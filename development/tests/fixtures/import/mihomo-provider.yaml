@@ -1,0 +1,7 @@
+payload:
+  - name: Provider Trojan
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: trojan-password
+    sni: trojan.example.com

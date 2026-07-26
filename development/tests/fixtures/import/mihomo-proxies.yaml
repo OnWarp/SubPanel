@@ -1,0 +1,33 @@
+proxies:
+  - name: Mihomo SS
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-128-gcm
+    password: password
+    plugin: obfs
+    plugin-opts:
+      mode: http
+      host: cdn.example.com
+  - name: Mihomo VLESS
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 22222222-2222-4222-8222-222222222222
+    network: ws
+    tls: true
+    servername: vless.example.com
+    ws-opts:
+      path: /vless
+      headers:
+        Host: cdn.example.com
+  - name: Mihomo WireGuard
+    type: wireguard
+    server: 192.0.2.1
+    port: 51820
+    ip: 192.0.2.2
+    public-key: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=
+    private-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    pre-shared-key: CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=
+    udp: true
+    reserved: [1, 2, 3]

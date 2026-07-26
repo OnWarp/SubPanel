@@ -1,0 +1,1 @@
+ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@ss.example.com:8388/?plugin=obfs-local%3Bobfs%3Dhttp%3Bobfs-host%3Dcdn.example.com#QuantumultX%20SS

@@ -1,0 +1,34 @@
+{
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "Sing-box SS",
+      "server": "ss.example.com",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "password"
+    },
+    {
+      "type": "vless",
+      "tag": "Sing-box VLESS",
+      "server": "vless.example.com",
+      "server_port": 443,
+      "uuid": "22222222-2222-4222-8222-222222222222",
+      "tls": {
+        "enabled": true,
+        "server_name": "vless.example.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/vless",
+        "headers": {
+          "Host": "cdn.example.com"
+        }
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

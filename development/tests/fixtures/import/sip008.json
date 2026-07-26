@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "servers": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "remarks": "SIP008 SS",
+      "server": "ss.example.com",
+      "server_port": 8388,
+      "password": "password",
+      "method": "aes-128-gcm",
+      "plugin": "obfs-local",
+      "plugin_opts": "obfs=http;obfs-host=cdn.example.com",
+      "vendor_note": "preserve-me"
+    }
+  ]
+}

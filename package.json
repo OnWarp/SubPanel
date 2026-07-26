@@ -1,0 +1,44 @@
+{
+  "name": "subpanel",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check": "wrangler types --check && tsc -b && oxlint -c development/oxlint.json",
+    "lint": "oxlint -c development/oxlint.json",
+    "test": "vitest run --config development/vitest.config.ts",
+    "test:watch": "vitest --config development/vitest.config.ts",
+    "pretest:e2e": "node -e \"require('node:fs').rmSync('.wrangler/state',{recursive:true,force:true})\"",
+    "test:e2e": "node development/test-e2e.mjs",
+    "preview": "npm run build && vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "hono": "^4.12.31",
+    "lucide-react": "^1.26.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.46.0",
+    "@cloudflare/vitest-pool-workers": "^0.18.7",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^24.13.3",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.113.0"
+  }
+}

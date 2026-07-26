@@ -1,0 +1,5 @@
+vless://22222222-2222-4222-8222-222222222222@reality.example.com:443?encryption=none&security=reality&sni=www.example.com&fp=chrome&pbk=public-key&sid=short-id&spx=%2F&flow=xtls-rprx-vision&cert=-----BEGIN%20CERTIFICATE-----%20CERT%20-----END%20CERTIFICATE-----&type=ws&host=cdn.example.com&path=%2Freality&x-custom=keep#Reality%20VLESS
+hysteria2://hy2-password@hy2.example.com:443?sni=hy2.example.com&insecure=1&obfs=salamander&obfs-password=obfs-secret&mport=2000-3000&upmbps=20&downmbps=100&hop_interval=30&certificate=-----BEGIN%20CERTIFICATE-----#Hysteria2%20Lossless
+tuic://33333333-3333-4333-8333-333333333333:tuic-password@tuic.example.com:443?sni=tuic.example.com&alpn=h3%2Ch2&congestion_control=bbr&udp_relay_mode=native#TUIC%20Lossless
+ss://MjAyMi1ibGFrZTMtc2hhMjU2OmF1dGgta2V5@ss2022.example.com:443#SS2022
+ssr://c3NyLmV4YW1wbGUuY29tOjQ0Mzpwcm90b2NvbDptZXRob2Q6b2JmczpjR0Z6YzNkdmNtUT0vP29iZnNwYXJhbT1lQT09JnByb3RvcGFyYW09ZVE9PSZyZW1hcmtzPVUxTlM=

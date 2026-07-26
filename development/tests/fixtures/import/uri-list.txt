@@ -1,0 +1,10 @@
+ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@ss.example.com:8388#SS%20Demo
+vmess://eyJ2IjoiMiIsInBzIjoiVk1lc3MgRGVtbyIsImFkZCI6InZtZXNzLmV4YW1wbGUuY29tIiwicG9ydCI6IjQ0MyIsImlkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIiwiYWlkIjoiMCIsInNjeSI6ImF1dG8iLCJuZXQiOiJ3cyIsInR5cGUiOiJub25lIiwiaG9zdCI6ImNkbi5leGFtcGxlLmNvbSIsInBhdGgiOiIvd3MiLCJ0bHMiOiJ0bHMiLCJzbmkiOiJ2bWVzcy5leGFtcGxlLmNvbSIsImFscG4iOiJoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIn0=
+vless://22222222-2222-4222-8222-222222222222@vless.example.com:443?encryption=none&security=tls&sni=vless.example.com&type=ws&host=cdn.example.com&path=%2Fvless#VLESS%20Demo
+trojan://trojan-password@trojan.example.com:443?security=tls&sni=trojan.example.com&type=tcp#Trojan%20Demo
+hysteria2://hy2-password@hy2.example.com:443?sni=hy2.example.com&insecure=0#Hysteria%202
+tuic://33333333-3333-4333-8333-333333333333:tuic-password@tuic.example.com:443?sni=tuic.example.com&congestion_control=bbr#TUIC%20Demo
+anytls://anytls-password@anytls.example.com:443?sni=anytls.example.com&insecure=0#AnyTLS%20Demo
+http://proxy-user:proxy-password@http.example.com:8080#HTTP%20Demo
+https://proxy-user:proxy-password@http.example.com:443#HTTPS%20Demo
+socks5://socks-user:socks-password@socks.example.com:1080#SOCKS%20Demo

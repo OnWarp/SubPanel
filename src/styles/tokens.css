@@ -1,0 +1,69 @@
+:root,
+:root[data-theme='light'] {
+  --color-canvas: #f3f6f5;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #edf2f0;
+  --color-surface-raised: #ffffff;
+  --color-sidebar: #13201c;
+  --color-sidebar-hover: #1d302a;
+  --color-sidebar-active: #25463d;
+  --color-sidebar-text: #e7efec;
+  --color-sidebar-muted: #9eb0a9;
+  --color-text: #17231f;
+  --color-text-muted: #60706a;
+  --color-border: #d7e0dd;
+  --color-border-strong: #adbbb6;
+  --color-primary: #08705f;
+  --color-primary-hover: #075f51;
+  --color-primary-soft: #e2f1ec;
+  --color-primary-contrast: #ffffff;
+  --color-info: #356b91;
+  --color-info-soft: #e8f1f7;
+  --color-success: #18745c;
+  --color-success-soft: #e2f2ec;
+  --color-warning: #8b5a16;
+  --color-warning-soft: #fff0d8;
+  --color-danger: #b64d47;
+  --color-danger-soft: #fae8e6;
+  --color-focus: #287f70;
+  --color-overlay: rgb(8 18 14 / 48%);
+  --shadow-float: 0 14px 36px rgb(19 32 28 / 16%);
+  --shadow-panel: 0 1px 2px rgb(19 32 28 / 5%);
+  --size-sidebar: 208px;
+  --size-topbar: 60px;
+  --radius-control: 5px;
+  --radius-panel: 6px;
+  --duration-ui: 180ms;
+}
+
+:root[data-theme='dark'] {
+  --color-canvas: #101714;
+  --color-surface: #17201d;
+  --color-surface-subtle: #1e2a26;
+  --color-surface-raised: #202b27;
+  --color-sidebar: #0b100e;
+  --color-sidebar-hover: #18231f;
+  --color-sidebar-active: #21453b;
+  --color-sidebar-text: #e7efec;
+  --color-sidebar-muted: #91a39c;
+  --color-text: #e7efec;
+  --color-text-muted: #9caaa5;
+  --color-border: #2d3a35;
+  --color-border-strong: #46564f;
+  --color-primary: #55bfa5;
+  --color-primary-hover: #6ccdb5;
+  --color-primary-soft: #173b32;
+  --color-primary-contrast: #07110e;
+  --color-info: #9abce0;
+  --color-info-soft: #203346;
+  --color-success: #68cbae;
+  --color-success-soft: #173a30;
+  --color-warning: #e3b36c;
+  --color-warning-soft: #402e18;
+  --color-danger: #ed938b;
+  --color-danger-soft: #472522;
+  --color-focus: #70cdb7;
+  --color-overlay: rgb(0 0 0 / 68%);
+  --shadow-float: 0 18px 44px rgb(0 0 0 / 42%);
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 28%);
+}

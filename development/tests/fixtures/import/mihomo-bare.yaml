@@ -1,0 +1,2 @@
+- { name: Bare SS, type: ss, server: bare-ss.example.com, port: 8388, cipher: aes-128-gcm, password: password }
+- { name: Bare Trojan, type: trojan, server: bare-trojan.example.com, port: 443, password: trojan-password, sni: bare-trojan.example.com }

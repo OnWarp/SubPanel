@@ -1,0 +1,145 @@
+[
+  {
+    "file": "uri-list.txt",
+    "upstreamUrl": "https://github.com/2dust/v2rayN/tree/1de83f96edeb199beeb0b54e226c88f626cb2bd2/v2rayN/ServiceLib/Handler/Fmt",
+    "ref": "1de83f96edeb199beeb0b54e226c88f626cb2bd2",
+    "formats": ["uri-list", "v2rayN", "v2rayNG", "NekoBox", "Shadowrocket"],
+    "expectedFormat": "uri-list",
+    "expectedNodes": 10,
+    "highValueFields": ["credentials", "tls", "transport"],
+    "coveredFields": ["scheme", "name", "server", "port", "credentials", "tls", "transport", "plugin"],
+    "omissions": ["NekoBox sn://", "Shadowrocket proprietary extensions"]
+  },
+  {
+    "file": "uri-list-base64.txt",
+    "upstreamUrl": "https://github.com/2dust/v2rayN/blob/1de83f96edeb199beeb0b54e226c88f626cb2bd2/v2rayN/ServiceLib/Handler/SubscriptionHandler.cs",
+    "ref": "1de83f96edeb199beeb0b54e226c88f626cb2bd2",
+    "formats": ["base64-uri-list"],
+    "expectedFormat": "uri-list",
+    "expectedNodes": 1,
+    "highValueFields": ["credentials"],
+    "coveredFields": ["single-layer Base64 subscription body"],
+    "omissions": ["recursive Base64 decoding"]
+  },
+  {
+    "file": "mihomo-proxies.yaml",
+    "upstreamUrl": "https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/config/config.go",
+    "ref": "e26714a181ac0e2fa803453c0a8e9a9ce94e31cb",
+    "formats": ["mihomo-full"],
+    "expectedFormat": "mihomo",
+    "expectedNodes": 3,
+    "highValueFields": ["credentials", "transport", "plugin", "extensions"],
+    "coveredFields": ["proxies", "shadowsocks", "vless", "wireguard", "keys", "reserved", "tls", "websocket", "plugin"],
+    "omissions": ["rules", "DNS", "proxy groups"]
+  },
+  {
+    "file": "mihomo-provider.yaml",
+    "upstreamUrl": "https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/adapter/provider/parser.go",
+    "ref": "e26714a181ac0e2fa803453c0a8e9a9ce94e31cb",
+    "formats": ["mihomo-provider"],
+    "expectedFormat": "mihomo",
+    "expectedNodes": 1,
+    "highValueFields": ["credentials", "tls"],
+    "coveredFields": ["payload", "trojan", "sni"],
+    "omissions": ["provider health checks", "provider overrides"]
+  },
+  {
+    "file": "mihomo-bare.yaml",
+    "upstreamUrl": "https://github.com/MetaCubeX/mihomo/blob/e26714a181ac0e2fa803453c0a8e9a9ce94e31cb/adapter/provider/parser.go",
+    "ref": "e26714a181ac0e2fa803453c0a8e9a9ce94e31cb",
+    "formats": ["mihomo-bare-proxy-lines"],
+    "expectedFormat": "mihomo",
+    "expectedNodes": 2,
+    "highValueFields": ["credentials", "tls"],
+    "coveredFields": ["bare proxy array", "shadowsocks", "trojan", "sni"],
+    "omissions": ["proxy groups", "rules"]
+  },
+  {
+    "file": "sing-box.json",
+    "upstreamUrl": "https://github.com/SagerNet/sing-box/blob/25a600db24f7680ad9806ce5427bd0ab8afe1114/option/options.go",
+    "ref": "25a600db24f7680ad9806ce5427bd0ab8afe1114",
+    "formats": ["sing-box-full"],
+    "expectedFormat": "sing-box",
+    "expectedNodes": 2,
+    "highValueFields": ["credentials", "tls", "transport"],
+    "coveredFields": ["outbounds", "shadowsocks", "vless", "tls", "websocket"],
+    "omissions": ["direct outbound", "route", "DNS"]
+  },
+  {
+    "file": "sing-box-outbounds.json",
+    "upstreamUrl": "https://github.com/2dust/v2rayN/blob/1de83f96edeb199beeb0b54e226c88f626cb2bd2/v2rayN/ServiceLib/Handler/Fmt/SingboxFmt.cs",
+    "ref": "1de83f96edeb199beeb0b54e226c88f626cb2bd2",
+    "formats": ["sing-box-outbound-array"],
+    "expectedFormat": "sing-box",
+    "expectedNodes": 2,
+    "highValueFields": ["credentials", "tls", "transport"],
+    "coveredFields": ["bare outbound array", "shadowsocks", "vless"],
+    "omissions": ["direct outbound"]
+  },
+  {
+    "file": "sip008.json",
+    "upstreamUrl": "https://github.com/shadowsocks/shadowsocks-org/blob/34598d65054dad975d330ff9d7317b0d41cf1efd/docs/doc/sip008.md",
+    "ref": "34598d65054dad975d330ff9d7317b0d41cf1efd",
+    "formats": ["sip008"],
+    "expectedFormat": "sip008",
+    "expectedNodes": 1,
+    "highValueFields": ["credentials", "plugin", "extensions"],
+    "coveredFields": ["version", "servers", "id", "remarks", "plugin", "custom fields"],
+    "omissions": ["usage accounting"]
+  },
+  {
+    "file": "loon-nodes.conf",
+    "upstreamUrl": "https://github.com/Loon0x00/LoonManual/blob/4311d0030fe3065d4664b403a32010f083b99273/docs/cn/node.md",
+    "ref": "4311d0030fe3065d4664b403a32010f083b99273",
+    "formats": ["loon"],
+    "expectedFormat": "loon",
+    "expectedNodes": 5,
+    "highValueFields": ["credentials", "tls", "extensions"],
+    "coveredFields": ["shadowsocks", "trojan", "hysteria2", "shadowsocksr", "wireguard", "quoted fields", "key-value options"],
+    "omissions": ["custom JavaScript protocols"]
+  },
+  {
+    "file": "quantumultx-servers.txt",
+    "upstreamUrl": "https://github.com/crossutility/Quantumult-X/blob/af6fb594233ec4a3ec6d4ccb3601e9c36b75ea2d/server.snippet",
+    "ref": "af6fb594233ec4a3ec6d4ccb3601e9c36b75ea2d",
+    "formats": ["quantumult-x", "sip002"],
+    "expectedFormat": "uri-list",
+    "expectedNodes": 1,
+    "highValueFields": ["credentials", "plugin"],
+    "coveredFields": ["shadowsocks URI", "plugin", "name"],
+    "omissions": ["undocumented proprietary syntax"]
+  },
+  {
+    "file": "uri-lossless.txt",
+    "upstreamUrl": "https://github.com/2dust/v2rayN/tree/1de83f96edeb199beeb0b54e226c88f626cb2bd2/v2rayN/ServiceLib/Handler/Fmt",
+    "ref": "1de83f96edeb199beeb0b54e226c88f626cb2bd2",
+    "formats": ["uri-list", "v2rayn-wrapper", "legacy-ssr"],
+    "expectedFormat": "uri-list",
+    "expectedNodes": 5,
+    "highValueFields": ["credentials", "tls", "transport", "extensions"],
+    "coveredFields": ["certificate", "certificate pin", "Reality", "Flow", "Hysteria2 port hopping", "TUIC", "Shadowsocks 2022", "SSR"],
+    "omissions": ["undocumented Shadowrocket extensions", "NekoBox sn://"]
+  },
+  {
+    "file": "surge-nodes.conf",
+    "upstreamUrl": "https://manual.nssurge.com/policy/proxy.html",
+    "ref": "2026-07-25",
+    "formats": ["surge-proxy-section"],
+    "expectedFormat": "surge",
+    "expectedNodes": 6,
+    "highValueFields": ["credentials", "tls", "transport", "plugin"],
+    "coveredFields": ["Shadowsocks", "Trojan", "Snell", "TUIC", "Hysteria 2", "AnyTLS", "TLS", "obfs", "port hopping"],
+    "omissions": ["VLESS (not a Surge protocol)", "external proxy providers"]
+  },
+  {
+    "file": "quantumultx-nodes.conf",
+    "upstreamUrl": "https://github.com/crossutility/Quantumult-X/blob/af6fb594233ec4a3ec6d4ccb3601e9c36b75ea2d/sample.conf",
+    "ref": "af6fb594233ec4a3ec6d4ccb3601e9c36b75ea2d",
+    "formats": ["quantumult-x-server-lines"],
+    "expectedFormat": "quantumultx",
+    "expectedNodes": 2,
+    "highValueFields": ["credentials", "tls", "plugin"],
+    "coveredFields": ["Shadowsocks", "Trojan", "TLS verification", "obfs", "tag"],
+    "omissions": ["undocumented proprietary options"]
+  }
+]
