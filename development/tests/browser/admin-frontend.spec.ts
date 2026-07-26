@@ -25,6 +25,8 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '节点', exact: true })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '分组', exact: true })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅', exact: true })).toBeVisible()
+    await expect(page.locator('.workspace-topbar').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
+    await expect(page.getByRole('contentinfo').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
   })
 
   test('previews and saves a source, then keeps the edit drawer open on backdrop clicks', async ({ page }) => {
@@ -300,7 +302,14 @@ test.describe.serial('Administrator frontend', () => {
     await page.goto('/catalog/nodes')
     const section = page.locator('section[aria-labelledby="nodes-title"]')
     await expect(section.locator('tbody tr')).toHaveCount(20)
+    await expect(section.getByRole('columnheader', { name: '序号' })).toBeVisible()
+    await expect(section.locator('tbody tr').first().getByRole('cell').nth(1)).toHaveText('1')
     await expect(section.getByText('第 1 / 2 页')).toBeVisible()
+    await section.getByLabel('选择当前页节点').check()
+    await expect(section.getByRole('toolbar', { name: '批量操作' })).toContainText('已选择 20 项')
+    await expect(section.locator('tbody tr')).toHaveCount(20)
+    await section.getByRole('button', { name: '下一页' }).click()
+    await expect(section.locator('tbody tr').first().getByRole('cell').nth(1)).toHaveText('21')
     await section.getByLabel('每页显示').selectOption('50')
     await expect(section.locator('tbody tr')).toHaveCount(25)
     await expect(section.getByText('第 1 / 1 页')).toBeVisible()
