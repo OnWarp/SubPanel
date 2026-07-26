@@ -8,6 +8,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { formatDate } from './catalog-utils'
+import { groupNodeIds } from './catalog-counts'
 
 type GroupForm = {
   name: string
@@ -68,6 +69,7 @@ export function GroupsPage() {
   const sources = catalog?.sources ?? EMPTY_SOURCES
   const nodes = catalog?.nodes ?? EMPTY_NODES
   const nodeNames = useMemo(() => new Map(nodes.map((node) => [node.id, node.displayName])), [nodes])
+  const groupNodeCounts = useMemo(() => new Map(groups.map((group) => [group.id, groupNodeIds(group, sources, nodes).size])), [groups, nodes, sources])
   const affectedSubscriptions = useMemo(() => subscriptions.filter((subscription) => subscription.groupIds.some((id) => selected.has(id))).length, [selected, subscriptions])
 
   const openCreate = () => {
@@ -104,6 +106,14 @@ export function GroupsPage() {
         [key]: toggle(current[key], id),
         [other]: adding ? current[other].filter((value) => value !== id) : current[other],
       }
+    })
+  }
+
+  const setAllNodeChoices = (key: 'includedNodeIds' | 'excludedNodeIds', invert: boolean) => {
+    setForm((current) => {
+      const other = key === 'includedNodeIds' ? 'excludedNodeIds' : 'includedNodeIds'
+      const next = invert ? nodes.map((node) => node.id).filter((id) => !current[key].includes(id)) : nodes.map((node) => node.id)
+      return { ...current, [key]: next, [other]: current[other].filter((id) => !next.includes(id)) }
     })
   }
 
@@ -183,14 +193,15 @@ export function GroupsPage() {
         <DataHeader id="groups-title" title="分组列表" actions={<BatchToolbar selectedCount={selected.size} totalCount={groups.length} onSelectAll={() => setSelected(new Set(groups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />} />
         <div className="table-scroll">
           <table>
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部分组" checked={groups.length > 0 && selected.size === groups.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(groups.map((group) => group.id)) : new Set())} /></th><th>名称</th><th>来源</th><th>单独包含</th><th>排除</th><th>更新时间</th><th className="align-right">操作</th></tr></thead>
+            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部分组" checked={groups.length > 0 && selected.size === groups.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(groups.map((group) => group.id)) : new Set())} /></th><th>名称</th><th>来源数</th><th>节点数</th><th>单独包含</th><th>排除</th><th>更新时间</th><th className="align-right">操作</th></tr></thead>
             <tbody>
-              {loading && !catalog ? <tr><td colSpan={7} className="empty-row">正在加载分组</td></tr> : null}
-              {!loading && groups.length === 0 ? <tr><td colSpan={7} className="empty-row">暂无分组</td></tr> : null}
+              {loading && !catalog ? <tr><td colSpan={8} className="empty-row">正在加载分组</td></tr> : null}
+              {!loading && groups.length === 0 ? <tr><td colSpan={8} className="empty-row">暂无分组</td></tr> : null}
               {groups.map((group) => <tr key={group.id}>
                 <td className="check-cell"><input type="checkbox" aria-label={`选择分组 ${group.name}`} checked={selected.has(group.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next })} /></td>
                 <td><strong>{group.name}</strong></td>
                 <td>{group.sourceIds.length}</td>
+                <td>{groupNodeCounts.get(group.id) ?? 0}</td>
                 <td>{group.includedNodeIds.length}</td>
                 <td>{group.excludedNodeIds.length}</td>
                 <td>{formatDate(group.updatedAt)}</td>
@@ -205,11 +216,11 @@ export function GroupsPage() {
         <form className="form-stack group-form" onSubmit={saveGroup}>
           <label className="field"><span>分组名称</span><input aria-label="分组名称" value={form.name} maxLength={128} onChange={(event) => { const name = event.currentTarget.value; setForm((current) => ({ ...current, name })) }} required /></label>
 
-          <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><input type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div> : <p className="drawer-note">暂无来源</p>}</fieldset>
+          <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id).filter((id) => !current.sourceIds.includes(id)) }))}>反选</button></div><div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><input type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div></> : <p className="drawer-note">暂无来源</p>}</fieldset>
 
-          <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><input type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div> : <p className="drawer-note">暂无节点</p>}</fieldset>
+          <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><input type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
 
-          <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><input type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div> : <p className="drawer-note">暂无节点</p>}</fieldset>
+          <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><input type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
 
           <fieldset className="choice-section"><legend>节点顺序</legend>{form.nodeOrder.length ? <ol className="order-list">{form.nodeOrder.map((id, index) => <li key={id}><span>{nodeNames.get(id) ?? id}</span><span className="row-actions"><button className="icon-button" type="button" aria-label={`上移 ${nodeNames.get(id) ?? id}`} title="上移" disabled={index === 0} onClick={() => moveNode(id, -1)}><ArrowUp aria-hidden="true" size={15} /></button><button className="icon-button" type="button" aria-label={`下移 ${nodeNames.get(id) ?? id}`} title="下移" disabled={index === form.nodeOrder.length - 1} onClick={() => moveNode(id, 1)}><ArrowDown aria-hidden="true" size={15} /></button></span></li>)}</ol> : <p className="drawer-note">暂无节点</p>}</fieldset>
 

@@ -1,4 +1,4 @@
-import { CheckCircle2, Pencil, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Pencil, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -39,6 +39,8 @@ export function NodesPage() {
   const [protocol, setProtocol] = useState('all')
   const [sourceId, setSourceId] = useState('all')
   const [status, setStatus] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [pageSize, setPageSize] = useState(20)
+  const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<CatalogNode | null>(null)
   const [nodeForm, setNodeForm] = useState<NodeForm>({ displayName: '', enabled: true, retained: false })
@@ -74,6 +76,11 @@ export function NodesPage() {
     if (status === 'disabled' && node.enabled) return false
     return true
   }), [nodes, protocol, query, sourceId, status])
+  const pageCount = Math.max(1, Math.ceil(filteredNodes.length / pageSize))
+  const visibleNodes = useMemo(() => filteredNodes.slice((page - 1) * pageSize, page * pageSize), [filteredNodes, page, pageSize])
+
+  useEffect(() => { setPage(1) }, [pageSize, protocol, query, sourceId, status])
+  useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
 
   useEffect(() => {
     const visible = new Set(filteredNodes.map((node) => node.id))
@@ -172,11 +179,11 @@ export function NodesPage() {
         <DataHeader id="nodes-title" title="节点列表" filters={<div className="data-header-filters" aria-label="节点筛选"><label className="search-field"><span className="sr-only">搜索节点</span><input aria-label="搜索节点" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="搜索名称、服务器或协议" /></label><label className="filter-field"><span>协议</span><select aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="filter-field"><span>来源</span><select aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label className="filter-field"><span>状态</span><select aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as typeof status)}><option value="all">全部</option><option value="enabled">正常</option><option value="disabled">已停用</option></select></label></div>} actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />} />
         <div className="table-scroll">
           <table className="nodes-table">
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部节点" checked={filteredNodes.length > 0 && selected.size === filteredNodes.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredNodes.map((node) => node.id)) : new Set())} /></th><th>名称</th><th>协议</th><th>服务器</th><th>端口</th><th>来源</th><th>状态</th><th>保留</th><th>更新时间</th><th className="align-right">操作</th></tr></thead>
+            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择当前页节点" checked={visibleNodes.length > 0 && visibleNodes.every((node) => selected.has(node.id))} disabled={busy} onChange={(event) => setSelected((current) => { const next = new Set(current); for (const node of visibleNodes) { if (event.currentTarget.checked) next.add(node.id); else next.delete(node.id) } return next })} /></th><th>名称</th><th>协议</th><th>服务器</th><th>端口</th><th>来源</th><th>状态</th><th>保留</th><th>更新时间</th><th className="align-right">操作</th></tr></thead>
             <tbody>
               {loading && !catalog ? <tr><td colSpan={10} className="empty-row">正在加载节点</td></tr> : null}
               {!loading && filteredNodes.length === 0 ? <tr><td colSpan={10} className="empty-row">暂无匹配节点</td></tr> : null}
-              {filteredNodes.map((node) => <tr key={node.id}>
+              {visibleNodes.map((node) => <tr key={node.id}>
                 <td className="check-cell"><input type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} /></td>
                 <td><strong>{node.displayName}</strong></td>
                 <td>{node.protocol}</td>
@@ -191,6 +198,11 @@ export function NodesPage() {
             </tbody>
           </table>
         </div>
+        <footer className="table-pagination" aria-label="节点分页">
+          <label><span>每页显示</span><select aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+          <span>第 {page} / {pageCount} 页 · 共 {filteredNodes.length} 项</span>
+          <div className="row-actions"><button className="icon-button" type="button" aria-label="上一页" title="上一页" disabled={page === 1} onClick={() => setPage((current) => current - 1)}><ChevronLeft aria-hidden="true" size={16} /></button><button className="icon-button" type="button" aria-label="下一页" title="下一页" disabled={page === pageCount} onClick={() => setPage((current) => current + 1)}><ChevronRight aria-hidden="true" size={16} /></button></div>
+        </footer>
       </section>
 
       <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit}>

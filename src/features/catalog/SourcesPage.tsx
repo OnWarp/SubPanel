@@ -1,6 +1,6 @@
 import { CheckCircle2, FileUp, Pencil, Plus, RefreshCw, Search, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type CatalogResponse, type CatalogSource } from '../../app/api'
+import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataHeader } from '../../ui/DataHeader'
 import { PageHeader } from '../../ui/PageHeader'
@@ -48,6 +48,7 @@ const sourceForm = (source: CatalogSource): SourceForm => ({
 })
 
 const EMPTY_SOURCES: CatalogSource[] = []
+const EMPTY_NODES: CatalogNode[] = []
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -92,6 +93,12 @@ export function SourcesPage() {
   useEffect(() => { load().catch(() => undefined) }, [load])
 
   const sources = catalog?.sources ?? EMPTY_SOURCES
+  const nodes = catalog?.nodes ?? EMPTY_NODES
+  const sourceNodeCounts = useMemo(() => {
+    const counts = new Map(sources.map((source) => [source.id, 0]))
+    for (const node of nodes) for (const id of node.sourceIds) counts.set(id, (counts.get(id) ?? 0) + 1)
+    return counts
+  }, [nodes, sources])
   const filteredSources = useMemo(() => sources.filter((source) => {
     if (!matchesText(`${source.name} ${source.remoteHost ?? ''}`, query)) return false
     if (statusFilter === 'enabled' && !source.enabled) return false
@@ -311,10 +318,10 @@ export function SourcesPage() {
         <DataHeader id="sources-title" title="来源列表" filters={<div className="data-header-filters" aria-label="来源筛选"><label className="search-field"><Search aria-hidden="true" size={15} /><span className="sr-only">搜索来源</span><input aria-label="搜索来源" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="搜索名称或主机" /></label><label className="filter-field"><span>状态</span><select aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}><option value="all">全部</option><option value="enabled">正常</option><option value="disabled">已停用</option><option value="error">需处理</option></select></label></div>} actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => setSelected(new Set())} actions={batchActions} busy={busy} progress={batchProgress} />} />
         <div className="table-scroll">
           <table className="sources-table">
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部来源" checked={filteredSources.length > 0 && selected.size === filteredSources.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} /></th><th>名称</th><th>类型</th><th>格式</th><th>状态</th><th>最近成功</th><th>最近尝试</th><th className="align-right">操作</th></tr></thead>
+            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部来源" checked={filteredSources.length > 0 && selected.size === filteredSources.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} /></th><th>名称</th><th>类型</th><th>格式</th><th>节点</th><th>状态</th><th>最近成功</th><th>最近尝试</th><th className="align-right">操作</th></tr></thead>
             <tbody>
-              {loading && !catalog ? <tr><td colSpan={8} className="empty-row">正在加载来源</td></tr> : null}
-              {!loading && filteredSources.length === 0 ? <tr><td colSpan={8} className="empty-row">暂无匹配来源</td></tr> : null}
+              {loading && !catalog ? <tr><td colSpan={9} className="empty-row">正在加载来源</td></tr> : null}
+              {!loading && filteredSources.length === 0 ? <tr><td colSpan={9} className="empty-row">暂无匹配来源</td></tr> : null}
               {filteredSources.map((source) => {
                 const status = sourceStatus(source)
                 return <tr key={source.id}>
@@ -322,6 +329,7 @@ export function SourcesPage() {
                   <td><strong>{source.name}</strong>{source.remoteHost ? <span className="cell-note">{source.remoteHost}</span> : null}</td>
                   <td>{sourceTypeLabel(source.type)}</td>
                   <td>{formatLabel(source.detectedFormat)}</td>
+                  <td>{sourceNodeCounts.get(source.id) ?? 0}</td>
                   <td><span className={`status ${status === '正常' ? 'success' : status === '需处理' ? 'warning' : 'muted'}`}><i />{status}</span></td>
                   <td>{formatDate(source.lastSuccessAt)}</td>
                   <td>{formatDate(source.lastAttemptAt)}</td>

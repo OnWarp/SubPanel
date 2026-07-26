@@ -163,10 +163,10 @@ export function MySubscriptionsPage() {
           </div>
         </section>
 
-        <section className="data-section user-subscription-section" aria-labelledby="diagnostics-title">
-          <DataHeader id="diagnostics-title" title="兼容诊断" />
+        <details className="data-section user-subscription-section diagnostic-disclosure" open>
+          <summary id="diagnostics-title">兼容诊断</summary>
           {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><span className={`status ${diagnostic.available ? 'success' : 'warning'}`}><i />{diagnostic.available ? '可用' : '不可用'}</span></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
-        </section>
+        </details>
       </> : null}
 
       <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={selected?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { copyText(qr.link, '链接已复制').catch(() => undefined); setQr(null) } }}>

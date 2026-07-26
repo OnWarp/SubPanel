@@ -274,6 +274,42 @@ test.describe.serial('Administrator frontend', () => {
     await expect(row.getByText('已停用')).toBeVisible()
   })
 
+  test('paginates nodes and shows source node counts', async ({ page }) => {
+    await loginAdmin(page)
+    const now = new Date().toISOString()
+    const source = { id: 'many-source', name: 'Many source', type: 'manual', enabled: true, warnings: [], updatedAt: now, createdAt: now }
+    const nodes = Array.from({ length: 25 }, (_, index) => ({
+      id: `many-node-${index}`,
+      protocol: 'ss',
+      displayName: `Many node ${index + 1}`,
+      server: `node-${index + 1}.example.com`,
+      port: 8388,
+      sourceIds: [source.id],
+      enabled: true,
+      retained: false,
+      order: index,
+      updatedAt: now,
+      createdAt: now,
+    }))
+    await page.route('**/api/admin/catalog', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ schemaVersion: 2, revision: 1, updatedAt: now, sources: [source], nodes, groups: [] }),
+    }))
+
+    await page.goto('/catalog/nodes')
+    const section = page.locator('section[aria-labelledby="nodes-title"]')
+    await expect(section.locator('tbody tr')).toHaveCount(20)
+    await expect(section.getByText('第 1 / 2 页')).toBeVisible()
+    await section.getByLabel('每页显示').selectOption('50')
+    await expect(section.locator('tbody tr')).toHaveCount(25)
+    await expect(section.getByText('第 1 / 1 页')).toBeVisible()
+
+    await page.goto('/catalog/sources')
+    await expect(page.getByRole('columnheader', { name: '节点' })).toBeVisible()
+    await expect(page.getByRole('row', { name: /Many source/ }).getByRole('cell').nth(4)).toHaveText('25')
+  })
+
   test('creates a group and keeps edit and batch confirmation surfaces open on backdrop clicks', async ({ page }) => {
     await loginAdmin(page)
     await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '分组', exact: true }).click()
@@ -284,11 +320,21 @@ test.describe.serial('Administrator frontend', () => {
     const createDrawer = page.getByRole('dialog', { name: '添加分组' })
     await expect(createDrawer).toHaveClass(/drawer-wide/)
     await createDrawer.getByLabel('分组名称').fill('Primary group')
+    await createDrawer.getByRole('button', { name: '全选包含来源' }).click()
+    await expect(createDrawer.getByLabel('包含来源 Primary source').first()).toBeChecked()
+    await createDrawer.getByRole('button', { name: '反选包含来源' }).click()
+    await expect(createDrawer.getByLabel('包含来源 Primary source').first()).not.toBeChecked()
     await createDrawer.getByLabel('包含来源 Primary source').first().check()
+    await createDrawer.getByRole('button', { name: '全选单独包含节点' }).click()
+    await createDrawer.getByRole('button', { name: '反选单独包含节点' }).click()
     await createDrawer.getByRole('button', { name: '保存分组' }).click()
 
     const row = page.getByRole('row', { name: /Primary group/ }).last()
     await expect(row).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '来源数' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '节点数' })).toBeVisible()
+    await expect(row.getByRole('cell').nth(2)).toHaveText('1')
+    await expect(row.getByRole('cell').nth(3)).toHaveText('0')
     await row.getByRole('button', { name: '编辑' }).click()
     const editDrawer = page.getByRole('dialog', { name: '编辑分组' })
     await editDrawer.dispatchEvent('pointerdown')
@@ -316,16 +362,31 @@ test.describe.serial('Administrator frontend', () => {
     await expect(createDrawer).toHaveClass(/drawer-medium/)
     await createDrawer.getByLabel('订阅名称').fill('Primary subscription')
     await createDrawer.getByLabel('所属用户').selectOption({ index: 0 })
+    await createDrawer.getByRole('button', { name: '全选使用分组' }).click()
+    await expect(createDrawer.getByLabel('使用分组 Primary group')).toBeChecked()
+    await createDrawer.getByRole('button', { name: '反选使用分组' }).click()
     await createDrawer.getByLabel('使用分组 Primary group').check()
     await createDrawer.getByRole('button', { name: '保存订阅' }).click()
 
     const row = page.getByRole('row', { name: /Primary subscription/ })
     await expect(row).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '来源数' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '节点数' })).toBeVisible()
+    await expect(row.getByRole('cell').nth(3)).toHaveText('1')
+    await expect(row.getByRole('cell').nth(4)).toHaveText('1')
+    await expect(row.getByRole('cell').nth(5)).toHaveText('0')
     await row.getByRole('button', { name: '查看详情' }).click()
     const details = page.getByRole('dialog', { name: '订阅详情' })
     await expect(details).toHaveClass(/drawer-large/)
     await expect(details.getByText('客户端链接')).toBeVisible()
-    await expect(details.getByText('兼容诊断')).toBeVisible()
+    const diagnostics = details.locator('details').filter({ hasText: '兼容诊断' })
+    await expect(diagnostics).toHaveAttribute('open', '')
+    await diagnostics.getByText('兼容诊断', { exact: true }).click()
+    await expect(diagnostics).not.toHaveAttribute('open', '')
+    await details.getByRole('button', { name: '显示 Mihomo 二维码' }).click()
+    const qrDialog = page.getByRole('dialog', { name: 'Mihomo 二维码' })
+    await expect(qrDialog.getByRole('img', { name: 'Mihomo 订阅二维码' })).toBeVisible()
+    await qrDialog.getByRole('button', { name: '关闭' }).click()
     await details.dispatchEvent('pointerdown')
     await expect(details).toBeVisible()
     await details.getByRole('button', { name: '关闭' }).click()
