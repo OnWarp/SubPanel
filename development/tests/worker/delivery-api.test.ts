@@ -73,6 +73,18 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('yaml')
     expect(response.headers.get('profile-title')).toBe(encodeURIComponent('主要订阅'))
+    const downloadNames = {
+      mihomo: '主要订阅.yaml', clash: '主要订阅.yaml', 'clash-meta': '主要订阅.yaml', stash: '主要订阅.yaml',
+      singbox: '主要订阅.json', karing: '主要订阅.json', 'sing-box': '主要订阅.json',
+      surge: '主要订阅.conf', loon: '主要订阅.conf', quantumultx: '主要订阅.conf', 'quantumult-x': '主要订阅.conf',
+      v2rayn: '主要订阅.txt', v2rayng: '主要订阅.txt', nekobox: '主要订阅.txt', 'neko-box': '主要订阅.txt',
+      shadowrocket: '主要订阅.txt', generic: '主要订阅.txt',
+    }
+    for (const [client, fileName] of Object.entries(downloadNames)) {
+      const clientResponse = await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/${client}`)
+      expect(clientResponse.status, client).toBe(200)
+      expect(clientResponse.headers.get('content-disposition'), client).toContain(`filename*=UTF-8''${encodeURIComponent(fileName)}`)
+    }
     const etag = response.headers.get('etag')
     expect(etag).toBeTruthy()
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/mihomo`, { headers: { 'If-None-Match': etag! } })).status).toBe(304)

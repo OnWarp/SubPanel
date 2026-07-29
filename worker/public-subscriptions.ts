@@ -81,7 +81,8 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   c.header('ETag', artifact.etag)
   c.header('Last-Modified', new Date(artifact.lastModified).toUTCString())
   c.header('Content-Type', artifact.contentType)
-  c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
+  const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
+  c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"; filename*=UTF-8''${encodeURIComponent(`${subscription.name}${extension}`)}`)
   c.header('profile-title', encodeURIComponent(subscription.name))
   const ifNoneMatch = c.req.header('If-None-Match')
   if (ifNoneMatch?.split(',').map((value: string) => value.trim()).includes(artifact.etag)) return c.body(null, 304)
