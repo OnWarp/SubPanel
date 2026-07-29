@@ -1,14 +1,15 @@
 import { env, exports } from 'cloudflare:workers'
+import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const ssLine = (name: string, host = 'ss.example.com') =>
   `ss://${btoa('aes-128-gcm:password')}@${host}:8388#${encodeURIComponent(name)}`
 
-async function createCatalogGroup(cookie: string): Promise<string> {
+async function createCatalogGroup(cookie: string, content = ssLine('Delivery node')): Promise<string> {
   const sourceResponse = await exports.default.fetch(
     `${TEST_ORIGIN}/api/admin/catalog/sources`,
-    jsonRequest({ type: 'manual', name: 'Delivery source', content: ssLine('Delivery node') }, withCookie(cookie)),
+    jsonRequest({ type: 'manual', name: 'Delivery source', content }, withCookie(cookie)),
   )
   const sourceId = (await sourceResponse.json() as { source: { id: string } }).source.id
   const catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { nodes: Array<{ id: string }> }
@@ -43,7 +44,7 @@ describe('Delivery APIs and public subscriptions', () => {
     const groupId = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Primary', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: '主要订阅', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
     )
     expect(created.status).toBe(201)
     const body = await created.json() as {
@@ -71,6 +72,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(response.headers.get('content-type')).toContain('yaml')
+    expect(response.headers.get('profile-title')).toBe(encodeURIComponent('主要订阅'))
     const etag = response.headers.get('etag')
     expect(etag).toBeTruthy()
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/mihomo`, { headers: { 'If-None-Match': etag! } })).status).toBe(304)
@@ -91,6 +93,24 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(karingAuto.headers.get('content-type')).toContain('application/json')
   })
 
+  it('converts an imported PEM certificate to a Mihomo certificate fingerprint', async () => {
+    const admin = await login()
+    const certificate = '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----'
+    const groupId = await createCatalogGroup(admin, `hysteria2://password@hy2.example.com:443?cert=${encodeURIComponent(certificate)}#HY2`)
+    const created = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId: 'usr_1', name: 'HY2', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
+    )
+    const token = (await created.json() as { token: string }).token
+    const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
+    const proxy = (parseYaml(await response.text()) as { proxies: Array<Record<string, unknown>> }).proxies[0]
+    expect(proxy).toMatchObject({
+      type: 'hysteria2',
+      fingerprint: '03:90:58:C6:F2:C0:CB:49:2C:53:3B:0A:4D:14:EF:77:CC:0F:78:AB:CC:CE:D5:28:7D:84:A1:A2:01:1C:FB:81',
+    })
+    expect(proxy).not.toHaveProperty('certificate')
+  })
+
   it('routes unknown user agents to the generic URI artifact', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
@@ -103,6 +123,23 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('text/plain')
     expect(atob(await response.text())).toContain('ss://')
+  })
+
+  it('recompiles legacy subscription artifacts on first request', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    const created = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId: 'usr_1', name: 'Legacy', groupIds: [groupId] }, withCookie(admin)),
+    )
+    const token = (await created.json() as { token: string }).token
+    const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
+    const artifact = JSON.parse((await env.DATA.get(artifactKey))!) as Record<string, unknown>
+    artifact.schemaVersion = 1
+    await env.DATA.put(artifactKey, JSON.stringify(artifact))
+
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(200)
+    expect(JSON.parse((await env.DATA.get(artifactKey))!).schemaVersion).toBe(2)
   })
 
   it('fails closed for a corrupt compiled artifact', async () => {

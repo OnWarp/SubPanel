@@ -16,6 +16,34 @@ function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscri
   return [...byId.values()]
 }
 
+async function certificateFingerprint(value: unknown): Promise<string | undefined> {
+  if (typeof value !== 'string') return undefined
+  const match = /-----BEGIN CERTIFICATE-----\s*([\s\S]*?)\s*-----END CERTIFICATE-----/u.exec(value)
+  if (!match) return undefined
+  try {
+    const binary = atob(match[1].replace(/\s/gu, ''))
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))
+    return [...digest].map((byte) => byte.toString(16).padStart(2, '0').toUpperCase()).join(':')
+  } catch {
+    return undefined
+  }
+}
+
+async function nodesForClient(client: RenderClient, nodes: ReturnType<typeof selectedNodes>) {
+  if (client !== 'mihomo') return nodes
+  return Promise.all(nodes.map(async (node) => {
+    const tls = { ...node.tls }
+    const fingerprint = await certificateFingerprint(tls.certificate ?? tls.ca ?? tls['ca-str'])
+    if (!fingerprint) return node
+    delete tls.certificate
+    delete tls.ca
+    delete tls['ca-str']
+    tls.certificateSha256 = fingerprint
+    return { ...node, tls }
+  }))
+}
+
 async function artifactFor(
   subscription: Subscription,
   client: RenderClient,
@@ -23,10 +51,10 @@ async function artifactFor(
   catalogRevision: number,
   now: string,
 ): Promise<CompiledArtifact> {
-  const rendered = renderClient(client, nodes)
+  const rendered = renderClient(client, await nodesForClient(client, nodes))
   const digest = await hashToken(rendered.body)
   return compiledArtifactSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     client,
     body: rendered.body,
     contentType: rendered.contentType,

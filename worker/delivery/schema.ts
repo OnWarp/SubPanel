@@ -100,7 +100,7 @@ const artifactFileNameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,12
 const artifactContentTypeSchema = z.string().min(1).max(256).regex(/^[\x20-\x7E]+$/u)
 
 export const compiledArtifactSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   client: clientIdSchema,
   body: z.string(),
   contentType: artifactContentTypeSchema,

@@ -5,6 +5,7 @@ import { readCatalog } from './catalog/repository.js'
 import { apiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
 import { compiledArtifactSchema } from './delivery/schema.js'
+import { compileSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
@@ -59,11 +60,20 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   } catch {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
-  const parsed = compiledArtifactSchema.safeParse(value)
-  if (!parsed.success) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-  const artifact = parsed.data
   const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
-  if (!subscription?.enabled || artifact.subscriptionRevision !== subscription.revision || artifact.catalogRevision !== catalog.revision) {
+  if (!subscription?.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  const parsed = compiledArtifactSchema.safeParse(value)
+  let artifact
+  if (parsed.success) artifact = parsed.data
+  else if (value !== null && typeof value === 'object' && !Array.isArray(value) && 'schemaVersion' in value && value.schemaVersion === 1) {
+    try {
+      artifact = (await compileSubscription(c.env.DATA, subscription)).find((candidate) => candidate.client === client)
+    } catch {
+      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    }
+    if (!artifact) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  } else throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  if (artifact.subscriptionRevision !== subscription.revision || artifact.catalogRevision !== catalog.revision) {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
   if (!artifact.available) throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
@@ -72,6 +82,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   c.header('Last-Modified', new Date(artifact.lastModified).toUTCString())
   c.header('Content-Type', artifact.contentType)
   c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
+  c.header('profile-title', encodeURIComponent(subscription.name))
   const ifNoneMatch = c.req.header('If-None-Match')
   if (ifNoneMatch?.split(',').map((value: string) => value.trim()).includes(artifact.etag)) return c.body(null, 304)
   return c.body(artifact.body)

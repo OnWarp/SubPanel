@@ -27,7 +27,7 @@ describe('Delivery snapshot and token service', () => {
 
   it('rejects inconsistent or unsafe compiled artifacts', () => {
     const base = {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       client: 'mihomo' as const,
       body: 'proxies: []',
       contentType: 'text/yaml; charset=utf-8',
