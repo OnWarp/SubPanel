@@ -42,6 +42,15 @@ describe('catalog import container detection', () => {
     expect(detectImport(`${mihomoProvider}\nnote: "Demo = Shadowsocks,ss.example.com,8388,aes-128-gcm,password"`).format).toBe('mihomo')
   })
 
+  it('accepts uniformly indented bare Mihomo lists', () => {
+    const content = `
+  - {name: "TUIC", type: tuic, server: 172.245.120.103, port: 8883, uuid: 2efc3fbc-0c98-4fa3-a156-51ff83d0d20e, password: 2efc3fbc-0c98-4fa3-a156-51ff83d0d20e, alpn: [h3], congestion-controller: bbr}
+
+  - {name: "VLESS", type: vless, server: cf.example.com, port: 443, uuid: 2efc3fbc-0c98-4fa3-a156-51ff83d0d20e, tls: true}
+`
+    expect(detectImport(content).nodes).toHaveLength(2)
+  })
+
   it('parses Loon quoted commas and key-value options', () => {
     const result = parseLoon('Quoted = Shadowsocks,ss.example.com,8388,aes-128-gcm,"pass,word",note="a,b",udp=true')
     expect(result.nodes[0]).toMatchObject({

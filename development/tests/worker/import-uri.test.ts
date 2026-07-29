@@ -185,6 +185,21 @@ describe('share URI imports', () => {
     ])
   })
 
+  it('uses Username as the UUID in v2rayN TUIC wrappers', () => {
+    const payload = btoa(JSON.stringify({
+      Address: 'tuic.example.com', Port: 443, Remarks: 'Wrapped TUIC',
+      Username: '33333333-3333-4333-8333-333333333333', Password: 'tuic-password',
+      Sni: 'tuic.example.com', ProtoExtraObj: { CongestionControl: 'bbr' },
+    }))
+    const result = parseUriList(`v2rayn://tuic/${payload}`)
+    expect(result.warnings).toEqual([])
+    expect(result.nodes[0]).toMatchObject({
+      protocol: 'tuic',
+      credentials: { uuid: '33333333-3333-4333-8333-333333333333', password: 'tuic-password' },
+      transport: { congestionControl: 'bbr' },
+    })
+  })
+
   it('marks HTTPS-family v2rayN wrappers as TLS', () => {
     const https = btoa(JSON.stringify({ Address: 'https.example.com', Port: 443, Username: 'user', Password: 'pass' }))
     const naive = btoa(JSON.stringify({ Address: 'naive.example.com', Port: 443, Username: 'user', Password: 'pass' }))

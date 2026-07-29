@@ -86,7 +86,7 @@ describe('structured delivery round trips', () => {
     expect(parsed.nodes).toHaveLength(1)
   })
 
-  it('round-trips Mihomo Reality, certificate and WebSocket fields', () => {
+  it('round-trips Mihomo Reality, certificate fingerprint and WebSocket fields', () => {
     const parsed = parseMihomo(renderClient('mihomo', [base({
       protocol: 'vless',
       credentials: { uuid: '22222222-2222-4222-8222-222222222222', encryption: 'none', flow: 'xtls-rprx-vision' },
@@ -103,9 +103,10 @@ describe('structured delivery round trips', () => {
     expect(parsed.warnings).toEqual([])
     expect(parsed.nodes[0]).toMatchObject({
       credentials: { uuid: '22222222-2222-4222-8222-222222222222', flow: 'xtls-rprx-vision' },
-      tls: { certificate: 'CERTIFICATE', certificateFingerprint: 'AA:BB:CC', reality: { publicKey: 'public-key', shortId: 'short-id' } },
+      tls: { certificateFingerprint: 'AA:BB:CC', reality: { publicKey: 'public-key', shortId: 'short-id' } },
       transport: { type: 'ws', path: '/edge', headers: { Host: 'cdn.example.com' }, earlyData: 2048 },
     })
+    expect(parsed.nodes[0].tls).not.toHaveProperty('certificate')
   })
 
   it('renders sing-box JSON accepted by the sing-box importer', () => {

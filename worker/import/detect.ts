@@ -45,8 +45,8 @@ function detectSingle(trimmed: string): ImportResult {
 }
 
 export function detectImport(content: string): ImportResult {
-  const trimmed = content.trim()
-  if (!trimmed) throw new Error('UNSUPPORTED_IMPORT_FORMAT')
+  const trimmed = content.trimEnd()
+  if (!trimmed.trim()) throw new Error('UNSUPPORTED_IMPORT_FORMAT')
 
   const blocks = trimmed.split(/^\s*[-=*]{5,}\s*$/gmu).map((block) => block.trim()).filter(Boolean)
   if (blocks.length > 1) {

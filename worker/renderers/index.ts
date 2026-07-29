@@ -225,7 +225,6 @@ function mihomoProxy(node: RenderNode): Record<string, unknown> {
   if (tlsCapable) {
     if (bool(tls.insecure) !== undefined) result['skip-cert-verify'] = tls.insecure
     else if (bool(tls.allowInsecure) !== undefined) result['skip-cert-verify'] = tls.allowInsecure
-    result.certificate = text(tls.certificate ?? tls.ca ?? tls['ca-str'])
     result.fingerprint = text(tls.certificateFingerprint ?? tls.pinSHA256 ?? tls.pinSha256)
   }
   if (v2ray || ['hysteria', 'hysteria2', 'tuic', 'anytls'].includes(node.protocol)) {
@@ -621,6 +620,7 @@ function unsupportedNodeFields(client: RenderClient, node: RenderNode): string[]
     else if (['hysteria', 'hysteria2', 'tuic'].includes(node.protocol)) supportedTls = commonTls.filter((key) => !['fingerprint', 'reality'].includes(key))
     else if (['http', 'https'].includes(node.protocol)) supportedTls = commonTls.filter((key) => !['alpn', 'fingerprint', 'reality'].includes(key))
     else if (node.protocol === 'socks5') supportedTls = commonTls.filter((key) => !['serverName', 'alpn', 'fingerprint', 'reality'].includes(key))
+    supportedTls = supportedTls.filter((key) => !['certificate', 'ca', 'ca-str'].includes(key))
     if (v2ray && text(tls.security)?.toLowerCase() === 'reality' && Object.keys(reality).length > 0) supportedTls.push('security')
     fields.push(...unsupportedObjectFields(tls, 'tls', supportedTls))
     fields.push(...unsupportedObjectFields(reality, 'tls.reality', v2ray ? ['publicKey', 'public_key', 'shortId', 'short_id', 'pbk', 'sid'] : []))

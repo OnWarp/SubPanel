@@ -103,7 +103,7 @@ describe('delivery renderer compatibility matrix', () => {
     expect(parseShareUri(raw!).transport).toMatchObject({ earlyData: '2048', earlyDataHeaderName: 'Sec-WebSocket-Protocol' })
   })
 
-  it('renders Mihomo TLS, Reality, Flow, pins and transport fields without dropping the node', () => {
+  it('does not render a server certificate as a Mihomo mTLS client certificate', () => {
     const result = renderClient('mihomo', [node()])
     const proxy = (parseYaml(result.body) as { proxies: Array<Record<string, unknown>> }).proxies[0]
     expect(proxy).toMatchObject({
@@ -111,11 +111,12 @@ describe('delivery renderer compatibility matrix', () => {
       'client-fingerprint': 'chrome',
       fingerprint: 'AA:BB:CC',
       'reality-opts': { 'public-key': 'public-key', 'short-id': 'short-id' },
-      certificate: expect.stringContaining('BEGIN CERTIFICATE'),
       'ws-opts': { path: '/edge', headers: { Host: 'cdn.example.com' }, 'max-early-data': 2048 },
     })
+    expect(proxy).not.toHaveProperty('certificate')
+    expect(proxy).not.toHaveProperty('ca-str')
     expect(proxy['reality-opts']).not.toHaveProperty('spider-x')
-    expect(result.diagnostics[0]).toMatchObject({ fields: expect.arrayContaining(['tls.reality.spiderX']) })
+    expect(result.diagnostics[0]).toMatchObject({ fields: expect.arrayContaining(['tls.certificate', 'tls.reality.spiderX']) })
     expect(result.outputNodes).toBe(1)
   })
 

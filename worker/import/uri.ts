@@ -304,7 +304,7 @@ function parseV2rayn(raw: string): ParsedNode {
   if (!server || !port) throw new Error('Missing v2rayN endpoint')
   const numberPort = parsePort(port)
   const name = scalar(source.Remarks ?? source.remarks ?? source.Name ?? source.name) || `${protocol} ${server}`
-  const uuid = scalar(source.Id ?? source.id ?? source.UUID ?? source.uuid ?? source.Uuid ?? source.uuid)
+  const uuid = scalar(source.Id ?? source.id ?? source.UUID ?? source.uuid ?? source.Uuid ?? (protocol === 'tuic' ? source.Username ?? source.username : undefined))
   const password = scalar(source.Password ?? source.password ?? source.Auth ?? source.auth ?? source.AuthStr ?? source.auth_str ?? source['auth-str'])
   const username = scalar(source.Username ?? source.username)
   const credentials: Record<string, JsonValue> = {}
