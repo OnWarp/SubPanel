@@ -7,7 +7,7 @@ type DiagnosticListProps = {
 
 export function DiagnosticList({ items }: DiagnosticListProps) {
   return (
-    <ul className="diagnostic-items">
+    <ul className="diagnostic-items del-diagnostic-items">
       {items.map((item, index) => (
         <li key={`${item.nodeId}-${index}`}>
           <strong>{item.nodeName ?? item.nodeId}</strong>
