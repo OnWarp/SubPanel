@@ -163,7 +163,7 @@ export function MySubscriptionsPage() {
           </div>
         </section>
 
-        <details className="data-section user-subscription-section diagnostic-disclosure" open>
+        <details className="data-section user-subscription-section diagnostic-disclosure">
           <summary id="diagnostics-title">兼容诊断</summary>
           {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><span className={`status ${diagnostic.available ? 'success' : 'warning'}`}><i />{diagnostic.available ? '可用' : '不可用'}</span></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
         </details>

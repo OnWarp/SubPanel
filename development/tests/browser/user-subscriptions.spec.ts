@@ -74,7 +74,6 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await expect(page.getByRole('heading', { name: '我的订阅' })).toBeVisible()
     await expect(page.getByRole('link', { name: '我的订阅' })).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('link', { name: '用户与邀请' })).toHaveCount(0)
-    await expect(page.getByText('输入 1 · 输出 1 · 跳过 0').first()).toBeVisible()
     const automaticLink = page.getByRole('textbox', { name: '自动订阅链接' })
     const originalLink = await automaticLink.inputValue()
     const overview = page.locator('.user-subscription-overview')
@@ -85,9 +84,10 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     expect(afterCopy?.y).toBe(beforeCopy?.y)
 
     const diagnostics = page.locator('details').filter({ hasText: '兼容诊断' })
-    await expect(diagnostics).toHaveAttribute('open', '')
-    await diagnostics.getByText('兼容诊断', { exact: true }).click()
     await expect(diagnostics).not.toHaveAttribute('open', '')
+    await diagnostics.getByText('兼容诊断', { exact: true }).click()
+    await expect(diagnostics).toHaveAttribute('open', '')
+    await expect(page.getByText('输入 1 · 输出 1 · 跳过 0').first()).toBeVisible()
 
     await page.getByLabel('选择订阅').selectOption({ label: '备用订阅' })
     await expect(page.getByRole('heading', { name: '备用订阅' })).toBeVisible()
