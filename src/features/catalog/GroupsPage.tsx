@@ -3,10 +3,15 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataHeader } from '../../ui/DataHeader'
+import { DataTable, type DataTableColumn } from '../../ui/DataTable'
+import { EmptyState } from '../../ui/EmptyState'
+import { ErrorState } from '../../ui/ErrorState'
+import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
-import { StatusMessage } from '../../ui/StatusMessage'
+import { useToast } from '../../ui/Toast'
 import { formatDate } from './catalog-utils'
 import { groupNodeIds } from './catalog-counts'
 
@@ -37,13 +42,13 @@ export function GroupsPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<'create' | CatalogGroup | null>(null)
   const [form, setForm] = useState<GroupForm>(emptyForm)
   const [drawerError, setDrawerError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [progress, setProgress] = useState('')
+  const toast = useToast()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -141,8 +146,8 @@ export function GroupsPage() {
       const path = editing === 'create' ? '/api/admin/catalog/groups' : `/api/admin/catalog/groups/${editing.id}`
       await api(path, { method: editing === 'create' ? 'POST' : 'PUT', body: jsonBody(form) })
       setEditing(null)
-      setMessage(editing === 'create' ? '分组已添加' : '分组已更新')
       await load()
+      toast.notify(editing === 'create' ? '分组已添加' : '分组已更新')
     } catch (cause) {
       setDrawerError(errorMessage(cause, '保存分组失败'))
     } finally {
@@ -155,8 +160,6 @@ export function GroupsPage() {
     if (!ids.length) return
     setConfirmDelete(false)
     setBusy(true)
-    setError('')
-    setMessage('')
     const failed = new Set<string>()
     let firstFailure = ''
     try {
@@ -171,10 +174,10 @@ export function GroupsPage() {
       }
       await load()
       setSelected(failed)
-      if (firstFailure) setError(`${failed.size} 项未完成：${firstFailure}`)
-      else setMessage('分组已删除')
+      if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
+      else toast.notify('分组已删除')
     } catch (cause) {
-      setError(errorMessage(cause, '批量删除失败'))
+      toast.notifyError(errorMessage(cause, '批量删除失败'))
     } finally {
       setBusy(false)
       setProgress('')
@@ -183,33 +186,58 @@ export function GroupsPage() {
 
   const actions: BatchAction[] = [{ key: 'delete', label: '删除', icon: Trash2, tone: 'danger', onClick: () => setConfirmDelete(true) }]
 
+  const columns: Array<DataTableColumn<CatalogGroup>> = [
+    {
+      key: 'select',
+      header: '选择',
+      width: 40,
+      render: (group) => <input type="checkbox" aria-label={`选择分组 ${group.name}`} checked={selected.has(group.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next })} />,
+    },
+    { key: 'name', header: '名称', render: (group) => <strong>{group.name}</strong> },
+    { key: 'sources', header: '来源数', render: (group) => group.sourceIds.length },
+    { key: 'nodes', header: '节点数', render: (group) => groupNodeCounts.get(group.id) ?? 0 },
+    { key: 'included', header: '单独包含', render: (group) => group.includedNodeIds.length },
+    { key: 'excluded', header: '排除', render: (group) => group.excludedNodeIds.length },
+    { key: 'updated', header: '更新时间', render: (group) => formatDate(group.updatedAt) },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      render: (group) => (
+        <span className="row-actions">
+          <button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(group)}><Pencil aria-hidden="true" size={16} /></button>
+          <button className="icon-button danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => { setSelected(new Set([group.id])); setConfirmDelete(true) }}><Trash2 aria-hidden="true" size={16} /></button>
+        </span>
+      ),
+    },
+  ]
+
   return (
     <div className="page-stack">
       <PageHeader title="分组" description={`${groups.length} 个分组 · 组合来源与节点生成订阅内容`} actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
 
-      {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => load()}>重试</button></div> : null}
-      {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-      <section className="data-section" aria-labelledby="groups-title">
-        <DataHeader id="groups-title" title="分组列表" actions={<BatchToolbar selectedCount={selected.size} totalCount={groups.length} onSelectAll={() => setSelected(new Set(groups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />} />
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部分组" checked={groups.length > 0 && selected.size === groups.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(groups.map((group) => group.id)) : new Set())} /></th><th>名称</th><th>来源数</th><th>节点数</th><th>单独包含</th><th>排除</th><th>更新时间</th><th className="align-right">操作</th></tr></thead>
-            <tbody>
-              {loading && !catalog ? <tr><td colSpan={8} className="empty-row">正在加载分组</td></tr> : null}
-              {!loading && groups.length === 0 ? <tr><td colSpan={8} className="empty-row">暂无分组</td></tr> : null}
-              {groups.map((group) => <tr key={group.id}>
-                <td className="check-cell"><input type="checkbox" aria-label={`选择分组 ${group.name}`} checked={selected.has(group.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next })} /></td>
-                <td><strong>{group.name}</strong></td>
-                <td>{group.sourceIds.length}</td>
-                <td>{groupNodeCounts.get(group.id) ?? 0}</td>
-                <td>{group.includedNodeIds.length}</td>
-                <td>{group.excludedNodeIds.length}</td>
-                <td>{formatDate(group.updatedAt)}</td>
-                <td className="align-right"><span className="row-actions"><button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(group)}><Pencil aria-hidden="true" size={16} /></button><button className="icon-button danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => { setSelected(new Set([group.id])); setConfirmDelete(true) }}><Trash2 aria-hidden="true" size={16} /></button></span></td>
-              </tr>)}
-            </tbody>
-          </table>
-        </div>
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
+      <section className="data-section cat-data-section" aria-labelledby="groups-title">
+        <DataHeader
+          id="groups-title"
+          title="分组列表"
+          actions={<BatchToolbar selectedCount={selected.size} totalCount={groups.length} onSelectAll={() => setSelected(new Set(groups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
+        />
+        {loading && !catalog ? (
+          <div className="cat-empty-wrap"><LoadingState label="正在加载分组" /></div>
+        ) : groups.length === 0 ? (
+          <div className="cat-empty-wrap"><EmptyState title="暂无分组" description="创建分组后即可组合来源与节点" /></div>
+        ) : (
+          <>
+            <div className="cat-table-tools">
+              <label className="cat-select-all">
+                <input type="checkbox" aria-label="选择全部分组" checked={groups.length > 0 && selected.size === groups.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(groups.map((group) => group.id)) : new Set())} />
+                <span>全选</span>
+              </label>
+            </div>
+            <DataTable columns={columns} rows={groups} rowKey={(group) => group.id} empty="暂无匹配分组" />
+          </>
+        )}
       </section>
 
       <EditDrawer open={editing !== null} title={editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} size="wide" onClose={closeEdit}>
@@ -229,7 +257,7 @@ export function GroupsPage() {
         </form>
       </EditDrawer>
 
-      <ConfirmDialog open={confirmDelete} title="删除分组" description={`将删除选中的 ${selected.size} 个分组。${affectedSubscriptions ? `有 ${affectedSubscriptions} 个订阅会移除这些分组引用。` : ''}`} confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={deleteSelected} />
+      <ConfirmDialog open={confirmDelete} title="删除分组" description={`将删除选中的 ${selected.size} 个分组${affectedSubscriptions ? ` · 有 ${affectedSubscriptions} 个订阅会移除这些分组引用` : ''}`} confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={deleteSelected} />
     </div>
   )
 }
