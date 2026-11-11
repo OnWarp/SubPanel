@@ -1,0 +1,303 @@
+/*
+ * Phase 4 subscription pages. Every new class is del- prefixed.
+ * Shared primitives stay in components.css and are not overridden globally.
+ */
+
+.del-admin-page,
+.del-user-page {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Admin list ------------------------------------------------------------ */
+.del-admin {
+  min-width: 0;
+  max-width: 100%;
+}
+.del-admin .data-header-main {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.del-admin .section-heading {
+  grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+}
+.del-admin .data-header-actions,
+.del-admin .batch-toolbar {
+  min-width: 0;
+  max-width: 100%;
+}
+.del-filters {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+.del-status-filters {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.del-filters .sp-search {
+  flex: 1 1 160px;
+  width: auto;
+  min-width: 0;
+  max-width: 280px;
+}
+.del-select-all {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  font-weight: 650;
+}
+.del-select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+.del-admin .sp-loading,
+.del-admin .sp-error,
+.del-admin .sp-empty {
+  margin: var(--space-4);
+}
+.del-table {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.del-table .sp-table {
+  width: 100%;
+  min-width: 0;
+}
+.del-table .sp-table th,
+.del-table .sp-table td {
+  height: auto;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.del-table .row-actions {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.del-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.del-times {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+.del-times span:last-child {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+/* User subscriptions ---------------------------------------------------- */
+/*
+ * Desktop reading column. --size-content-max is 1360px; 720px sits inside
+ * that cap so the same mobile stack stays centered and readable on desktop
+ * (link text plus a 240px QR, without stretching to the full content width).
+ */
+.del-user-column {
+  display: grid;
+  width: min(100%, 720px);
+  max-width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  gap: var(--space-4);
+}
+.del-user-column > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.del-status-card {
+  display: grid;
+  gap: var(--space-3);
+}
+.del-status-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.del-status-card h2 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-title);
+  font-weight: 700;
+  line-height: 1.2;
+}
+.del-status-head .sp-badge { flex: 0 0 auto; }
+.del-status-group {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+.del-link-card,
+.del-reset {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.del-link-card h2,
+.del-reset h2 {
+  margin: 0;
+  font-size: var(--font-md);
+}
+.del-reset {
+  align-items: center;
+}
+@media (min-width: 761px) {
+  .del-reset {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+.del-link-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.del-link-text {
+  flex: 1 1 200px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  user-select: text;
+}
+.del-qr-slot {
+  display: grid;
+  min-width: 0;
+  min-height: 120px;
+  place-items: center;
+}
+.del-qr {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  image-rendering: pixelated;
+}
+.del-qr-loading {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+.del-link-missing {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+.del-user-column .token-strip {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
+}
+.del-user-column .token-strip > div { grid-column: 1 / -1; }
+.del-user-column .token-strip input,
+.del-user-column .user-link-row input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.del-diagnostics {
+  min-width: 0;
+}
+.del-diagnostics header {
+  flex-wrap: wrap;
+}
+.del-diagnostics .diagnostic-list,
+.del-diagnostics article,
+.del-diagnostic-items,
+.del-diagnostic-items li,
+.del-diagnostic-items strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .del-user-column .user-link-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .del-user-column .user-link-label { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+  .del-filters .sp-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .del-admin .section-heading { grid-template-columns: minmax(0, 1fr); }
+  .del-reset .button,
+  .del-link-line .button { width: 100%; }
+  .del-status-card h2 { font-size: var(--font-lg); }
+}
+
+@media (max-width: 1100px) {
+  /* With the sidebar open, seven columns still crush names and dates.
+     Use the same stacked row-card shape DataTable uses under 760px. */
+  .del-admin .del-table {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+  .del-admin .del-table .sp-table {
+    min-width: 0;
+    table-layout: auto;
+  }
+  .del-admin .del-table .sp-table thead { display: none; }
+  .del-admin .del-table .sp-table,
+  .del-admin .del-table .sp-table tbody,
+  .del-admin .del-table .sp-table tr,
+  .del-admin .del-table .sp-table td {
+    display: block;
+    width: auto;
+  }
+  .del-admin .del-table .sp-table tbody tr {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+  }
+  .del-admin .del-table .sp-table td {
+    display: grid;
+    height: auto;
+    padding: var(--space-2) 0;
+    grid-template-columns: minmax(84px, 34%) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-3);
+    border-bottom: 0;
+    white-space: normal;
+  }
+  .del-admin .del-table .sp-table td::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+    font-size: var(--font-xs);
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .del-admin .del-table .row-actions { justify-content: flex-start; }
+}
+
+@media (min-width: 1101px) {
+  .del-table { overflow-x: auto; }
+  .del-table .row-actions { flex-wrap: nowrap; }
+}

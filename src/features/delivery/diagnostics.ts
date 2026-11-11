@@ -20,7 +20,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   socks5: 'SOCKS5',
 }
 
-export const DIAGNOSTIC_HELP = '已跳过表示该节点未输出；节点仍会输出表示仅列出的字段未能映射，相关能力可能失效。'
+export const DIAGNOSTIC_HELP = '已跳过表示该节点未输出；节点仍会输出表示仅列出的字段未能映射，相关能力可能失效'
 
 export function diagnosticDescription(item: SubscriptionDiagnostic['diagnostics'][number]): string {
   if (item.code === 'UNSUPPORTED_PROTOCOL') {
