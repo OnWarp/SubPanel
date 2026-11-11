@@ -19,7 +19,9 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .icon-button { display: inline-grid; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); cursor: pointer; }
 .icon-button.danger { color: var(--color-danger); }
 .field { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
-.field input, .field select, .field textarea, .compact-field select, .invite-form input, .link-strip input, .token-strip input, .link-list input, .user-link-row input { width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); }
+/* Legacy input fallback. Wrapped in :where() so the sp- components in
+   components.css always win without deleting the old business rules. */
+:where(.field input, .field select, .field textarea, .compact-field select, .invite-form input, .link-strip input, .token-strip input, .link-list input, .user-link-row input) { width: 100%; min-height: 36px; padding: 7px 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); }
 .field textarea { min-height: 120px; resize: vertical; }
 .form-stack, .security-form { display: grid; gap: 15px; }
 .form-message { margin: 0; line-height: 1.5; }
