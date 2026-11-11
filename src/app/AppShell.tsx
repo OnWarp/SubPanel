@@ -55,6 +55,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!drawerOpen || !mobile) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [drawerOpen, mobile])
+
+  useEffect(() => {
     if (!drawerOpen) return
     closeButton.current?.focus()
     const closeOnEscape = (event: KeyboardEvent) => {
