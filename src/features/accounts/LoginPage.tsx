@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../../app/api'
 import { useSession } from '../../app/session'
+import { FormField } from '../../ui/FormField'
 import { AuthLayout } from './AuthLayout'
 
 export function LoginPage() {
@@ -29,14 +30,12 @@ export function LoginPage() {
   return (
     <AuthLayout title="登录">
       <form className="form-stack" onSubmit={submit}>
-        <label className="field">
-          <span>用户名</span>
-          <input name="username" autoComplete="username" required />
-        </label>
-        <label className="field">
-          <span>密码</span>
-          <input name="password" type="password" autoComplete="current-password" required />
-        </label>
+        <FormField label="用户名" htmlFor="login-username">
+          <input id="login-username" name="username" autoComplete="username" required />
+        </FormField>
+        <FormField label="密码" htmlFor="login-password">
+          <input id="login-password" name="password" type="password" autoComplete="current-password" required />
+        </FormField>
         {error ? <p className="form-message error" role="alert">{error}</p> : null}
         <button className="button primary" type="submit" disabled={submitting}>
           <LogIn aria-hidden="true" size={17} />

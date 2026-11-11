@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { useSession } from '../../app/session'
+import { FormField } from '../../ui/FormField'
 import { AuthLayout } from './AuthLayout'
 
 export function SetupPage() {
@@ -36,14 +37,12 @@ export function SetupPage() {
   return (
     <AuthLayout title="初始化管理员">
       <form className="form-stack" onSubmit={submit}>
-        <label className="field">
-          <span>管理员用户名</span>
-          <input name="username" autoComplete="username" minLength={3} maxLength={32} required />
-        </label>
-        <label className="field">
-          <span>管理员密码</span>
-          <input name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
-        </label>
+        <FormField label="管理员用户名" htmlFor="setup-username">
+          <input id="setup-username" name="username" autoComplete="username" minLength={3} maxLength={32} required />
+        </FormField>
+        <FormField label="管理员密码" htmlFor="setup-password">
+          <input id="setup-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+        </FormField>
         {error ? <p className="form-message error" role="alert">{error}</p> : null}
         <button className="button primary" type="submit" disabled={submitting}>
           <KeyRound aria-hidden="true" size={17} />
