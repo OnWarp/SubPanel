@@ -1,7 +1,8 @@
-import { FolderKanban, Gauge, LogOut, Menu, Network, Rss, Send, ShieldCheck, UserRound, Users, X, type LucideIcon } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Ellipsis, FolderKanban, Gauge, LogOut, Network, Rss, Send, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
+import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
 
 type NavItem = { to: string; label: string; icon: LucideIcon }
@@ -28,26 +29,24 @@ const userSections: NavSection[] = [
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
 
-/* GitHub 仓库宣传已注释掉：图标组件仅供下方顶栏与页脚的仓库链接使用
-function GitHubIcon({ size }: { size: number }) {
-  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 19 19"><use href="/icons.svg#github-icon" /></svg>
-}
-*/
-
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [mobile, setMobile] = useState(false)
-  const menuButton = useRef<HTMLButtonElement>(null)
-  const closeButton = useRef<HTMLButtonElement>(null)
+  const moreButton = useRef<HTMLButtonElement>(null)
+  const sheet = useRef<HTMLElement>(null)
+  const touchStart = useRef(0)
   const sections = user?.role === 'admin' ? adminSections : userSections
+  const navItems = sections.flatMap((section) => section.items)
+  const dockItems = navItems.slice(0, 3)
+  const sheetItems = navItems.slice(3)
 
-  useEffect(() => setDrawerOpen(false), [location.pathname])
+  useEffect(() => setSheetOpen(false), [location.pathname])
 
   useEffect(() => {
-    const media = window.matchMedia('(max-width: 760px)')
+    const media = window.matchMedia(MOBILE_MEDIA_QUERY)
     const sync = () => setMobile(media.matches)
     sync()
     media.addEventListener('change', sync)
@@ -55,37 +54,49 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!drawerOpen || !mobile) return
+    if (!mobile) setSheetOpen(false)
+  }, [mobile])
+
+  useEffect(() => {
+    if (!sheetOpen) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
-  }, [drawerOpen, mobile])
+  }, [sheetOpen])
 
   useEffect(() => {
-    if (!drawerOpen) return
-    closeButton.current?.focus()
+    if (!sheetOpen) return
+    sheet.current?.focus()
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setDrawerOpen(false)
-        menuButton.current?.focus()
+        setSheetOpen(false)
+        moreButton.current?.focus()
       }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [drawerOpen])
+  }, [sheetOpen])
 
   const signOut = async () => {
     await logout()
     navigate('/login', { replace: true })
   }
 
+  const startSwipe = (event: TouchEvent<HTMLElement>) => {
+    touchStart.current = event.touches[0]?.clientY ?? 0
+  }
+
+  const finishSwipe = (event: TouchEvent<HTMLElement>) => {
+    const end = event.changedTouches[0]?.clientY ?? touchStart.current
+    if (end - touchStart.current > 56 && (sheet.current?.scrollTop ?? 0) <= 0) setSheetOpen(false)
+  }
+
   return (
     <div className="app-layout">
-      <aside className={`sidebar ${drawerOpen ? 'open' : ''}`} inert={mobile && !drawerOpen ? true : undefined}>
+      <aside className="sidebar">
         <div className="sidebar-brand">
           <img className="brand-mark" src="/favicon.svg" alt="" />
           <div><strong>SubPanel</strong><span>Control plane</span></div>
-          <button ref={closeButton} className="sidebar-close" type="button" aria-label="关闭导航" onClick={() => setDrawerOpen(false)}><X aria-hidden="true" size={19} /></button>
         </div>
         <nav className="sidebar-nav" aria-label="主导航">
           {sections.map((section) => <section className="nav-section" key={section.label}>
@@ -99,18 +110,51 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-account"><UserRound aria-hidden="true" size={18} /><div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div><button className="sidebar-signout" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button></div>
       </aside>
-      {drawerOpen ? <button className="drawer-overlay" type="button" aria-label="关闭导航遮罩" onClick={() => setDrawerOpen(false)} /> : null}
       <div className="workspace">
         <header className="workspace-topbar">
-          <button ref={menuButton} className="icon-button mobile-menu" type="button" aria-label="打开导航" onClick={() => setDrawerOpen(true)}><Menu aria-hidden="true" size={19} /></button>
           <div id="page-title-slot" className="topbar-context" />
-          {/* <a className="icon-button" href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库" title="GitHub 仓库"><GitHubIcon size={18} /></a> */}
           <ThemeMenu />
           <div id="page-actions-slot" className="topbar-page-actions" />
         </header>
-        <main className="workspace-content">{children}</main>
-        {/* <footer className="workspace-footer">Powered by <a href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库"><GitHubIcon size={15} /><span>SubPanel</span></a></footer> */}
+        <main key={location.pathname} className="workspace-content">{children}</main>
       </div>
+      <nav className="dock" aria-label="快捷导航">
+        {dockItems.map(({ to, label, icon: Icon }) => (
+          <Link key={to} to={to} className={`dock-item ${location.pathname === to ? 'active' : ''}`} aria-current={location.pathname === to ? 'page' : undefined}>
+            <Icon aria-hidden="true" size={18} /><span>{label}</span>
+          </Link>
+        ))}
+        <button ref={moreButton} className="dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
+          <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
+        </button>
+      </nav>
+      {sheetOpen ? <>
+        <button className="dock-backdrop" type="button" aria-label="关闭更多导航" onClick={() => setSheetOpen(false)} />
+        <section
+          ref={sheet}
+          className="dock-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="更多导航"
+          tabIndex={-1}
+          onTouchStart={startSwipe}
+          onTouchEnd={finishSwipe}
+        >
+          <span className="dock-sheet-handle" aria-hidden="true" />
+          {sheetItems.length ? <nav className="dock-sheet-nav" aria-label="主导航">
+            {sheetItems.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+                <Icon aria-hidden="true" size={19} /><span>{label}</span>
+              </Link>
+            ))}
+          </nav> : null}
+          <div className="dock-sheet-account">
+            <UserRound aria-hidden="true" size={18} />
+            <div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div>
+            <button className="icon-button" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button>
+          </div>
+        </section>
+      </> : null}
     </div>
   )
 }

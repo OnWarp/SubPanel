@@ -3,7 +3,9 @@ import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { useSession } from '../../app/session'
 import { DataHeader } from '../../ui/DataHeader'
+import { FormField } from '../../ui/FormField'
 import { PageHeader } from '../../ui/PageHeader'
+import { StatusMessage } from '../../ui/StatusMessage'
 
 export function AccountPage() {
   const { user, refresh } = useSession()
@@ -35,16 +37,22 @@ export function AccountPage() {
   }
 
   return (
-    <div className="page-stack account-workspace">
+    <div className="page-stack">
       <PageHeader title="账户安全" description={<>当前账户：<strong>{user?.username}</strong></>} />
       <section className="data-section security-section">
         <DataHeader title="修改密码" />
-        <form className="security-form" onSubmit={changePassword}>
-          <label className="field"><span>当前密码</span><input name="currentPassword" type="password" autoComplete="current-password" required /></label>
-          <label className="field"><span>新密码</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
-          <label className="field"><span>确认新密码</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>
-          {error ? <p className="form-message error" role="alert">{error}</p> : null}
-          {message ? <p className="form-message success" role="status">{message}</p> : null}
+        <form className="security-form adm-account-form" onSubmit={changePassword}>
+          <FormField label="当前密码" htmlFor="account-current-password">
+            <input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
+          </FormField>
+          <FormField label="新密码" htmlFor="account-new-password">
+            <input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+          </FormField>
+          <FormField label="确认新密码" htmlFor="account-confirm-password">
+            <input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+          </FormField>
+          {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
+          {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
           <div><button className="button primary" type="submit"><KeyRound aria-hidden="true" size={17} />更新密码</button></div>
         </form>
       </section>

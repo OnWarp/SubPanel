@@ -2,7 +2,9 @@ import { AlertTriangle, ArrowRight, Database, Layers3, Rss, Users } from 'lucide
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError, type AdminSubscription, type CatalogResponse, type UserSummary } from '../../app/api'
-import { StatusMessage } from '../../ui/StatusMessage'
+import { EmptyState } from '../../ui/EmptyState'
+import { ErrorState } from '../../ui/ErrorState'
+import { LoadingState } from '../../ui/LoadingState'
 import { DataHeader } from '../../ui/DataHeader'
 import { PageHeader } from '../../ui/PageHeader'
 
@@ -57,19 +59,35 @@ export function DashboardPage() {
   return (
     <div className="page-stack">
       <PageHeader title="概览" description="查看资源状态和需要处理的事项。" />
-      {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => load()}>重试</button></div> : null}
-      {loading && !data ? <div className="data-section loading-section" role="status">正在加载概览</div> : null}
+      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
+      {loading && !data ? <section className="data-section"><LoadingState label="正在加载概览" /></section> : null}
       {data ? (
         <>
-          <section className="metric-grid" aria-label="资源统计">
-            <Link className="metric" to="/catalog/sources"><Rss aria-hidden="true" size={18} /><span>来源</span><strong>{data.catalog.sources.length}</strong></Link>
-            <Link className="metric" to="/catalog/nodes"><Database aria-hidden="true" size={18} /><span>启用节点</span><strong>{data.catalog.nodes.filter((node) => node.enabled).length}</strong></Link>
-            <Link className="metric" to="/delivery/subscriptions"><Layers3 aria-hidden="true" size={18} /><span>活跃订阅</span><strong>{data.subscriptions.filter((subscription) => subscription.enabled).length}</strong></Link>
-            <Link className="metric" to="/users"><Users aria-hidden="true" size={18} /><span>用户</span><strong>{data.users.length}</strong></Link>
+          <section className="adm-stat-grid" aria-label="资源统计">
+            <Link className="adm-stat" to="/catalog/sources">
+              <span className="adm-stat-label">来源</span>
+              <Rss className="adm-stat-icon" aria-hidden="true" size={18} />
+              <strong className="adm-stat-value">{data.catalog.sources.length}</strong>
+            </Link>
+            <Link className="adm-stat" to="/catalog/nodes">
+              <span className="adm-stat-label">启用节点</span>
+              <Database className="adm-stat-icon" aria-hidden="true" size={18} />
+              <strong className="adm-stat-value">{data.catalog.nodes.filter((node) => node.enabled).length}</strong>
+            </Link>
+            <Link className="adm-stat" to="/delivery/subscriptions">
+              <span className="adm-stat-label">活跃订阅</span>
+              <Layers3 className="adm-stat-icon" aria-hidden="true" size={18} />
+              <strong className="adm-stat-value">{data.subscriptions.filter((subscription) => subscription.enabled).length}</strong>
+            </Link>
+            <Link className="adm-stat" to="/users">
+              <span className="adm-stat-label">用户</span>
+              <Users className="adm-stat-icon" aria-hidden="true" size={18} />
+              <strong className="adm-stat-value">{data.users.length}</strong>
+            </Link>
           </section>
           <section className="data-section issue-section" aria-labelledby="issues-title">
             <DataHeader id="issues-title" title="需要处理" />
-            {issues.length ? <ul className="issue-list">{issues.map((issue) => <li key={issue.key}><AlertTriangle aria-hidden="true" size={17} /><div><strong>{issue.label}</strong><span>{issue.detail}</span></div><Link to={issue.to} aria-label={`查看${issue.label}`}>查看<ArrowRight aria-hidden="true" size={15} /></Link></li>)}</ul> : <p className="empty-state">当前没有需要处理的事项。</p>}
+            {issues.length ? <ul className="issue-list">{issues.map((issue) => <li key={issue.key}><AlertTriangle aria-hidden="true" size={17} /><div><strong>{issue.label}</strong><span>{issue.detail}</span></div><Link to={issue.to} aria-label={`查看${issue.label}`}>查看<ArrowRight aria-hidden="true" size={15} /></Link></li>)}</ul> : <EmptyState title="当前没有需要处理的事项" />}
           </section>
         </>
       ) : null}
