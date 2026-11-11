@@ -126,7 +126,7 @@ export function MySubscriptionsPage() {
   return (
     <div className="page-stack">
       <PageHeader title="我的订阅" description={`${subscriptions.length} 个订阅 · 选择一个订阅查看客户端链接`} actions={<label className="compact-field">
-          <span>选择订阅</span>
+          <span className="sr-only">选择订阅</span>
           <select aria-label="选择订阅" value={selectedId} onChange={(event) => { setSelectedId(event.currentTarget.value); setTokenNotice(null); setMessage('') }} disabled={loading || subscriptions.length === 0}>
             {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
           </select>

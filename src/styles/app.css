@@ -75,6 +75,8 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .topbar-page-title h1 { min-width: 0; margin: 0; overflow: hidden; font-size: 18px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-page-title p { min-width: 0; margin: 0; overflow: hidden; color: var(--color-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-page-actions { display: flex; min-width: 0; margin-left: 8px; align-items: center; gap: 7px; }
+.topbar-page-actions .compact-field { min-width: 0; }
+.topbar-page-actions .compact-field select { width: min(260px,42vw); }
 .topbar-page-actions:empty { display: none; }
 .workspace-content { width: 100%; max-width: 1500px; margin: 0 auto; padding: 18px 24px 34px; }
 .workspace-footer { display: flex; min-height: 42px; padding: 9px 24px; align-items: center; justify-content: center; gap: 5px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 11px; }
