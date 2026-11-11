@@ -35,14 +35,6 @@
   --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
   --color-overlay: rgb(12 12 14 / 48%);
 
-  /* Sidebar aliases: the sidebar now shares the canvas color. Kept only so the
-     existing app.css shell rules keep building; see stage-3 cleanup list. */
-  --color-sidebar: var(--color-canvas);
-  --color-sidebar-hover: var(--color-surface-subtle);
-  --color-sidebar-active: var(--color-primary-soft);
-  --color-sidebar-text: var(--color-text);
-  --color-sidebar-muted: var(--color-text-muted);
-
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-xs: 11px;
@@ -116,13 +108,6 @@
   --color-border-strong: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
   --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
   --color-overlay: rgb(0 0 0 / 68%);
-
-  /* Sidebar aliases, see the light-theme comment above. */
-  --color-sidebar: var(--color-canvas);
-  --color-sidebar-hover: var(--color-surface-subtle);
-  --color-sidebar-active: var(--color-primary-soft);
-  --color-sidebar-text: var(--color-text);
-  --color-sidebar-muted: var(--color-text-muted);
 
   --shadow-float: 0 14px 30px -10px rgb(0 0 0 / 0.5);
   --shadow-panel: none;
