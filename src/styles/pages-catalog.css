@@ -1,0 +1,103 @@
+/*
+ * Phase 4 page styles: catalog sources / nodes / groups (catalog group).
+ * Every class is cat- prefixed and page-local; shared primitives live in
+ * components.css and are never overridden here.
+ */
+
+/* Shared data surface ---------------------------------------------------- */
+.cat-data-section .sp-table-wrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+.cat-empty-wrap {
+  padding: var(--space-6) var(--space-4);
+}
+
+/* Filter bar ------------------------------------------------------------- */
+.cat-filter-search {
+  flex: 0 0 auto;
+  width: 210px;
+}
+.cat-chip-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cat-select-all {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.cat-select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+/* Table tools (select all, page size + range) --------------------------- */
+.cat-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+.cat-page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+.cat-page-meta label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.cat-page-meta select {
+  min-height: 32px;
+  padding: 4px 26px 4px var(--space-3);
+}
+
+/* Responsive ------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .cat-filter-search { width: 170px; }
+}
+
+@media (max-width: 760px) {
+  .cat-data-section {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .cat-data-section .section-heading {
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+  }
+  .cat-data-section .sp-table-wrap { overflow: visible; }
+  .cat-data-section .sp-table td { overflow-wrap: anywhere; }
+  .cat-data-section .sp-table-pagination {
+    border-top: 0;
+    background: transparent;
+    padding: var(--space-2) 0;
+  }
+  .cat-filter-search { width: 160px; }
+  .cat-table-tools {
+    padding: var(--space-2) 0;
+    border-bottom: 0;
+  }
+  .cat-empty-wrap { padding: var(--space-5) 0; }
+}
