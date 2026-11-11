@@ -1,8 +1,7 @@
-type StatusMessageProps = {
-  tone: 'error' | 'success' | 'warning'
-  children: string
-}
+import { InlineMessage, type InlineMessageProps } from './InlineMessage'
+
+export type StatusMessageProps = InlineMessageProps
 
 export function StatusMessage({ tone, children }: StatusMessageProps) {
-  return <p className={`form-message ${tone}`} role={tone === 'error' ? 'alert' : 'status'}>{children}</p>
+  return <InlineMessage tone={tone}>{children}</InlineMessage>
 }

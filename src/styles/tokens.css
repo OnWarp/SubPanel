@@ -1,69 +1,129 @@
+/*
+ * Design tokens.
+ * Names stay stable so existing call sites keep working; new semantic names are
+ * additive. Every derived color is generated with color-mix instead of a
+ * hand-picked approximation.
+ */
 :root,
 :root[data-theme='light'] {
-  --color-canvas: #f3f6f5;
+  color-scheme: light;
+
+  --color-canvas: #f8f8f6;
   --color-surface: #ffffff;
-  --color-surface-subtle: #edf2f0;
+  --color-surface-subtle: #efefec;
   --color-surface-raised: #ffffff;
-  --color-sidebar: #13201c;
-  --color-sidebar-hover: #1d302a;
-  --color-sidebar-active: #25463d;
-  --color-sidebar-text: #e7efec;
-  --color-sidebar-muted: #9eb0a9;
-  --color-text: #17231f;
-  --color-text-muted: #60706a;
-  --color-border: #d7e0dd;
-  --color-border-strong: #adbbb6;
-  --color-primary: #08705f;
-  --color-primary-hover: #075f51;
-  --color-primary-soft: #e2f1ec;
-  --color-primary-contrast: #ffffff;
-  --color-info: #356b91;
-  --color-info-soft: #e8f1f7;
-  --color-success: #18745c;
-  --color-success-soft: #e2f2ec;
-  --color-warning: #8b5a16;
-  --color-warning-soft: #fff0d8;
-  --color-danger: #b64d47;
-  --color-danger-soft: #fae8e6;
-  --color-focus: #287f70;
-  --color-overlay: rgb(8 18 14 / 48%);
-  --shadow-float: 0 14px 36px rgb(19 32 28 / 16%);
-  --shadow-panel: 0 1px 2px rgb(19 32 28 / 5%);
-  --size-sidebar: 208px;
-  --size-topbar: 60px;
-  --radius-control: 5px;
-  --radius-panel: 6px;
-  --duration-ui: 180ms;
+  --color-text: #16161a;
+  --color-text-muted: #6b6b73;
+  --color-text-faint: #c4c4c8;
+  --color-border: #e3e3df;
+
+  --color-primary: #b8acf2;
+  --color-primary-hover: color-mix(in srgb, var(--color-primary) 88%, var(--color-text));
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 24%, var(--color-canvas));
+  --color-primary-contrast: #0c0c0e;
+
+  --color-info: #8ec8ea;
+  --color-success: #7dd3a0;
+  --color-warning: #febc2e;
+  --color-danger: #ff5a5f;
+  --color-info-soft: color-mix(in srgb, var(--color-info) 24%, var(--color-canvas));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 24%, var(--color-canvas));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 24%, var(--color-canvas));
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 24%, var(--color-canvas));
+
+  --color-border-strong: color-mix(in srgb, var(--color-primary) 65%, var(--color-border));
+  --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  --color-overlay: rgb(12 12 14 / 48%);
+
+  /* Sidebar aliases: the sidebar now shares the canvas color. Kept only so the
+     existing app.css shell rules keep building; see stage-3 cleanup list. */
+  --color-sidebar: var(--color-canvas);
+  --color-sidebar-hover: var(--color-surface-subtle);
+  --color-sidebar-active: var(--color-primary-soft);
+  --color-sidebar-text: var(--color-text);
+  --color-sidebar-muted: var(--color-text-muted);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-body: 13px;
+  --font-md: 14px;
+  --font-lg: 15px;
+  --font-title: 26px;
+  --leading-body: 1.5;
+
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+
+  --radius-ctl: 11px;
+  --radius-field: 14px;
+  --radius-card: 16px;
+  --radius-card-lg: 18px;
+  --radius-dock: 20px;
+  --radius-sheet: 22px;
+  --radius-control: var(--radius-ctl);
+  --radius-panel: var(--radius-card);
+
+  --size-sidebar: 224px;
+  --size-topbar: 56px;
+  --size-bar: 36px;
+  --size-content-max: 1360px;
+
+  --shadow-float: 0 10px 30px -12px rgb(0 0 0 / 0.18);
+  --shadow-panel: none;
+
+  --duration-ui: 200ms;
+  --ease-spring: cubic-bezier(.3, 1.5, .5, 1);
+
+  --z-topbar: 20;
+  --z-overlay: 25;
+  --z-sidebar: 30;
+  --z-menu: 50;
+  --z-toast: 60;
 }
 
 :root[data-theme='dark'] {
-  --color-canvas: #101714;
-  --color-surface: #17201d;
-  --color-surface-subtle: #1e2a26;
-  --color-surface-raised: #202b27;
-  --color-sidebar: #0b100e;
-  --color-sidebar-hover: #18231f;
-  --color-sidebar-active: #21453b;
-  --color-sidebar-text: #e7efec;
-  --color-sidebar-muted: #91a39c;
-  --color-text: #e7efec;
-  --color-text-muted: #9caaa5;
-  --color-border: #2d3a35;
-  --color-border-strong: #46564f;
-  --color-primary: #55bfa5;
-  --color-primary-hover: #6ccdb5;
-  --color-primary-soft: #173b32;
-  --color-primary-contrast: #07110e;
-  --color-info: #9abce0;
-  --color-info-soft: #203346;
-  --color-success: #68cbae;
-  --color-success-soft: #173a30;
-  --color-warning: #e3b36c;
-  --color-warning-soft: #402e18;
-  --color-danger: #ed938b;
-  --color-danger-soft: #472522;
-  --color-focus: #70cdb7;
+  color-scheme: dark;
+
+  --color-canvas: #0c0c0e;
+  --color-surface: #141417;
+  --color-surface-subtle: #1d1d22;
+  --color-surface-raised: #1d1d22;
+  --color-text: #f3f3f5;
+  --color-text-muted: #8b8b94;
+  --color-text-faint: #4a4a52;
+  --color-border: #25252b;
+
+  --color-primary: #b8acf2;
+  --color-primary-hover: color-mix(in srgb, var(--color-primary) 88%, var(--color-text));
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 14%, var(--color-canvas));
+  --color-primary-contrast: #0c0c0e;
+
+  --color-info: #8ec8ea;
+  --color-success: #7dd3a0;
+  --color-warning: #febc2e;
+  --color-danger: #ff5a5f;
+  --color-info-soft: color-mix(in srgb, var(--color-info) 14%, var(--color-canvas));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 14%, var(--color-canvas));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 14%, var(--color-canvas));
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 14%, var(--color-canvas));
+
+  --color-border-strong: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
   --color-overlay: rgb(0 0 0 / 68%);
-  --shadow-float: 0 18px 44px rgb(0 0 0 / 42%);
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 28%);
+
+  /* Sidebar aliases, see the light-theme comment above. */
+  --color-sidebar: var(--color-canvas);
+  --color-sidebar-hover: var(--color-surface-subtle);
+  --color-sidebar-active: var(--color-primary-soft);
+  --color-sidebar-text: var(--color-text);
+  --color-sidebar-muted: var(--color-text-muted);
+
+  --shadow-float: 0 14px 30px -10px rgb(0 0 0 / 0.5);
+  --shadow-panel: none;
 }
