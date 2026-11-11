@@ -28,9 +28,11 @@ const userSections: NavSection[] = [
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
 
+/* GitHub 仓库宣传已注释掉：图标组件仅供下方顶栏与页脚的仓库链接使用
 function GitHubIcon({ size }: { size: number }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 19 19"><use href="/icons.svg#github-icon" /></svg>
 }
+*/
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
@@ -95,12 +97,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="workspace-topbar">
           <button ref={menuButton} className="icon-button mobile-menu" type="button" aria-label="打开导航" onClick={() => setDrawerOpen(true)}><Menu aria-hidden="true" size={19} /></button>
           <div id="page-title-slot" className="topbar-context" />
-          <a className="icon-button" href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库" title="GitHub 仓库"><GitHubIcon size={18} /></a>
+          {/* <a className="icon-button" href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库" title="GitHub 仓库"><GitHubIcon size={18} /></a> */}
           <ThemeMenu />
           <div id="page-actions-slot" className="topbar-page-actions" />
         </header>
         <main className="workspace-content">{children}</main>
-        <footer className="workspace-footer">Powered by <a href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库"><GitHubIcon size={15} /><span>SubPanel</span></a></footer>
+        {/* <footer className="workspace-footer">Powered by <a href="https://github.com/kadidalax/SubPanel" target="_blank" rel="noreferrer" aria-label="GitHub 仓库"><GitHubIcon size={15} /><span>SubPanel</span></a></footer> */}
       </div>
     </div>
   )
