@@ -25,8 +25,9 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '节点', exact: true })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '分组', exact: true })).toBeVisible()
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅', exact: true })).toBeVisible()
-    await expect(page.locator('.workspace-topbar').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
-    await expect(page.getByRole('contentinfo').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
+    // GitHub 仓库宣传入口已在 AppShell 中注释掉，以下两条断言随之注释
+    // await expect(page.locator('.workspace-topbar').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
+    // await expect(page.getByRole('contentinfo').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
   })
 
   test('previews and saves a source, then keeps the edit drawer open on backdrop clicks', async ({ page }) => {
