@@ -5,6 +5,7 @@ import { ThemeProvider } from './theme/ThemeProvider'
 import './styles/tokens.css'
 import './styles/app.css'
 import './styles/components.css'
+import './styles/pages-delivery.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
