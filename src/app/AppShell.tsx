@@ -27,7 +27,10 @@ const adminSections: NavSection[] = [
 ]
 
 const userSections: NavSection[] = [
-  { label: '订阅', items: [{ to: '/subscriptions', label: '我的订阅', icon: Rss }] },
+  { label: '订阅', items: [
+    { to: '/subscriptions', label: '我的订阅', icon: Rss },
+    { to: '/apps', label: 'APP 下载', icon: Download },
+  ] },
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
 
