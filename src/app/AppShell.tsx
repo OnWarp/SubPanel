@@ -1,4 +1,4 @@
-import { Ellipsis, FolderKanban, Gauge, LogOut, Network, Rss, Send, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Download, Ellipsis, FolderKanban, Gauge, LogOut, Network, Rss, Send, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
@@ -16,6 +16,7 @@ const adminSections: NavSection[] = [
   { label: '资源', items: [
     { to: '/catalog/sources', label: '来源', icon: Rss },
     { to: '/catalog/groups', label: '分组', icon: FolderKanban },
+    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
   ] },
   { label: '交付与权限', items: [
     { to: '/delivery/subscriptions', label: '订阅', icon: Send },
