@@ -1,7 +1,9 @@
-import { Copy, KeyRound, QrCode, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Copy, KeyRound, QrCode, RefreshCw, Share2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
+import { ShareDrawer } from '../shares/ShareDrawer'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { EmptyState } from '../../ui/EmptyState'
@@ -49,6 +51,10 @@ function groupSummary(groupIds: string[]): string {
 }
 
 export function MySubscriptionsPage() {
+  const [params, setParams] = useSearchParams()
+  const shareParam = params.get('share') ?? ''
+  const shareButtonRef = useRef<HTMLButtonElement>(null)
+  const appliedShare = useRef('')
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
   const [selectedId, setSelectedId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -68,9 +74,12 @@ export function MySubscriptionsPage() {
     try {
       const result = await api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions')
       setSubscriptions(result.subscriptions)
-      setSelectedId((current) => result.subscriptions.some((subscription) => subscription.id === current)
-        ? current
-        : result.subscriptions[0]?.id ?? '')
+      setSelectedId((current) => {
+        if (result.subscriptions.some((subscription) => subscription.id === current)) return current
+        const requested = new URLSearchParams(window.location.search).get('share')
+        if (requested && result.subscriptions.some((subscription) => subscription.id === requested)) return requested
+        return result.subscriptions[0]?.id ?? ''
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载订阅失败'))
     } finally {
@@ -79,6 +88,39 @@ export function MySubscriptionsPage() {
   }, [])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
+
+  useEffect(() => {
+    if (loading || loadError || !shareParam) return
+    if (!subscriptions.some((subscription) => subscription.id === shareParam)) {
+      setParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('share')
+        return next
+      }, { replace: true })
+      setMessage('')
+      setError('未找到要分享的订阅')
+      return
+    }
+    if (appliedShare.current === shareParam) return
+    appliedShare.current = shareParam
+    setSelectedId(shareParam)
+  }, [loadError, loading, setParams, shareParam, subscriptions])
+
+  const openShare = (subscriptionId: string) => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set('share', subscriptionId)
+      return next
+    }, { replace: true })
+  }
+
+  const closeShare = () => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete('share')
+      return next
+    }, { replace: true })
+  }
 
   const selected = useMemo(
     () => subscriptions.find((subscription) => subscription.id === selectedId) ?? null,
@@ -163,7 +205,13 @@ export function MySubscriptionsPage() {
     <div className="page-stack del-user-page">
       <PageHeader title="我的订阅" description={`${subscriptions.length} 个订阅 · 选择一个订阅查看客户端链接`} actions={<label className="compact-field">
           <span className="sr-only">选择订阅</span>
-          <select aria-label="选择订阅" value={selectedId} onChange={(event) => { setSelectedId(event.currentTarget.value); setTokenNotice(null); setMessage('') }} disabled={loading || subscriptions.length === 0}>
+          <select aria-label="选择订阅" value={selectedId} onChange={(event) => {
+            const nextId = event.currentTarget.value
+            setSelectedId(nextId)
+            setTokenNotice(null)
+            setMessage('')
+            if (shareParam) openShare(nextId)
+          }} disabled={loading || subscriptions.length === 0}>
             {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
           </select>
         </label>} />
@@ -189,6 +237,7 @@ export function MySubscriptionsPage() {
                 <StatusBadge tone={selected.enabled ? 'success' : 'muted'}>{selected.enabled ? '正常' : '已停用'}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
+              <button ref={shareButtonRef} className="button secondary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button>
             </div>
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">
@@ -246,6 +295,11 @@ export function MySubscriptionsPage() {
         {qr?.loading ? <p className="qr-loading" role="status">正在生成二维码</p> : qr?.dataUrl ? <img className="qr-image" src={qr.dataUrl} alt={`${CLIENT_LABELS[qr.client] ?? qr.client} 订阅二维码`} /> : null}
       </ConfirmDialog>
       <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" busy={busy} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
+      <ShareDrawer
+        subscription={subscriptions.find((subscription) => subscription.id === shareParam) ?? null}
+        onClose={closeShare}
+        returnFocusRef={shareButtonRef}
+      />
     </div>
   )
 }
