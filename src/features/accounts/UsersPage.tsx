@@ -1,11 +1,23 @@
-import { CheckCircle2, Copy, KeyRound, Plus, Trash2, X, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { CheckCircle2, Copy, KeyRound, Mail, Plus, Trash2, Users, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
-import { DataHeader } from '../../ui/DataHeader'
-import { PageHeader } from '../../ui/PageHeader'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { DataHeader } from '../../ui/DataHeader'
+import { DataTable, type DataTableColumn } from '../../ui/DataTable'
+import { Dialog } from '../../ui/Dialog'
+import { EmptyState } from '../../ui/EmptyState'
+import { ErrorState } from '../../ui/ErrorState'
+import { FilterBar } from '../../ui/FilterBar'
+import { FilterChip } from '../../ui/FilterChip'
+import { FormField } from '../../ui/FormField'
+import { LoadingState } from '../../ui/LoadingState'
+import { PageHeader } from '../../ui/PageHeader'
+import { SearchInput } from '../../ui/SearchInput'
+import { StatusBadge } from '../../ui/StatusBadge'
+import { StatusMessage } from '../../ui/StatusMessage'
+import { useToast } from '../../ui/Toast'
 
 type InviteSummary = {
   id: string
@@ -16,13 +28,36 @@ type InviteSummary = {
 
 type BatchTarget = 'users' | 'invites'
 type BatchActionKind = 'disable' | 'revoke'
+type StatusFilter = 'all' | 'enabled' | 'disabled'
+
+const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'enabled', label: '正常' },
+  { value: 'disabled', label: '已停用' },
+]
+
+function errorMessage(cause: unknown, fallback: string) {
+  return cause instanceof ApiClientError ? cause.message : fallback
+}
+
+function formatDate(value?: string) {
+  if (!value) return '-'
+  return new Date(value).toLocaleString('zh-CN')
+}
+
+function toggleId(current: Set<string>, id: string) {
+  const next = new Set(current)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
 
 export function UsersPage() {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [invites, setInvites] = useState<InviteSummary[]>([])
   const [newLink, setNewLink] = useState('')
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [resetUser, setResetUser] = useState<UserSummary | null>(null)
   const [resetError, setResetError] = useState('')
   const [mutating, setMutating] = useState(false)
@@ -30,7 +65,9 @@ export function UsersPage() {
   const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<{ target: BatchTarget; action: BatchActionKind } | null>(null)
   const [batchProgress, setBatchProgress] = useState('')
-  const resetDialog = useRef<HTMLDialogElement>(null)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const toast = useToast()
 
   const load = useCallback(async () => {
     const [userResult, inviteResult] = await Promise.all([
@@ -41,17 +78,48 @@ export function UsersPage() {
     setInvites(inviteResult.invites)
     setSelectedUsers((current) => new Set([...current].filter((id) => userResult.users.some((user) => user.id === id && user.role === 'user'))))
     setSelectedInvites((current) => new Set([...current].filter((id) => inviteResult.invites.some((invite) => invite.id === id))))
+    setLoadError('')
   }, [])
 
   useEffect(() => {
-    load().catch((cause) => setError(cause instanceof ApiClientError ? cause.message : '加载用户失败'))
+    setLoading(true)
+    load()
+      .catch((cause) => setLoadError(errorMessage(cause, '加载用户失败')))
+      .finally(() => setLoading(false))
   }, [load])
+
+  const filteredUsers = useMemo(() => users.filter((user) => {
+    if (statusFilter === 'enabled' && !user.enabled) return false
+    if (statusFilter === 'disabled' && user.enabled) return false
+    const needle = query.trim().toLowerCase()
+    if (!needle) return true
+    return user.username.toLowerCase().includes(needle) || user.id.toLowerCase().includes(needle)
+  }), [query, statusFilter, users])
+
+  const selectableUsers = useMemo(
+    () => filteredUsers.filter((user) => user.role === 'user'),
+    [filteredUsers],
+  )
+
+  useEffect(() => {
+    const visible = new Set(selectableUsers.map((user) => user.id))
+    setSelectedUsers((current) => {
+      const next = [...current].filter((id) => visible.has(id))
+      return next.length === current.size ? current : new Set(next)
+    })
+  }, [selectableUsers])
+
+  const retry = () => {
+    setLoading(true)
+    setLoadError('')
+    load()
+      .catch((cause) => setLoadError(errorMessage(cause, '加载用户失败')))
+      .finally(() => setLoading(false))
+  }
 
   const createInvite = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (mutating) return
-    setError('')
-    setMessage('')
     const form = event.currentTarget
     const data = new FormData(form)
     setMutating(true)
@@ -61,11 +129,11 @@ export function UsersPage() {
         body: jsonBody({ username: data.get('username') }),
       })
       setNewLink(result.invite.link)
-      setMessage('邀请已创建。链接只在本次显示。')
+      toast.notify('邀请已创建。链接只在本次显示')
       form.reset()
       await load()
     } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '创建邀请失败')
+      toast.notifyError(errorMessage(cause, '创建邀请失败'))
     } finally {
       setMutating(false)
     }
@@ -74,17 +142,14 @@ export function UsersPage() {
   const copyLink = async () => {
     try {
       await copyToClipboard(newLink)
-      setMessage('邀请链接已复制。')
-      setError('')
+      toast.notify('邀请链接已复制')
     } catch {
-      setMessage('')
-      setError('浏览器未允许复制，请手动选择链接。')
+      toast.notifyError('浏览器未允许复制，请手动选择链接')
     }
   }
 
   const setEnabled = async (user: UserSummary, enabled: boolean) => {
     if (mutating) return
-    setError('')
     setMutating(true)
     setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, enabled } : candidate))
     try {
@@ -95,7 +160,7 @@ export function UsersPage() {
       setUsers((current) => current.map((candidate) => candidate.id === user.id ? result.user : candidate))
     } catch (cause) {
       setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, enabled: user.enabled } : candidate))
-      setError(cause instanceof ApiClientError ? cause.message : '更新用户失败')
+      toast.notifyError(errorMessage(cause, '更新用户失败'))
     } finally {
       setMutating(false)
     }
@@ -103,13 +168,12 @@ export function UsersPage() {
 
   const revokeInvite = async (id: string) => {
     if (mutating) return
-    setError('')
     setMutating(true)
     try {
       await api(`/api/admin/invites/${id}`, { method: 'DELETE' })
       setInvites((current) => current.filter((invite) => invite.id !== id))
     } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '撤销邀请失败')
+      toast.notifyError(errorMessage(cause, '撤销邀请失败'))
     } finally {
       setMutating(false)
     }
@@ -118,11 +182,12 @@ export function UsersPage() {
   const openPasswordReset = (user: UserSummary) => {
     setResetUser(user)
     setResetError('')
-    resetDialog.current?.showModal()
   }
 
   const closePasswordReset = () => {
-    if (!mutating) resetDialog.current?.close()
+    if (mutating) return
+    setResetUser(null)
+    setResetError('')
   }
 
   const resetPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -142,11 +207,12 @@ export function UsersPage() {
         body: jsonBody({ newPassword }),
       })
       setUsers((current) => current.map((candidate) => candidate.id === resetUser.id ? result.user : candidate))
-      setMessage(`${resetUser.username} 的密码已重置，旧会话已退出。`)
-      resetDialog.current?.close()
+      toast.notify(`${resetUser.username} 的密码已重置，旧会话已退出`)
+      setResetError('')
+      setResetUser(null)
       form.reset()
     } catch (cause) {
-      setResetError(cause instanceof ApiClientError ? cause.message : '重置密码失败')
+      setResetError(errorMessage(cause, '重置密码失败'))
     } finally {
       setMutating(false)
     }
@@ -157,8 +223,6 @@ export function UsersPage() {
     if (!ids.length || mutating) return
     setBatchConfirm(null)
     setMutating(true)
-    setError('')
-    setMessage('')
     let firstFailure = ''
     const failed = new Set<string>()
     try {
@@ -172,16 +236,16 @@ export function UsersPage() {
           }
         } catch (cause) {
           failed.add(id)
-          if (!firstFailure) firstFailure = cause instanceof ApiClientError ? cause.message : '请求失败'
+          if (!firstFailure) firstFailure = errorMessage(cause, '请求失败')
         }
       }
       await load()
       if (target === 'users') setSelectedUsers(failed)
       else setSelectedInvites(failed)
-      if (firstFailure) setError(`${failed.size} 项未完成：${firstFailure}`)
-      else setMessage(target === 'invites' ? '邀请已撤销' : '用户状态已更新')
+      if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
+      else toast.notify(target === 'invites' ? '邀请已撤销' : '用户状态已更新')
     } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '批量操作失败')
+      toast.notifyError(errorMessage(cause, '批量操作失败'))
     } finally {
       setMutating(false)
       setBatchProgress('')
@@ -196,12 +260,95 @@ export function UsersPage() {
     { key: 'revoke', label: '撤销', icon: Trash2, tone: 'danger', onClick: () => setBatchConfirm({ target: 'invites', action: 'revoke' }) },
   ]
 
+  const userColumns: Array<DataTableColumn<UserSummary>> = [
+    {
+      key: 'select',
+      header: '选择',
+      width: 52,
+      render: (user) => (
+        <input
+          type="checkbox"
+          aria-label={`选择用户 ${user.username}`}
+          checked={user.role === 'user' && selectedUsers.has(user.id)}
+          disabled={user.role === 'admin' || mutating}
+          onChange={() => setSelectedUsers((current) => toggleId(current, user.id))}
+        />
+      ),
+    },
+    { key: 'id', header: '用户 ID', render: (user) => <span className="usr-id">{user.id}</span> },
+    { key: 'username', header: '用户名', render: (user) => <strong className="usr-name">{user.username}</strong> },
+    { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
+    {
+      key: 'status',
+      header: '状态',
+      render: (user) => <StatusBadge tone={user.enabled ? 'success' : 'muted'} size="sm">{user.enabled ? '正常' : '已停用'}</StatusBadge>,
+    },
+    { key: 'createdAt', header: '创建时间', render: (user) => <span className="usr-time">{formatDate(user.createdAt)}</span> },
+    {
+      key: 'actions',
+      header: '管理',
+      align: 'right',
+      render: (user) => (
+        <span className="row-actions">
+          {user.role === 'user' ? (
+            <button className="icon-button" type="button" disabled={mutating} aria-label={`重置 ${user.username} 的密码`} title="重置密码" onClick={() => openPasswordReset(user)}>
+              <KeyRound aria-hidden="true" size={16} />
+            </button>
+          ) : null}
+          <input
+            type="checkbox"
+            checked={user.enabled}
+            disabled={user.role === 'admin' || mutating}
+            aria-label={`启用 ${user.username}`}
+            onChange={(event) => setEnabled(user, event.currentTarget.checked)}
+          />
+        </span>
+      ),
+    },
+  ]
+
+  const inviteColumns: Array<DataTableColumn<InviteSummary>> = [
+    {
+      key: 'select',
+      header: '选择',
+      width: 52,
+      render: (invite) => (
+        <input
+          type="checkbox"
+          aria-label={`选择邀请 ${invite.username}`}
+          checked={selectedInvites.has(invite.id)}
+          disabled={mutating}
+          onChange={() => setSelectedInvites((current) => toggleId(current, invite.id))}
+        />
+      ),
+    },
+    { key: 'username', header: '用户名', render: (invite) => <strong className="usr-name">{invite.username}</strong> },
+    { key: 'expiresAt', header: '到期时间', render: (invite) => <span className="usr-time">{formatDate(invite.expiresAt)}</span> },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      render: (invite) => (
+        <button className="icon-button danger" type="button" disabled={mutating} aria-label={`撤销 ${invite.username} 的邀请`} title="撤销邀请" onClick={() => revokeInvite(invite.id)}>
+          <Trash2 aria-hidden="true" size={17} />
+        </button>
+      ),
+    },
+  ]
+
+  const usersAllSelected = selectableUsers.length > 0 && selectableUsers.every((user) => selectedUsers.has(user.id))
+  const invitesAllSelected = invites.length > 0 && selectedInvites.size === invites.length
+
   return (
-    <div className="page-stack">
-      <PageHeader title="用户与邀请" description={`${users.length} 个用户 · ${invites.length} 个有效邀请`} actions={<button className="button primary" type="submit" form="invite-form" disabled={mutating}><Plus aria-hidden="true" size={17} />创建邀请</button>} />
+    <div className="page-stack usr-page">
+      <PageHeader
+        title="用户与邀请"
+        description={`${users.length} 个用户 · ${invites.length} 个有效邀请`}
+        actions={<button className="button primary" type="submit" form="invite-form" disabled={mutating}><Plus aria-hidden="true" size={17} />创建邀请</button>}
+      />
 
       {newLink ? (
-        <section className="link-strip" aria-label="新邀请链接">
+        <section className="link-strip usr-link-strip" aria-label="新邀请链接">
           <div><strong>邀请链接</strong><span>24 小时内有效</span></div>
           <input aria-label="邀请链接" value={newLink} readOnly />
           <button className="icon-button" type="button" aria-label="复制邀请链接" title="复制邀请链接" onClick={copyLink}>
@@ -209,97 +356,110 @@ export function UsersPage() {
           </button>
         </section>
       ) : null}
-      {error ? <p className="form-message error" role="alert">{error}</p> : null}
-      {message ? <p className="form-message success" role="status">{message}</p> : null}
 
-      <section className="data-section" aria-labelledby="users-title">
-        <DataHeader id="users-title" title="用户" filters={<form id="invite-form" className="invite-form" onSubmit={createInvite}><label className="sr-only" htmlFor="invite-username">邀请用户名</label><input id="invite-username" name="username" aria-label="邀请用户名" placeholder="输入用户名" minLength={3} maxLength={32} required /></form>} actions={<BatchToolbar selectedCount={selectedUsers.size} totalCount={users.filter((user) => user.role === 'user').length} onSelectAll={() => setSelectedUsers(new Set(users.filter((user) => user.role === 'user').map((user) => user.id)))} onClear={() => setSelectedUsers(new Set())} actions={userActions} busy={mutating} progress={batchProgress} />} />
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部用户" checked={users.some((user) => user.role === 'user') && selectedUsers.size === users.filter((user) => user.role === 'user').length} disabled={mutating} onChange={(event) => setSelectedUsers(event.currentTarget.checked ? new Set(users.filter((user) => user.role === 'user').map((user) => user.id)) : new Set())} /></th><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th className="align-right">管理</th></tr></thead>
-            <tbody>
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="check-cell"><input type="checkbox" aria-label={`选择用户 ${user.username}`} checked={user.role === 'user' && selectedUsers.has(user.id)} disabled={user.role === 'admin' || mutating} onChange={() => setSelectedUsers((current) => { const next = new Set(current); if (next.has(user.id)) next.delete(user.id); else next.add(user.id); return next })} /></td>
-                  <td><strong>{user.username}</strong></td>
-                  <td>{user.role === 'admin' ? '管理员' : '用户'}</td>
-                  <td><span className={`status ${user.enabled ? 'success' : 'muted'}`}><i />{user.enabled ? '正常' : '已停用'}</span></td>
-                  <td>{user.createdAt ? new Date(user.createdAt).toLocaleString('zh-CN') : '-'}</td>
-                  <td className="align-right">
-                    <span className="row-actions">
-                      {user.role === 'user' ? (
-                        <button className="icon-button" type="button" disabled={mutating} aria-label={`重置 ${user.username} 的密码`} title="重置密码" onClick={() => openPasswordReset(user)}>
-                          <KeyRound aria-hidden="true" size={16} />
-                        </button>
-                      ) : null}
-                      <input
-                        type="checkbox"
-                        checked={user.enabled}
-                        disabled={user.role === 'admin' || mutating}
-                        aria-label={`启用 ${user.username}`}
-                        onChange={(event) => setEnabled(user, event.currentTarget.checked)}
-                      />
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {loading ? <div className="usr-state"><LoadingState label="正在加载用户与邀请" /></div> : null}
+      {!loading && loadError ? <ErrorState message={loadError} onRetry={retry} /> : null}
 
-      <section className="data-section" aria-labelledby="invites-title">
-        <DataHeader id="invites-title" title="有效邀请" actions={<BatchToolbar selectedCount={selectedInvites.size} totalCount={invites.length} onSelectAll={() => setSelectedInvites(new Set(invites.map((invite) => invite.id)))} onClear={() => setSelectedInvites(new Set())} actions={inviteActions} busy={mutating} progress={batchProgress} />} />
-        <div className="table-scroll">
-          <table>
-            <thead><tr><th className="check-cell"><input type="checkbox" aria-label="选择全部邀请" checked={invites.length > 0 && selectedInvites.size === invites.length} disabled={mutating} onChange={(event) => setSelectedInvites(event.currentTarget.checked ? new Set(invites.map((invite) => invite.id)) : new Set())} /></th><th>用户名</th><th>到期时间</th><th className="align-right">操作</th></tr></thead>
-            <tbody>
-              {invites.length ? invites.map((invite) => (
-                <tr key={invite.id}>
-                  <td className="check-cell"><input type="checkbox" aria-label={`选择邀请 ${invite.username}`} checked={selectedInvites.has(invite.id)} disabled={mutating} onChange={() => setSelectedInvites((current) => { const next = new Set(current); if (next.has(invite.id)) next.delete(invite.id); else next.add(invite.id); return next })} /></td>
-                  <td><strong>{invite.username}</strong></td>
-                  <td>{new Date(invite.expiresAt).toLocaleString('zh-CN')}</td>
-                  <td className="align-right">
-                    <button className="icon-button danger" type="button" disabled={mutating} aria-label={`撤销 ${invite.username} 的邀请`} title="撤销邀请" onClick={() => revokeInvite(invite.id)}>
-                      <Trash2 aria-hidden="true" size={17} />
-                    </button>
-                  </td>
-                </tr>
-              )) : <tr><td colSpan={4} className="empty-row">暂无有效邀请</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {!loading && !loadError ? (
+        <>
+          <section className="data-section usr-section" aria-labelledby="users-title">
+            <DataHeader
+              id="users-title"
+              title="用户"
+              filters={(
+                <form id="invite-form" className="invite-form usr-invite-form" onSubmit={createInvite}>
+                  <FormField label="邀请用户名" htmlFor="invite-username">
+                    <input id="invite-username" name="username" placeholder="输入用户名" minLength={3} maxLength={32} required />
+                  </FormField>
+                </form>
+              )}
+              actions={<BatchToolbar selectedCount={selectedUsers.size} totalCount={selectableUsers.length} onSelectAll={() => setSelectedUsers(new Set(selectableUsers.map((user) => user.id)))} onClear={() => setSelectedUsers(new Set())} actions={userActions} busy={mutating} progress={batchProgress} />}
+            />
+            {users.length === 0 ? (
+              <div className="usr-empty"><EmptyState icon={Users} title="暂无用户" description="创建邀请并完成注册后，用户会显示在这里" /></div>
+            ) : (
+              <>
+                <FilterBar className="usr-filters">
+                  <SearchInput className="usr-search" label="搜索用户" placeholder="搜索用户名或 ID" value={query} onChange={setQuery} />
+                  <div className="usr-chips" role="group" aria-label="用户状态">
+                    {STATUS_FILTERS.map((item) => (
+                      <FilterChip key={item.value} active={statusFilter === item.value} onClick={() => setStatusFilter(item.value)}>{item.label}</FilterChip>
+                    ))}
+                  </div>
+                </FilterBar>
+                <div className="usr-tools">
+                  <label className="usr-select-all">
+                    <input
+                      type="checkbox"
+                      aria-label="选择全部用户"
+                      checked={usersAllSelected}
+                      disabled={mutating}
+                      onChange={(event) => setSelectedUsers(event.currentTarget.checked ? new Set(selectableUsers.map((user) => user.id)) : new Set())}
+                    />
+                    <span>全选</span>
+                  </label>
+                </div>
+                <DataTable className="usr-table" columns={userColumns} rows={filteredUsers} rowKey={(user) => user.id} empty="暂无匹配用户" />
+              </>
+            )}
+          </section>
 
-      <dialog
-        ref={resetDialog}
-        className="reset-dialog"
-        aria-labelledby="reset-title"
-        onCancel={(event) => { event.preventDefault(); closePasswordReset() }}
-        onClose={() => setResetUser(null)}
-        onPointerDown={(event) => { if (event.target === resetDialog.current) event.preventDefault() }}
-      >
-        <form className="form-stack" onSubmit={resetPassword}>
-          <header className="dialog-heading">
-            <div><h2 id="reset-title">重置用户密码</h2><p>{resetUser?.username}</p></div>
-            <button className="icon-button" type="button" aria-label="关闭密码重置" onClick={closePasswordReset} disabled={mutating}>
-              <X aria-hidden="true" size={18} />
-            </button>
-          </header>
-          <label className="field"><span>新密码</span><input name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required /></label>
-          <label className="field"><span>确认新密码</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required /></label>
-          {resetError ? <p className="form-message error" role="alert">{resetError}</p> : null}
-          <div className="dialog-actions">
+          <section className="data-section usr-section" aria-labelledby="invites-title">
+            <DataHeader
+              id="invites-title"
+              title="有效邀请"
+              actions={<BatchToolbar selectedCount={selectedInvites.size} totalCount={invites.length} onSelectAll={() => setSelectedInvites(new Set(invites.map((invite) => invite.id)))} onClear={() => setSelectedInvites(new Set())} actions={inviteActions} busy={mutating} progress={batchProgress} />}
+            />
+            {invites.length === 0 ? (
+              <div className="usr-empty"><EmptyState icon={Mail} title="暂无有效邀请" /></div>
+            ) : (
+              <>
+                <div className="usr-tools">
+                  <label className="usr-select-all">
+                    <input
+                      type="checkbox"
+                      aria-label="选择全部邀请"
+                      checked={invitesAllSelected}
+                      disabled={mutating}
+                      onChange={(event) => setSelectedInvites(event.currentTarget.checked ? new Set(invites.map((invite) => invite.id)) : new Set())}
+                    />
+                    <span>全选</span>
+                  </label>
+                </div>
+                <DataTable className="usr-table" columns={inviteColumns} rows={invites} rowKey={(invite) => invite.id} empty="暂无有效邀请" />
+              </>
+            )}
+          </section>
+        </>
+      ) : null}
+
+      <Dialog
+        open={resetUser !== null}
+        onClose={closePasswordReset}
+        title="重置用户密码"
+        footer={(
+          <>
             <button className="button secondary" type="button" onClick={closePasswordReset} disabled={mutating}>取消</button>
-            <button className="button primary" type="submit" disabled={mutating}><KeyRound aria-hidden="true" size={17} />确认重置</button>
-          </div>
+            <button className="button primary" type="submit" form="reset-password-form" disabled={mutating}><KeyRound aria-hidden="true" size={17} />确认重置</button>
+          </>
+        )}
+      >
+        <form id="reset-password-form" className="form-stack usr-reset-form" onSubmit={resetPassword}>
+          {resetUser ? <p className="usr-reset-user">{resetUser.username}</p> : null}
+          <FormField label="新密码" htmlFor="reset-new-password">
+            <input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+          </FormField>
+          <FormField label="确认新密码" htmlFor="reset-confirm-password">
+            <input id="reset-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+          </FormField>
+          {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
         </form>
-      </dialog>
+      </Dialog>
 
       <ConfirmDialog
         open={batchConfirm !== null}
         title={batchConfirm?.target === 'invites' ? '撤销邀请' : '停用用户'}
-        description={batchConfirm?.target === 'invites' ? `将撤销选中的 ${selectedInvites.size} 个邀请。` : `将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销。`}
+        description={batchConfirm?.target === 'invites' ? `将撤销选中的 ${selectedInvites.size} 个邀请` : `将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销`}
         confirmLabel={batchConfirm?.target === 'invites' ? '确认撤销' : '确认停用'}
         danger
         busy={mutating}
