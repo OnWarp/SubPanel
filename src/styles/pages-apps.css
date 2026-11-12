@@ -267,3 +267,304 @@
     grid-column: auto;
   }
 }
+
+/*
+ * User download center. Every new class is appu- prefixed.
+ */
+
+.appu-page,
+.appu-results,
+.appu-section,
+.appu-grid,
+.appu-card,
+.appu-detail,
+.appu-platform,
+.appu-import {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.appu-filters {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.appu-chip-group {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.appu-chip-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.appu-filters .sp-chip {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.appu-search {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.appu-results {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.appu-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.appu-section h2,
+.appu-block h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-md);
+  font-weight: 750;
+}
+
+.appu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: var(--space-4);
+}
+
+.appu-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.appu-card:hover {
+  border-color: var(--color-border-strong);
+}
+
+.appu-card-open {
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.appu-card-head,
+.appu-detail-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.appu-card-id,
+.appu-detail-id {
+  display: grid;
+  min-width: 0;
+  justify-items: start;
+  gap: 2px;
+}
+
+.appu-mark {
+  display: inline-grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: var(--font-lg);
+  font-weight: 750;
+}
+
+.appu-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.appu-name,
+.appu-lead,
+.appu-copy,
+.appu-note,
+.appu-meta {
+  overflow-wrap: anywhere;
+}
+
+.appu-name {
+  font-size: var(--font-lg);
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.appu-card .appu-name {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.appu-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.appu-meta,
+.appu-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+
+.appu-note,
+.appu-lead,
+.appu-copy,
+.appu-kicker {
+  margin: 0;
+}
+
+.appu-lead {
+  line-height: var(--leading-body);
+}
+
+.appu-copy {
+  white-space: pre-wrap;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+
+.appu-kicker {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.appu-badges,
+.appu-actions,
+.appu-platforms-inline,
+.appu-platform-head {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.appu-platforms-inline {
+  color: var(--color-text-muted);
+}
+
+.appu-actions .button {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.appu-detail,
+.appu-block,
+.appu-import,
+.appu-platform-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.appu-detail {
+  gap: var(--space-5);
+}
+
+.appu-platform-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.appu-platform {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+
+.appu-platform-head strong {
+  overflow-wrap: anywhere;
+}
+
+.appu-field {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-sm);
+  font-weight: 650;
+}
+
+.appu-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.edit-drawer:has(.appu-detail) .dialog-heading {
+  align-items: flex-start;
+}
+
+.edit-drawer:has(.appu-detail) .dialog-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.appu-detail .sp-empty,
+.appu-detail .sp-error,
+.appu-detail .sp-loading {
+  max-width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .appu-search {
+    max-width: none;
+  }
+
+  .appu-field select {
+    min-height: 44px;
+  }
+}
