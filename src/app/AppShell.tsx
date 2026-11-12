@@ -1,6 +1,6 @@
-import { Download, Ellipsis, FolderKanban, Gauge, LogOut, Network, Rss, Send, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Network, Rss, Send, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
@@ -26,12 +26,11 @@ const adminSections: NavSection[] = [
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
 
-const userSections: NavSection[] = [
-  { label: '订阅', items: [
-    { to: '/subscriptions', label: '我的订阅', icon: Rss },
-    { to: '/apps', label: 'APP 下载', icon: Download },
-  ] },
-  { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
+const userNav: NavItem[] = [
+  { to: '/home', label: '首页', icon: Home },
+  { to: '/subscriptions', label: '订阅', icon: Rss },
+  { to: '/apps', label: 'APP 下载', icon: Download },
+  { to: '/me', label: '我的', icon: UserRound },
 ]
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -43,10 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const moreButton = useRef<HTMLButtonElement>(null)
   const sheet = useRef<HTMLElement>(null)
   const touchStart = useRef(0)
-  const sections = user?.role === 'admin' ? adminSections : userSections
-  const navItems = sections.flatMap((section) => section.items)
-  const dockItems = navItems.slice(0, 3)
-  const sheetItems = navItems.slice(3)
+  const isAdmin = user?.role === 'admin'
+  const adminItems = adminSections.flatMap((section) => section.items)
+  const dockItems = adminItems.slice(0, 3)
+  const sheetItems = adminItems.slice(3)
 
   useEffect(() => setSheetOpen(false), [location.pathname])
 
@@ -103,16 +102,26 @@ export function AppShell({ children }: { children: ReactNode }) {
           <img className="brand-mark" src="/favicon.svg" alt="" />
           <div><strong>SubPanel</strong><span>Control plane</span></div>
         </div>
-        <nav className="sidebar-nav" aria-label="主导航">
-          {sections.map((section) => <section className="nav-section" key={section.label}>
-            <p className="nav-label">{section.label}</p>
-            {section.items.map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+        {isAdmin ? (
+          <nav className="sidebar-nav" aria-label="主导航">
+            {adminSections.map((section) => <section className="nav-section" key={section.label}>
+              <p className="nav-label">{section.label}</p>
+              {section.items.map(({ to, label, icon: Icon }) => (
+                <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+                  <Icon aria-hidden="true" size={17} /><span>{label}</span>
+                </Link>
+              ))}
+            </section>)}
+          </nav>
+        ) : (
+          <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
+            {userNav.map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} end className={({ isActive }) => isActive ? 'active' : undefined}>
                 <Icon aria-hidden="true" size={17} /><span>{label}</span>
-              </Link>
+              </NavLink>
             ))}
-          </section>)}
-        </nav>
+          </nav>
+        )}
         <div className="sidebar-account"><UserRound aria-hidden="true" size={18} /><div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div><button className="sidebar-signout" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button></div>
       </aside>
       <div className="workspace">
@@ -123,17 +132,27 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
         <main key={location.pathname} className="workspace-content">{children}</main>
       </div>
-      <nav className="dock" aria-label="快捷导航">
-        {dockItems.map(({ to, label, icon: Icon }) => (
-          <Link key={to} to={to} className={`dock-item ${location.pathname === to ? 'active' : ''}`} aria-current={location.pathname === to ? 'page' : undefined}>
-            <Icon aria-hidden="true" size={18} /><span>{label}</span>
-          </Link>
-        ))}
-        <button ref={moreButton} className="dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
-          <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
-        </button>
-      </nav>
-      {sheetOpen ? <>
+      {isAdmin ? (
+        <nav className="dock" aria-label="快捷导航">
+          {dockItems.map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to} className={`dock-item ${location.pathname === to ? 'active' : ''}`} aria-current={location.pathname === to ? 'page' : undefined}>
+              <Icon aria-hidden="true" size={18} /><span>{label}</span>
+            </Link>
+          ))}
+          <button ref={moreButton} className="dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
+            <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
+          </button>
+        </nav>
+      ) : (
+        <nav className="dock nav-dock" aria-label="快捷导航">
+          {userNav.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} end className={({ isActive }) => `dock-item nav-dock-item${isActive ? ' active' : ''}`}>
+              <Icon aria-hidden="true" size={18} /><span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      )}
+      {isAdmin && sheetOpen ? <>
         <button className="dock-backdrop" type="button" aria-label="关闭更多导航" onClick={() => setSheetOpen(false)} />
         <section
           ref={sheet}
