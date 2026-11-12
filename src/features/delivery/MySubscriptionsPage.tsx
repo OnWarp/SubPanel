@@ -10,6 +10,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { Select } from '../../ui/Select'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -203,18 +204,18 @@ export function MySubscriptionsPage() {
 
   return (
     <div className="page-stack del-user-page">
-      <PageHeader title="我的订阅" description={`${subscriptions.length} 个订阅 · 选择一个订阅查看客户端链接`} actions={<label className="compact-field">
-          <span className="sr-only">选择订阅</span>
-          <select aria-label="选择订阅" value={selectedId} onChange={(event) => {
-            const nextId = event.currentTarget.value
+      <PageHeader title="我的订阅" description={`${subscriptions.length} 个订阅 · 选择一个订阅查看客户端链接`} actions={<Select
+          label="选择订阅"
+          value={selectedId}
+          options={subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))}
+          disabled={loading || subscriptions.length === 0}
+          onChange={(nextId) => {
             setSelectedId(nextId)
             setTokenNotice(null)
             setMessage('')
             if (shareParam) openShare(nextId)
-          }} disabled={loading || subscriptions.length === 0}>
-            {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-          </select>
-        </label>} />
+          }}
+        />} />
 
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</button></div> : null}
