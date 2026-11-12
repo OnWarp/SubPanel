@@ -21,6 +21,8 @@ export type SubscriptionInput = {
   groupIds: string[]
   enabled?: boolean
   defaultClient?: ClientId
+  startsAt?: number | null
+  expiresAt?: number | null
 }
 
 export type SubscriptionMutationOptions = {
@@ -58,6 +60,16 @@ function normalizedName(name: string): string {
 function validToken(token: string): string {
   if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) fail('SUBSCRIPTION_TOKEN_INVALID')
   return token
+}
+
+function cleanEpoch(value: number | null): number | null {
+  if (value === null) return null
+  if (!Number.isSafeInteger(value) || value < 0) fail('SUBSCRIPTION_INVALID')
+  return value
+}
+
+function assertWindow(startsAt: number | null, expiresAt: number | null): void {
+  if (startsAt !== null && expiresAt !== null && expiresAt <= startsAt) fail('SUBSCRIPTION_WINDOW_INVALID')
 }
 
 async function assertReferences(kv: KVNamespace, userId: string, groupIds: string[]): Promise<void> {
@@ -101,6 +113,9 @@ export async function createSubscription(
   const id = `sub_${snapshot.nextSubscriptionId}` as const
   const tokenData = await createToken(kv, token)
   if (snapshot.subscriptions.some((item) => item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
+  const startsAt = cleanEpoch(input.startsAt ?? null)
+  const expiresAt = cleanEpoch(input.expiresAt ?? null)
+  assertWindow(startsAt, expiresAt)
   const subscription: Subscription = {
     id,
     userId: input.userId as Subscription['userId'],
@@ -110,6 +125,8 @@ export async function createSubscription(
     enabled: input.enabled ?? true,
     defaultClient: clientIdSchema.parse(input.defaultClient ?? 'mihomo'),
     revision: 1,
+    startsAt,
+    expiresAt,
     createdAt: now,
     updatedAt: now,
   }
@@ -136,7 +153,7 @@ export async function getSubscription(kv: KVNamespace, id: string): Promise<Subs
   return findSubscription(await readDelivery(kv), id)
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt'>>
 
 export async function updateSubscription(
   kv: KVNamespace,
@@ -150,6 +167,9 @@ export async function updateSubscription(
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
   const nextGroups = input.groupIds === undefined ? current.groupIds : [...input.groupIds]
   await assertReferences(kv, current.userId, nextGroups)
+  const startsAt = cleanEpoch(input.startsAt === undefined ? current.startsAt : input.startsAt)
+  const expiresAt = cleanEpoch(input.expiresAt === undefined ? current.expiresAt : input.expiresAt)
+  assertWindow(startsAt, expiresAt)
   const now = options.now ?? new Date().toISOString()
   const updated: Subscription = {
     ...current,
@@ -157,6 +177,8 @@ export async function updateSubscription(
     groupIds: nextGroups as Subscription['groupIds'],
     enabled: input.enabled ?? current.enabled,
     defaultClient: input.defaultClient === undefined ? current.defaultClient : clientIdSchema.parse(input.defaultClient),
+    startsAt,
+    expiresAt,
     revision: current.revision + 1,
     updatedAt: now,
   }

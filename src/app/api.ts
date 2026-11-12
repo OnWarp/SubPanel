@@ -86,6 +86,8 @@ export type AdminSubscription = {
   enabled: boolean
   defaultClient: string
   revision: number
+  startsAt: number | null
+  expiresAt: number | null
   createdAt: string
   updatedAt: string
   links: Record<string, string>

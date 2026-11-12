@@ -8,10 +8,12 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { InlineMessage } from '../../ui/InlineMessage'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
 import { DIAGNOSTIC_HELP } from './diagnostics'
+import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from './expiry'
 
 const CLIENT_LABELS: Record<string, string> = {
   auto: '自动识别',
@@ -87,6 +89,8 @@ export function MySubscriptionsPage() {
     : []
   const diagnostics = selected ? Object.entries(selected.diagnostics) : []
   const primaryLink = selected?.links.auto || (selected ? selected.links[selected.defaultClient] ?? '' : '')
+  const expiry = selected ? getExpiryState(selected) : null
+  const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
   useEffect(() => {
     if (!primaryLink) {
@@ -175,13 +179,23 @@ export function MySubscriptionsPage() {
         {!loading && !loadError && !selected ? <EmptyState title="暂无可用订阅" description="管理员创建订阅后，它会出现在这里" /> : null}
         {loadError && selected ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
 
-        {selected ? <>
+        {selected && expiry && expiryBadge ? <>
+          {expiry.kind === 'expired' ? <div className="exp-alert"><InlineMessage tone="warning">订阅已过期，请联系管理员续期</InlineMessage></div> : null}
+          {expiry.kind === 'pending' ? <div className="exp-alert"><InlineMessage tone="warning">{`将于 ${formatExpiryTime(expiry.startsAt)} 生效`}</InlineMessage></div> : null}
           <section className="data-section user-subscription-overview del-status-card" aria-labelledby="current-subscription-title">
             <div className="del-status-head">
               <h2 id="current-subscription-title">{selected.name}</h2>
-              <StatusBadge tone={selected.enabled ? 'success' : 'muted'}>{selected.enabled ? '正常' : '已停用'}</StatusBadge>
+              <span className="exp-badges">
+                <StatusBadge tone={selected.enabled ? 'success' : 'muted'}>{selected.enabled ? '正常' : '已停用'}</StatusBadge>
+                <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
+              </span>
             </div>
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
+            <dl className="exp-status-meta">
+              <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
+              <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
+              {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
+            </dl>
             {!selected.enabled ? <StatusMessage tone="warning">此订阅已停用，链接暂时不会提供内容</StatusMessage> : null}
           </section>
 

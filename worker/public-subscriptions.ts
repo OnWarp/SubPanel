@@ -4,6 +4,7 @@ import type { AppEnv } from './app-env.js'
 import { readCatalog } from './catalog/repository.js'
 import { apiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
+import { assertSubscriptionAvailable } from './delivery/expiry.js'
 import { compiledArtifactSchema } from './delivery/schema.js'
 import { compileSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
@@ -41,15 +42,22 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   const client = clientAliases[requestedClient.toLowerCase()] ?? requestedClient.toLowerCase()
   if (!clients.has(client)) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
   const tokenHash = await hashToken(token)
-  let raw: string | null
   let delivery: Awaited<ReturnType<typeof readDelivery>>
   let catalog: Awaited<ReturnType<typeof readCatalog>>
   try {
-    [raw, delivery, catalog] = await Promise.all([
-      c.env.DATA.get(compiledKey(tokenHash, client)),
+    [delivery, catalog] = await Promise.all([
       readDelivery(c.env.DATA),
       readCatalog(c.env.DATA),
     ])
+  } catch {
+    throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  }
+  const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
+  if (!subscription?.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  assertSubscriptionAvailable(subscription)
+  let raw: string | null
+  try {
+    raw = await c.env.DATA.get(compiledKey(tokenHash, client))
   } catch {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
@@ -60,8 +68,6 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   } catch {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
-  const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
-  if (!subscription?.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   const parsed = compiledArtifactSchema.safeParse(value)
   let artifact
   if (parsed.success) artifact = parsed.data
