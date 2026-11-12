@@ -80,7 +80,7 @@ const UNIFIED_FILTERS: Array<{ key: UnifiedFilter; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'active', label: '正常' },
   { key: 'pending', label: '未生效' },
-  { key: 'expiring', label: '即将到期' },
+  { key: 'soon', label: '即将到期' },
   { key: 'expired', label: '已过期' },
   { key: 'permanent', label: '永久有效' },
   { key: 'disabled', label: '已停用' },
@@ -206,7 +206,7 @@ export function SubscriptionsPage() {
     : expiryFilter === 'all'
       ? 'all'
       : LEGACY_EXPIRY_WINDOWS.includes(expiryFilter)
-        ? 'expiring'
+        ? 'soon'
         : expiryFilter
   const selectUnified = (key: UnifiedFilter) => {
     if (key === 'all') { setStatusFilter('all'); selectExpiry('all'); return }
