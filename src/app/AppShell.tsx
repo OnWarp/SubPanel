@@ -9,16 +9,14 @@ type NavItem = { to: string; label: string; icon: LucideIcon }
 type NavSection = { label: string; items: NavItem[] }
 
 const adminSections: NavSection[] = [
-  { label: '监控', items: [
+  { label: '仪表盘', items: [
     { to: '/dashboard', label: '概览', icon: Gauge },
     { to: '/catalog/nodes', label: '节点', icon: Network },
-  ] },
-  { label: '资源', items: [
     { to: '/catalog/sources', label: '来源', icon: Rss },
     { to: '/catalog/groups', label: '分组', icon: FolderKanban },
-    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
   ] },
   { label: '交付与权限', items: [
+    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
     { to: '/delivery/subscriptions', label: '订阅', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
     { to: '/users', label: '用户与邀请', icon: Users },
