@@ -5,6 +5,8 @@ import { userIdSchema } from '../accounts/schema.js'
 
 export const subscriptionIdSchema = z.string().regex(/^sub_[1-9]\d*$/)
 export const tokenHashSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
+export const epochMillisSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
+const storedEpochSchema = epochMillisSchema.nullable().optional().transform((value) => value ?? null)
 export const clientIdSchema = z.enum([
   'mihomo',
   'singbox',
@@ -43,6 +45,8 @@ export const subscriptionSchema = z.object({
   enabled: z.boolean(),
   defaultClient: clientIdSchema,
   revision: z.number().int().positive(),
+  startsAt: storedEpochSchema,
+  expiresAt: storedEpochSchema,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 })

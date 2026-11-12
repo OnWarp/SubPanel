@@ -1,5 +1,6 @@
 import { CheckCircle2, Copy, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -12,6 +13,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
+import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
@@ -19,6 +21,17 @@ import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
 import { DIAGNOSTIC_HELP } from './diagnostics'
 import { formatDate, matchesText } from '../catalog/catalog-utils'
+import {
+  EXPIRY_BADGE,
+  addExpiryDays,
+  formatExpiryTime,
+  formatRemaining,
+  fromDatetimeLocal,
+  getExpiryState,
+  isWithinExpiryDays,
+  toDatetimeLocal,
+  type ExpiryKind,
+} from './expiry'
 
 type SubscriptionForm = {
   userId: string
@@ -26,7 +39,12 @@ type SubscriptionForm = {
   groupIds: string[]
   defaultClient: string
   enabled: boolean
+  startsAt: string
+  expiresAt: string
 }
+
+type ExpiryFilter = 'all' | ExpiryKind | '7' | '15' | '30'
+type FieldErrors = { startsAt?: string; expiresAt?: string }
 
 type DrawerState = 'create' | { kind: 'edit' | 'details'; subscription: AdminSubscription }
 type ConfirmAction = 'disable' | 'delete'
@@ -51,9 +69,41 @@ const CLIENT_LABELS: Record<string, string> = {
 }
 const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: '全部' },
-  { key: 'enabled', label: '正常' },
+  { key: 'enabled', label: '已启用' },
   { key: 'disabled', label: '已停用' },
 ]
+const EXPIRY_FILTERS: Array<{ key: ExpiryFilter; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'active', label: '正常' },
+  { key: 'pending', label: '未生效' },
+  { key: 'soon', label: '即将到期' },
+  { key: 'expired', label: '已过期' },
+  { key: 'permanent', label: '永久有效' },
+  { key: '7', label: '7 天内' },
+  { key: '15', label: '15 天内' },
+  { key: '30', label: '30 天内' },
+]
+const EMPTY_FORM: SubscriptionForm = { userId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
+
+function parseExpiryFilter(value: string | null): ExpiryFilter {
+  return EXPIRY_FILTERS.some((filter) => filter.key === value) ? value as ExpiryFilter : 'all'
+}
+
+function validateWindow(startsAt: string, expiresAt: string): FieldErrors {
+  if (startsAt && fromDatetimeLocal(startsAt) === null) return { startsAt: '生效时间无效' }
+  if (expiresAt && fromDatetimeLocal(expiresAt) === null) return { expiresAt: '到期时间无效' }
+  const starts = fromDatetimeLocal(startsAt)
+  const expires = fromDatetimeLocal(expiresAt)
+  if (starts !== null && expires !== null && expires <= starts) return { expiresAt: '到期时间必须晚于生效时间' }
+  return {}
+}
+
+function matchesExpiry(subscription: AdminSubscription, filter: ExpiryFilter, enabledOnly: boolean, now: number): boolean {
+  if (enabledOnly && !subscription.enabled) return false
+  if (filter === '7' || filter === '15' || filter === '30') return isWithinExpiryDays(subscription, Number(filter), now)
+  if (filter === 'all') return true
+  return getExpiryState(subscription, now).kind === filter
+}
 const EMPTY_SUBSCRIPTIONS: AdminSubscription[] = []
 const EMPTY_GROUPS: CatalogGroup[] = []
 
@@ -74,12 +124,16 @@ export function SubscriptionsPage() {
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const expiryFilter = parseExpiryFilter(searchParams.get('expiry'))
+  const enabledOnly = searchParams.get('enabled') === '1'
   const [tokenNotice, setTokenNotice] = useState<{ name: string; token: string; warning: string } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
-  const [form, setForm] = useState<SubscriptionForm>({ userId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true })
+  const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [drawerError, setDrawerError] = useState('')
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [progress, setProgress] = useState('')
@@ -112,14 +166,18 @@ export function SubscriptionsPage() {
   const groups = catalog?.groups ?? EMPTY_GROUPS
   const userNames = useMemo(() => new Map(users.map((user) => [user.id, user.username])), [users])
   const groupNames = useMemo(() => new Map(groups.map((group) => [group.id, group.name])), [groups])
-  const filtered = useMemo(() => subscriptions.filter((subscription) => {
-    if (statusFilter === 'enabled' && !subscription.enabled) return false
-    if (statusFilter === 'disabled' && subscription.enabled) return false
-    if (!query.trim()) return true
-    const user = userNames.get(subscription.userId) ?? subscription.userId
-    const groupLabel = subscription.groupIds.map((id) => groupNames.get(id) ?? id).join(' ')
-    return matchesText(subscription.name, query) || matchesText(user, query) || matchesText(groupLabel, query)
-  }), [groupNames, query, statusFilter, subscriptions, userNames])
+  const filtered = useMemo(() => {
+    const now = Date.now()
+    return subscriptions.filter((subscription) => {
+      if (statusFilter === 'enabled' && !subscription.enabled) return false
+      if (statusFilter === 'disabled' && subscription.enabled) return false
+      if (!matchesExpiry(subscription, expiryFilter, enabledOnly, now)) return false
+      if (!query.trim()) return true
+      const user = userNames.get(subscription.userId) ?? subscription.userId
+      const groupLabel = subscription.groupIds.map((id) => groupNames.get(id) ?? id).join(' ')
+      return matchesText(subscription.name, query) || matchesText(user, query) || matchesText(groupLabel, query)
+    })
+  }, [enabledOnly, expiryFilter, groupNames, query, statusFilter, subscriptions, userNames])
   const allFilteredSelected = filtered.length > 0 && filtered.every((subscription) => selected.has(subscription.id))
   const someFilteredSelected = filtered.some((subscription) => selected.has(subscription.id))
 
@@ -127,16 +185,42 @@ export function SubscriptionsPage() {
     if (selectAllRef.current) selectAllRef.current.indeterminate = someFilteredSelected && !allFilteredSelected
   }, [allFilteredSelected, someFilteredSelected])
 
+  const selectExpiry = (filter: ExpiryFilter) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (filter === 'all') next.delete('expiry')
+      else next.set('expiry', filter)
+      next.delete('enabled')
+      return next
+    }, { replace: true })
+  }
+
   const openCreate = () => {
-    setForm({ userId: users[0]?.id ?? '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true })
+    setForm({ ...EMPTY_FORM, userId: users[0]?.id ?? '' })
+    setFieldErrors({})
     setDrawerError('')
     setDrawer('create')
   }
 
   const openEdit = (subscription: AdminSubscription) => {
-    setForm({ userId: subscription.userId, name: subscription.name, groupIds: [...subscription.groupIds], defaultClient: subscription.defaultClient, enabled: subscription.enabled })
+    setForm({
+      userId: subscription.userId,
+      name: subscription.name,
+      groupIds: [...subscription.groupIds],
+      defaultClient: subscription.defaultClient,
+      enabled: subscription.enabled,
+      startsAt: toDatetimeLocal(subscription.startsAt),
+      expiresAt: toDatetimeLocal(subscription.expiresAt),
+    })
+    setFieldErrors({})
     setDrawerError('')
     setDrawer({ kind: 'edit', subscription })
+  }
+
+  const shiftExpiry = (days: number) => {
+    const expiresAt = toDatetimeLocal(addExpiryDays(fromDatetimeLocal(form.expiresAt), days))
+    setForm((current) => ({ ...current, expiresAt }))
+    setFieldErrors(validateWindow(form.startsAt, expiresAt))
   }
 
   const closeDrawer = () => {
@@ -144,6 +228,7 @@ export function SubscriptionsPage() {
       setDrawer(null)
       setQr(null)
       setDrawerError('')
+      setFieldErrors({})
     }
   }
 
@@ -167,26 +252,35 @@ export function SubscriptionsPage() {
       setDrawerError('请选择用户并填写订阅名称')
       return
     }
+    const windowErrors = validateWindow(form.startsAt, form.expiresAt)
+    if (windowErrors.startsAt || windowErrors.expiresAt) {
+      setFieldErrors(windowErrors)
+      return
+    }
+    const startsAt = fromDatetimeLocal(form.startsAt)
+    const expiresAt = fromDatetimeLocal(form.expiresAt)
     setBusy(true)
     try {
       if (drawer === 'create') {
         const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>('/api/admin/subscriptions', {
           method: 'POST',
-          body: jsonBody(form),
+          body: jsonBody({ userId: form.userId, name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt }),
         })
         setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
         setMessage('订阅已添加')
       } else if (drawer.kind === 'edit') {
         const result = await api<{ subscription: AdminSubscription; warning: string }>(`/api/admin/subscriptions/${drawer.subscription.id}`, {
           method: 'PATCH',
-          body: jsonBody({ name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled }),
+          body: jsonBody({ name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt }),
         })
         setMessage(`订阅已更新。${result.warning}`)
       }
       setDrawer(null)
       await load()
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '保存订阅失败'))
+      const message = errorMessage(cause, '保存订阅失败')
+      if (cause instanceof ApiClientError && cause.code === 'SUBSCRIPTION_WINDOW_INVALID') setFieldErrors({ expiresAt: message })
+      else setDrawerError(message)
     } finally {
       setBusy(false)
     }
@@ -321,6 +415,27 @@ export function SubscriptionsPage() {
       ),
     },
     {
+      key: 'expires',
+      header: '到期时间',
+      render: (subscription) => (
+        <span className="exp-expiry">{subscription.expiresAt === null ? '—' : formatExpiryTime(subscription.expiresAt)}</span>
+      ),
+    },
+    {
+      key: 'remaining',
+      header: '剩余',
+      render: (subscription) => {
+        const state = getExpiryState(subscription)
+        const badge = EXPIRY_BADGE[state.kind]
+        return (
+          <span className="exp-remaining">
+            <StatusBadge tone={badge.tone} size="sm">{badge.label}</StatusBadge>
+            {state.remainingDays !== null ? <span>{formatRemaining(state.remainingDays)}</span> : null}
+          </span>
+        )
+      },
+    },
+    {
       key: 'actions',
       header: '操作',
       align: 'right',
@@ -352,11 +467,17 @@ export function SubscriptionsPage() {
           filters={subscriptions.length > 0 ? (
             <FilterBar className="del-filters">
               <SearchInput value={query} onChange={setQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
-              <div className="del-status-filters" role="group" aria-label="订阅状态">
+              <div className="del-status-filters" role="group" aria-label="启用状态">
                 {STATUS_FILTERS.map((filter) => (
                   <FilterChip key={filter.key} active={statusFilter === filter.key} onClick={() => setStatusFilter(filter.key)}>{filter.label}</FilterChip>
                 ))}
               </div>
+              <div className="del-status-filters" role="group" aria-label="订阅时效">
+                {EXPIRY_FILTERS.map((filter) => (
+                  <FilterChip key={filter.key} active={expiryFilter === filter.key} onClick={() => selectExpiry(filter.key)}>{filter.label}</FilterChip>
+                ))}
+              </div>
+              {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
               <label className="del-select-all">
                 <input
                   ref={selectAllRef}
@@ -387,6 +508,29 @@ export function SubscriptionsPage() {
           <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><input type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
           <label className="field"><span>默认客户端</span><select aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</select></label>
           <label className="toggle-field"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} /><span>启用订阅</span></label>
+          <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
+            <input id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
+              const startsAt = event.currentTarget.value
+              setForm((current) => ({ ...current, startsAt }))
+              setFieldErrors(validateWindow(startsAt, form.expiresAt))
+            }} />
+          </FormField>
+          <FormField label="到期时间" htmlFor="exp-expires-at" error={fieldErrors.expiresAt}>
+            <input id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
+              const expiresAt = event.currentTarget.value
+              setForm((current) => ({ ...current, expiresAt }))
+              setFieldErrors(validateWindow(form.startsAt, expiresAt))
+            }} />
+            <div className="exp-quick">
+              <button className="button secondary" type="button" onClick={() => shiftExpiry(30)}>+30 天</button>
+              <button className="button secondary" type="button" onClick={() => shiftExpiry(90)}>+90 天</button>
+              <button className="button secondary" type="button" onClick={() => shiftExpiry(365)}>+365 天</button>
+              <button className="button secondary" type="button" onClick={() => {
+                setForm((current) => ({ ...current, expiresAt: '' }))
+                setFieldErrors(validateWindow(form.startsAt, ''))
+              }}>设为永久</button>
+            </div>
+          </FormField>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button></div>
         </form>

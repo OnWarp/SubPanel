@@ -7,6 +7,7 @@ import type { CatalogSnapshot } from '../catalog/schema.js'
 import { compileSubscription } from '../delivery/compiler.js'
 import { compiledKey, readDelivery } from '../delivery/repository.js'
 import { compiledArtifactSchema, clientIdSchema, type ClientId, type CompiledArtifact, type Subscription } from '../delivery/schema.js'
+import { assertSubscriptionAvailable } from '../delivery/expiry.js'
 import { decryptSubscriptionToken } from '../delivery/service.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken } from '../platform/crypto.js'
 import {
@@ -403,7 +404,7 @@ export async function readShareMeta(
   const { share, subscription } = await guard(kv, token, 'meta', actor, sessionHash, undefined, now)
   const catalog = await readCatalog(kv)
   const preview = previewNodes(catalog, subscription)
-  // showExpiry 展示分享自己的 expiresAt。订阅没有到期或流量字段，不能在这里补。
+  // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
   const meta: ShareMeta = { nodeCount: preview.count }
   if (share.showSubscriptionName) meta.subscriptionName = subscription.name
   if (share.showGroups) meta.groupNames = groupNames(catalog, subscription)
@@ -486,12 +487,14 @@ export async function exportShare(
   const nowIso = now.toISOString()
   if (parsed.data.type === 'link') {
     if (!guarded.share.allowOriginalLink) throw notFound()
+    assertSubscriptionAvailable(guarded.subscription, now.getTime())
     const link = `${publicOrigin(guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(kv, guarded.subscription)}`
     if (!(await readShareSettings(kv)).enabled || !(await claimExportAccess(kv, guarded.share.tokenHash, nowIso))) throw notFound()
     return { kind: 'link', link }
   }
   const resolved = resolveShareClient(parsed.data.client ?? '')
   if (!resolved) throw notFound()
+  assertSubscriptionAvailable(guarded.subscription, now.getTime())
   const artifact = await loadShareArtifact(kv, guarded.share, guarded.subscription, resolved)
   if (!artifact.available) throw shareError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
   if (!(await readShareSettings(kv)).enabled || !(await claimExportAccess(kv, guarded.share.tokenHash, nowIso))) throw notFound()

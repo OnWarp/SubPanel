@@ -1,23 +1,38 @@
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AccountPage } from '../features/accounts/AccountPage'
 import { InvitePage } from '../features/accounts/InvitePage'
 import { LoginPage } from '../features/accounts/LoginPage'
 import { SetupPage } from '../features/accounts/SetupPage'
 import { UsersPage } from '../features/accounts/UsersPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
+import { AppsPage } from '../features/catalog/AppsPage'
 import { SourcesPage } from '../features/catalog/SourcesPage'
 import { NodesPage } from '../features/catalog/NodesPage'
 import { GroupsPage } from '../features/catalog/GroupsPage'
 import { SubscriptionsPage } from '../features/delivery/SubscriptionsPage'
+import { AdminSharesPage } from '../features/delivery/AdminSharesPage'
 import { MySubscriptionsPage } from '../features/delivery/MySubscriptionsPage'
+import { SharePage } from '../features/shares/SharePage'
+import { readShareReturn } from '../features/shares/share-link'
 import { AppShell } from './AppShell'
 import { useSession } from './session'
 
+function RootRedirect() {
+  const { initialized, user } = useSession()
+  const shareReturn = readShareReturn()
+  if (shareReturn) return <Navigate to={shareReturn} replace />
+  const home = user?.role === 'admin' ? '/dashboard' : '/subscriptions'
+  const signedOut = initialized ? '/login' : '/setup'
+  return <Navigate to={user ? home : signedOut} replace />
+}
+
 export function AppRouter() {
+  const location = useLocation()
   const { initialized, loading, user, bootstrapError, retryBootstrap } = useSession()
-  if (loading) return <main className="loading-screen" role="status">正在加载</main>
-  if (bootstrapError) {
+  const onPublicShare = /^\/s\/[^/]+$/u.test(location.pathname)
+  if (!onPublicShare && loading) return <main className="loading-screen" role="status">正在加载</main>
+  if (!onPublicShare && bootstrapError) {
     return (
       <main className="phase-shell">
         <section className="auth-panel" aria-labelledby="bootstrap-error-title">
@@ -30,18 +45,23 @@ export function AppRouter() {
 
   const home = user?.role === 'admin' ? '/dashboard' : '/subscriptions'
   const signedOut = initialized ? '/login' : '/setup'
+  const returnedShare = readShareReturn()
   const shell = (content: ReactNode) => user ? <AppShell>{content}</AppShell> : <Navigate to={signedOut} replace />
 
   return (
     <Routes>
+      <Route path="/s/:token" element={<SharePage />} />
+      <Route path="/" element={<RootRedirect />} />
       <Route path="/invite/:token" element={<InvitePage />} />
       <Route path="/setup" element={initialized ? <Navigate to="/login" replace /> : <SetupPage />} />
-      <Route path="/login" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={home} replace /> : <LoginPage />} />
+      <Route path="/login" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={returnedShare ?? home} replace /> : <LoginPage />} />
       <Route path="/dashboard" element={user?.role === 'admin' ? shell(<DashboardPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/sources" element={user?.role === 'admin' ? shell(<SourcesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/catalog/apps" element={user?.role === 'admin' ? shell(<AppsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/nodes" element={user?.role === 'admin' ? shell(<NodesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/groups" element={user?.role === 'admin' ? shell(<GroupsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/subscriptions" element={user?.role === 'admin' ? shell(<SubscriptionsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/users" element={user?.role === 'admin' ? shell(<UsersPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/account" element={shell(<AccountPage />)} />
