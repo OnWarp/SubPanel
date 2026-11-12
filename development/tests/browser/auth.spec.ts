@@ -38,10 +38,10 @@ test.describe.serial('SubPanel account shell', () => {
     await expect(page.getByText('监控', { exact: true })).toBeVisible()
     await expect(page.getByText('资源', { exact: true })).toBeVisible()
     await expect(page.getByText('交付与权限', { exact: true })).toBeVisible()
-    await expect(page.locator('.workspace-topbar')).toHaveCSS('height', '60px')
+    await expect(page.locator('.workspace-topbar')).toHaveCSS('height', '56px')
     await page.getByRole('link', { name: '账户安全' }).click()
     await expect(page).toHaveURL(/\/account$/)
-    await expect(page.locator('.workspace-topbar').getByText('admin', { exact: true })).toBeVisible()
+    await expect(page.locator('.sidebar-account').getByText('admin', { exact: true })).toBeVisible()
 
     await page.getByLabel('当前密码').fill('correct horse battery staple')
     await page.getByLabel('新密码', { exact: true }).fill('new correct horse password')
@@ -113,16 +113,18 @@ test.describe.serial('SubPanel account shell', () => {
     await expect(page.getByRole('alert')).toContainText('用户名或密码错误')
   })
 
-  test('uses a drawer without horizontal page overflow on a mobile viewport', async ({ page }) => {
+  test('opens the mobile more sheet without horizontal page overflow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
     await page.getByLabel('密码').fill('new correct horse password')
     await page.getByRole('button', { name: '登录' }).click()
-    await page.getByRole('button', { name: '打开导航' }).click()
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
+    await page.getByRole('button', { name: '更多', exact: true }).click()
+    const sheet = page.getByRole('dialog', { name: '更多导航' })
+    await expect(sheet.getByRole('navigation', { name: '主导航' })).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-    await page.getByRole('button', { name: '关闭导航', exact: true }).click()
+    await page.getByRole('button', { name: '关闭更多导航' }).click()
+    await expect(sheet).toHaveCount(0)
   })
 
   test('keeps both approved palettes above WCAG AA for primary text pairs', async ({ page }) => {
@@ -137,8 +139,8 @@ test.describe.serial('SubPanel account shell', () => {
     }
 
     const expected = {
-      light: { canvas: '#f3f6f5', surface: '#ffffff', text: '#17231f', muted: '#60706a', primary: '#08705f', contrast: '#ffffff' },
-      dark: { canvas: '#101714', surface: '#17201d', text: '#e7efec', muted: '#9caaa5', primary: '#55bfa5', contrast: '#07110e' },
+      light: { canvas: '#f8f8f6', surface: '#ffffff', text: '#16161a', muted: '#6b6b73', primary: '#b8acf2', contrast: '#0c0c0e' },
+      dark: { canvas: '#0c0c0e', surface: '#141417', text: '#f3f3f5', muted: '#8b8b94', primary: '#b8acf2', contrast: '#0c0c0e' },
     } as const
 
     for (const preference of ['light', 'dark'] as const) {
