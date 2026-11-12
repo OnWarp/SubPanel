@@ -9,6 +9,7 @@ import { readAccounts } from './accounts/repository.js'
 import { ApiError } from './platform/api-error.js'
 import { noStore, originGuard, securityHeaders } from './platform/http.js'
 import { adminDeliveryRoutes, userDeliveryRoutes } from './delivery/routes.js'
+import { adminAppRoutes, userAppRoutes } from './apps/routes.js'
 import { adminShareRoutes, shareRoutes } from './shares/routes.js'
 import { readCronStatus } from './operations/cron.js'
 import { publicSubscriptionRoutes } from './public-subscriptions.js'
@@ -41,6 +42,8 @@ app.use('/api/subscriptions', requireAuth)
 app.use('/api/subscriptions/*', requireAuth)
 app.use('/api/user/subscriptions', requireAuth)
 app.use('/api/user/subscriptions/*', requireAuth)
+app.use('/api/apps', requireAuth)
+app.use('/api/apps/*', requireAuth)
 
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
@@ -56,6 +59,8 @@ app.route('/api/subscriptions', userDeliveryRoutes)
 app.route('/api/user/subscriptions', userDeliveryRoutes)
 app.route('/api/shares', shareRoutes)
 app.route('/api/admin', adminShareRoutes)
+app.route('/api/apps', userAppRoutes)
+app.route('/api/admin/apps', adminAppRoutes)
 app.route('/', publicSubscriptionRoutes)
 
 app.notFound((c) =>

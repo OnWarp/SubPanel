@@ -1,11 +1,13 @@
 import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { decryptText, readCryptoMaterial } from '../../../worker/platform/crypto.js'
+import { EXPIRY_SOON_DAYS } from '../../../worker/delivery/expiry.js'
 import {
   createSubscription,
   listSubscriptionsForUser,
   resetSubscriptionToken,
   toPublicSubscription,
+  updateSubscription,
 } from '../../../worker/delivery/service.js'
 import { readDelivery } from '../../../worker/delivery/repository.js'
 import { compiledArtifactSchema, deliverySnapshotSchema, emptyDeliverySnapshot } from '../../../worker/delivery/schema.js'
@@ -98,6 +100,55 @@ describe('Delivery snapshot and token service', () => {
     await createSubscription(env.DATA, { userId: 'usr_1', name: 'First', groupIds: [] }, { token: 'G'.repeat(43) })
     await expect(createSubscription(env.DATA, { userId: 'usr_1', name: 'Second', groupIds: [] }, { token: 'G'.repeat(43) }))
       .rejects.toThrow('SUBSCRIPTION_TOKEN_COLLISION')
+  })
+
+  it('reads subscriptions saved before validity fields as open-ended', async () => {
+    expect(EXPIRY_SOON_DAYS).toBe(7)
+    await createSubscription(env.DATA, { userId: 'usr_1', name: 'Legacy', groupIds: [] }, { token: 'J'.repeat(43), now })
+    const raw = JSON.parse(await env.DATA.get('state:delivery') ?? '{}') as { subscriptions: Array<Record<string, unknown>> }
+    delete raw.subscriptions[0].startsAt
+    delete raw.subscriptions[0].expiresAt
+    await env.DATA.put('state:delivery', JSON.stringify(raw))
+    const stored = (await readDelivery(env.DATA)).subscriptions[0]
+    expect(stored.startsAt).toBeNull()
+    expect(stored.expiresAt).toBeNull()
+    expect(deliverySnapshotSchema.parse({
+      schemaVersion: 1,
+      revision: 1,
+      updatedAt: now,
+      nextSubscriptionId: 2,
+      subscriptions: [{
+        id: 'sub_1',
+        userId: 'usr_1',
+        name: 'Legacy',
+        groupIds: [],
+        tokenHash: 'A'.repeat(43),
+        tokenPrefix: 'AAAAAAAA',
+        encryptedToken: { version: 1, algorithm: 'AES-GCM', iv: 'A'.repeat(16), ciphertext: 'B'.repeat(22) },
+        enabled: true,
+        defaultClient: 'mihomo',
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      }],
+    }).subscriptions[0]).toMatchObject({ startsAt: null, expiresAt: null })
+  })
+
+  it('stores validity instants and rejects an inverted window', async () => {
+    const created = await createSubscription(env.DATA, {
+      userId: 'usr_1',
+      name: 'Window',
+      groupIds: [],
+      startsAt: 1_000,
+      expiresAt: 5_000,
+    }, { token: 'K'.repeat(43), now })
+    expect(created.subscription.startsAt).toBe(1_000)
+    expect(created.subscription.expiresAt).toBe(5_000)
+    await expect(updateSubscription(env.DATA, created.subscription.id, { expiresAt: 1_000 }, { actorRole: 'admin' }))
+      .rejects.toThrow('SUBSCRIPTION_WINDOW_INVALID')
+    const cleared = await updateSubscription(env.DATA, created.subscription.id, { startsAt: null, expiresAt: null }, { actorRole: 'admin' })
+    expect(cleared.startsAt).toBeNull()
+    expect(cleared.expiresAt).toBeNull()
   })
 
   it('allocates unique IDs and preserves an explicitly disabled subscription', async () => {

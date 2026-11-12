@@ -1,6 +1,6 @@
 import { CheckCircle2, Copy, KeyRound, Mail, Plus, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type UserSummary } from '../../app/api'
+import { api, ApiClientError, jsonBody, type AdminSubscription, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -18,6 +18,7 @@ import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
+import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 
 type InviteSummary = {
   id: string
@@ -45,6 +46,29 @@ function formatDate(value?: string) {
   return new Date(value).toLocaleString('zh-CN')
 }
 
+function UserSubscriptionList({ items }: { items: AdminSubscription[] }) {
+  return (
+    <details className="exp-user-subs">
+      <summary>{items.length} 个订阅</summary>
+      <ul>
+        {items.map((subscription) => {
+          const state = getExpiryState(subscription)
+          const badge = EXPIRY_BADGE[state.kind]
+          return (
+            <li className="exp-user-sub" key={subscription.id}>
+              <strong>{subscription.name}</strong>
+              <StatusBadge tone={badge.tone} size="sm">{badge.label}</StatusBadge>
+              <span>{state.expiresAt === null ? '永久有效' : `到期 ${formatExpiryTime(state.expiresAt)}`}</span>
+              {state.kind === 'pending' ? <span>{`将于 ${formatExpiryTime(state.startsAt)} 生效`}</span> : null}
+              {state.expiresAt !== null ? <span>{`剩余 ${formatRemaining(state.remainingDays ?? 0)}`}</span> : null}
+            </li>
+          )
+        })}
+      </ul>
+    </details>
+  )
+}
+
 function toggleId(current: Set<string>, id: string) {
   const next = new Set(current)
   if (next.has(id)) next.delete(id)
@@ -67,6 +91,9 @@ export function UsersPage() {
   const [batchProgress, setBatchProgress] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
+  const [subscriptionsReady, setSubscriptionsReady] = useState(false)
+  const [subscriptionNote, setSubscriptionNote] = useState('')
   const toast = useToast()
 
   const load = useCallback(async () => {
@@ -79,6 +106,14 @@ export function UsersPage() {
     setSelectedUsers((current) => new Set([...current].filter((id) => userResult.users.some((user) => user.id === id && user.role === 'user'))))
     setSelectedInvites((current) => new Set([...current].filter((id) => inviteResult.invites.some((invite) => invite.id === id))))
     setLoadError('')
+    try {
+      const subscriptionResult = await api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions')
+      setSubscriptions(subscriptionResult.subscriptions)
+      setSubscriptionsReady(true)
+      setSubscriptionNote('')
+    } catch (cause) {
+      setSubscriptionNote(errorMessage(cause, '订阅时效加载失败'))
+    }
   }, [])
 
   useEffect(() => {
@@ -100,6 +135,15 @@ export function UsersPage() {
     () => filteredUsers.filter((user) => user.role === 'user'),
     [filteredUsers],
   )
+  const subscriptionsByUser = useMemo(() => {
+    const grouped = new Map<string, AdminSubscription[]>()
+    for (const subscription of subscriptions) {
+      const owned = grouped.get(subscription.userId) ?? []
+      owned.push(subscription)
+      grouped.set(subscription.userId, owned)
+    }
+    return grouped
+  }, [subscriptions])
 
   useEffect(() => {
     const visible = new Set(selectableUsers.map((user) => user.id))
@@ -285,6 +329,16 @@ export function UsersPage() {
     },
     { key: 'createdAt', header: '创建时间', render: (user) => <span className="usr-time">{formatDate(user.createdAt)}</span> },
     {
+      key: 'subscriptions',
+      header: '订阅',
+      render: (user) => {
+        if (!subscriptionsReady) return <span className="exp-user-none">—</span>
+        const owned = subscriptionsByUser.get(user.id) ?? []
+        if (owned.length === 0) return <span className="exp-user-none">—</span>
+        return <UserSubscriptionList items={owned} />
+      },
+    },
+    {
       key: 'actions',
       header: '管理',
       align: 'right',
@@ -375,6 +429,7 @@ export function UsersPage() {
               )}
               actions={<BatchToolbar selectedCount={selectedUsers.size} totalCount={selectableUsers.length} onSelectAll={() => setSelectedUsers(new Set(selectableUsers.map((user) => user.id)))} onClear={() => setSelectedUsers(new Set())} actions={userActions} busy={mutating} progress={batchProgress} />}
             />
+            {subscriptionNote ? <StatusMessage tone="warning">{subscriptionNote}</StatusMessage> : null}
             {users.length === 0 ? (
               <div className="usr-empty"><EmptyState icon={Users} title="暂无用户" description="创建邀请并完成注册后，用户会显示在这里" /></div>
             ) : (
