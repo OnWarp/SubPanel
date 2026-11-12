@@ -531,7 +531,7 @@ function renderStructured(client: RenderClient, nodes: RenderNode[]): string {
   if (client === 'mihomo') {
     const proxies = nodes.map(mihomoProxy)
     const names = proxies.map((node) => node.name as string)
-    return stringifyYaml({ proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }] })
+    return stringifyYaml({ proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
   }
   if (client === 'singbox') {
     const outbounds = nodes.map(singboxOutbound)

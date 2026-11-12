@@ -40,10 +40,11 @@ describe('delivery renderers', () => {
       base(),
       base({ id: 'node_2', displayName: 'Demo', order: 2, server: 'ss2.example.com' }),
     ])
-    const document = parseYaml(result.body) as { proxies: Array<Record<string, unknown>>; 'proxy-groups': Array<Record<string, unknown>> }
+    const document = parseYaml(result.body) as { proxies: Array<Record<string, unknown>>; 'proxy-groups': Array<Record<string, unknown>>; rules: string[] }
     expect(document.proxies).toHaveLength(2)
     expect(document.proxies.map((node) => node.name)).toEqual(['Demo', 'Demo (2)'])
     expect(document['proxy-groups'][0]).toMatchObject({ type: 'select', proxies: ['Demo', 'Demo (2)'] })
+    expect(document.rules).toEqual(['MATCH,Proxy'])
     expect(result.diagnostics).toEqual([])
   })
 
