@@ -50,8 +50,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const touchStart = useRef(0)
   const isAdmin = user?.role === 'admin'
   const adminItems = adminSections.flatMap((section) => section.items)
-  const dockItems = adminItems.slice(0, 3)
-  const sheetItems = adminItems.slice(3)
+  const dockPaths = ['/dashboard', '/catalog/groups', '/users']
+  const dockItems = dockPaths
+    .map((path) => adminItems.find((item) => item.to === path))
+    .filter((item): item is NavItem => Boolean(item))
+    .map((item) => (item.to === '/users' ? { ...item, label: '用户' } : item))
+  const sheetItems = adminItems.filter((item) => !dockPaths.includes(item.to))
 
   useEffect(() => setSheetOpen(false), [location.pathname])
 
