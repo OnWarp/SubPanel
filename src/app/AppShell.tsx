@@ -16,10 +16,10 @@ const adminSections: NavSection[] = [
     { to: '/catalog/groups', label: '分组', icon: FolderKanban },
   ] },
   { label: '交付与权限', items: [
-    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
     { to: '/delivery/subscriptions', label: '订阅', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
     { to: '/users', label: '用户与邀请', icon: Users },
+    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
   ] },
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
