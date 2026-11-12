@@ -1,0 +1,269 @@
+/*
+ * APP management page. Every class is app- prefixed.
+ * Shared primitives stay in components.css.
+ */
+
+.app-page {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-data .sp-table-wrap {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+
+.app-filters {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-search {
+  flex: 1 1 180px;
+  width: auto;
+  min-width: 0;
+  max-width: 280px;
+}
+
+.app-chip-group {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-chip-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.app-empty-wrap {
+  padding: var(--space-6) var(--space-4);
+}
+
+.app-identity {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.app-mark {
+  position: relative;
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  font-weight: 750;
+}
+
+.app-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-versions {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.app-badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.app-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.app-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.app-span-2 {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.app-form input:not([type='checkbox']),
+.app-form select,
+.app-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.app-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.app-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+}
+
+.app-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.app-flag input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.app-platforms {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.app-platforms-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.app-platforms-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.app-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+}
+
+.app-platform-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-platform-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+
+.app-platform-card.is-active {
+  border-color: var(--color-border-strong);
+}
+
+.app-platform-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-platform-editor {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.app-platform-editor h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.app-inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-inline-confirm p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+@media (max-width: 760px) {
+  .app-data {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-data .section-heading {
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+  }
+
+  .app-filters,
+  .app-empty-wrap {
+    padding-right: 0;
+    padding-left: 0;
+    border-bottom: 0;
+  }
+
+  .app-data .sp-table-wrap {
+    overflow: visible;
+  }
+
+  .app-search,
+  .app-versions {
+    max-width: none;
+  }
+
+  .app-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .app-span-2 {
+    grid-column: auto;
+  }
+}
