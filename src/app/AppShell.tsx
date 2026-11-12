@@ -106,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <img className="brand-mark" src="/favicon.svg" alt="" />
-          <div><strong>SubPanel</strong><span>Control plane</span></div>
+          <div><strong>SubPanel</strong></div>
         </div>
         {isAdmin ? (
           <nav className="sidebar-nav" aria-label="主导航">
