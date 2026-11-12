@@ -11,6 +11,7 @@ import { SourcesPage } from '../features/catalog/SourcesPage'
 import { NodesPage } from '../features/catalog/NodesPage'
 import { GroupsPage } from '../features/catalog/GroupsPage'
 import { SubscriptionsPage } from '../features/delivery/SubscriptionsPage'
+import { AdminSharesPage } from '../features/delivery/AdminSharesPage'
 import { MySubscriptionsPage } from '../features/delivery/MySubscriptionsPage'
 import { SharePage } from '../features/shares/SharePage'
 import { readShareReturn } from '../features/shares/share-link'
@@ -60,6 +61,7 @@ export function AppRouter() {
       <Route path="/catalog/nodes" element={user?.role === 'admin' ? shell(<NodesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/groups" element={user?.role === 'admin' ? shell(<GroupsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/subscriptions" element={user?.role === 'admin' ? shell(<SubscriptionsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/users" element={user?.role === 'admin' ? shell(<UsersPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/account" element={shell(<AccountPage />)} />
