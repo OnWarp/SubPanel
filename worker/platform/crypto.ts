@@ -1,8 +1,17 @@
+import { env as workerEnv } from 'cloudflare:workers'
 import { z } from 'zod'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const CRYPTO_KEY = 'system:crypto'
+
+// KV stores each key as unpadded base64url. Env secrets accept that form or standard base64.
+const ENV_CRYPTO_CREATED_AT = '1970-01-01T00:00:00.000Z'
+
+export type CryptoSecrets = {
+  DATA_ENCRYPTION_KEY?: string
+  SESSION_KEY?: string
+}
 
 const cryptoMaterialSchema = z.object({
   schemaVersion: z.literal(1),
@@ -54,13 +63,55 @@ function parseCryptoMaterial(raw: string): CryptoMaterial {
   }
 }
 
-export async function readCryptoMaterial(kv: KVNamespace): Promise<CryptoMaterial> {
+function nonemptySecret(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+function normalizeEncodedKey(value: string): string {
+  return value.replace(/=+$/u, '').replaceAll('+', '-').replaceAll('/', '_')
+}
+
+function readAmbientSecrets(): CryptoSecrets {
+  try {
+    return {
+      DATA_ENCRYPTION_KEY: workerEnv.DATA_ENCRYPTION_KEY,
+      SESSION_KEY: workerEnv.SESSION_KEY,
+    }
+  } catch {
+    return {}
+  }
+}
+
+function materialFromSecrets(secrets: CryptoSecrets): CryptoMaterial | undefined {
+  const encryptionKey = nonemptySecret(secrets.DATA_ENCRYPTION_KEY)
+  const sessionKey = nonemptySecret(secrets.SESSION_KEY)
+  if (encryptionKey === undefined && sessionKey === undefined) return undefined
+  if (encryptionKey === undefined || sessionKey === undefined) throw new Error('Crypto material is corrupt')
+  return parseCryptoMaterial(JSON.stringify({
+    schemaVersion: 1,
+    encryptionKey: normalizeEncodedKey(encryptionKey),
+    sessionKey: normalizeEncodedKey(sessionKey),
+    createdAt: ENV_CRYPTO_CREATED_AT,
+  }))
+}
+
+function resolveSecrets(explicit: CryptoSecrets | undefined): CryptoSecrets {
+  return explicit ?? readAmbientSecrets()
+}
+
+export async function readCryptoMaterial(kv: KVNamespace, secrets?: CryptoSecrets): Promise<CryptoMaterial> {
+  const fromSecrets = materialFromSecrets(resolveSecrets(secrets))
+  if (fromSecrets) return fromSecrets
   const stored = await kv.get(CRYPTO_KEY)
   if (stored === null) throw new Error('Crypto material is missing')
   return parseCryptoMaterial(stored)
 }
 
-export async function getOrCreateCryptoMaterial(kv: KVNamespace): Promise<CryptoMaterial> {
+export async function getOrCreateCryptoMaterial(kv: KVNamespace, secrets?: CryptoSecrets): Promise<CryptoMaterial> {
+  const fromSecrets = materialFromSecrets(resolveSecrets(secrets))
+  if (fromSecrets) return fromSecrets
   const stored = await kv.get(CRYPTO_KEY)
   if (stored !== null) return parseCryptoMaterial(stored)
 
