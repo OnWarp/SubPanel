@@ -16,6 +16,8 @@ import { AdminSharesPage } from '../features/delivery/AdminSharesPage'
 import { MySubscriptionsPage } from '../features/delivery/MySubscriptionsPage'
 import { SharePage } from '../features/shares/SharePage'
 import { readShareReturn } from '../features/shares/share-link'
+import { HomePage } from '../features/user/HomePage'
+import { MinePage } from '../features/user/MinePage'
 import { AppShell } from './AppShell'
 import { useSession } from './session'
 
@@ -23,7 +25,7 @@ function RootRedirect() {
   const { initialized, user } = useSession()
   const shareReturn = readShareReturn()
   if (shareReturn) return <Navigate to={shareReturn} replace />
-  const home = user?.role === 'admin' ? '/dashboard' : '/subscriptions'
+  const home = user?.role === 'admin' ? '/dashboard' : '/home'
   const signedOut = initialized ? '/login' : '/setup'
   return <Navigate to={user ? home : signedOut} replace />
 }
@@ -44,7 +46,7 @@ export function AppRouter() {
     )
   }
 
-  const home = user?.role === 'admin' ? '/dashboard' : '/subscriptions'
+  const home = user?.role === 'admin' ? '/dashboard' : '/home'
   const signedOut = initialized ? '/login' : '/setup'
   const returnedShare = readShareReturn()
   const shell = (content: ReactNode) => user ? <AppShell>{content}</AppShell> : <Navigate to={signedOut} replace />
@@ -65,6 +67,8 @@ export function AppRouter() {
       <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/users" element={user?.role === 'admin' ? shell(<UsersPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/apps" element={user ? shell(<UserAppsPage />) : <Navigate to={signedOut} replace />} />
+      <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/account" element={shell(<AccountPage />)} />
       <Route path="*" element={<Navigate to={user ? home : signedOut} replace />} />
