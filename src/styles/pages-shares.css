@@ -1,0 +1,372 @@
+/*
+ * Share drawer and public share page. Every class is sh- prefixed.
+ * Shared primitives stay in components.css.
+ */
+
+.sh-status-actions {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.sh-drawer {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.sh-drawer-lead,
+.sh-reveal,
+.sh-form,
+.sh-filters,
+.sh-list {
+  min-width: 0;
+}
+
+.sh-reveal,
+.sh-form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-subtle);
+}
+
+.sh-reveal p,
+.sh-hint,
+.sh-switches legend,
+.sh-list-title {
+  margin: 0;
+}
+
+.sh-hint,
+.sh-switches legend,
+.sh-list-title {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.sh-list-title {
+  font-weight: 700;
+}
+
+.sh-reveal-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-form input,
+.sh-reveal input,
+.sh-manual input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.sh-reveal input,
+.sh-manual input {
+  flex: 1 1 180px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+}
+
+.sh-days,
+.sh-chips,
+.sh-switches,
+.sh-client-actions,
+.sh-row-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sh-switches {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: var(--space-3);
+}
+
+.sh-public > p {
+  margin: 0;
+}
+
+.sh-switch {
+  position: relative;
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.sh-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sh-switch-ui {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+}
+
+.sh-switch-ui::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+}
+
+.sh-switch input:checked + .sh-switch-ui {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.sh-switch input:checked + .sh-switch-ui::after {
+  transform: translateX(18px);
+  background: var(--color-primary-contrast);
+}
+
+.sh-switch input:focus-visible + .sh-switch-ui {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.sh-switch-text {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  font-weight: 650;
+}
+
+.sh-filters {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.sh-share-table {
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sh-share-table table {
+  min-width: 0;
+}
+
+.sh-share-table .sp-table thead {
+  display: none;
+}
+
+.sh-share-table .sp-table,
+.sh-share-table .sp-table tbody,
+.sh-share-table .sp-table tr,
+.sh-share-table .sp-table td {
+  display: block;
+  width: auto;
+}
+
+.sh-share-table .sp-table tbody tr {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.sh-share-table .sp-table tbody tr:hover td {
+  background: transparent;
+}
+
+.sh-share-table .sp-table td {
+  display: grid;
+  height: auto;
+  padding: var(--space-2) 0;
+  grid-template-columns: minmax(72px, 34%) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  border-bottom: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.sh-share-table .sp-table td::before {
+  content: attr(data-label);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.sh-share-table .sh-row-actions .button {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: var(--font-xs);
+}
+
+.sh-state {
+  min-width: 0;
+}
+
+.auth-page:has(.sh-public) .auth-panel {
+  width: min(560px, calc(100% - 32px));
+}
+
+.auth-page:has(.sh-public) .auth-heading h1,
+.sh-meta dd,
+.sh-nodes li,
+.sh-client span {
+  overflow-wrap: anywhere;
+}
+
+.sh-public {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.sh-meta {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.sh-meta div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sh-meta dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.sh-meta dd {
+  margin: 0;
+}
+
+.sh-nodes {
+  display: grid;
+  max-height: min(240px, 40vh);
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  gap: var(--space-2);
+  list-style: none;
+}
+
+.sh-nodes li {
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ctl);
+  background: var(--color-surface);
+}
+
+.sh-clients {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+.sh-clients h2 {
+  margin: 0;
+  font-size: var(--font-md);
+}
+
+.sh-client {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.sh-client .sh-client-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+
+.sh-client span {
+  font-weight: 700;
+}
+
+.auth-panel .sh-client-actions .button {
+  width: auto;
+  height: auto;
+  min-height: 34px;
+  flex: 0 0 auto;
+}
+
+.sh-manual {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+@media (max-width: 760px) {
+  .sh-status-actions {
+    width: 100%;
+  }
+
+  .sh-form input,
+  .sh-reveal input,
+  .sh-manual input,
+  .sh-share-table .sh-row-actions .button,
+  .auth-panel .sh-client-actions .button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sh-reveal-line .button,
+  .sh-client .sh-client-actions {
+    width: 100%;
+  }
+
+  .auth-panel .sh-client-actions .button {
+    flex: 1 1 96px;
+  }
+
+  .sh-share-table .sp-table td {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+}
