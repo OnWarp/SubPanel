@@ -9,6 +9,7 @@ import { readAccounts } from './accounts/repository.js'
 import { ApiError } from './platform/api-error.js'
 import { noStore, originGuard, securityHeaders } from './platform/http.js'
 import { adminDeliveryRoutes, userDeliveryRoutes } from './delivery/routes.js'
+import { userNodeRoutes } from './delivery/user-nodes.js'
 import { adminAppRoutes, userAppRoutes } from './apps/routes.js'
 import { adminShareRoutes, shareRoutes } from './shares/routes.js'
 import { readCronStatus } from './operations/cron.js'
@@ -42,6 +43,8 @@ app.use('/api/subscriptions', requireAuth)
 app.use('/api/subscriptions/*', requireAuth)
 app.use('/api/user/subscriptions', requireAuth)
 app.use('/api/user/subscriptions/*', requireAuth)
+app.use('/api/user/nodes', requireAuth)
+app.use('/api/user/nodes/*', requireAuth)
 app.use('/api/apps', requireAuth)
 app.use('/api/apps/*', requireAuth)
 
@@ -57,6 +60,7 @@ app.route('/api/account/delivery', userDeliveryRoutes)
 app.route('/api/account/delivery/subscriptions', userDeliveryRoutes)
 app.route('/api/subscriptions', userDeliveryRoutes)
 app.route('/api/user/subscriptions', userDeliveryRoutes)
+app.route('/api/user/nodes', userNodeRoutes)
 app.route('/api/shares', shareRoutes)
 app.route('/api/admin', adminShareRoutes)
 app.route('/api/apps', userAppRoutes)

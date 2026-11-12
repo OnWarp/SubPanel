@@ -26,9 +26,17 @@ const adminSections: NavSection[] = [
   { label: '账户', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }] },
 ]
 
-const userNav: NavItem[] = [
+const userDock: NavItem[] = [
   { to: '/home', label: '首页', icon: Home },
   { to: '/subscriptions', label: '订阅', icon: Rss },
+  { to: '/apps', label: 'APP 下载', icon: Download },
+  { to: '/me', label: '我的', icon: UserRound },
+]
+
+const userSidebar: NavItem[] = [
+  { to: '/home', label: '首页', icon: Home },
+  { to: '/subscriptions', label: '订阅', icon: Rss },
+  { to: '/nodes', label: '节点', icon: Network },
   { to: '/apps', label: 'APP 下载', icon: Download },
   { to: '/me', label: '我的', icon: UserRound },
 ]
@@ -115,7 +123,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         ) : (
           <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
-            {userNav.map(({ to, label, icon: Icon }) => (
+            {userSidebar.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} end className={({ isActive }) => isActive ? 'active' : undefined}>
                 <Icon aria-hidden="true" size={17} /><span>{label}</span>
               </NavLink>
@@ -145,7 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
       ) : (
         <nav className="dock nav-dock" aria-label="快捷导航">
-          {userNav.map(({ to, label, icon: Icon }) => (
+          {userDock.map(({ to, label, icon: Icon }) => (
             <NavLink key={to} to={to} end className={({ isActive }) => `dock-item nav-dock-item${isActive ? ' active' : ''}`}>
               <Icon aria-hidden="true" size={18} /><span>{label}</span>
             </NavLink>

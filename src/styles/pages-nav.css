@@ -1,5 +1,6 @@
 /*
- * User navigation, home, and mine. Every class is nav- prefixed.
+ * User navigation, home, mine, and my-nodes.
+ * Navigation classes use the nav- prefix. My-nodes classes use the node- prefix.
  * Shared shell rules stay in app.css. Admin dock and sidebar are untouched.
  */
 
@@ -218,6 +219,153 @@
 
 @media (min-width: 900px) {
   .nav-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.node-page {
+  width: min(100%, 960px);
+  min-width: 0;
+  margin-inline: auto;
+}
+
+.node-page > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.node-summary {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.node-summary-item {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 140px;
+  gap: 2px;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.node-summary-item span {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.node-summary-item strong {
+  overflow-wrap: anywhere;
+  font-size: var(--font-title);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.node-list { min-width: 0; }
+
+.node-toolbar {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.node-search {
+  width: 100%;
+  max-width: 420px;
+}
+
+.node-page .node-filters {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.node-filter-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.node-filter-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+.node-page .sp-chip {
+  max-width: 100%;
+  height: auto;
+  min-height: 30px;
+  padding-block: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.node-name,
+.node-missing {
+  overflow-wrap: anywhere;
+}
+
+.node-list .node-table {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.node-page .sp-badge {
+  max-width: 100%;
+  height: auto;
+  min-height: 22px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 761px) {
+  .node-table .sp-table { table-layout: fixed; }
+
+  .node-table .sp-table th,
+  .node-table .sp-table td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 760px) {
+  .node-search { max-width: none; }
+
+  .node-list {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .node-list .section-heading {
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+  }
+
+  .node-toolbar {
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+  }
+
+  .node-table {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .node-table .sp-table td { overflow-wrap: anywhere; }
 }
 
 @media (max-width: 760px) {

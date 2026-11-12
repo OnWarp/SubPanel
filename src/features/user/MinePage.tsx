@@ -1,4 +1,4 @@
-import { ChevronRight, Download, LogOut, Share2, ShieldCheck, UserRound } from 'lucide-react'
+import { ChevronRight, Download, LogOut, Network, Share2, ShieldCheck, UserRound } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiClientError } from '../../app/api'
@@ -47,6 +47,11 @@ export function MinePage() {
         <Link className="nav-menu-item" to="/subscriptions">
           <Share2 aria-hidden="true" size={18} />
           <span>我的分享</span>
+          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
+        </Link>
+        <Link className="nav-menu-item" to="/nodes">
+          <Network aria-hidden="true" size={18} />
+          <span>我的节点</span>
           <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
         </Link>
         <Link className="nav-menu-item" to="/apps">

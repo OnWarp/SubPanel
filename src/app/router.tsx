@@ -18,6 +18,7 @@ import { SharePage } from '../features/shares/SharePage'
 import { readShareReturn } from '../features/shares/share-link'
 import { HomePage } from '../features/user/HomePage'
 import { MinePage } from '../features/user/MinePage'
+import { MyNodesPage } from '../features/user/MyNodesPage'
 import { AppShell } from './AppShell'
 import { useSession } from './session'
 
@@ -70,6 +71,7 @@ export function AppRouter() {
       <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/nodes" element={user?.role === 'user' ? shell(<MyNodesPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/account" element={shell(<AccountPage />)} />
       <Route path="*" element={<Navigate to={user ? home : signedOut} replace />} />
     </Routes>
