@@ -339,6 +339,89 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(await response.text()).toContain('Edited node')
   })
 
+  it('enforces subscription start and expiry on public delivery and share export', async () => {
+    const admin = await login()
+    const userCookie = await createUserCookie(admin)
+    const users = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(admin))).json() as { users: Array<{ id: string; username: string }> }
+    const userId = users.users.find((user) => user.username === 'delivery-user')?.id
+    expect(userId).toBeTruthy()
+    const groupId = await createCatalogGroup(admin)
+    const now = Date.now()
+    const day = 86_400_000
+
+    const inverted = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId, name: 'Inverted', groupIds: [groupId], startsAt: now + 10 * day, expiresAt: now + day }, withCookie(admin)),
+    )
+    expect(inverted.status).toBe(422)
+    expect(await inverted.json()).toEqual({ error: { code: 'SUBSCRIPTION_WINDOW_INVALID', message: '到期时间必须晚于生效时间' } })
+
+    const pendingResponse = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId, name: 'Pending', groupIds: [groupId], startsAt: now + 2 * day, expiresAt: now + 10 * day }, withCookie(admin)),
+    )
+    expect(pendingResponse.status).toBe(201)
+    const pending = await pendingResponse.json() as { subscription: { id: string; startsAt: number | null; expiresAt: number | null }; token: string }
+    expect(pending.subscription).toMatchObject({ startsAt: now + 2 * day, expiresAt: now + 10 * day })
+    const pendingFetch = await exports.default.fetch(`${TEST_ORIGIN}/sub/${pending.token}/mihomo`)
+    expect(pendingFetch.status).toBe(403)
+    expect(await pendingFetch.json()).toEqual({ error: { code: 'SUB_NOT_STARTED', message: '订阅尚未生效' } })
+
+    const expiredResponse = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId, name: 'Expired', groupIds: [groupId], expiresAt: now - day }, withCookie(admin)),
+    )
+    expect(expiredResponse.status).toBe(201)
+    const expired = await expiredResponse.json() as { subscription: { id: string; expiresAt: number | null }; token: string }
+    expect(expired.subscription.expiresAt).toBe(now - day)
+    const expiredFetch = await exports.default.fetch(`${TEST_ORIGIN}/sub/${expired.token}/mihomo`)
+    expect(expiredFetch.status).toBe(410)
+    expect(await expiredFetch.json()).toEqual({ error: { code: 'SUB_EXPIRED', message: '订阅已过期' } })
+
+    const foreverResponse = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/subscriptions`,
+      jsonRequest({ userId, name: 'Forever', groupIds: [groupId] }, withCookie(admin)),
+    )
+    expect(foreverResponse.status).toBe(201)
+    const forever = await foreverResponse.json() as { subscription: { id: string; startsAt: number | null; expiresAt: number | null }; token: string }
+    expect(forever.subscription.startsAt).toBeNull()
+    expect(forever.subscription.expiresAt).toBeNull()
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${forever.token}/mihomo`)).status).toBe(200)
+
+    const mine = await (await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(userCookie))).json() as { subscriptions: Array<{ id: string; startsAt: number | null; expiresAt: number | null }> }
+    expect(mine.subscriptions.find((item) => item.id === pending.subscription.id)).toMatchObject({ startsAt: now + 2 * day, expiresAt: now + 10 * day })
+    expect(mine.subscriptions.find((item) => item.id === forever.subscription.id)).toMatchObject({ startsAt: null, expiresAt: null })
+
+    async function shareExport(subscriptionId: string): Promise<Response> {
+      const created = await exports.default.fetch(
+        `${TEST_ORIGIN}/api/shares`,
+        jsonRequest({ subscriptionId }, withCookie(userCookie)),
+      )
+      expect(created.status).toBe(201)
+      const token = (await created.json() as { token: string }).token
+      return exports.default.fetch(`${TEST_ORIGIN}/api/shares/${token}/export?client=mihomo`)
+    }
+
+    const pendingShare = await shareExport(pending.subscription.id)
+    expect(pendingShare.status).toBe(403)
+    expect(await pendingShare.json()).toEqual({ error: { code: 'SUB_NOT_STARTED', message: '订阅尚未生效' } })
+    const expiredShare = await shareExport(expired.subscription.id)
+    expect(expiredShare.status).toBe(410)
+    expect(await expiredShare.json()).toEqual({ error: { code: 'SUB_EXPIRED', message: '订阅已过期' } })
+    expect((await shareExport(forever.subscription.id)).status).toBe(200)
+
+    const raw = JSON.parse(await env.DATA.get('state:delivery') ?? '{}') as { subscriptions: Array<Record<string, unknown>> }
+    for (const subscription of raw.subscriptions) {
+      delete subscription.startsAt
+      delete subscription.expiresAt
+    }
+    await env.DATA.put('state:delivery', JSON.stringify(raw))
+    const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ startsAt: number | null; expiresAt: number | null }> }
+    expect(listed.subscriptions.every((subscription) => subscription.startsAt === null && subscription.expiresAt === null)).toBe(true)
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${expired.token}/mihomo`)).status).toBe(200)
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${forever.token}/mihomo`)).status).toBe(200)
+  }, 30_000)
+
   it('removes deleted group references from subscriptions', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)

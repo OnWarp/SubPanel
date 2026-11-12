@@ -18,21 +18,26 @@ import {
   DeliveryError,
 } from './service.js'
 import { compiledKey } from './repository.js'
-import { compiledArtifactSchema } from './schema.js'
+import { compiledArtifactSchema, epochMillisSchema } from './schema.js'
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
+const epochField = epochMillisSchema.nullable().optional()
 const createSchema = z.object({
   userId: z.string().regex(/^usr_[1-9]\d*$/),
   name: z.string().trim().min(1).max(128),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)),
   enabled: z.boolean().optional(),
   defaultClient: client.optional(),
+  startsAt: epochField,
+  expiresAt: epochField,
 })
 const updateSchema = z.object({
   name: z.string().trim().min(1).max(128).optional(),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)).optional(),
   enabled: z.boolean().optional(),
   defaultClient: client.optional(),
+  startsAt: epochField,
+  expiresAt: epochField,
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 const emptySchema = z.object({}).default({})
 
@@ -53,6 +58,7 @@ function mapError(error: unknown): never {
   if (error instanceof DeliveryError) {
     const statuses: Record<string, 400 | 403 | 404 | 409 | 422> = {
       SUBSCRIPTION_INVALID: 422,
+      SUBSCRIPTION_WINDOW_INVALID: 422,
       SUBSCRIPTION_TOKEN_INVALID: 422,
       SUBSCRIPTION_TOKEN_COLLISION: 409,
       SUBSCRIPTION_NOT_FOUND: 404,
@@ -64,6 +70,7 @@ function mapError(error: unknown): never {
     const messages: Record<string, string> = {
       SUBSCRIPTION_FORBIDDEN: '无权操作该订阅',
       SUBSCRIPTION_NOT_FOUND: '订阅不存在',
+      SUBSCRIPTION_WINDOW_INVALID: '到期时间必须晚于生效时间',
       USER_NOT_FOUND: '用户不存在',
       GROUP_NOT_FOUND: '分组不存在',
     }
@@ -122,6 +129,8 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     enabled: subscription.enabled,
     defaultClient: subscription.defaultClient,
     revision: subscription.revision,
+    startsAt: subscription.startsAt,
+    expiresAt: subscription.expiresAt,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
     links,
