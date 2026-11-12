@@ -339,8 +339,7 @@ export function SourcesPage() {
     { key: 'format', header: '格式', render: (source) => formatLabel(source.detectedFormat) },
     { key: 'nodes', header: '节点', render: (source) => sourceNodeCounts.get(source.id) ?? 0 },
     { key: 'status', header: '状态', render: (source) => <StatusBadge tone={statusTone(source)} size="sm">{sourceStatus(source)}</StatusBadge> },
-    { key: 'lastSuccess', header: '最近成功', render: (source) => formatDate(source.lastSuccessAt) },
-    { key: 'lastAttempt', header: '最近尝试', render: (source) => formatDate(source.lastAttemptAt) },
+    { key: 'lastSync', header: '最近同步', render: (source) => formatDate(source.lastSuccessAt) },
     {
       key: 'actions',
       header: '操作',
