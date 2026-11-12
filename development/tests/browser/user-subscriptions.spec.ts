@@ -70,9 +70,11 @@ test.describe.serial('Ordinary user subscription workspace', () => {
 
     await page.getByRole('button', { name: '退出登录' }).click()
     await login(page, 'alice', userPassword)
+    await expect(page).toHaveURL(/\/home$/)
+    await page.getByRole('link', { name: '订阅', exact: true }).click()
     await expect(page).toHaveURL(/\/subscriptions$/)
     await expect(page.getByRole('heading', { name: '我的订阅' })).toBeVisible()
-    await expect(page.getByRole('link', { name: '我的订阅' })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('link', { name: '用户与邀请' })).toHaveCount(0)
     const automaticLink = page.getByRole('textbox', { name: '自动订阅链接' })
     const originalLink = await automaticLink.inputValue()

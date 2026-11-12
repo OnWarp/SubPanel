@@ -84,7 +84,7 @@ test.describe.serial('SubPanel account shell', () => {
     await page.getByLabel('用户名', { exact: true }).fill('alice')
     await page.getByLabel('密码').fill('alice correct password')
     await page.getByRole('button', { name: '登录' }).click()
-    await expect(page).toHaveURL(/\/subscriptions$/)
+    await expect(page).toHaveURL(/\/home$/)
     await expect(page.getByRole('link', { name: '用户与邀请' })).toHaveCount(0)
 
     await page.getByRole('button', { name: '退出登录' }).click()
