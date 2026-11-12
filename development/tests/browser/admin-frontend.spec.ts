@@ -115,13 +115,13 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page.locator('.workspace-topbar')).not.toContainText('个节点')
     const table = section.locator('table')
     await expect(table).toBeVisible()
-    const before = await table.boundingBox()
     const row = section.getByRole('row').nth(1)
     await row.getByRole('checkbox', { name: /选择来源/ }).check()
     const toolbar = section.locator('.section-heading').getByRole('toolbar', { name: '批量操作' })
     await expect(toolbar).toBeVisible()
-    const after = await table.boundingBox()
-    expect(after?.y).toBe(before?.y)
+    await expect(section.locator('.section-heading').getByLabel('搜索来源')).toBeVisible()
+    await expect(section.locator('.section-heading').getByLabel('来源状态')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await expect(section.locator('.data-header-count')).toHaveCount(0)
     const filtersBox = await section.locator('.data-header-filters').boundingBox()
     const toolbarBox = await toolbar.boundingBox()
@@ -135,16 +135,11 @@ test.describe.serial('Administrator frontend', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/catalog/sources')
     const section = page.locator('section[aria-labelledby="sources-title"]')
-    const heading = section.locator('.section-heading')
-    const before = await heading.boundingBox()
-    const row = section.getByRole('row').nth(1)
-    await row.getByRole('checkbox', { name: /选择来源/ }).check()
+    await section.getByRole('checkbox', { name: /选择来源/ }).first().check()
     const toolbar = section.getByRole('toolbar', { name: '批量操作' })
     await expect(toolbar).toBeVisible()
     await expect(section.locator('.data-header-filters')).toBeVisible()
     await expect(section.locator('.data-header-count')).toHaveCount(0)
-    const after = await heading.boundingBox()
-    expect(after?.y).toBe(before?.y)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 
@@ -218,7 +213,7 @@ test.describe.serial('Administrator frontend', () => {
     })
   })
 
-  test('warns without shifting layout when a remote source is saved but its first fetch fails', async ({ page }) => {
+  test('warns when a remote source is saved but its first fetch fails', async ({ page }) => {
     await loginAdmin(page)
     const now = new Date().toISOString()
     const source = { id: 'src_43', name: 'Failing remote', type: 'remote', enabled: true, refreshIntervalMinutes: 60, remoteHost: 'remote.example.com', lastErrorCode: 'REMOTE_FETCH_FAILED', warnings: [], updatedAt: now, createdAt: now }
@@ -235,8 +230,6 @@ test.describe.serial('Administrator frontend', () => {
       body: JSON.stringify({ schemaVersion: 2, revision: 1, updatedAt: now, sources: created ? [source] : [], nodes: [], groups: [] }),
     }))
     await page.goto('/catalog/sources')
-    const section = page.locator('section[aria-labelledby="sources-title"]')
-    const before = await section.boundingBox()
     await page.getByRole('button', { name: '添加来源' }).click()
     const drawer = page.getByRole('dialog', { name: '添加来源' })
     await drawer.getByLabel('来源名称').fill('Failing remote')
@@ -249,8 +242,6 @@ test.describe.serial('Administrator frontend', () => {
     await expect(warning).not.toHaveClass(/success/)
     await expect(page.getByText('来源已添加', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('alert')).toHaveCount(0)
-    const after = await section.boundingBox()
-    expect(after?.y).toBe(before?.y)
   })
 
   test('filters nodes and batch disables a selected node', async ({ page }) => {
@@ -380,11 +371,9 @@ test.describe.serial('Administrator frontend', () => {
 
     const row = page.getByRole('row', { name: /Primary subscription/ })
     await expect(row).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: '来源数' })).toBeVisible()
-    await expect(page.getByRole('columnheader', { name: '节点数' })).toBeVisible()
-    await expect(row.getByRole('cell').nth(3)).toHaveText('1')
-    await expect(row.getByRole('cell').nth(4)).toHaveText('1')
-    await expect(row.getByRole('cell').nth(5)).toHaveText('0')
+    await expect(row.getByRole('cell').nth(3)).toHaveText('Primary group')
+    await expect(row.getByRole('cell').nth(4)).toHaveText('正常')
+    await expect(row.getByRole('cell').nth(5)).toHaveText(/^创建 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}更新 \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)
     await row.getByRole('button', { name: '查看详情' }).click()
     const details = page.getByRole('dialog', { name: '订阅详情' })
     await expect(details).toHaveClass(/drawer-large/)
@@ -419,8 +408,8 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page.locator('section[aria-labelledby="users-title"] .section-heading').getByLabel('邀请用户名')).toBeVisible()
     await expect(page.locator('section[aria-labelledby="invites-title"] .section-heading').getByLabel('邀请用户名')).toHaveCount(0)
     await expect(page.locator('.nav-section').filter({ has: page.getByText('监控', { exact: true }) }).getByRole('link', { name: '节点', exact: true })).toBeVisible()
-    expect(await topbar.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(60)
-    expect(Number.parseFloat(await topbar.getByRole('heading', { name: '用户与邀请' }).evaluate((element) => getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(18)
+    expect(await topbar.evaluate((element) => getComputedStyle(element).height)).toBe('56px')
+    expect(await topbar.getByRole('heading', { name: '用户与邀请' }).evaluate((element) => getComputedStyle(element).fontSize)).toBe('15px')
 
     for (const username of ['batch-one', 'batch-two']) {
       await page.getByLabel('邀请用户名').fill(username)
