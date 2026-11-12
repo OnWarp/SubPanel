@@ -94,8 +94,7 @@ export function HomePage() {
               <div className="nav-status-head">
                 <h3 className="nav-status-name">{current.name}</h3>
                 <span className="nav-badges">
-                  <StatusBadge tone={current.enabled ? 'success' : 'muted'}>{current.enabled ? '正常' : '已停用'}</StatusBadge>
-                  <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
+                  {current.enabled ? <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge> : <StatusBadge tone="muted">已停用</StatusBadge>}
                 </span>
               </div>
               <p className="nav-group">{groupSummary(current.groupIds)}</p>
