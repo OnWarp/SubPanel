@@ -67,11 +67,6 @@ const CLIENT_LABELS: Record<string, string> = {
   shadowrocket: 'Shadowrocket',
   generic: '通用 URI',
 }
-const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'enabled', label: '已启用' },
-  { key: 'disabled', label: '已停用' },
-]
 const EXPIRY_FILTERS: Array<{ key: ExpiryFilter; label: string }> = [
   { key: 'all', label: '全部' },
   { key: 'active', label: '正常' },
@@ -79,13 +74,24 @@ const EXPIRY_FILTERS: Array<{ key: ExpiryFilter; label: string }> = [
   { key: 'soon', label: '即将到期' },
   { key: 'expired', label: '已过期' },
   { key: 'permanent', label: '永久有效' },
-  { key: '7', label: '7 天内' },
-  { key: '15', label: '15 天内' },
-  { key: '30', label: '30 天内' },
 ]
+type UnifiedFilter = 'all' | 'disabled' | Exclude<ExpiryFilter, 'all'>
+const UNIFIED_FILTERS: Array<{ key: UnifiedFilter; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'active', label: '正常' },
+  { key: 'pending', label: '未生效' },
+  { key: 'expiring', label: '即将到期' },
+  { key: 'expired', label: '已过期' },
+  { key: 'permanent', label: '永久有效' },
+  { key: 'disabled', label: '已停用' },
+]
+
 const EMPTY_FORM: SubscriptionForm = { userId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
 
+const LEGACY_EXPIRY_WINDOWS: ExpiryFilter[] = ['7', '15', '30']
+
 function parseExpiryFilter(value: string | null): ExpiryFilter {
+  if (LEGACY_EXPIRY_WINDOWS.includes(value as ExpiryFilter)) return value as ExpiryFilter
   return EXPIRY_FILTERS.some((filter) => filter.key === value) ? value as ExpiryFilter : 'all'
 }
 
@@ -193,6 +199,20 @@ export function SubscriptionsPage() {
       next.delete('enabled')
       return next
     }, { replace: true })
+  }
+
+  const activeUnified: UnifiedFilter = statusFilter === 'disabled'
+    ? 'disabled'
+    : expiryFilter === 'all'
+      ? 'all'
+      : LEGACY_EXPIRY_WINDOWS.includes(expiryFilter)
+        ? 'expiring'
+        : expiryFilter
+  const selectUnified = (key: UnifiedFilter) => {
+    if (key === 'all') { setStatusFilter('all'); selectExpiry('all'); return }
+    if (key === 'disabled') { setStatusFilter('disabled'); selectExpiry('all'); return }
+    setStatusFilter('enabled')
+    selectExpiry(key)
   }
 
   const openCreate = () => {
@@ -467,14 +487,9 @@ export function SubscriptionsPage() {
           filters={subscriptions.length > 0 ? (
             <FilterBar className="del-filters">
               <SearchInput value={query} onChange={setQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
-              <div className="del-status-filters" role="group" aria-label="启用状态">
-                {STATUS_FILTERS.map((filter) => (
-                  <FilterChip key={filter.key} active={statusFilter === filter.key} onClick={() => setStatusFilter(filter.key)}>{filter.label}</FilterChip>
-                ))}
-              </div>
-              <div className="del-status-filters" role="group" aria-label="订阅时效">
-                {EXPIRY_FILTERS.map((filter) => (
-                  <FilterChip key={filter.key} active={expiryFilter === filter.key} onClick={() => selectExpiry(filter.key)}>{filter.label}</FilterChip>
+              <div className="del-status-filters" role="group" aria-label="订阅状态">
+                {UNIFIED_FILTERS.map((filter) => (
+                  <FilterChip key={filter.key} active={activeUnified === filter.key} onClick={() => selectUnified(filter.key)}>{filter.label}</FilterChip>
                 ))}
               </div>
               {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
