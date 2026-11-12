@@ -105,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <img className="brand-mark" src="/favicon.svg" alt="" />
+          <img className="brand-mark" src="/logo.png" alt="" />
           <div><strong>SubPanel</strong></div>
         </div>
         {isAdmin ? (
