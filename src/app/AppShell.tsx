@@ -26,7 +26,11 @@ const adminSections: NavSection[] = [
 
 const userDock: NavItem[] = [
   { to: '/home', label: '首页', icon: Home },
+  { to: '/nodes', label: '节点', icon: Network },
   { to: '/subscriptions', label: '订阅', icon: Rss },
+]
+
+const userSheetItems: NavItem[] = [
   { to: '/apps', label: 'APP 下载', icon: Download },
   { to: '/me', label: '我的', icon: UserRound },
 ]
@@ -160,9 +164,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Icon aria-hidden="true" size={18} /><span>{label}</span>
             </NavLink>
           ))}
+          <button ref={moreButton} className="dock-item nav-dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
+            <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
+          </button>
         </nav>
       )}
-      {isAdmin && sheetOpen ? <>
+      {sheetOpen ? <>
         <button className="dock-backdrop" type="button" aria-label="关闭更多导航" onClick={() => setSheetOpen(false)} />
         <section
           ref={sheet}
@@ -175,8 +182,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           onTouchEnd={finishSwipe}
         >
           <span className="dock-sheet-handle" aria-hidden="true" />
-          {sheetItems.length ? <nav className="dock-sheet-nav" aria-label="主导航">
-            {sheetItems.map(({ to, label, icon: Icon }) => (
+          {(isAdmin ? sheetItems : userSheetItems).length ? <nav className="dock-sheet-nav" aria-label="主导航">
+            {(isAdmin ? sheetItems : userSheetItems).map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
                 <Icon aria-hidden="true" size={19} /><span>{label}</span>
               </Link>
