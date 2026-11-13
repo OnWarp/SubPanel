@@ -4,6 +4,8 @@ import { decodeSettingJson, getSetting, putSetting } from './settings-repository
 export const CATALOG_D1_READY_KEY = 'catalog_d1_ready'
 export const APPS_D1_READY_KEY = 'apps_d1_ready'
 export const ACCOUNTS_D1_READY_KEY = 'accounts_d1_ready'
+export const DELIVERY_D1_READY_KEY = 'delivery_d1_ready'
+export const SHARES_D1_READY_KEY = 'shares_d1_ready'
 
 export const CATALOG_SETTING_KEYS = {
   schemaVersion: 'catalog_schema_version',

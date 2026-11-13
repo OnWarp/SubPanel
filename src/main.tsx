@@ -14,6 +14,7 @@ import './styles/pages-users.css'
 import './styles/pages-admin.css'
 import './styles/pages-catalog.css'
 import './styles/pages-delivery.css'
+import './styles/pages-system.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
