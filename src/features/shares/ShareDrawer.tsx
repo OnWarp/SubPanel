@@ -11,6 +11,7 @@ import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
+import { Switch } from '../../ui/Switch'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import {
@@ -58,27 +59,15 @@ function shareLabel(share: ShareView): string {
   return share.remark.trim() || '未备注'
 }
 
-function ShareToggle({ id, label, checked, onChange, disabled }: {
-  id: string
+function ShareToggle({ label, checked, onChange, disabled }: {
   label: string
   checked: boolean
   disabled?: boolean
   onChange: (checked: boolean) => void
 }) {
   return (
-    <FormField label={label} htmlFor={id}>
-      <label className="sh-switch">
-        <input
-          id={id}
-          type="checkbox"
-          role="switch"
-          checked={checked}
-          disabled={disabled}
-          onChange={(event) => onChange(event.currentTarget.checked)}
-        />
-        <span className="sh-switch-ui" aria-hidden="true" />
-        <span className="sh-switch-text">{checked ? '开' : '关'}</span>
-      </label>
+    <FormField label={label}>
+      <Switch checked={checked} disabled={disabled} onChange={onChange} ariaLabel={label} />
     </FormField>
   )
 }
@@ -175,13 +164,13 @@ function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated }: {
           onChange={(event) => setPassword(event.currentTarget.value)}
         />
       </FormField>
-      <ShareToggle id="share-original" label="允许查看原始链接" checked={allowOriginalLink} disabled={submitting} onChange={setAllowOriginalLink} />
+      <ShareToggle label="允许查看原始链接" checked={allowOriginalLink} disabled={submitting} onChange={setAllowOriginalLink} />
       <fieldset className="sh-switches">
         <legend>展示内容</legend>
-        <ShareToggle id="share-name" label="订阅名" checked={showSubscriptionName} disabled={submitting} onChange={setShowSubscriptionName} />
-        <ShareToggle id="share-groups" label="分组" checked={showGroups} disabled={submitting} onChange={setShowGroups} />
-        <ShareToggle id="share-expiry" label="到期" checked={showExpiry} disabled={submitting} onChange={setShowExpiry} />
-        <ShareToggle id="share-nodes" label="节点名" checked={showNodeNames} disabled={submitting} onChange={setShowNodeNames} />
+        <ShareToggle label="订阅名" checked={showSubscriptionName} disabled={submitting} onChange={setShowSubscriptionName} />
+        <ShareToggle label="分组" checked={showGroups} disabled={submitting} onChange={setShowGroups} />
+        <ShareToggle label="到期" checked={showExpiry} disabled={submitting} onChange={setShowExpiry} />
+        <ShareToggle label="节点名" checked={showNodeNames} disabled={submitting} onChange={setShowNodeNames} />
       </fieldset>
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
       <div className="dialog-actions">

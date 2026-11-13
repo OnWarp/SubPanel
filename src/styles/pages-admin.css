@@ -6,7 +6,6 @@
 
 /* Dashboard stat cards ---------------------------------------------------- */
 .adm-stat-grid {
-  --font-xl: 30px;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
@@ -27,23 +26,17 @@
 .adm-stat-label {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
+  font-weight: 590;
+  letter-spacing: .02em;
 }
 .adm-stat-icon { color: var(--color-primary); }
 .adm-stat-value {
   grid-column: 1 / -1;
-  font-size: var(--font-xl);
-  font-weight: 800;
+  font-size: var(--font-display);
+  font-weight: 590;
   font-variant-numeric: tabular-nums;
   line-height: 1.05;
-}
-
-.issue-section .sp-empty {
-  padding: var(--space-5) var(--space-4);
-  border: 0;
-  background: transparent;
+  letter-spacing: -0.01em;
 }
 
 /* Account form ----------------------------------------------------------- */
@@ -65,3 +58,22 @@
 @media (max-width: 760px) {
   .adm-account-form input { min-height: 44px; }
 }
+
+/* Alert banner ----------------------------------------------------------- */
+.adm-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  color: color-mix(in srgb, var(--color-warning) 55%, var(--color-text));
+  background: var(--color-warning-soft);
+}
+.adm-alert-link {
+  margin-left: auto;
+  font-size: var(--font-sm);
+  color: var(--color-primary);
+}
+.adm-alert-link:hover { text-decoration: underline; }
+

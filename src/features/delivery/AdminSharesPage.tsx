@@ -138,7 +138,6 @@ export function AdminSharesPage() {
   useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
   const currentPage = Math.min(page, pageCount)
   const visibleRows = useMemo(() => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE), [currentPage, filtered])
-  const activeCount = shares.filter((share) => effectiveStatus(share, Date.now()) === 'active').length
 
   const confirmAction = async () => {
     if (!pending || busy) return
@@ -164,9 +163,9 @@ export function AdminSharesPage() {
       render: (share) => {
         const username = userNames.get(share.ownerUserId)
         return (
-          <span className="ashr-cell">
+          <span>
             <strong>{username ?? share.ownerUserId}</strong>
-            {username ? <span className="ashr-cell-note">{share.ownerUserId}</span> : null}
+            {username ? <span className="cell-note">{share.ownerUserId}</span> : null}
           </span>
         )
       },
@@ -177,9 +176,9 @@ export function AdminSharesPage() {
       render: (share) => {
         const name = subscriptionNames.get(share.subscriptionId)
         return (
-          <span className="ashr-cell">
+          <span>
             <strong>{name ?? share.subscriptionId}</strong>
-            {name ? <span className="ashr-cell-note">{share.subscriptionId}</span> : null}
+            {name ? <span className="cell-note">{share.subscriptionId}</span> : null}
           </span>
         )
       },
@@ -188,9 +187,9 @@ export function AdminSharesPage() {
       key: 'remark',
       header: '备注',
       render: (share) => (
-        <span className="ashr-cell">
-          <strong className="ashr-remark">{share.remark.trim() || '未填写'}</strong>
-          <span className="ashr-cell-note">{share.id} · {share.tokenPrefix}…</span>
+        <span>
+          <strong>{share.remark.trim() || '未填写'}</strong>
+          <span className="cell-note">{share.id} · {share.tokenPrefix}…</span>
         </span>
       ),
     },
@@ -208,14 +207,14 @@ export function AdminSharesPage() {
       header: '访问次数',
       width: 104,
       render: (share) => (
-        <span className="ashr-count">
+        <span>
           <strong>{share.accessCount}</strong>
-          {share.maxAccessCount !== null ? <span className="ashr-cell-note">上限 {share.maxAccessCount}</span> : null}
+          {share.maxAccessCount !== null ? <span className="cell-note">上限 {share.maxAccessCount}</span> : null}
         </span>
       ),
     },
-    { key: 'expiresAt', header: '到期时间', width: 160, render: (share) => <span className="ashr-time">{formatDate(share.expiresAt)}</span> },
-    { key: 'createdAt', header: '创建时间', width: 160, render: (share) => <span className="ashr-time">{formatDate(share.createdAt)}</span> },
+    { key: 'expiresAt', header: '到期时间', width: 160, render: (share) => <span>{formatDate(share.expiresAt)}</span> },
+    { key: 'createdAt', header: '创建时间', width: 160, render: (share) => <span>{formatDate(share.createdAt)}</span> },
     {
       key: 'actions',
       header: '操作',
@@ -247,72 +246,66 @@ export function AdminSharesPage() {
               <Trash2 aria-hidden="true" size={16} />
             </button>
           ) : null}
-          {share.status === 'revoked' ? <span className="ashr-cell-note">—</span> : null}
+          {share.status === 'revoked' ? <span className="cell-note">—</span> : null}
         </span>
       ),
     },
   ], [busy, subscriptionNames, userNames])
 
   return (
-    <div className="page-stack ashr-page">
-      <PageHeader title="分享管理" description={`${shares.length} 个分享 · ${activeCount} 个有效`} />
+    <div className="page-stack">
+      <PageHeader title="分享管理" />
 
-      <section className="data-section ashr-list" aria-labelledby="ashr-shares-title">
+      <FilterBar className="ashr-filters">
+        <SearchInput label="搜索分享" placeholder="搜索备注、前缀或用户" value={query} onChange={setQuery} />
+        <div className="ashr-chips" role="group" aria-label="分享状态">
+          {STATUS_FILTERS.map((filter) => (
+            <FilterChip key={filter.value} active={statusFilter === filter.value} onClick={() => setStatusFilter(filter.value)}>{filter.label}</FilterChip>
+          ))}
+        </div>
+        <label>
+          <span>用户</span>
+          <select aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
+            <option value="">全部</option>
+            {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>订阅</span>
+          <select aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
+            <option value="">全部</option>
+            {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
+          </select>
+        </label>
+      </FilterBar>
+
+      <section className="data-section" aria-labelledby="ashr-shares-title">
         <DataHeader
           id="ashr-shares-title"
           title="全站分享"
-          filters={(
-            <FilterBar className="ashr-filters">
-              <SearchInput className="ashr-search" label="搜索分享" placeholder="搜索备注、前缀或用户" value={query} onChange={setQuery} />
-              <div className="ashr-chips" role="group" aria-label="分享状态">
-                {STATUS_FILTERS.map((filter) => (
-                  <FilterChip key={filter.value} active={statusFilter === filter.value} onClick={() => setStatusFilter(filter.value)}>{filter.label}</FilterChip>
-                ))}
-              </div>
-              <label className="ashr-filter-field">
-                <span>用户</span>
-                <select aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
-                  <option value="">全部</option>
-                  {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-                </select>
-              </label>
-              <label className="ashr-filter-field">
-                <span>订阅</span>
-                <select aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
-                  <option value="">全部</option>
-                  {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-                </select>
-              </label>
-            </FilterBar>
-          )}
+          actions={<span>{filtered.length} 个分享符合当前筛选 · 第 {currentPage} / {pageCount} 页</span>}
         />
-        {loadError ? <div className="ashr-state"><ErrorState message={loadError} onRetry={() => { loadShares().catch(() => undefined) }} /></div> : null}
+        {loadError ? <div><ErrorState message={loadError} onRetry={() => { loadShares().catch(() => undefined) }} /></div> : null}
         {sharesLoading && shares.length === 0 ? <LoadingState label="正在加载分享" /> : null}
         {!sharesLoading && !loadError && shares.length === 0 ? (
-          <div className="ashr-empty"><EmptyState icon={Share2} title="暂无分享" description="用户创建分享后会在这里显示" /></div>
+          <div><EmptyState icon={Share2} title="暂无分享" description="用户创建分享后会在这里显示" /></div>
         ) : null}
         {shares.length > 0 && filtered.length === 0 ? (
-          <div className="ashr-empty"><EmptyState title="没有符合条件的分享" /></div>
+          <div><EmptyState title="没有符合条件的分享" /></div>
         ) : null}
         {filtered.length > 0 ? (
-          <>
-            <div className="ashr-list-meta">
-              <span>{filtered.length} 个分享符合当前筛选</span>
-              <span>第 {currentPage} / {pageCount} 页</span>
-            </div>
-            <DataTable
-              className="ashr-table"
-              columns={columns}
-              rows={visibleRows}
-              rowKey={(share) => share.id}
-              empty="暂无匹配分享"
-              pagination={{ page: currentPage, pageCount, onPageChange: setPage }}
-            />
-          </>
+          <DataTable
+            className="ashr-table"
+            columns={columns}
+            rows={visibleRows}
+            rowKey={(share) => share.id}
+            empty="暂无匹配分享"
+            pagination={{ page: currentPage, pageCount, onPageChange: setPage }}
+          />
         ) : null}
       </section>
 
-      <section className="data-section ashr-settings" aria-labelledby="ashr-settings-title">
+      <section className="data-section" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
         <div className="ashr-settings-form">
           <p className="ashr-settings-hint">分享策略已迁至系统管理页统一维护</p>

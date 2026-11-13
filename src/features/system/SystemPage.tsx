@@ -1,5 +1,5 @@
-import { Database, Info } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Database, Download, Info, Mail, Settings, Share2, User, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -8,6 +8,7 @@ import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
+import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 import { formatDate } from '../catalog/catalog-utils'
 import {
@@ -18,8 +19,8 @@ import {
   type SystemMailSettings,
   type SystemStatus,
 } from './api'
-import { ShareSettingsSection } from './ShareSettingsSection'
 import { DomainSettingsSection } from './DomainSettingsSection'
+import { ShareSettingsSection } from './ShareSettingsSection'
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof ApiClientError ? cause.message : fallback
@@ -34,6 +35,8 @@ const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string; hint: 
   { value: 'invite', label: '邀请注册', hint: '只能凭邀请码注册' },
   { value: 'closed', label: '关闭注册', hint: '暂停新用户注册' },
 ]
+
+type SysSection = 'registration' | 'mail' | 'app-downloads' | 'share' | 'domain' | 'status'
 
 function RegistrationSection() {
   const [mode, setMode] = useState<RegistrationMode | null>(null)
@@ -78,10 +81,10 @@ function RegistrationSection() {
     <section className="data-section sys-section" aria-labelledby="sys-registration-title">
       <DataHeader id="sys-registration-title" title="账户与注册" />
       {loading ? <LoadingState label="正在加载注册设置" /> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && mode ? (
         <div className="sys-body">
-          <div className="sys-mode-row" role="group" aria-label="注册模式">
+          <div role="group" aria-label="注册模式">
             {REGISTRATION_MODES.map((option) => (
               <FilterChip key={option.value} active={mode === option.value} onClick={() => { changeMode(option.value).catch(() => undefined) }}>
                 {option.label}
@@ -177,7 +180,7 @@ function EmailDomains() {
               {domains.map((entry) => (
                 <li key={entry.domain} className="sys-domain-item">
                   <span>{entry.domain}</span>
-                  <button className="button ghost sys-domain-remove" type="button" disabled={busy} onClick={() => { remove(entry.domain).catch(() => undefined) }}>移除</button>
+                  <button className="button ghost" type="button" disabled={busy} onClick={() => { remove(entry.domain).catch(() => undefined) }}>移除</button>
                 </li>
               ))}
             </ul>
@@ -285,7 +288,7 @@ function MailSection() {
     <section className="data-section sys-section" aria-labelledby="sys-mail-title">
       <DataHeader id="sys-mail-title" title="邮件" />
       {loading ? <LoadingState label="正在加载邮件设置" /> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && form && settings ? (
         <form className="sys-form" onSubmit={save} noValidate>
           <div className="sys-grid">
@@ -364,78 +367,6 @@ function MailSection() {
   )
 }
 
-function StatusSection() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setLoadError('')
-    try {
-      const result = await api<{ status: SystemStatus }>('/api/admin/system/status')
-      setStatus(result.status)
-    } catch (cause) {
-      setLoadError(errorMessage(cause, '加载系统状态失败'))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load().catch(() => undefined) }, [load])
-
-  return (
-    <section className="data-section sys-section" aria-labelledby="sys-status-title">
-      <DataHeader
-        id="sys-status-title"
-        title="系统状态"
-        filters={(
-          <button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>
-        )}
-      />
-      {loading && !status ? <LoadingState label="正在加载系统状态" /> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
-      {status ? (
-        <div className="sys-body">
-          <div className="sys-status-db">
-            <Database aria-hidden="true" />
-            <span>D1 数据库</span>
-            <strong>{status.databaseName}</strong>
-          </div>
-          <ul className="sys-status-list">
-            {status.modules.map((module) => (
-              <li key={module.module} className="sys-status-item">
-                <span className="sys-status-label">{module.label}</span>
-                <StatusBadge tone={module.backend === 'd1' ? 'success' : 'muted'}>{module.backend === 'd1' ? 'D1' : 'KV'}</StatusBadge>
-                <span className="sys-status-meta">
-                  {module.schemaVersion !== null ? `结构版本 ${module.schemaVersion}` : '暂无版本记录'}
-                  {module.updatedAt ? ` · 更新于 ${formatDate(module.updatedAt)}` : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="sys-subsection">
-            <h3 className="sys-subtitle">已应用迁移</h3>
-            {status.migrations.length === 0 ? (
-              <p className="sys-hint">暂无迁移记录，各模块结构版本见上方列表</p>
-            ) : (
-              <ul className="sys-migration-list">
-                {status.migrations.map((migration) => (
-                  <li key={migration.name} className="sys-migration-item">
-                    <span>{migration.name}</span>
-                    <span className="sys-status-meta">{migration.appliedAt ? formatDate(migration.appliedAt) : ''}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <p className="sys-hint">存储后端由迁移流程统一切换，此页仅供查看</p>
-        </div>
-      ) : null}
-    </section>
-  )
-}
-
 function AppDownloadsSection() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
@@ -477,25 +408,14 @@ function AppDownloadsSection() {
   return (
     <section className="data-section sys-section" aria-labelledby="sys-app-downloads-title">
       <DataHeader id="sys-app-downloads-title" title="APP 下载" />
-      {loading ? <div className="sys-state"><LoadingState label="正在加载 APP 下载设置" /></div> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {loading ? <LoadingState label="正在加载 APP 下载设置" /> : null}
+      {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !loadError && enabled !== null ? (
         <div>
           <p className="sys-hint">开启后，普通用户可以在用户端查看各平台的 APP 下载入口；关闭后，用户端隐藏整个 APP 下载板块，但不会删除已配置的 APP</p>
           <div className="sys-toggles">
             <FormField label="显示 APP 下载板块">
-              <label className="sys-switch">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label="显示 APP 下载板块"
-                  checked={enabled}
-                  disabled={saving}
-                  onChange={(event) => { toggle(event.currentTarget.checked).catch(() => undefined) }}
-                />
-                <span className="sys-switch-track" aria-hidden="true"><span className="sys-switch-thumb" /></span>
-                <span className="sys-switch-label">{enabled ? '已开启' : '已关闭'}</span>
-              </label>
+              <Switch checked={enabled} onChange={(checked) => { toggle(checked).catch(() => undefined) }} disabled={saving} ariaLabel="显示 APP 下载板块" />
             </FormField>
           </div>
         </div>
@@ -504,16 +424,120 @@ function AppDownloadsSection() {
   )
 }
 
-export function SystemPage() {
+function StatusSection() {
+  const [status, setStatus] = useState<SystemStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const result = await api<{ status: SystemStatus }>('/api/admin/system/status')
+      setStatus(result.status)
+    } catch (cause) {
+      setLoadError(errorMessage(cause, '加载系统状态失败'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load().catch(() => undefined) }, [load])
+
   return (
-    <div className="page-stack">
-      <PageHeader title="系统管理" description="账户与注册、邮件、APP 下载、分享与系统状态集中在这里" />
-      <RegistrationSection />
-      <MailSection />
-      <AppDownloadsSection />
-      <ShareSettingsSection />
-      <DomainSettingsSection />
-      <StatusSection />
+    <section className="data-section sys-section" aria-labelledby="sys-status-title">
+      <DataHeader
+        id="sys-status-title"
+        title="系统状态"
+        actions={<button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>}
+      />
+      {loading && !status ? <LoadingState label="正在加载系统状态" /> : null}
+      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {status ? (
+        <div className="sys-body">
+          <div className="sys-status-db">
+            <Database aria-hidden="true" />
+            <span>D1 数据库</span>
+            <strong>{status.databaseName}</strong>
+          </div>
+          <ul className="sys-status-list">
+            {status.modules.map((module) => (
+              <li key={module.module} className="sys-status-item">
+                <span className="sys-status-label">{module.label}</span>
+                <StatusBadge tone={module.backend === 'd1' ? 'success' : 'muted'}>{module.backend === 'd1' ? 'D1' : 'KV'}</StatusBadge>
+                <span className="sys-status-meta">
+                  {module.schemaVersion !== null ? `结构版本 ${module.schemaVersion}` : '暂无版本记录'}
+                  {module.updatedAt ? ` · 更新于 ${formatDate(module.updatedAt)}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="sys-subsection">
+            <h3 className="sys-subtitle">已应用迁移</h3>
+            {status.migrations.length === 0 ? (
+              <p className="sys-hint">暂无迁移记录，各模块结构版本见上方列表</p>
+            ) : (
+              <ul className="sys-migration-list">
+                {status.migrations.map((migration) => (
+                  <li key={migration.name} className="sys-migration-item">
+                    <span>{migration.name}</span>
+                    <span className="sys-status-meta">{migration.appliedAt ? formatDate(migration.appliedAt) : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <p className="sys-hint">存储后端由迁移流程统一切换，此页仅供查看</p>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+const SECTIONS: Array<{ key: SysSection; label: string; icon: LucideIcon }> = [
+  { key: 'registration', label: '账户与注册', icon: User },
+  { key: 'mail', label: '邮件', icon: Mail },
+  { key: 'app-downloads', label: 'APP 下载', icon: Download },
+  { key: 'share', label: '分享策略', icon: Share2 },
+  { key: 'domain', label: '域名策略', icon: Settings },
+  { key: 'status', label: '系统状态', icon: Info },
+]
+
+export function SystemPage() {
+  const [activeSection, setActiveSection] = useState<SysSection>('registration')
+
+  const sections: Record<SysSection, ReactElement> = {
+    registration: <RegistrationSection />,
+    mail: <MailSection />,
+    'app-downloads': <AppDownloadsSection />,
+    share: <ShareSettingsSection />,
+    domain: <DomainSettingsSection />,
+    status: <StatusSection />,
+  }
+
+  return (
+    <div className="page-stack sys-page">
+      <PageHeader title="系统管理" />
+      <div className="sys-layout">
+        <nav className="sys-sidebar" aria-label="系统管理导航">
+          <ul role="list">
+            {SECTIONS.map(({ key, label, icon: Icon }) => (
+              <li key={key}>
+                <button
+                  className={`sys-nav-item${activeSection === key ? ' active' : ''}`}
+                  onClick={() => setActiveSection(key)}
+                >
+                  <Icon aria-hidden="true" size={18} />
+                  <span>{label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div className="sys-content">
+          {sections[activeSection]}
+        </div>
+      </div>
     </div>
   )
 }

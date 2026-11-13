@@ -44,20 +44,6 @@
   min-width: 0;
   max-width: 280px;
 }
-.del-select-all {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-sm);
-  font-weight: 650;
-}
-.del-select-all input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
-}
 .del-admin .sp-loading,
 .del-admin .sp-error,
 .del-admin .sp-empty {
@@ -67,7 +53,6 @@
   min-width: 0;
   max-width: 100%;
   border: 0;
-  border-radius: 0;
   background: transparent;
 }
 .del-table .sp-table {
@@ -137,7 +122,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-title);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.2;
 }
 .del-status-head .sp-badge { flex: 0 0 auto; }
@@ -291,7 +276,7 @@
     content: attr(data-label);
     color: var(--color-text-muted);
     font-size: var(--font-xs);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: .04em;
   }
   .del-admin .del-table .row-actions { justify-content: flex-start; }

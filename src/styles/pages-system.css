@@ -23,10 +23,6 @@
   min-width: 0;
 }
 
-.sys-state {
-  padding: var(--space-5);
-}
-
 .sys-grid {
   display: grid;
   min-width: 0;
@@ -75,12 +71,6 @@
   min-width: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-2);
-}
-
-.sys-mode-row {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -211,75 +201,84 @@
   text-align: right;
 }
 
-/* Switch (mirrors the admin shares policy switch) ------------------------- */
-.sys-switch {
-  display: inline-flex;
-  min-height: 38px;
+/* Sidebar layout -------------------------------------------------------- */
+.sys-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+.sys-sidebar {
+  position: sticky;
+  top: var(--space-4);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+.sys-sidebar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+.sys-nav-item {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
-  cursor: pointer;
-}
-
-.sys-switch input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.sys-switch-track {
-  position: relative;
-  display: inline-block;
-  width: 44px;
-  height: 26px;
-  flex: 0 0 auto;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  background: var(--color-surface-subtle);
-  transition: background-color var(--duration-ui) ease, border-color var(--duration-ui) ease;
-}
-
-.sys-switch-thumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
   background: var(--color-surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.24);
-  transition: transform var(--duration-ui) ease;
+  color: var(--color-text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-ui) ease, background-color var(--duration-ui) ease;
 }
-
-.sys-switch input:checked + .sys-switch-track {
+.sys-nav-item:hover {
   border-color: var(--color-primary);
-  background: var(--color-primary);
+  background: var(--color-primary-soft);
 }
-
-.sys-switch input:checked + .sys-switch-track .sys-switch-thumb {
-  transform: translateX(18px);
+.sys-nav-item.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
-
-.sys-switch input:focus-visible + .sys-switch-track {
+.sys-nav-item:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
-
-.sys-switch input:disabled + .sys-switch-track {
-  cursor: default;
-  opacity: .55;
+.sys-content {
+  min-width: 0;
 }
 
-.sys-switch-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-sm);
-  font-weight: 650;
-}
+/* Shared Switch component styles are in components.css - no private switch styles needed */
 
 @media (max-width: 720px) {
   .sys-grid,
   .sys-toggles {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sys-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sys-sidebar {
+    position: static;
+    max-height: none;
+  }
+
+  .sys-sidebar ul {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+  }
+
+  .sys-nav-item {
+    width: auto;
+    white-space: nowrap;
   }
 
   .sys-status-item {
@@ -312,7 +311,7 @@
 
 .dom-card-title {
   margin: 0;
-  font-size: var(--font-md, 1rem);
+  font-size: var(--font-md);
   color: var(--color-text);
 }
 

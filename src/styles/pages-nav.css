@@ -20,7 +20,7 @@
 .sidebar-nav.nav-sidebar a.active {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .sidebar-nav.nav-sidebar a span {
@@ -32,7 +32,7 @@
 .nav-dock .dock-item.active {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .nav-dock .dock-item span {
@@ -46,7 +46,7 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .nav-status-body,
@@ -73,7 +73,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-title);
-  font-weight: 750;
+  font-weight: 590;
   line-height: 1.2;
 }
 
@@ -94,7 +94,7 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .nav-meta dd {
@@ -184,7 +184,7 @@
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-weight: 650;
+  font-weight: 590;
   text-align: left;
   cursor: pointer;
 }
@@ -253,7 +253,7 @@
 .node-summary-item span {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .node-summary-item strong {
@@ -296,7 +296,7 @@
 .node-filter-label {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .node-page .sp-chip {
