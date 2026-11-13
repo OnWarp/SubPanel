@@ -137,7 +137,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-title);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   line-height: 1.2;
 }
 .del-status-head .sp-badge { flex: 0 0 auto; }
@@ -300,4 +300,10 @@
 @media (min-width: 1101px) {
   .del-table { overflow-x: auto; }
   .del-table .row-actions { flex-wrap: nowrap; }
+}
+
+/* Subscription link area: platform segmented control scroll guard (plan 7/8). */
+.del-seg-scroll {
+  max-width: 100%;
+  overflow-x: auto;
 }

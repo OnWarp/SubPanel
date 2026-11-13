@@ -285,33 +285,8 @@
 }
 
 .appu-filters {
-  width: 100%;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-3);
-}
-
-.appu-chip-group {
-  display: flex;
-  width: 100%;
-  min-width: 0;
   max-width: 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.appu-chip-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-weight: 700;
-}
-
-.appu-filters .sp-chip {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-x: auto;
 }
 
 .appu-search {
@@ -336,7 +311,7 @@
   margin: 0;
   overflow-wrap: anywhere;
   font-size: var(--font-md);
-  font-weight: 750;
+  font-weight: var(--weight-strong);
 }
 
 .appu-grid {
@@ -396,11 +371,11 @@
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--radius-card-lg);
   background: var(--color-primary-soft);
   color: var(--color-text);
   font-size: var(--font-lg);
-  font-weight: 750;
+  font-weight: var(--weight-strong);
 }
 
 .appu-mark img {
@@ -419,7 +394,7 @@
 
 .appu-name {
   font-size: var(--font-lg);
-  font-weight: 750;
+  font-weight: var(--weight-strong);
   line-height: 1.3;
 }
 
@@ -468,7 +443,7 @@
 .appu-kicker {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .appu-badges,
@@ -529,7 +504,7 @@
   min-width: 0;
   margin: 0;
   font-size: var(--font-sm);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .appu-field select {
@@ -585,3 +560,20 @@
   gap: var(--space-2);
   margin-top: var(--space-4);
 }
+
+/* User app cards: one-line summary and a text link for docs (plan 8). */
+.appu-card .appu-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.appu-doc-link {
+  color: var(--color-accent);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.appu-doc-link:hover { text-decoration: underline; }

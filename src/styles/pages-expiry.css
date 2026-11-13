@@ -97,7 +97,7 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .exp-status-meta dd {
