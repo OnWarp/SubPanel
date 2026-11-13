@@ -69,6 +69,35 @@ export const toPublicUser = (user: User): PublicUser => ({
   updatedAt: user.updatedAt,
 })
 
+export const normalizeEmail = (value: string): string => value.trim().toLowerCase()
+
+export const emailInputSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.string().regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/))
+
+export interface UserEmailFields {
+  email: string | null
+  emailNormalized: string | null
+  emailVerifiedAt: string | null
+}
+
+// A user row as stored in D1: the KV snapshot shape plus the email columns
+// that only exist in D1 (docs/d1/SCHEMA.md). KV-mode users always carry nulls.
+export type AccountUser = User & UserEmailFields
+
+export type PublicAccountUser = PublicUser & {
+  email: string | null
+  emailVerifiedAt: string | null
+}
+
+export const toPublicAccountUser = (user: AccountUser): PublicAccountUser => ({
+  ...toPublicUser(user),
+  email: user.email,
+  emailVerifiedAt: user.emailVerifiedAt,
+})
+
 export const emptyAccountsSnapshot = (now = '1970-01-01T00:00:00.000Z'): AccountsSnapshot => ({
   schemaVersion: 1,
   revision: 0,

@@ -33,12 +33,12 @@ describe('accounts snapshot repository', () => {
   })
 
   it('returns a valid empty snapshot when KV has no state', async () => {
-    expect(await readAccounts(env.DATA)).toEqual(emptyAccountsSnapshot())
+    expect(await readAccounts(env)).toEqual(emptyAccountsSnapshot())
   })
 
   it('increments revision and rejects a second administrator', async () => {
-    const current = await readAccounts(env.DATA)
-    const saved = await writeAccounts(env.DATA, {
+    const current = await readAccounts(env)
+    const saved = await writeAccounts(env, {
       ...current,
       users: [
         {
@@ -57,7 +57,7 @@ describe('accounts snapshot repository', () => {
 
     expect(saved.revision).toBe(1)
     expect(accountsSnapshotSchema.parse(JSON.parse((await env.DATA.get('state:accounts'))!))).toEqual(saved)
-    await expect(writeAccounts(env.DATA, {
+    await expect(writeAccounts(env, {
       ...saved,
       users: [...saved.users, { ...saved.users[0], id: 'usr_2', username: 'root' }],
     }, now)).rejects.toThrow('Accounts snapshot validation failed')
@@ -65,6 +65,6 @@ describe('accounts snapshot repository', () => {
 
   it('fails closed when stored JSON is corrupt', async () => {
     await env.DATA.put('state:accounts', '{broken')
-    await expect(readAccounts(env.DATA)).rejects.toThrow('Accounts snapshot is corrupt')
+    await expect(readAccounts(env)).rejects.toThrow('Accounts snapshot is corrupt')
   })
 })

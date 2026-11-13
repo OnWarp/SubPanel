@@ -28,7 +28,7 @@ describe('administrator setup', () => {
       user: { id: 'usr_1', username: 'admin', role: 'admin', enabled: true },
     })
 
-    const accounts = await readAccounts(env.DATA)
+    const accounts = await readAccounts(env)
     expect(accounts.users).toHaveLength(1)
     expect(accounts.users[0].password.iterations).toBe(PASSWORD_ITERATIONS)
     expect(JSON.stringify(accounts)).not.toContain('correct horse battery staple')
@@ -39,6 +39,6 @@ describe('administrator setup', () => {
       jsonRequest({ username: 'other', password: 'another correct password' }),
     )
     expect(repeated.status).toBe(409)
-    expect((await readAccounts(env.DATA)).users).toHaveLength(1)
+    expect((await readAccounts(env)).users).toHaveLength(1)
   })
 })

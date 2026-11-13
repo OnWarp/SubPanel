@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv, Principal } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { readCryptoMaterial } from '../platform/crypto.js'
-import { readAccounts } from './repository.js'
+import { findAccountUserById } from './repository.js'
 import { readSessionCookie, verifySessionToken } from './session.js'
 import type { User } from './schema.js'
 
@@ -13,8 +13,10 @@ export async function resolveSessionUser(c: Context<AppEnv>): Promise<User | nul
   const payload = await verifySessionToken(token, material.sessionKey)
   if (!payload) return null
 
-  const accounts = await readAccounts(c.env.DATA)
-  const user = accounts.users.find(({ id }) => id === payload.subject)
+  // Sessions are stateless HMAC tokens; the only stored session state is the
+  // user's sessionVersion (plus enabled/role), which follows the accounts
+  // repository switch like every other account read.
+  const user = await findAccountUserById(c.env, payload.subject)
   if (!user || !user.enabled) return null
   if (user.role !== payload.role || user.sessionVersion !== payload.sessionVersion) return null
   return user

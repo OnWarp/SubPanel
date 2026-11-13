@@ -149,7 +149,7 @@ shareRoutes.post('/:token/verify', async (c) => {
   const token = requireShareToken(c.req.param('token'))
   const input = await readJson(c, verifyShareSchema)
   const actor = await resolveSessionUser(c)
-  const result = await run(() => verifyShare(c.env.DATA, token, input.password, actor))
+  const result = await run(() => verifyShare(c.env, token, input.password, actor))
   const expiresAt = await issueShareSession(c, result.tokenHash)
   return c.json({ verified: true, expiresAt })
 })

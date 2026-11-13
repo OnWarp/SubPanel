@@ -39,13 +39,13 @@ async function listInvites(kv: KVNamespace): Promise<Array<InviteRecord & { id: 
 export const adminAccountRoutes = new Hono<AppEnv>()
 
 adminAccountRoutes.get('/users', async (c) => {
-  const accounts = await readAccounts(c.env.DATA)
+  const accounts = await readAccounts(c.env)
   return c.json({ users: accounts.users.map(toPublicUser) })
 })
 
 adminAccountRoutes.patch('/users/:id', async (c) => {
   const input = await readJson(c, updateUserSchema)
-  const accounts = await readAccounts(c.env.DATA)
+  const accounts = await readAccounts(c.env)
   const index = accounts.users.findIndex(({ id }) => id === c.req.param('id'))
   if (index < 0) throw apiError(404, 'USER_NOT_FOUND', '用户不存在')
   if (accounts.users[index].role === 'admin') throw apiError(409, 'ADMIN_IMMUTABLE', '不能停用管理员')
@@ -58,13 +58,13 @@ adminAccountRoutes.patch('/users/:id', async (c) => {
     updatedAt: now,
   }
   const users = accounts.users.with(index, user)
-  await writeAccounts(c.env.DATA, { ...accounts, users }, now)
+  await writeAccounts(c.env, { ...accounts, users }, now)
   return c.json({ user: toPublicUser(user) })
 })
 
 adminAccountRoutes.post('/users/:id/password', async (c) => {
   const input = await readJson(c, resetPasswordSchema)
-  const accounts = await readAccounts(c.env.DATA)
+  const accounts = await readAccounts(c.env)
   const index = accounts.users.findIndex(({ id }) => id === c.req.param('id'))
   if (index < 0) throw apiError(404, 'USER_NOT_FOUND', '用户不存在')
   if (accounts.users[index].role === 'admin') {
@@ -78,7 +78,7 @@ adminAccountRoutes.post('/users/:id/password', async (c) => {
     sessionVersion: accounts.users[index].sessionVersion + 1,
     updatedAt: now,
   }
-  await writeAccounts(c.env.DATA, { ...accounts, users: accounts.users.with(index, user) }, now)
+  await writeAccounts(c.env, { ...accounts, users: accounts.users.with(index, user) }, now)
   return c.json({ user: toPublicUser(user) })
 })
 
@@ -88,7 +88,7 @@ adminAccountRoutes.get('/invites', async (c) => {
 
 adminAccountRoutes.post('/invites', async (c) => {
   const input = await readJson(c, createInviteSchema)
-  const accounts = await readAccounts(c.env.DATA)
+  const accounts = await readAccounts(c.env)
   if (accounts.users.some(({ username }) => username === input.username)) {
     throw apiError(409, 'USERNAME_TAKEN', '用户名已存在')
   }
@@ -106,7 +106,7 @@ adminAccountRoutes.post('/invites', async (c) => {
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + INVITE_TTL_SECONDS * 1_000).toISOString(),
   }
-  await writeAccounts(c.env.DATA, { ...accounts, nextUserId: accounts.nextUserId + 1 }, createdAt.toISOString())
+  await writeAccounts(c.env, { ...accounts, nextUserId: accounts.nextUserId + 1 }, createdAt.toISOString())
   await c.env.DATA.put(`${INVITE_PREFIX}${id}`, JSON.stringify(record), {
     expirationTtl: INVITE_TTL_SECONDS,
   })

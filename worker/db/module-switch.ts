@@ -3,6 +3,7 @@ import { decodeSettingJson, getSetting, putSetting } from './settings-repository
 
 export const CATALOG_D1_READY_KEY = 'catalog_d1_ready'
 export const APPS_D1_READY_KEY = 'apps_d1_ready'
+export const ACCOUNTS_D1_READY_KEY = 'accounts_d1_ready'
 
 export const CATALOG_SETTING_KEYS = {
   schemaVersion: 'catalog_schema_version',
@@ -21,6 +22,13 @@ export const APPS_SETTING_KEYS = {
   nextAppId: 'next_app_id',
   nextPlatformId: 'next_platform_id',
   entityOrder: 'apps_entity_order',
+} as const
+
+export const ACCOUNTS_SETTING_KEYS = {
+  schemaVersion: 'accounts_schema_version',
+  revision: 'accounts_revision',
+  updatedAt: 'accounts_updated_at',
+  nextUserId: 'next_user_id',
 } as const
 
 export type DataEnv = {

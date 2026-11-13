@@ -74,7 +74,7 @@ function assertWindow(startsAt: number | null, expiresAt: number | null): void {
 }
 
 async function assertReferences(env: DataEnv, userId: string, groupIds: string[]): Promise<void> {
-  const accounts = await readAccounts(env.DATA)
+  const accounts = await readAccounts(env)
   if (!accounts.users.some((user) => user.id === userId)) fail('USER_NOT_FOUND')
   const groups = new Set((await readCatalog(env)).groups.map((group) => group.id))
   if (groupIds.some((groupId) => !groups.has(groupId))) fail('GROUP_NOT_FOUND')

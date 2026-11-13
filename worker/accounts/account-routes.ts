@@ -4,10 +4,11 @@ import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { readCryptoMaterial } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
+import { confirmEmailBind, requestEmailBind } from './email-binding.js'
 import { hashPassword, verifyPassword } from './password.js'
-import { readAccounts, writeAccounts } from './repository.js'
+import { findAccountUserById, readAccounts, writeAccounts } from './repository.js'
 import { clearSessionCookie, createSessionToken, setSessionCookie } from './session.js'
-import { passwordInputSchema, toPublicUser } from './schema.js'
+import { emailInputSchema, passwordInputSchema, toPublicAccountUser, toPublicUser } from './schema.js'
 
 const passwordChangeSchema = z
   .object({
@@ -25,7 +26,7 @@ accountRoutes.get('/', (c) => c.json({ user: c.get('principal') }))
 
 accountRoutes.post('/password', async (c) => {
   const input = await readJson(c, passwordChangeSchema)
-  const accounts = await readAccounts(c.env.DATA)
+  const accounts = await readAccounts(c.env)
   const index = accounts.users.findIndex(({ id }) => id === c.get('principal').id)
   if (index < 0) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
   const current = accounts.users[index]
@@ -40,7 +41,7 @@ accountRoutes.post('/password', async (c) => {
     sessionVersion: current.sessionVersion + 1,
     updatedAt: now,
   }
-  await writeAccounts(c.env.DATA, { ...accounts, users: accounts.users.with(index, user) }, now)
+  await writeAccounts(c.env, { ...accounts, users: accounts.users.with(index, user) }, now)
   const material = await readCryptoMaterial(c.env.DATA)
   setSessionCookie(c, await createSessionToken(user, material.sessionKey))
   return c.json({ user: toPublicUser(user) })
@@ -49,4 +50,23 @@ accountRoutes.post('/password', async (c) => {
 accountRoutes.post('/logout', (c) => {
   clearSessionCookie(c)
   return c.json({ ok: true })
+})
+
+const bindEmailSchema = z.object({ email: emailInputSchema })
+const confirmBindSchema = z.object({ code: z.string().regex(/^\d{6}$/) })
+
+accountRoutes.post('/email/bind', async (c) => {
+  const input = await readJson(c, bindEmailSchema)
+  const user = await findAccountUserById(c.env, c.get('principal').id)
+  if (!user) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
+  const result = await requestEmailBind(c.env, user, input.email)
+  return c.json(result)
+})
+
+accountRoutes.post('/email/bind/confirm', async (c) => {
+  const input = await readJson(c, confirmBindSchema)
+  const user = await findAccountUserById(c.env, c.get('principal').id)
+  if (!user) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
+  const updated = await confirmEmailBind(c.env, user, input.code)
+  return c.json({ user: toPublicAccountUser(updated) })
 })

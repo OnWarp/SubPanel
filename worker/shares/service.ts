@@ -147,11 +147,11 @@ async function sealToken(kv: KVNamespace, token: string): Promise<Pick<ShareReco
   }
 }
 
-async function liveSubscription(kv: KVNamespace, share: ShareRecord): Promise<Subscription | null> {
-  const delivery = await readDelivery(kv)
+async function liveSubscription(env: DataEnv, share: ShareRecord): Promise<Subscription | null> {
+  const delivery = await readDelivery(env.DATA)
   const subscription = delivery.subscriptions.find((item) => item.id === share.subscriptionId)
   if (!subscription?.enabled || subscription.userId !== share.ownerUserId) return null
-  const accounts = await readAccounts(kv)
+  const accounts = await readAccounts(env)
   const owner = accounts.users.find((user) => user.id === share.ownerUserId)
   if (!owner?.enabled) return null
   return subscription
@@ -160,7 +160,7 @@ async function liveSubscription(kv: KVNamespace, share: ShareRecord): Promise<Su
 // 访问保护按这个顺序失败即拒绝：存在 → 状态 → 到期 → 登录 → 密码关 → 次数 → 订阅和用户仍启用。
 // 原始链接开关只在 export?type=link 上检查。meta 与 export 未通过时统一 404，避免泄露分享是否存在。
 async function guard(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   kind: GuardKind,
   actor: User | null,
@@ -168,6 +168,7 @@ async function guard(
   password: string | undefined,
   now: Date,
 ): Promise<{ share: ShareRecord, subscription: Subscription, settings: ShareSettings }> {
+  const kv = env.DATA
   const settings = await readShareSettings(kv)
   if (!settings.enabled) throw notFound()
   const share = await readShare(kv, await hashToken(token))
@@ -186,7 +187,7 @@ async function guard(
     throw notFound()
   }
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
-  const subscription = await liveSubscription(kv, share)
+  const subscription = await liveSubscription(env, share)
   if (!subscription) throw notFound()
   return { share, subscription, settings }
 }
@@ -402,8 +403,7 @@ export async function readShareMeta(
   sessionHash: string | null,
   now = new Date(),
 ): Promise<ShareMeta> {
-  const kv = env.DATA
-  const { share, subscription } = await guard(kv, token, 'meta', actor, sessionHash, undefined, now)
+  const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
   const catalog = await readCatalog(env)
   const preview = previewNodes(catalog, subscription)
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
@@ -416,17 +416,17 @@ export async function readShareMeta(
 }
 
 export async function verifyShare(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   password: string | undefined,
   actor: User | null,
   now = new Date(),
 ): Promise<{ tokenHash: string }> {
   const tokenHash = await hashToken(token)
-  if (!(await consumeVerifySlot(kv, tokenHash, now.getTime()))) {
+  if (!(await consumeVerifySlot(env.DATA, tokenHash, now.getTime()))) {
     throw shareError(429, 'SHARE_RATE_LIMITED', '尝试次数过多，请稍后再试')
   }
-  const guarded = await guard(kv, token, 'verify', actor, null, password, now)
+  const guarded = await guard(env, token, 'verify', actor, null, password, now)
   return { tokenHash: guarded.share.tokenHash }
 }
 
@@ -482,7 +482,7 @@ export async function exportShare(
   now = new Date(),
 ): Promise<ShareExportResult> {
   const kv = env.DATA
-  const guarded = await guard(kv, token, 'export', actor, sessionHash, undefined, now)
+  const guarded = await guard(env, token, 'export', actor, sessionHash, undefined, now)
   const parsed = exportQuerySchema.safeParse({
     type: type === '' ? undefined : type,
     client: client === '' ? undefined : client,

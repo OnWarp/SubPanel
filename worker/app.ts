@@ -26,7 +26,7 @@ app.use('/sub/*', noStore)
 app.get('/api/health', async (c) => {
   try {
     const [accounts, cron] = await Promise.all([
-      readAccounts(c.env.DATA),
+      readAccounts(c.env),
       readCronStatus(c.env.DATA),
     ])
     return c.json({ ok: true, version: '0.1.0' as const, initialized: accounts.users.length > 0, cron })
