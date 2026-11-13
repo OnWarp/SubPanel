@@ -48,6 +48,7 @@ async function createUser(username: string, password: string): Promise<User> {
     enabled: true,
     password: await hashPassword(password),
     sessionVersion: 0,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   }

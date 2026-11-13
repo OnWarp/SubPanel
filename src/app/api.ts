@@ -5,8 +5,44 @@ export type UserSummary = {
   username: string
   role: Role
   enabled: boolean
+  email?: string | null
+  emailVerifiedAt?: string | null
+  deletedAt?: string | null
+  subscriptionCount?: number
   createdAt?: string
   updatedAt?: string
+}
+
+export type AdminUsersResponse = {
+  users: UserSummary[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type AdminUserSubscription = {
+  id: string
+  name: string
+  tokenPrefix: string
+  enabled: boolean
+  defaultClient: string
+  revision: number
+  startsAt: number | null
+  expiresAt: number | null
+  groupIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type AdminUserDetail = {
+  user: UserSummary
+  subscriptions: AdminUserSubscription[]
+  invitationRedemptions: Array<{
+    id: number
+    invitationId: string
+    invitationUsername: string
+    redeemedAt: string
+  }>
 }
 
 export type CatalogSource = {

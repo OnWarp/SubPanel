@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { AppEnv } from './app-env.js'
+import { readAccounts } from './accounts/repository.js'
 import { readCatalog } from './catalog/repository.js'
 import { apiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
@@ -54,6 +55,17 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   }
   const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
   if (!subscription?.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  // A soft-deleted owner loses public delivery immediately: their
+  // subscriptions stop serving even while compiled artifacts remain cached.
+  let ownerDeleted = false
+  try {
+    const accounts = await readAccounts(c.env)
+    const owner = accounts.users.find((candidate) => candidate.id === subscription.userId)
+    ownerDeleted = !owner || owner.deletedAt !== null
+  } catch {
+    ownerDeleted = true
+  }
+  if (ownerDeleted) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   assertSubscriptionAvailable(subscription)
   let raw: string | null
   try {

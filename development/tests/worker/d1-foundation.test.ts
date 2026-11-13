@@ -28,6 +28,7 @@ import {
   emptyDatabase,
   INIT_MIGRATION_NAME,
   initMigration,
+  SOFT_DELETE_MIGRATION_NAME,
   listTables,
 } from './d1'
 import { resetData } from './helpers'
@@ -45,11 +46,11 @@ describe('D1 migrations', () => {
     expect((await listTables(env.DB)).filter((name) => name !== 'd1_migrations')).toEqual([...D1_TABLES])
 
     const applied = await env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()
-    expect(applied.results.map((row) => row.name)).toEqual([INIT_MIGRATION_NAME])
+    expect(applied.results.map((row) => row.name)).toEqual([INIT_MIGRATION_NAME, SOFT_DELETE_MIGRATION_NAME])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(1)
+    expect(replayed?.count).toBe(2)
 
     await env.DB.prepare(
       `INSERT INTO users (

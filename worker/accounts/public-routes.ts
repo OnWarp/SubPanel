@@ -57,6 +57,7 @@ publicAccountRoutes.post('/setup', async (c) => {
     enabled: true,
     password: await hashPassword(input.password),
     sessionVersion: 0,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   }
@@ -139,6 +140,7 @@ publicAccountRoutes.post('/invites/:token', async (c) => {
     enabled: true,
     password: await hashPassword(input.password),
     sessionVersion: 0,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   }

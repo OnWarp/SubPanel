@@ -20,6 +20,10 @@ export const userSchema = z.object({
   enabled: z.boolean(),
   password: passwordHashSchema,
   sessionVersion: z.number().int().nonnegative(),
+  // Soft delete (batch 8): null while active, deletion timestamp while the
+  // account sits in the recycle bin. Defaulted so pre-batch-8 snapshots and
+  // fixtures without the field keep parsing.
+  deletedAt: z.iso.datetime().nullable().default(null),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 })
@@ -58,13 +62,14 @@ export type PasswordHash = z.infer<typeof passwordHashSchema>
 export type User = z.infer<typeof userSchema>
 export type AccountsSnapshot = z.infer<typeof accountsSnapshotSchema>
 
-export type PublicUser = Pick<User, 'id' | 'username' | 'role' | 'enabled' | 'createdAt' | 'updatedAt'>
+export type PublicUser = Pick<User, 'id' | 'username' | 'role' | 'enabled' | 'deletedAt' | 'createdAt' | 'updatedAt'>
 
 export const toPublicUser = (user: User): PublicUser => ({
   id: user.id,
   username: user.username,
   role: user.role,
   enabled: user.enabled,
+  deletedAt: user.deletedAt,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 })
