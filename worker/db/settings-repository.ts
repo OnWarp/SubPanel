@@ -8,6 +8,7 @@ import {
 import { queryFirst, type AppDatabase } from './db.js'
 
 export const REGISTRATION_MODE_KEY = 'registration_mode'
+export const SHOW_APP_DOWNLOADS_KEY = 'show_app_downloads'
 export const SHARE_SETTINGS_KEY = 'share_settings'
 
 // Mail configuration keys (batch 5). Read by worker/accounts/email.ts when
@@ -75,6 +76,22 @@ export async function getRegistrationMode(db: AppDatabase): Promise<Registration
   const parsed = registrationModeSchema.safeParse(decodeSettingJson(raw))
   if (!parsed.success) throw new Error('Setting value is corrupt')
   return parsed.data
+}
+
+export async function getShowAppDownloads(db: AppDatabase): Promise<boolean> {
+  const raw = await getSetting(db, SHOW_APP_DOWNLOADS_KEY)
+  if (raw === null) return true
+  const parsed = z.boolean().safeParse(decodeSettingJson(raw))
+  if (!parsed.success) throw new Error('Setting value is corrupt')
+  return parsed.data
+}
+
+export async function putShowAppDownloads(
+  db: AppDatabase,
+  enabled: boolean,
+  now = new Date().toISOString(),
+): Promise<void> {
+  await putSetting(db, SHOW_APP_DOWNLOADS_KEY, z.boolean().parse(enabled), now)
 }
 
 export async function putRegistrationMode(

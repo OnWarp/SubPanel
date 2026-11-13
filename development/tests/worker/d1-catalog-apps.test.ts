@@ -138,13 +138,8 @@ function appsFixture(): AppsSnapshot {
       {
         id: 'app_1',
         name: '面板',
-        icon: '',
-        summary: '简介',
-        description: '说明',
-        category: '工具',
-        officialWebsite: 'https://example.com',
-        developer: 'Lab',
-        flags: { isRecommended: true, isOfficial: false, isPopular: true, isEnabled: true, isPublic: true },
+        description: '简介说明',
+        enabled: true,
         sortOrder: 2,
         createdAt: NOW,
         updatedAt: NOW,
@@ -152,12 +147,8 @@ function appsFixture(): AppsSnapshot {
       {
         id: 'app_2',
         name: '另一个',
-        icon: '',
-        summary: '',
         description: '',
-        category: '系统',
-        officialWebsite: '',
-        flags: { isRecommended: false, isOfficial: true, isPopular: false, isEnabled: true, isPublic: false },
+        enabled: false,
         sortOrder: 1,
         createdAt: NOW,
         updatedAt: NOW,
@@ -168,17 +159,9 @@ function appsFixture(): AppsSnapshot {
         id: 'plt_1',
         appId: 'app_1',
         platform: 'ios',
-        version: '1.0.0',
         downloadUrl: 'https://cdn.example.com/ios',
-        downloadType: 'store',
-        officialStoreUrl: '',
-        officialDownloadUrl: '',
-        updateNotes: '',
-        importSupported: false,
-        importProtocol: '',
-        importUrlTemplate: '',
-        importInstructions: '',
-        isEnabled: true,
+        documentationUrl: 'https://example.com/docs/ios',
+        sortOrder: 3,
         createdAt: NOW,
         updatedAt: NOW,
       },
@@ -186,18 +169,8 @@ function appsFixture(): AppsSnapshot {
         id: 'plt_2',
         appId: 'app_1',
         platform: 'android',
-        version: '1.2.0',
         downloadUrl: 'https://cdn.example.com/app.apk',
-        downloadType: 'direct',
-        fileSizeKb: 2048,
-        officialStoreUrl: '',
-        officialDownloadUrl: '',
-        updateNotes: '修复',
-        importSupported: true,
-        importProtocol: 'clash',
-        importUrlTemplate: 'clash://install-config?url={url}',
-        importInstructions: '打开后导入',
-        isEnabled: true,
+        sortOrder: 2,
         createdAt: NOW,
         updatedAt: NOW,
       },
@@ -326,9 +299,8 @@ describe('apps D1 repository and import', () => {
     const stored = await readApps(env)
     expect(stored.apps.map((app) => app.id)).toEqual(['app_1', 'app_2'])
     expect(stored.platforms.map((platform) => platform.id)).toEqual(['plt_1', 'plt_2'])
-    expect(stored.apps[1].developer).toBeUndefined()
-    expect(stored.platforms[0].fileSizeKb).toBeUndefined()
-    expect(stored.platforms[1].fileSizeKb).toBe(2048)
+    expect(stored.platforms[0].documentationUrl).toBe('https://example.com/docs/ios')
+    expect(stored.platforms[1].documentationUrl).toBeUndefined()
   })
 })
 

@@ -1,36 +1,30 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
+import { getShowAppDownloads } from '../db/settings-repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { appIdSchema, appWriteSchema, platformIdSchema, platformWriteSchema, type App, type AppsSnapshot, type Platform, type PlatformName } from './schema.js'
+import {
+  appIdSchema,
+  appWriteSchema,
+  isHttpsUrl,
+  platformRank,
+  type App,
+  type AppsSnapshot,
+  type Platform,
+} from './schema.js'
 import {
   AppsError,
   createApp,
-  createPlatform,
   deleteApp,
-  deletePlatform,
   readAppsState,
+  setAppEnabled,
   updateApp,
-  updatePlatform,
 } from './service.js'
-
-const PLATFORM_RANK: Record<PlatformName, number> = {
-  android: 0,
-  ios: 1,
-  windows: 2,
-  macos: 3,
-  linux: 4,
-}
 
 function requireAppId(value: string | undefined): string {
   const parsed = appIdSchema.safeParse(value ?? '')
   if (!parsed.success) throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
-  return parsed.data
-}
-
-function requirePlatformId(value: string | undefined): string {
-  const parsed = platformIdSchema.safeParse(value ?? '')
-  if (!parsed.success) throw apiError(404, 'PLATFORM_NOT_FOUND', '平台配置不存在')
   return parsed.data
 }
 
@@ -40,7 +34,6 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof AppsError) {
       if (error.code === 'APP_NOT_FOUND') throw apiError(404, error.code, '应用不存在')
-      if (error.code === 'PLATFORM_NOT_FOUND') throw apiError(404, error.code, '平台配置不存在')
       if (error.code === 'APPS_SNAPSHOT_TOO_LARGE') throw apiError(413, error.code, '应用数据超过大小限制')
       throw apiError(500, 'APPS_STATE_INVALID', '应用数据不可用')
     }
@@ -48,25 +41,30 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-function toPublicPlatform(platform: Platform) {
+function sortedPlatforms(platforms: Platform[]): Platform[] {
+  return [...platforms].sort((left, right) => left.sortOrder - right.sortOrder
+    || platformRank(left.platform) - platformRank(right.platform)
+    || left.id.localeCompare(right.id))
+}
+
+function toAdminApp(app: App, platforms: Platform[]) {
   return {
-    id: platform.id,
-    appId: platform.appId,
-    platform: platform.platform,
-    version: platform.version,
-    downloadUrl: platform.downloadUrl,
-    downloadType: platform.downloadType,
-    fileSizeKb: platform.fileSizeKb ?? null,
-    officialStoreUrl: platform.officialStoreUrl,
-    officialDownloadUrl: platform.officialDownloadUrl,
-    updateNotes: platform.updateNotes,
-    importSupported: platform.importSupported,
-    importProtocol: platform.importProtocol,
-    importUrlTemplate: platform.importUrlTemplate,
-    importInstructions: platform.importInstructions,
-    isEnabled: platform.isEnabled,
-    createdAt: platform.createdAt,
-    updatedAt: platform.updatedAt,
+    id: app.id,
+    name: app.name,
+    description: app.description,
+    enabled: app.enabled,
+    sortOrder: app.sortOrder,
+    createdAt: app.createdAt,
+    updatedAt: app.updatedAt,
+    platforms: sortedPlatforms(platforms.filter((item) => item.appId === app.id)).map((platform) => ({
+      id: platform.id,
+      platform: platform.platform,
+      downloadUrl: platform.downloadUrl,
+      documentationUrl: platform.documentationUrl ?? null,
+      sortOrder: platform.sortOrder,
+      createdAt: platform.createdAt,
+      updatedAt: platform.updatedAt,
+    })),
   }
 }
 
@@ -74,38 +72,27 @@ function toPublicApp(app: App, platforms: Platform[]) {
   return {
     id: app.id,
     name: app.name,
-    icon: app.icon,
-    summary: app.summary,
     description: app.description,
-    category: app.category,
-    officialWebsite: app.officialWebsite,
-    developer: app.developer ?? null,
-    flags: {
-      isRecommended: app.flags.isRecommended,
-      isOfficial: app.flags.isOfficial,
-      isPopular: app.flags.isPopular,
-      isEnabled: app.flags.isEnabled,
-      isPublic: app.flags.isPublic,
-    },
     sortOrder: app.sortOrder,
-    createdAt: app.createdAt,
-    updatedAt: app.updatedAt,
-    platforms: platforms
-      .filter((item) => item.appId === app.id && item.isEnabled)
-      .sort((left, right) => PLATFORM_RANK[left.platform] - PLATFORM_RANK[right.platform]
-        || left.version.localeCompare(right.version, 'zh-CN')
-        || left.id.localeCompare(right.id))
-      .map(toPublicPlatform),
+    platforms: sortedPlatforms(platforms.filter((item) => item.appId === app.id && isHttpsUrl(item.downloadUrl)))
+      .map((platform) => ({
+        id: platform.id,
+        platform: platform.platform,
+        downloadUrl: platform.downloadUrl,
+        documentationUrl: platform.documentationUrl ?? null,
+        sortOrder: platform.sortOrder,
+      })),
   }
 }
 
 function toPublicApps(snapshot: AppsSnapshot) {
   return snapshot.apps
-    .filter((app) => app.flags.isEnabled && app.flags.isPublic)
+    .filter((app) => app.enabled)
     .sort((left, right) => left.sortOrder - right.sortOrder
       || left.name.localeCompare(right.name, 'zh-CN')
       || left.id.localeCompare(right.id))
     .map((app) => toPublicApp(app, snapshot.platforms))
+    .filter((app) => app.platforms.length > 0)
 }
 
 export const adminAppRoutes = new Hono<AppEnv>()
@@ -116,22 +103,31 @@ adminAppRoutes.get('/', async (c) => {
     schemaVersion: snapshot.schemaVersion,
     revision: snapshot.revision,
     updatedAt: snapshot.updatedAt,
-    apps: snapshot.apps,
-    platforms: snapshot.platforms,
+    apps: snapshot.apps.map((app) => toAdminApp(app, snapshot.platforms)),
   })
 })
 
 adminAppRoutes.post('/', async (c) => {
   const input = await readJson(c, appWriteSchema)
-  const app = await run(() => createApp(c.env, input))
-  return c.json({ app }, 201)
+  const { app, platforms } = await run(() => createApp(c.env, input))
+  return c.json({ app: toAdminApp(app, platforms) }, 201)
 })
 
 adminAppRoutes.put('/:id', async (c) => {
   const id = requireAppId(c.req.param('id'))
   const input = await readJson(c, appWriteSchema)
-  const app = await run(() => updateApp(c.env, id, input))
-  return c.json({ app })
+  const { app, platforms } = await run(() => updateApp(c.env, id, input))
+  return c.json({ app: toAdminApp(app, platforms) })
+})
+
+const enabledBodySchema = z.object({ enabled: z.boolean() }).strict()
+
+adminAppRoutes.post('/:id/enabled', async (c) => {
+  const id = requireAppId(c.req.param('id'))
+  const input = await readJson(c, enabledBodySchema)
+  const app = await run(() => setAppEnabled(c.env, id, input.enabled))
+  const snapshot = await run(() => readAppsState(c.env))
+  return c.json({ app: toAdminApp(app, snapshot.platforms) })
 })
 
 adminAppRoutes.delete('/:id', async (c) => {
@@ -140,39 +136,25 @@ adminAppRoutes.delete('/:id', async (c) => {
   return c.body(null, 204)
 })
 
-adminAppRoutes.post('/:id/platforms', async (c) => {
-  const appId = requireAppId(c.req.param('id'))
-  const input = await readJson(c, platformWriteSchema)
-  const platform = await run(() => createPlatform(c.env, appId, input))
-  return c.json({ platform }, 201)
-})
-
-adminAppRoutes.put('/:appId/platforms/:pid', async (c) => {
-  const appId = requireAppId(c.req.param('appId'))
-  const platformId = requirePlatformId(c.req.param('pid'))
-  const input = await readJson(c, platformWriteSchema)
-  const platform = await run(() => updatePlatform(c.env, appId, platformId, input))
-  return c.json({ platform })
-})
-
-adminAppRoutes.delete('/:appId/platforms/:pid', async (c) => {
-  const appId = requireAppId(c.req.param('appId'))
-  const platformId = requirePlatformId(c.req.param('pid'))
-  await run(() => deletePlatform(c.env, appId, platformId))
-  return c.body(null, 204)
-})
-
 export const userAppRoutes = new Hono<AppEnv>()
 
 userAppRoutes.get('/', async (c) => {
+  if (!(await getShowAppDownloads(c.env.DB))) {
+    return c.json({ downloadsEnabled: false, apps: [] })
+  }
   const snapshot = await run(() => readAppsState(c.env))
-  return c.json({ apps: toPublicApps(snapshot) })
+  return c.json({ downloadsEnabled: true, apps: toPublicApps(snapshot) })
 })
 
 userAppRoutes.get('/:id', async (c) => {
   const id = requireAppId(c.req.param('id'))
+  if (!(await getShowAppDownloads(c.env.DB))) {
+    throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
+  }
   const snapshot = await run(() => readAppsState(c.env))
   const app = snapshot.apps.find((item) => item.id === id)
-  if (!app || !app.flags.isEnabled || !app.flags.isPublic) throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
-  return c.json({ app: toPublicApp(app, snapshot.platforms) })
+  if (!app || !app.enabled) throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
+  const publicApp = toPublicApp(app, snapshot.platforms)
+  if (publicApp.platforms.length === 0) throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
+  return c.json({ app: publicApp })
 })
