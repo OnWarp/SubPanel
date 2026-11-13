@@ -17,17 +17,8 @@ export type AppsCounts = {
 type AppSql = {
   id: string
   name: string
-  icon: string
-  summary: string
   description: string
-  category: string
-  official_website: string
-  developer: string | null
-  is_recommended: number
-  is_official: number
-  is_popular: number
-  is_enabled: number
-  is_public: number
+  enabled: number
   sort_order: number
   created_at: string
   updated_at: string
@@ -37,18 +28,9 @@ type PlatformSql = {
   id: string
   app_id: string
   platform: 'android' | 'ios' | 'windows' | 'macos' | 'linux'
-  version: string
   download_url: string
-  download_type: string
-  file_size_kb: number | null
-  official_store_url: string
-  official_download_url: string
-  update_notes: string
-  import_supported: number
-  import_protocol: string
-  import_url_template: string
-  import_instructions: string
-  is_enabled: number
+  documentation_url: string | null
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -126,49 +108,26 @@ export async function readAppsFromD1(db: AppDatabase): Promise<AppsSnapshot> {
       updatedAt,
       nextAppId,
       nextPlatformId,
-      apps: orderExactly(appRows, asStringArray(order.apps)).map((row) => {
-        const app: Record<string, unknown> = {
-          id: row.id,
-          name: row.name,
-          icon: row.icon,
-          summary: row.summary,
-          description: row.description,
-          category: row.category,
-          officialWebsite: row.official_website,
-          flags: {
-            isRecommended: row.is_recommended === 1,
-            isOfficial: row.is_official === 1,
-            isPopular: row.is_popular === 1,
-            isEnabled: row.is_enabled === 1,
-            isPublic: row.is_public === 1,
-          },
-          sortOrder: row.sort_order,
-          createdAt: row.created_at,
-          updatedAt: row.updated_at,
-        }
-        if (row.developer) app.developer = row.developer
-        return app
-      }),
+      apps: orderExactly(appRows, asStringArray(order.apps)).map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        enabled: row.enabled === 1,
+        sortOrder: row.sort_order,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
       platforms: orderExactly(platformRows, asStringArray(order.platforms)).map((row) => {
         const platform: Record<string, unknown> = {
           id: row.id,
           appId: row.app_id,
           platform: row.platform,
-          version: row.version,
           downloadUrl: row.download_url,
-          downloadType: row.download_type,
-          officialStoreUrl: row.official_store_url,
-          officialDownloadUrl: row.official_download_url,
-          updateNotes: row.update_notes,
-          importSupported: row.import_supported === 1,
-          importProtocol: row.import_protocol,
-          importUrlTemplate: row.import_url_template,
-          importInstructions: row.import_instructions,
-          isEnabled: row.is_enabled === 1,
+          sortOrder: row.sort_order,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }
-        if (row.file_size_kb !== null) platform.fileSizeKb = row.file_size_kb
+        if (row.documentation_url) platform.documentationUrl = row.documentation_url
         return platform
       }),
     }
@@ -182,24 +141,13 @@ export async function readAppsFromD1(db: AppDatabase): Promise<AppsSnapshot> {
 function appInsert(db: AppDatabase, row: AppRow): D1PreparedStatement {
   return db.prepare(
     `INSERT INTO apps (
-      id, name, icon, summary, description, category, official_website, developer,
-      is_recommended, is_official, is_popular, is_enabled, is_public,
-      sort_order, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, name, description, enabled, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     row.id,
     row.name,
-    row.icon,
-    row.summary,
     row.description,
-    row.category,
-    row.official_website,
-    row.developer,
-    row.is_recommended,
-    row.is_official,
-    row.is_popular,
-    row.is_enabled,
-    row.is_public,
+    row.enabled,
     row.sort_order,
     row.created_at,
     row.updated_at,
@@ -209,27 +157,15 @@ function appInsert(db: AppDatabase, row: AppRow): D1PreparedStatement {
 function platformInsert(db: AppDatabase, row: AppPlatformRow): D1PreparedStatement {
   return db.prepare(
     `INSERT INTO app_platforms (
-      id, app_id, platform, version, download_url, download_type, file_size_kb,
-      official_store_url, official_download_url, update_notes,
-      import_supported, import_protocol, import_url_template, import_instructions,
-      is_enabled, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, app_id, platform, download_url, documentation_url, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     row.id,
     row.app_id,
     row.platform,
-    row.version,
     row.download_url,
-    row.download_type,
-    row.file_size_kb,
-    row.official_store_url,
-    row.official_download_url,
-    row.update_notes,
-    row.import_supported,
-    row.import_protocol,
-    row.import_url_template,
-    row.import_instructions,
-    row.is_enabled,
+    row.documentation_url,
+    row.sort_order,
     row.created_at,
     row.updated_at,
   )

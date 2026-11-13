@@ -21,17 +21,8 @@ export interface AppsConversionResult {
 export interface AppRow {
   id: string
   name: string
-  icon: string
-  summary: string
   description: string
-  category: string
-  official_website: string
-  developer: string | null
-  is_recommended: 0 | 1
-  is_official: 0 | 1
-  is_popular: 0 | 1
-  is_enabled: 0 | 1
-  is_public: 0 | 1
+  enabled: 0 | 1
   sort_order: number
   created_at: string
   updated_at: string
@@ -41,18 +32,9 @@ export interface AppPlatformRow {
   id: string
   app_id: string
   platform: 'android' | 'ios' | 'windows' | 'macos' | 'linux'
-  version: string
   download_url: string
-  download_type: string
-  file_size_kb: number | null
-  official_store_url: string
-  official_download_url: string
-  update_notes: string
-  import_supported: 0 | 1
-  import_protocol: string
-  import_url_template: string
-  import_instructions: string
-  is_enabled: 0 | 1
+  documentation_url: string | null
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -64,27 +46,16 @@ export function convertApps(kvValue: unknown): AppsConversionResult {
 
   const appIdSet = new Set(snapshot.apps.map((a) => a.id))
 
-  // Convert apps
   const apps: AppRow[] = snapshot.apps.map((app) => ({
     id: app.id,
     name: app.name,
-    icon: app.icon,
-    summary: app.summary,
     description: app.description,
-    category: app.category,
-    official_website: app.officialWebsite,
-    developer: app.developer ?? null,
-    is_recommended: app.flags.isRecommended ? 1 : 0,
-    is_official: app.flags.isOfficial ? 1 : 0,
-    is_popular: app.flags.isPopular ? 1 : 0,
-    is_enabled: app.flags.isEnabled ? 1 : 0,
-    is_public: app.flags.isPublic ? 1 : 0,
+    enabled: app.enabled ? 1 : 0,
     sort_order: app.sortOrder,
     created_at: app.createdAt,
     updated_at: app.updatedAt,
   }))
 
-  // Convert platforms
   const app_platforms: AppPlatformRow[] = []
   for (const platform of snapshot.platforms) {
     if (!appIdSet.has(platform.appId)) {
@@ -97,18 +68,9 @@ export function convertApps(kvValue: unknown): AppsConversionResult {
       id: platform.id,
       app_id: platform.appId,
       platform: platform.platform,
-      version: platform.version,
       download_url: platform.downloadUrl,
-      download_type: platform.downloadType,
-      file_size_kb: platform.fileSizeKb ?? null,
-      official_store_url: platform.officialStoreUrl,
-      official_download_url: platform.officialDownloadUrl,
-      update_notes: platform.updateNotes,
-      import_supported: platform.importSupported ? 1 : 0,
-      import_protocol: platform.importProtocol,
-      import_url_template: platform.importUrlTemplate,
-      import_instructions: platform.importInstructions,
-      is_enabled: platform.isEnabled ? 1 : 0,
+      documentation_url: platform.documentationUrl ?? null,
+      sort_order: platform.sortOrder,
       created_at: platform.createdAt,
       updated_at: platform.updatedAt,
     })

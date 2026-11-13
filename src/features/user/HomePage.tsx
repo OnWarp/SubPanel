@@ -12,6 +12,7 @@ import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { EXPIRY_BADGE, EXPIRY_SOON_DAYS, formatExpiryTime, formatRemaining, getExpiryState, isWithinExpiryDays } from '../delivery/expiry'
+import { useDownloadsEnabled } from '../apps/downloads-visibility'
 
 function groupSummary(groupIds: string[]): string {
   return groupIds.length ? `${groupIds.length} 个分组` : '未选择分组'
@@ -26,6 +27,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 export function HomePage() {
+  const downloadsEnabled = useDownloadsEnabled()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -81,7 +83,7 @@ export function HomePage() {
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && !current ? (
         <EmptyState icon={Rss} title="还没有订阅" description="管理员分配订阅后，状态会显示在这里">
-          <Link className="button primary" to="/apps">看 APP 下载</Link>
+          {downloadsEnabled ? <Link className="button primary" to="/apps">看 APP 下载</Link> : null}
         </EmptyState>
       ) : null}
       {!loading && !error && current && expiry && expiryBadge ? (
@@ -115,7 +117,7 @@ export function HomePage() {
               <button className="button secondary" type="button" onClick={() => { copyLink().catch(() => undefined) }}><Copy aria-hidden="true" size={16} />复制订阅链接</button>
               <Link className="button secondary" to="/subscriptions"><Rss aria-hidden="true" size={16} />打开订阅管理</Link>
               <Link className="button secondary" to={`/subscriptions?share=${encodeURIComponent(current.id)}`}><Share2 aria-hidden="true" size={16} />创建分享</Link>
-              <Link className="button secondary" to="/apps"><Download aria-hidden="true" size={16} />去下载 APP</Link>
+              {downloadsEnabled ? <Link className="button secondary" to="/apps"><Download aria-hidden="true" size={16} />去下载 APP</Link> : null}
             </div>
           </section>
 

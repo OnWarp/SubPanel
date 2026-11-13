@@ -7,74 +7,66 @@ export const appIdSchema = z.string().regex(/^app_[1-9]\d*$/)
 export const platformIdSchema = z.string().regex(/^plt_[1-9]\d*$/)
 export const platformNameSchema = z.enum(['android', 'ios', 'windows', 'macos', 'linux'])
 
+/** Display order for user-side platform categories (SubPanel_APP.md §5.2). */
+export const PLATFORM_ORDER = ['windows', 'macos', 'android', 'ios', 'linux'] as const
+
+export function platformRank(platform: z.infer<typeof platformNameSchema>): number {
+  const index = (PLATFORM_ORDER as readonly string[]).indexOf(platform)
+  return index === -1 ? PLATFORM_ORDER.length : index
+}
+
 const URL_MAX = 2048
 
-export function isHttpUrl(value: string): boolean {
-  if (!/^https?:\/\//iu.test(value) || value.length > URL_MAX || /[\s\\]/u.test(value)) return false
+export function isHttpsUrl(value: string): boolean {
+  if (!/^https:\/\//iu.test(value) || value.length > URL_MAX || /[\s\\]/u.test(value)) return false
   try {
     const url = new URL(value)
-    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0
+    return url.protocol === 'https:' && url.hostname.length > 0
   } catch {
     return false
   }
 }
 
-const httpUrlSchema = z.string().trim().min(1).max(URL_MAX).refine(isHttpUrl, '仅允许 http 或 https 链接')
-const optionalHttpUrlSchema = z.string().trim().max(URL_MAX).refine(
-  (value) => value.length === 0 || isHttpUrl(value),
-  '仅允许 http 或 https 链接',
+const httpsUrlSchema = z.string().trim().min(1).max(URL_MAX).refine(isHttpsUrl, '仅允许 https 链接')
+const optionalHttpsUrlSchema = z.string().trim().max(URL_MAX).refine(
+  (value) => value.length === 0 || isHttpsUrl(value),
+  '仅允许 https 链接',
 )
-
-export const appFlagsSchema = z.object({
-  isRecommended: z.boolean(),
-  isOfficial: z.boolean(),
-  isPopular: z.boolean(),
-  isEnabled: z.boolean(),
-  isPublic: z.boolean(),
-})
 
 const appFields = {
   name: z.string().trim().min(1).max(128),
-  icon: optionalHttpUrlSchema,
-  summary: z.string().trim().max(512),
   description: z.string().trim().max(8000),
-  category: z.string().trim().min(1).max(64),
-  officialWebsite: optionalHttpUrlSchema,
-  developer: z.union([z.string().trim().max(128), z.null()]).optional(),
-  flags: appFlagsSchema,
+  enabled: z.boolean(),
   sortOrder: z.number().int().nonnegative().max(1_000_000),
 } as const
 
-export const appWriteSchema = z.object(appFields)
-
-const platformFields = {
+const platformWriteFields = {
   platform: platformNameSchema,
-  version: z.string().trim().min(1).max(64),
-  downloadUrl: httpUrlSchema,
-  downloadType: z.string().trim().min(1).max(64),
-  fileSizeKb: z.number().int().nonnegative().max(2_000_000_000).nullable().optional(),
-  officialStoreUrl: optionalHttpUrlSchema,
-  officialDownloadUrl: optionalHttpUrlSchema,
-  updateNotes: z.string().trim().max(8000),
-  importSupported: z.boolean(),
-  importProtocol: z.string().trim().max(64),
-  importUrlTemplate: z.string().trim().max(2048),
-  importInstructions: z.string().trim().max(4000),
-  isEnabled: z.boolean(),
+  downloadUrl: httpsUrlSchema,
+  documentationUrl: optionalHttpsUrlSchema.optional(),
+  sortOrder: z.number().int().nonnegative().max(1_000_000).optional(),
 } as const
 
-export const platformWriteSchema = z.object(platformFields)
+export const platformWriteSchema = z.object(platformWriteFields)
+
+export const appWriteSchema = z.object({
+  ...appFields,
+  platforms: z.array(platformWriteSchema).min(1).max(PLATFORM_ORDER.length),
+}).superRefine((input, ctx) => {
+  const seen = new Set<string>()
+  for (const [index, platform] of input.platforms.entries()) {
+    if (seen.has(platform.platform)) {
+      ctx.addIssue({ code: 'custom', path: ['platforms', index, 'platform'], message: '同一 APP 不能重复配置相同平台' })
+    }
+    seen.add(platform.platform)
+  }
+})
 
 export const appSchema = z.object({
   id: appIdSchema,
   name: appFields.name,
-  icon: appFields.icon,
-  summary: appFields.summary,
   description: appFields.description,
-  category: appFields.category,
-  officialWebsite: appFields.officialWebsite,
-  developer: z.string().trim().min(1).max(128).optional(),
-  flags: appFlagsSchema,
+  enabled: appFields.enabled,
   sortOrder: appFields.sortOrder,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -83,19 +75,10 @@ export const appSchema = z.object({
 export const platformSchema = z.object({
   id: platformIdSchema,
   appId: appIdSchema,
-  platform: platformFields.platform,
-  version: platformFields.version,
-  downloadUrl: platformFields.downloadUrl,
-  downloadType: platformFields.downloadType,
-  fileSizeKb: z.number().int().nonnegative().max(2_000_000_000).optional(),
-  officialStoreUrl: platformFields.officialStoreUrl,
-  officialDownloadUrl: platformFields.officialDownloadUrl,
-  updateNotes: platformFields.updateNotes,
-  importSupported: platformFields.importSupported,
-  importProtocol: platformFields.importProtocol,
-  importUrlTemplate: platformFields.importUrlTemplate,
-  importInstructions: platformFields.importInstructions,
-  isEnabled: platformFields.isEnabled,
+  platform: platformNameSchema,
+  downloadUrl: httpsUrlSchema,
+  documentationUrl: httpsUrlSchema.optional(),
+  sortOrder: z.number().int().nonnegative().max(1_000_000),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 })
@@ -112,6 +95,7 @@ function validateSnapshot(snapshot: {
 }, ctx: z.RefinementCtx): void {
   const appIds = new Set<string>()
   const platformIds = new Set<string>()
+  const platformKeys = new Set<string>()
 
   if (snapshot.nextAppId <= maxIdentifierNumber(snapshot.apps.map(({ id }) => id), 'app_')) {
     ctx.addIssue({ code: 'custom', path: ['nextAppId'], message: 'nextAppId must be greater than all existing app IDs' })
@@ -131,6 +115,11 @@ function validateSnapshot(snapshot: {
     if (!appIds.has(platform.appId)) {
       ctx.addIssue({ code: 'custom', path: ['platforms', index, 'appId'], message: 'Platform references a missing app' })
     }
+    const key = `${platform.appId}:${platform.platform}`
+    if (platformKeys.has(key)) {
+      ctx.addIssue({ code: 'custom', path: ['platforms', index, 'platform'], message: 'Duplicate platform for app' })
+    }
+    platformKeys.add(key)
   }
 }
 
@@ -147,7 +136,6 @@ export const appsSnapshotSchema = z.object({
 export type AppId = z.infer<typeof appIdSchema>
 export type PlatformId = z.infer<typeof platformIdSchema>
 export type PlatformName = z.infer<typeof platformNameSchema>
-export type AppFlags = z.infer<typeof appFlagsSchema>
 export type AppWrite = z.infer<typeof appWriteSchema>
 export type PlatformWrite = z.infer<typeof platformWriteSchema>
 export type App = z.infer<typeof appSchema>
@@ -164,11 +152,8 @@ export const emptyAppsSnapshot = (now = '1970-01-01T00:00:00.000Z'): AppsSnapsho
   platforms: [],
 })
 
-export function cleanDeveloper(value: string | null | undefined): string | undefined {
+/** Normalizes an optional URL field: blank input means "no link". */
+export function cleanOptionalUrl(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
-}
-
-export function cleanFileSizeKb(value: number | null | undefined): number | undefined {
-  return value === null || value === undefined ? undefined : value
 }

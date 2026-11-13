@@ -2,55 +2,33 @@ import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
-type Flags = {
-  isRecommended: boolean
-  isOfficial: boolean
-  isPopular: boolean
-  isEnabled: boolean
-  isPublic: boolean
-}
-
 type ErrorBody = { error: { code: string, message: string } }
 
-const baseFlags: Flags = {
-  isRecommended: false,
-  isOfficial: false,
-  isPopular: false,
-  isEnabled: true,
-  isPublic: true,
+type AdminPlatformDto = {
+  id: string
+  appId: string
+  platform: string
+  downloadUrl: string
+  documentationUrl: string | null
+  sortOrder: number
 }
 
-function appInput(overrides: { flags?: Partial<Flags> } & Record<string, unknown> = {}) {
-  const { flags, ...rest } = overrides
+type AdminAppDto = {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  sortOrder: number
+  platforms: AdminPlatformDto[]
+}
+
+function appInput(overrides: Record<string, unknown> = {}) {
   return {
     name: '示例应用',
-    icon: '',
-    summary: '一句话简介',
     description: '详细介绍',
-    category: '工具',
-    officialWebsite: '',
-    developer: 'Example Lab',
+    enabled: true,
     sortOrder: 0,
-    ...rest,
-    flags: { ...baseFlags, ...flags },
-  }
-}
-
-function platformInput(overrides: Record<string, unknown> = {}) {
-  return {
-    platform: 'android',
-    version: '1.2.0',
-    downloadUrl: 'https://cdn.example.com/app.apk',
-    downloadType: 'direct',
-    fileSizeKb: 1024,
-    officialStoreUrl: '',
-    officialDownloadUrl: '',
-    updateNotes: '',
-    importSupported: true,
-    importProtocol: 'clash',
-    importUrlTemplate: 'clash://install-config?url={url}',
-    importInstructions: '打开客户端后导入',
-    isEnabled: true,
+    platforms: [{ platform: 'android', downloadUrl: 'https://cdn.example.com/app.apk' }],
     ...overrides,
   }
 }
@@ -98,47 +76,45 @@ describe('admin app catalog', () => {
 
   it('creates, updates, and deletes apps with cascaded platforms', async () => {
     const admin = await login()
-    const created = await authed(admin, 'POST', '/api/admin/apps', appInput({ name: '面板', sortOrder: 2, flags: { isRecommended: true } }))
+    const created = await authed(admin, 'POST', '/api/admin/apps', appInput({
+      name: '面板',
+      sortOrder: 2,
+      platforms: [
+        { platform: 'windows', downloadUrl: 'https://cdn.example.com/panel.exe', documentationUrl: 'https://example.com/docs' },
+        { platform: 'android', downloadUrl: 'https://cdn.example.com/panel.apk' },
+      ],
+    }))
     expect(created.status).toBe(201)
-    const app = (await created.json() as { app: { id: string, name: string, flags: Flags, developer?: string } }).app
+    const app = (await created.json() as { app: AdminAppDto }).app
     expect(app.id).toMatch(/^app_[1-9]\d*$/)
     expect(app.name).toBe('面板')
-    expect(app.flags.isRecommended).toBe(true)
-    expect(app.developer).toBe('Example Lab')
+    expect(app.enabled).toBe(true)
+    expect(app.platforms.map((item) => item.platform)).toEqual(['windows', 'android'])
+    const windows = app.platforms[0]
+    expect(windows?.id).toMatch(/^plt_[1-9]\d*$/)
+    expect(windows?.documentationUrl).toBe('https://example.com/docs')
+    expect(app.platforms[1]?.documentationUrl).toBeNull()
 
-    const platform = await authed(admin, 'POST', `/api/admin/apps/${app.id}/platforms`, platformInput())
-    expect(platform.status).toBe(201)
-    const storedPlatform = (await platform.json() as { platform: { id: string, importUrlTemplate: string, downloadUrl: string } }).platform
-    expect(storedPlatform.id).toMatch(/^plt_[1-9]\d*$/)
-    expect(storedPlatform.importUrlTemplate).toBe('clash://install-config?url={url}')
-
-    const renamed = await authed(admin, 'PUT', `/api/admin/apps/${app.id}`, appInput({ name: '面板 Pro', developer: null, flags: { isRecommended: true } }))
-    expect(renamed.status).toBe(200)
-    const renamedApp = (await renamed.json() as { app: { name: string, developer?: string } }).app
-    expect(renamedApp.name).toBe('面板 Pro')
-    expect(renamedApp.developer).toBeUndefined()
-
-    const versioned = await authed(admin, 'PUT', `/api/admin/apps/${app.id}/platforms/${storedPlatform.id}`, platformInput({ version: '1.3.0' }))
-    expect(versioned.status).toBe(200)
-    expect((await versioned.json() as { platform: { version: string } }).platform.version).toBe('1.3.0')
-
-    const other = await authed(admin, 'POST', '/api/admin/apps', appInput({ name: '另一个', category: '系统' }))
-    const otherApp = (await other.json() as { app: { id: string } }).app
-    const otherPlatform = await authed(admin, 'POST', `/api/admin/apps/${otherApp.id}/platforms`, platformInput({
-      downloadUrl: 'https://cdn.example.com/other.apk',
+    const replaced = await authed(admin, 'PUT', `/api/admin/apps/${app.id}`, appInput({
+      name: '面板 Pro',
+      platforms: [
+        { platform: 'windows', downloadUrl: 'https://cdn.example.com/panel-pro.exe' },
+        { platform: 'ios', downloadUrl: 'https://cdn.example.com/panel.ipa' },
+      ],
     }))
-    const otherPlatformId = (await otherPlatform.json() as { platform: { id: string } }).platform.id
+    expect(replaced.status).toBe(200)
+    const replacedApp = (await replaced.json() as { app: AdminAppDto }).app
+    expect(replacedApp.name).toBe('面板 Pro')
+    expect(replacedApp.platforms.map((item) => item.platform)).toEqual(['windows', 'ios'])
+    expect(replacedApp.platforms[0]?.id).toBe(windows?.id)
+    expect(replacedApp.platforms[0]?.downloadUrl).toBe('https://cdn.example.com/panel-pro.exe')
 
-    await expectError(
-      await authed(admin, 'PUT', `/api/admin/apps/${otherApp.id}/platforms/${storedPlatform.id}`, platformInput({ version: '9.9.9' })),
-      404,
-      'PLATFORM_NOT_FOUND',
-    )
+    const other = await authed(admin, 'POST', '/api/admin/apps', appInput({ name: '另一个' }))
+    const otherApp = (await other.json() as { app: AdminAppDto }).app
+
     await expectError(await authed(admin, 'GET', '/api/admin/apps/missing'), 404, 'NOT_FOUND')
     await expectError(await authed(admin, 'DELETE', '/api/admin/apps/nope'), 404, 'APP_NOT_FOUND')
 
-    const removedPlatform = await authed(admin, 'DELETE', `/api/admin/apps/${app.id}/platforms/${storedPlatform.id}`)
-    expect(removedPlatform.status).toBe(204)
     const removedApp = await authed(admin, 'DELETE', `/api/admin/apps/${otherApp.id}`)
     expect(removedApp.status).toBe(204)
 
@@ -146,47 +122,57 @@ describe('admin app catalog', () => {
     expect(list.status).toBe(200)
     const body = await list.json() as {
       schemaVersion: number
-      apps: Array<{ id: string, name: string }>
-      platforms: Array<{ id: string, appId: string }>
+      apps: AdminAppDto[]
+      platforms?: unknown
       nextAppId?: number
     }
     expect(body.schemaVersion).toBe(1)
     expect(body.nextAppId).toBeUndefined()
+    expect(body.platforms).toBeUndefined()
     expect(body.apps.map((item) => item.id)).toEqual([app.id])
-    expect(body.platforms.map((item) => item.id)).toEqual([])
-    expect(body.platforms.some((item) => item.id === otherPlatformId)).toBe(false)
+    expect(body.apps[0]?.platforms.map((item) => item.platform)).toEqual(['windows', 'ios'])
   })
 
-  it('rejects non-http download and store URLs', async () => {
+  it('rejects non-https download and documentation URLs', async () => {
     const admin = await login()
-    const app = (await (await authed(admin, 'POST', '/api/admin/apps', appInput())).json() as { app: { id: string } }).app
-    for (const downloadUrl of ['javascript:alert(1)', 'ftp://files.example.com/a.apk', 'file:///tmp/a.apk', 'data:text/plain,hi']) {
+    for (const downloadUrl of ['http://cdn.example.com/app.apk', 'javascript:alert(1)', 'ftp://files.example.com/a.apk', 'file:///tmp/a.apk', 'data:text/plain,hi']) {
       await expectError(
-        await authed(admin, 'POST', `/api/admin/apps/${app.id}/platforms`, platformInput({ downloadUrl })),
+        await authed(admin, 'POST', '/api/admin/apps', appInput({
+          platforms: [{ platform: 'android', downloadUrl }],
+        })),
         422,
         'VALIDATION_FAILED',
       )
     }
     await expectError(
-      await authed(admin, 'POST', `/api/admin/apps/${app.id}/platforms`, platformInput({ officialStoreUrl: 'ftp://files.example.com/a' })),
+      await authed(admin, 'POST', '/api/admin/apps', appInput({
+        platforms: [{ platform: 'android', downloadUrl: 'https://cdn.example.com/app.apk', documentationUrl: 'http://example.com/docs' }],
+      })),
       422,
       'VALIDATION_FAILED',
     )
     await expectError(
-      await authed(admin, 'POST', '/api/admin/apps', appInput({ icon: 'javascript:alert(1)' })),
+      await authed(admin, 'POST', '/api/admin/apps', appInput({
+        platforms: [
+          { platform: 'android', downloadUrl: 'https://cdn.example.com/a.apk' },
+          { platform: 'android', downloadUrl: 'https://cdn.example.com/b.apk' },
+        ],
+      })),
       422,
       'VALIDATION_FAILED',
     )
-    const allowed = await authed(admin, 'POST', `/api/admin/apps/${app.id}/platforms`, platformInput({
-      downloadUrl: 'http://cdn.example.com/app.apk',
-      officialDownloadUrl: 'https://example.com/download',
-    }))
+    await expectError(
+      await authed(admin, 'POST', '/api/admin/apps', appInput({ platforms: [] })),
+      422,
+      'VALIDATION_FAILED',
+    )
+    const allowed = await authed(admin, 'POST', '/api/admin/apps', appInput())
     expect(allowed.status).toBe(201)
   })
 })
 
 describe('user app catalog', () => {
-  it('returns only enabled public apps and enabled platforms', async () => {
+  it('returns only enabled apps with their configured platforms', async () => {
     const admin = await login()
     const reader = await provisionUser(admin)
     await expectError(await exports.default.fetch(`${TEST_ORIGIN}/api/apps`), 401, 'AUTH_REQUIRED')
@@ -194,73 +180,60 @@ describe('user app catalog', () => {
     const visible = (await (await authed(admin, 'POST', '/api/admin/apps', appInput({
       name: '公开应用',
       sortOrder: 5,
-      developer: null,
-      flags: { isRecommended: true, isOfficial: true },
-    }))).json() as { app: { id: string } }).app
+      platforms: [
+        { platform: 'ios', downloadUrl: 'https://cdn.example.com/visible-ios.ipa' },
+        { platform: 'android', downloadUrl: 'https://cdn.example.com/visible-android.apk', documentationUrl: 'https://example.com/guide' },
+      ],
+    }))).json() as { app: AdminAppDto }).app
     const earlier = (await (await authed(admin, 'POST', '/api/admin/apps', appInput({
       name: '靠前应用',
       sortOrder: 1,
-      category: '网络',
-    }))).json() as { app: { id: string } }).app
-    const hidden = (await (await authed(admin, 'POST', '/api/admin/apps', appInput({
-      name: '内部应用',
-      flags: { isPublic: false },
-    }))).json() as { app: { id: string } }).app
+      platforms: [{ platform: 'windows', downloadUrl: 'https://cdn.example.com/earlier.exe' }],
+    }))).json() as { app: AdminAppDto }).app
     const disabled = (await (await authed(admin, 'POST', '/api/admin/apps', appInput({
       name: '停用应用',
-      flags: { isEnabled: false },
-    }))).json() as { app: { id: string } }).app
-
-    await authed(admin, 'POST', `/api/admin/apps/${visible.id}/platforms`, platformInput({
-      platform: 'ios',
-      version: '2.0.0',
-      downloadUrl: 'https://cdn.example.com/visible-ios.ipa',
-    }))
-    await authed(admin, 'POST', `/api/admin/apps/${visible.id}/platforms`, platformInput({
-      platform: 'android',
-      version: '2.1.0',
-      downloadUrl: 'https://cdn.example.com/secret-android.apk',
-      isEnabled: false,
-    }))
-    await authed(admin, 'POST', `/api/admin/apps/${hidden.id}/platforms`, platformInput({
-      downloadUrl: 'https://cdn.example.com/hidden.apk',
-    }))
+      enabled: false,
+      platforms: [{ platform: 'windows', downloadUrl: 'https://cdn.example.com/disabled.exe' }],
+    }))).json() as { app: AdminAppDto }).app
 
     const listResponse = await authed(reader, 'GET', '/api/apps')
     expect(listResponse.status).toBe(200)
     const list = await listResponse.json() as {
-      apps: Array<{ id: string, name: string, developer: string | null, platforms: Array<{ downloadUrl: string, isEnabled: boolean }> }>
+      downloadsEnabled: boolean
+      apps: Array<{ id: string, name: string, platforms: Array<{ platform: string, downloadUrl: string, documentationUrl: string | null }> }>
       revision?: number
       platforms?: unknown
       nextAppId?: number
     }
+    expect(list.downloadsEnabled).toBe(true)
     expect(list.revision).toBeUndefined()
     expect(list.platforms).toBeUndefined()
     expect(list.nextAppId).toBeUndefined()
     expect(list.apps.map((item) => item.id)).toEqual([earlier.id, visible.id])
     const visibleDto = list.apps[1]
-    expect(visibleDto?.developer).toBeNull()
-    expect(visibleDto?.platforms.map((item) => item.downloadUrl)).toEqual(['https://cdn.example.com/visible-ios.ipa'])
+    expect(visibleDto?.platforms.map((item) => item.platform)).toEqual(['android', 'ios'])
+    expect(visibleDto?.platforms.map((item) => item.downloadUrl)).toEqual([
+      'https://cdn.example.com/visible-android.apk',
+      'https://cdn.example.com/visible-ios.ipa',
+    ])
+    expect(visibleDto?.platforms[0]?.documentationUrl).toBe('https://example.com/guide')
+    expect(visibleDto?.platforms[1]?.documentationUrl).toBeNull()
     expect(Object.keys(visibleDto ?? {}).sort()).toEqual([
-      'category', 'createdAt', 'description', 'developer', 'flags', 'icon', 'id', 'name', 'officialWebsite', 'platforms', 'sortOrder', 'summary', 'updatedAt',
+      'description', 'id', 'name', 'platforms', 'sortOrder',
     ])
     expect(Object.keys(visibleDto?.platforms[0] ?? {}).sort()).toEqual([
-      'appId', 'createdAt', 'downloadType', 'downloadUrl', 'fileSizeKb', 'id', 'importInstructions', 'importProtocol', 'importSupported', 'importUrlTemplate', 'isEnabled', 'officialDownloadUrl', 'officialStoreUrl', 'platform', 'updateNotes', 'updatedAt', 'version',
+      'documentationUrl', 'downloadUrl', 'id', 'platform', 'sortOrder',
     ])
     const serialized = JSON.stringify(list)
-    expect(serialized).not.toContain('内部应用')
     expect(serialized).not.toContain('停用应用')
-    expect(serialized).not.toContain('secret-android.apk')
-    expect(serialized).not.toContain('hidden.apk')
+    expect(serialized).not.toContain('disabled.exe')
     expect(serialized).not.toContain('nextPlatformId')
 
     const detail = await authed(reader, 'GET', `/api/apps/${visible.id}`)
     expect(detail.status).toBe(200)
-    const detailBody = await detail.json() as { app: { id: string, flags: Flags } }
+    const detailBody = await detail.json() as { app: { id: string, enabled?: unknown } }
     expect(detailBody.app.id).toBe(visible.id)
-    expect(detailBody.app.flags.isEnabled).toBe(true)
-    expect(detailBody.app.flags.isPublic).toBe(true)
-    await expectError(await authed(reader, 'GET', `/api/apps/${hidden.id}`), 404, 'APP_NOT_FOUND')
+    expect(detailBody.app.enabled).toBeUndefined()
     await expectError(await authed(reader, 'GET', `/api/apps/${disabled.id}`), 404, 'APP_NOT_FOUND')
     await expectError(await authed(reader, 'GET', '/api/apps/app_999'), 404, 'APP_NOT_FOUND')
   })

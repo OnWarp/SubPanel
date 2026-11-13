@@ -4,6 +4,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
+import { useDownloadsEnabled } from '../features/apps/downloads-visibility'
 
 type NavItem = { to: string; label: string; icon: LucideIcon }
 type NavSection = { label: string; items: NavItem[] }
@@ -53,6 +54,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sheet = useRef<HTMLElement>(null)
   const touchStart = useRef(0)
   const isAdmin = user?.role === 'admin'
+  const downloadsEnabled = useDownloadsEnabled()
+  const visibleUserSheetItems = !isAdmin && !downloadsEnabled ? userSheetItems.filter((item) => item.to !== '/apps') : userSheetItems
+  const visibleUserSidebar = !isAdmin && !downloadsEnabled ? userSidebar.filter((item) => item.to !== '/apps') : userSidebar
   const adminItems = adminSections.flatMap((section) => section.items)
   const dockPaths = ['/dashboard', '/catalog/groups', '/users']
   const dockItems = dockPaths
@@ -129,7 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
         ) : (
           <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
-            {userSidebar.map(({ to, label, icon: Icon }) => (
+            {visibleUserSidebar.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} end className={({ isActive }) => isActive ? 'active' : undefined}>
                 <Icon aria-hidden="true" size={17} /><span>{label}</span>
               </NavLink>
@@ -182,8 +186,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           onTouchEnd={finishSwipe}
         >
           <span className="dock-sheet-handle" aria-hidden="true" />
-          {(isAdmin ? sheetItems : userSheetItems).length ? <nav className="dock-sheet-nav" aria-label="主导航">
-            {(isAdmin ? sheetItems : userSheetItems).map(({ to, label, icon: Icon }) => (
+          {(isAdmin ? sheetItems : visibleUserSheetItems).length ? <nav className="dock-sheet-nav" aria-label="主导航">
+            {(isAdmin ? sheetItems : visibleUserSheetItems).map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
                 <Icon aria-hidden="true" size={19} /><span>{label}</span>
               </Link>

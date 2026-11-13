@@ -435,12 +435,81 @@ function StatusSection() {
   )
 }
 
+function AppDownloadsSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const toast = useToast()
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const data = await api<{ enabled: boolean }>('/api/admin/system/app-downloads')
+      setEnabled(data.enabled)
+    } catch (cause) {
+      setLoadError(errorMessage(cause, '加载 APP 下载设置失败'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load().catch(() => undefined) }, [load])
+
+  const toggle = async (next: boolean) => {
+    setSaving(true)
+    try {
+      const data = await api<{ enabled: boolean }>('/api/admin/system/app-downloads', {
+        method: 'PUT',
+        body: jsonBody({ enabled: next }),
+      })
+      setEnabled(data.enabled)
+      toast.notify(data.enabled ? '已显示 APP 下载板块' : '已隐藏 APP 下载板块')
+    } catch (cause) {
+      toast.notifyError(errorMessage(cause, '保存 APP 下载设置失败'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <section className="data-section sys-section" aria-labelledby="sys-app-downloads-title">
+      <DataHeader id="sys-app-downloads-title" title="APP 下载" />
+      {loading ? <div className="sys-state"><LoadingState label="正在加载 APP 下载设置" /></div> : null}
+      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {!loading && !loadError && enabled !== null ? (
+        <div>
+          <p className="sys-hint">开启后，普通用户可以在用户端查看各平台的 APP 下载入口；关闭后，用户端隐藏整个 APP 下载板块，但不会删除已配置的 APP</p>
+          <div className="sys-toggles">
+            <FormField label="显示 APP 下载板块">
+              <label className="sys-switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="显示 APP 下载板块"
+                  checked={enabled}
+                  disabled={saving}
+                  onChange={(event) => { toggle(event.currentTarget.checked).catch(() => undefined) }}
+                />
+                <span className="sys-switch-track" aria-hidden="true"><span className="sys-switch-thumb" /></span>
+                <span className="sys-switch-label">{enabled ? '已开启' : '已关闭'}</span>
+              </label>
+            </FormField>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 export function SystemPage() {
   return (
     <div className="page-stack">
-      <PageHeader title="系统管理" description="账户与注册、邮件、分享与系统状态集中在这里" />
+      <PageHeader title="系统管理" description="账户与注册、邮件、APP 下载、分享与系统状态集中在这里" />
       <RegistrationSection />
       <MailSection />
+      <AppDownloadsSection />
       <ShareSettingsSection />
       <StatusSection />
     </div>
