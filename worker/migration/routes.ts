@@ -6,7 +6,7 @@ import { readJson } from '../platform/http.js'
 import { MigrationError, runModuleImport } from './run.js'
 
 const bodySchema = z.object({
-  module: z.enum(['catalog', 'apps']),
+  module: z.enum(['catalog', 'apps', 'delivery', 'shares']),
 })
 
 export const migrationRoutes = new Hono<AppEnv>()

@@ -411,12 +411,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(await expiredShare.json()).toEqual({ error: { code: 'SUB_EXPIRED', message: '订阅已过期' } })
     expect((await shareExport(forever.subscription.id)).status).toBe(200)
 
-    const raw = JSON.parse(await env.DATA.get('state:delivery') ?? '{}') as { subscriptions: Array<Record<string, unknown>> }
-    for (const subscription of raw.subscriptions) {
-      delete subscription.startsAt
-      delete subscription.expiresAt
-    }
-    await env.DATA.put('state:delivery', JSON.stringify(raw))
+    await env.DB.prepare('UPDATE subscriptions SET starts_at = NULL, expires_at = NULL').run()
     const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ startsAt: number | null; expiresAt: number | null }> }
     expect(listed.subscriptions.every((subscription) => subscription.startsAt === null && subscription.expiresAt === null)).toBe(true)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${expired.token}/mihomo`)).status).toBe(200)

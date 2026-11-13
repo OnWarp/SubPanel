@@ -46,7 +46,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   let catalog: Awaited<ReturnType<typeof readCatalog>>
   try {
     [delivery, catalog] = await Promise.all([
-      readDelivery(c.env.DATA),
+      readDelivery(c.env),
       readCatalog(c.env),
     ])
   } catch {

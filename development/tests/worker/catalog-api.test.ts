@@ -210,7 +210,10 @@ describe('administrator Catalog APIs', () => {
     const catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { nodes: Array<{ id: string }> }
 
     // A corrupt delivery snapshot makes recompilation fail after the Catalog write.
-    await env.DATA.put('state:delivery', '{}')
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value, updated_at) VALUES ('delivery_revision', '"bad"', '2020-01-01T00:00:00.000Z')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run()
     const response = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/nodes/${catalog.nodes[0].id}`,
       jsonRequest({ displayName: 'After compile failure' }, { ...withCookie(cookie), method: 'PATCH' }),
@@ -227,7 +230,10 @@ describe('administrator Catalog APIs', () => {
 
   it('reports source recompile failures without rolling back saved mutations', async () => {
     const cookie = await login()
-    await env.DATA.put('state:delivery', '{}')
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value, updated_at) VALUES ('delivery_revision', '"bad"', '2020-01-01T00:00:00.000Z')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run()
 
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources`,
@@ -322,7 +328,10 @@ describe('administrator Catalog APIs', () => {
     )
     const groupId = (await createdGroup.json() as { group: { id: string } }).group.id
 
-    await env.DATA.put('state:delivery', '{}')
+    await env.DB.prepare(
+      `INSERT INTO system_settings (key, value, updated_at) VALUES ('delivery_revision', '"bad"', '2020-01-01T00:00:00.000Z')
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    ).run()
     const response = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/groups/${groupId}`,
       jsonRequest({}, { ...withCookie(cookie), method: 'DELETE' }),

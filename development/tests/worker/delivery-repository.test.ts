@@ -23,7 +23,7 @@ beforeEach(async () => {
 describe('Delivery snapshot and token service', () => {
   it('rejects a next subscription ID that can collide with an existing subscription', async () => {
     await createSubscription(env, { userId: 'usr_1', name: 'Existing', groupIds: [] }, { token: 'Z'.repeat(43) })
-    const snapshot = await readDelivery(env.DATA)
+    const snapshot = await readDelivery(env)
     expect(deliverySnapshotSchema.safeParse({ ...snapshot, nextSubscriptionId: 1 }).success).toBe(false)
   })
 
@@ -51,14 +51,14 @@ describe('Delivery snapshot and token service', () => {
   })
 
   it('returns an empty validated delivery snapshot when absent', async () => {
-    const snapshot = await readDelivery(env.DATA)
+    const snapshot = await readDelivery(env)
     expect(snapshot).toEqual(emptyDeliverySnapshot())
     expect(deliverySnapshotSchema.parse(snapshot)).toEqual(snapshot)
   })
 
   it('rejects a corrupt snapshot', async () => {
     await env.DATA.put('state:delivery', '{}')
-    await expect(readDelivery(env.DATA)).rejects.toThrow('Delivery snapshot is corrupt')
+    await expect(readDelivery(env)).rejects.toThrow('Delivery snapshot is corrupt')
   })
 
   it('stores only a hash and encrypted recoverable token', async () => {
@@ -68,7 +68,7 @@ describe('Delivery snapshot and token service', () => {
       groupIds: [],
     }, { now, token: 'A'.repeat(43) })
 
-    const snapshot = await readDelivery(env.DATA)
+    const snapshot = await readDelivery(env)
     const stored = snapshot.subscriptions[0]
     expect(result.token).toBe('A'.repeat(43))
     expect(stored.tokenHash).not.toBe(result.token)
@@ -81,18 +81,18 @@ describe('Delivery snapshot and token service', () => {
 
   it('returns only the owner subscriptions and rotates the old token', async () => {
     const first = await createSubscription(env, { userId: 'usr_1', name: 'One', groupIds: [] }, { token: 'B'.repeat(43) })
-    expect((await listSubscriptionsForUser(env.DATA, 'usr_1')).map((item) => item.id)).toEqual([first.subscription.id])
+    expect((await listSubscriptionsForUser(env, 'usr_1')).map((item) => item.id)).toEqual([first.subscription.id])
 
-    const rotated = await resetSubscriptionToken(env.DATA, first.subscription.id, { actorUserId: 'usr_1', token: 'D'.repeat(43) })
+    const rotated = await resetSubscriptionToken(env, first.subscription.id, { actorUserId: 'usr_1', token: 'D'.repeat(43) })
     expect(rotated.token).toBe('D'.repeat(43))
     expect(rotated.subscription.tokenPrefix).toBe('DDDDDDDD')
-    expect((await readDelivery(env.DATA)).subscriptions[0].tokenHash).not.toBe(first.subscription.tokenHash)
+    expect((await readDelivery(env)).subscriptions[0].tokenHash).not.toBe(first.subscription.tokenHash)
     expect(toPublicSubscription(rotated.subscription)).not.toHaveProperty('encryptedToken')
   })
 
   it('rejects a non-owner token reset', async () => {
     const created = await createSubscription(env, { userId: 'usr_1', name: 'Private', groupIds: [] }, { token: 'E'.repeat(43) })
-    await expect(resetSubscriptionToken(env.DATA, created.subscription.id, { actorUserId: 'usr_2', token: 'F'.repeat(43) }))
+    await expect(resetSubscriptionToken(env, created.subscription.id, { actorUserId: 'usr_2', token: 'F'.repeat(43) }))
       .rejects.toThrow('SUBSCRIPTION_FORBIDDEN')
   })
 
@@ -109,7 +109,7 @@ describe('Delivery snapshot and token service', () => {
     delete raw.subscriptions[0].startsAt
     delete raw.subscriptions[0].expiresAt
     await env.DATA.put('state:delivery', JSON.stringify(raw))
-    const stored = (await readDelivery(env.DATA)).subscriptions[0]
+    const stored = (await readDelivery(env)).subscriptions[0]
     expect(stored.startsAt).toBeNull()
     expect(stored.expiresAt).toBeNull()
     expect(deliverySnapshotSchema.parse({

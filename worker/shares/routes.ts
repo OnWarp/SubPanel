@@ -87,54 +87,54 @@ shareRoutes.use('*', async (c, next) => {
 })
 
 shareRoutes.get('/', async (c) => {
-  const shares = await run(() => listOwnShares(c.env.DATA, c.get('principal').id))
+  const shares = await run(() => listOwnShares(c.env, c.get('principal').id))
   return c.json({ shares })
 })
 
 shareRoutes.post('/', async (c) => {
   const input = await readJson(c, createShareSchema)
-  const result = await run(() => createShare(c.env.DATA, c.get('principal').id, input))
+  const result = await run(() => createShare(c.env, c.get('principal').id, input))
   return c.json(result, 201)
 })
 
 shareRoutes.put('/:id', async (c) => {
   const input = await readJson(c, updateShareSchema)
-  const share = await run(() => updateShare(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id, input))
+  const share = await run(() => updateShare(c.env, requireShareId(c.req.param('id')), c.get('principal').id, input))
   return c.json({ share })
 })
 
 shareRoutes.post('/:id/disable', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => changeOwnStatus(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id, 'disabled'))
+  const share = await run(() => changeOwnStatus(c.env, requireShareId(c.req.param('id')), c.get('principal').id, 'disabled'))
   return c.json({ share })
 })
 
 shareRoutes.post('/:id/enable', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => changeOwnStatus(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id, 'active'))
+  const share = await run(() => changeOwnStatus(c.env, requireShareId(c.req.param('id')), c.get('principal').id, 'active'))
   return c.json({ share })
 })
 
 shareRoutes.post('/:id/revoke', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => changeOwnStatus(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id, 'revoked'))
+  const share = await run(() => changeOwnStatus(c.env, requireShareId(c.req.param('id')), c.get('principal').id, 'revoked'))
   return c.json({ share })
 })
 
 shareRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetShareToken(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id))
+  const result = await run(() => resetShareToken(c.env, requireShareId(c.req.param('id')), c.get('principal').id))
   return c.json(result)
 })
 
 shareRoutes.post('/:id/reveal', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => revealOriginalLink(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id, c.req.url))
+  const result = await run(() => revealOriginalLink(c.env, requireShareId(c.req.param('id')), c.get('principal').id, c.req.url))
   return c.json(result)
 })
 
 shareRoutes.delete('/:id', async (c) => {
-  await run(() => removeShare(c.env.DATA, requireShareId(c.req.param('id')), c.get('principal').id))
+  await run(() => removeShare(c.env, requireShareId(c.req.param('id')), c.get('principal').id))
   return c.body(null, 204)
 })
 
@@ -184,29 +184,29 @@ adminShareRoutes.get('/shares', async (c) => {
     status: queryValue(c.req.query('status')),
   })
   if (!parsed.success) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败', parsed.error.flatten())
-  const shares = await run(() => listAdminShares(c.env.DATA, parsed.data))
+  const shares = await run(() => listAdminShares(c.env, parsed.data))
   return c.json({ shares })
 })
 
 adminShareRoutes.post('/shares/:id/disable', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => adminChangeStatus(c.env.DATA, requireShareId(c.req.param('id')), 'disabled'))
+  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'disabled'))
   return c.json({ share })
 })
 
 adminShareRoutes.post('/shares/:id/revoke', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => adminChangeStatus(c.env.DATA, requireShareId(c.req.param('id')), 'revoked'))
+  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'revoked'))
   return c.json({ share })
 })
 
 adminShareRoutes.get('/share-settings', async (c) => {
-  const settings = await run(() => readShareSettings(c.env.DATA))
+  const settings = await run(() => readShareSettings(c.env))
   return c.json({ settings })
 })
 
 adminShareRoutes.put('/share-settings', async (c) => {
   const input = await readJson(c, shareSettingsSchema)
-  const settings = await run(() => updateSettings(c.env.DATA, input))
+  const settings = await run(() => updateSettings(c.env, input))
   return c.json({ settings })
 })

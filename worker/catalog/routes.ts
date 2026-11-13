@@ -228,12 +228,12 @@ catalogRoutes.delete('/groups/:groupId', async (c) => {
   const snapshot = await readCatalog(c.env)
   if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   try {
-    await readDelivery(c.env.DATA)
+    await readDelivery(c.env)
   } catch {
     throw apiError(500, 'DELIVERY_STATE_INVALID', '订阅状态不可用，未删除分组')
   }
   await writeCatalog(c.env, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })
-  await removeGroupReference(c.env.DATA, id.data)
+  await removeGroupReference(c.env, id.data)
   const warning = await recompileDelivery(c.env)
   if (warning) c.header('X-Catalog-Recompile', 'failed')
   return c.body(null, 204)
