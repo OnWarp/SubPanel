@@ -10,6 +10,7 @@ import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { SegmentedControl } from '../../ui/SegmentedControl'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 
@@ -72,7 +73,6 @@ export function MyNodesPage() {
   const groupOptions = useMemo(() => uniqueRefs(nodes, 'groups'), [nodes])
   const activeSubscription = subscriptionId !== 'all' && subscriptionOptions.some((item) => item.id === subscriptionId) ? subscriptionId : 'all'
   const activeGroup = groupId !== 'all' && groupOptions.some((item) => item.id === groupId) ? groupId : 'all'
-  const groupCount = useMemo(() => new Set(nodes.flatMap((node) => node.groups.map((group) => group.id))).size, [nodes])
   const visibleNodes = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     return nodes.filter((node) => {
@@ -99,20 +99,16 @@ export function MyNodesPage() {
 
   return (
     <div className="page-stack node-page">
-      <PageHeader title="我的节点" description="汇总名下订阅里的可用节点" />
+      <PageHeader title="我的节点" />
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && nodes.length === 0 ? (
-        <EmptyState icon={Network} title="还没有可用节点" description="订阅分配分组后，节点会显示在这里">
+        <EmptyState icon={Network} title="暂无可用节点">
           <Link className="button primary" to="/subscriptions">去订阅</Link>
         </EmptyState>
       ) : null}
       {!loading && !error && nodes.length > 0 ? (
         <>
-          <div className="node-summary" aria-label="节点汇总">
-            <div className="node-summary-item"><span>节点总数</span><strong>{nodes.length}</strong></div>
-            <div className="node-summary-item"><span>来自分组数</span><strong>{groupCount}</strong></div>
-          </div>
           <section className="data-section node-list" aria-labelledby="node-list-title">
             <DataHeader id="node-list-title" title="节点列表" />
             <div className="node-toolbar">
@@ -125,12 +121,16 @@ export function MyNodesPage() {
                     <FilterChip key={item.id} active={activeSubscription === item.id} onClick={() => setSubscriptionId(item.id)}>{item.name}</FilterChip>
                   ))}
                 </div>
-                <div className="node-filter-row" role="group" aria-label="按分组筛选">
+                <div className="node-filter-row">
                   <span className="node-filter-label">分组</span>
-                  <FilterChip active={activeGroup === 'all'} onClick={() => setGroupId('all')}>全部</FilterChip>
-                  {groupOptions.map((item) => (
-                    <FilterChip key={item.id} active={activeGroup === item.id} onClick={() => setGroupId(item.id)}>{item.name}</FilterChip>
-                  ))}
+                  <div className="node-seg-scroll">
+                    <SegmentedControl
+                      label="按分组筛选"
+                      value={activeGroup}
+                      options={[{ value: 'all', label: '全部' }, ...groupOptions.map((item) => ({ value: item.id, label: item.name }))]}
+                      onChange={setGroupId}
+                    />
+                  </div>
                 </div>
               </FilterBar>
             </div>

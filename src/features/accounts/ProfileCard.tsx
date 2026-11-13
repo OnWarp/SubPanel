@@ -24,9 +24,6 @@ export function ProfileCard({ profile }: { profile: AccountProfile }) {
             <dd>{formatProfileDate(profile.user.createdAt)}</dd>
           </div>
         </dl>
-        {profile.user.role === 'admin' && !profile.emailBound ? (
-          <p className="profile-hint">绑定邮箱后，管理员头像将显示 Gravatar</p>
-        ) : null}
       </div>
     </section>
   )

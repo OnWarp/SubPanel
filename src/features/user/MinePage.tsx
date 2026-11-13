@@ -44,7 +44,7 @@ export function MinePage() {
 
   return (
     <div className="page-stack nav-mine">
-      <PageHeader title="我的" description="资料、会话与账户安全" />
+      <PageHeader title="我的" />
       {profile ? (
         <ProfileCard profile={profile} />
       ) : (
@@ -58,20 +58,6 @@ export function MinePage() {
           </div>
         </section>
       )}
-      <section className="data-section profile-session" aria-label="会话与安全">
-        <div className="profile-session-info">
-          <strong>会话与安全</strong>
-          {profile?.session ? (
-            <span>本次登录 {formatProfileDate(profile.session.issuedAt)}，{formatProfileDate(profile.session.expiresAt)} 过期</span>
-          ) : (
-            <span>会话信息加载中</span>
-          )}
-        </div>
-        <button className="button danger" type="button" onClick={() => setConfirmLogoutAll(true)}>
-          <LogOut aria-hidden="true" size={16} />
-          退出全部设备
-        </button>
-      </section>
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
       <nav className="data-section nav-menu" aria-label="我的入口">
         <Link className="nav-menu-item" to="/account">
@@ -94,11 +80,24 @@ export function MinePage() {
           <span>APP 下载</span>
           <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
         </Link>
-        <button className="nav-menu-item" type="button" disabled={busy} onClick={() => { signOut().catch(() => undefined) }}>
-          <LogOut aria-hidden="true" size={18} />
-          <span>退出登录</span>
-        </button>
       </nav>
+      <section className="data-section nav-menu" aria-label="会话与安全">
+        <div className="nav-menu-item nav-session-row">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <span>
+            {profile?.session
+              ? `本次登录 ${formatProfileDate(profile.session.issuedAt)}，${formatProfileDate(profile.session.expiresAt)} 过期`
+              : '会话信息加载中'}
+          </span>
+        </div>
+        <button className="nav-menu-item danger" type="button" onClick={() => setConfirmLogoutAll(true)}>
+          <LogOut aria-hidden="true" size={18} />
+          <span>退出全部设备</span>
+        </button>
+      </section>
+      <button className="nav-logout" type="button" disabled={busy} onClick={() => { signOut().catch(() => undefined) }}>
+        退出登录
+      </button>
       <ConfirmDialog
         open={confirmLogoutAll}
         title="退出全部设备"

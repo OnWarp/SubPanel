@@ -1,6 +1,7 @@
 import { MailCheck, Send } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AccountProfile } from '../../app/api'
+import { Button } from '../../ui/Button'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
 
@@ -77,14 +78,14 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
         </FormField>
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
         {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-        <div className="profile-actions">
-          <button className="button primary" type="submit" disabled={busy}>
+        <div className="form-actions">
+          <Button variant="ghost" disabled={busy} onClick={() => setStep('email')}>
+            重新填写邮箱
+          </Button>
+          <Button variant="primary" type="submit" loading={busy}>
             <MailCheck aria-hidden="true" size={17} />
             {bound ? '确认更换' : '确认绑定'}
-          </button>
-          <button className="button" type="button" disabled={busy} onClick={() => setStep('email')}>
-            重新填写邮箱
-          </button>
+          </Button>
         </div>
       </form>
     )
@@ -92,11 +93,6 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
 
   return (
     <form className="security-form" onSubmit={sendCode}>
-      {bound ? (
-        <p className="profile-hint">当前邮箱：{profile.user.email}，验证码将发送至新邮箱</p>
-      ) : (
-        <p className="profile-hint">绑定后可使用邮箱登录</p>
-      )}
       <FormField label={bound ? '新邮箱' : '邮箱'} htmlFor="account-email-address">
         <input
           id="account-email-address"
@@ -110,11 +106,11 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
       </FormField>
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-      <div>
-        <button className="button primary" type="submit" disabled={busy}>
+      <div className="form-actions">
+        <Button variant="primary" type="submit" loading={busy}>
           <Send aria-hidden="true" size={17} />
           获取验证码
-        </button>
+        </Button>
       </div>
     </form>
   )

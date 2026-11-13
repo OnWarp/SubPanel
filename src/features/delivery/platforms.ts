@@ -71,3 +71,20 @@ export function pickPrimaryLink(
   }
   return ''
 }
+
+/** Fallback display names for subscription clients, used when the platform settings have no name. */
+export const CLIENT_LABELS: Record<string, string> = {
+  auto: '自动识别',
+  mihomo: 'Mihomo',
+  clash: 'Clash',
+  'clash-meta': 'Clash Meta',
+  stash: 'Stash',
+  singbox: 'sing-box',
+  karing: 'Karing',
+  surge: 'Surge',
+  loon: 'Loon',
+  quantumultx: 'Quantumult X',
+  v2rayn: 'v2rayN',
+  nekobox: 'NekoBox',
+  shadowrocket: 'Shadowrocket',
+}

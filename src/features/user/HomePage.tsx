@@ -1,26 +1,22 @@
-import { Copy, Download, Rss, Share2 } from 'lucide-react'
+import { Rss } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError, type AdminSubscription } from '../../app/api'
-import { copyToClipboard } from '../../app/clipboard'
+import { CopyButton } from '../../ui/CopyButton'
 import { DataHeader } from '../../ui/DataHeader'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
-import { StatusMessage } from '../../ui/StatusMessage'
-import { EXPIRY_BADGE, EXPIRY_SOON_DAYS, formatExpiryTime, formatRemaining, getExpiryState, isWithinExpiryDays } from '../delivery/expiry'
+import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
-import { pickPrimaryLink, useEnabledPlatforms, type EnabledPlatformsState } from '../delivery/platforms'
+import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
 
 function groupSummary(groupIds: string[]): string {
   return groupIds.length ? `${groupIds.length} 个分组` : '未选择分组'
-}
-
-function subscriptionLink(subscription: AdminSubscription, platforms: EnabledPlatformsState): string {
-  return pickPrimaryLink(subscription.links, subscription.defaultClient, platforms)
 }
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -32,8 +28,7 @@ export function HomePage() {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [noticeError, setNoticeError] = useState('')
+  const [client, setClient] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,40 +46,29 @@ export function HomePage() {
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 
-  const now = Date.now()
   const current = subscriptions[0] ?? null
-  const expiry = current ? getExpiryState(current, now) : null
+  const expiry = current ? getExpiryState(current, Date.now()) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
-  const soon = subscriptions
-    .filter((subscription) => isWithinExpiryDays(subscription, EXPIRY_SOON_DAYS, now))
-    .sort((left, right) => (left.expiresAt ?? 0) - (right.expiresAt ?? 0))
 
   const platforms = useEnabledPlatforms()
-  const copyLink = async () => {
-    if (!current) return
-    const link = subscriptionLink(current, platforms)
-    if (!link) {
-      setNotice('')
-      setNoticeError('暂无订阅链接')
-      return
-    }
-    try {
-      await copyToClipboard(link)
-      setNotice('订阅链接已复制')
-      setNoticeError('')
-    } catch {
-      setNotice('')
-      setNoticeError('浏览器未允许复制，请手动选择内容')
-    }
-  }
+  const linkEntries = current
+    ? orderLinkEntries(Object.entries(current.links).filter(([key]) => key !== 'generic'), platforms)
+    : []
+  const primaryClient = current
+    ? linkEntries.find(([, link]) => link === pickPrimaryLink(current.links, current.defaultClient, platforms))?.[0] ?? ''
+    : ''
+  const activeClient = linkEntries.some(([key]) => key === client)
+    ? client
+    : primaryClient || linkEntries[0]?.[0] || ''
+  const activeLink = linkEntries.find(([key]) => key === activeClient)?.[1] ?? ''
 
   return (
     <div className="page-stack nav-home">
-      <PageHeader title="首页" description="查看当前订阅和即将到期的提醒" />
+      <PageHeader title="首页" />
       {loading ? <LoadingState label="正在加载订阅" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && !current ? (
-        <EmptyState icon={Rss} title="还没有订阅" description="管理员分配订阅后，状态会显示在这里">
+        <EmptyState icon={Rss} title="暂无订阅">
           {downloadsEnabled ? <Link className="button primary" to="/apps">看 APP 下载</Link> : null}
         </EmptyState>
       ) : null}
@@ -103,47 +87,31 @@ export function HomePage() {
               </div>
               <p className="nav-group">{groupSummary(current.groupIds)}</p>
               <dl className="nav-meta">
-                <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
                 <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
-                {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
+                {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd className="nav-meta-big">{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
+                <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
               </dl>
-              {!current.enabled ? <StatusMessage tone="warning">此订阅已停用，链接暂时不会提供内容</StatusMessage> : null}
             </div>
           </section>
 
-          <section className="nav-actions-block" aria-labelledby="nav-actions-title">
-            <h2 id="nav-actions-title" className="nav-kicker">快捷操作</h2>
-            {notice ? <StatusMessage tone="success">{notice}</StatusMessage> : null}
-            {noticeError ? <StatusMessage tone="error">{noticeError}</StatusMessage> : null}
-            <div className="nav-actions">
-              <button className="button secondary" type="button" onClick={() => { copyLink().catch(() => undefined) }}><Copy aria-hidden="true" size={16} />复制订阅链接</button>
-              <Link className="button secondary" to="/subscriptions"><Rss aria-hidden="true" size={16} />打开订阅管理</Link>
-              <Link className="button secondary" to={`/subscriptions?share=${encodeURIComponent(current.id)}`}><Share2 aria-hidden="true" size={16} />创建分享</Link>
-              {downloadsEnabled ? <Link className="button secondary" to="/apps"><Download aria-hidden="true" size={16} />去下载 APP</Link> : null}
-            </div>
-          </section>
-
-          <section className="data-section nav-soon" aria-labelledby="nav-soon-title">
-            <DataHeader id="nav-soon-title" title="最近到期" />
-            {soon.length ? (
-              <ul className="nav-soon-list">
-                {soon.map((subscription) => {
-                  const state = getExpiryState(subscription, now)
-                  const badge = EXPIRY_BADGE[state.kind]
-                  return (
-                    <li className="nav-soon-item" key={subscription.id}>
-                      <Link to="/subscriptions">
-                        <strong>{subscription.name}</strong>
-                        <span>{groupSummary(subscription.groupIds)}</span>
-                        <span>{state.expiresAt === null ? '永久有效' : formatExpiryTime(state.expiresAt)}</span>
-                        <span className="nav-soon-days">剩余 {formatRemaining(state.remainingDays ?? 0)}</span>
-                        <StatusBadge tone={badge.tone} size="sm">{badge.label}</StatusBadge>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : <EmptyState title="暂无 7 天内到期的订阅" />}
+          <section className="data-section nav-links" aria-labelledby="nav-links-title">
+            <DataHeader id="nav-links-title" title="订阅链接" />
+            {linkEntries.length ? (
+              <div className="nav-link-body">
+                <div className="nav-seg-scroll">
+                  <SegmentedControl
+                    label="客户端平台"
+                    value={activeClient}
+                    options={linkEntries.map(([key]) => ({ value: key, label: platforms.names[key] ?? CLIENT_LABELS[key] ?? key }))}
+                    onChange={setClient}
+                  />
+                </div>
+                <div className="nav-link-line">
+                  <p className="nav-link-text">{activeLink}</p>
+                  <CopyButton value={activeLink} />
+                </div>
+              </div>
+            ) : <p className="section-empty">暂无订阅链接</p>}
           </section>
         </>
       ) : null}

@@ -1,48 +1,26 @@
-import { Copy, KeyRound, QrCode, RefreshCw, Share2 } from 'lucide-react'
+import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
-import { copyToClipboard } from '../../app/clipboard'
 import { ShareDrawer } from '../shares/ShareDrawer'
+import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
+import { CopyButton } from '../../ui/CopyButton'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { SegmentedControl } from '../../ui/SegmentedControl'
 import { Select } from '../../ui/Select'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
-import { orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from './platforms'
+import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from './platforms'
 import { DIAGNOSTIC_HELP } from './diagnostics'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from './expiry'
 
-const CLIENT_LABELS: Record<string, string> = {
-  auto: '自动识别',
-  mihomo: 'Mihomo',
-  clash: 'Clash',
-  'clash-meta': 'Clash Meta',
-  stash: 'Stash',
-  singbox: 'sing-box',
-  karing: 'Karing',
-  surge: 'Surge',
-  loon: 'Loon',
-  quantumultx: 'Quantumult X',
-  v2rayn: 'v2rayN',
-  nekobox: 'NekoBox',
-  shadowrocket: 'Shadowrocket',
-}
-
 const EMPTY_SUBSCRIPTIONS: AdminSubscription[] = []
-
-type QrState = {
-  client: string
-  link: string
-  dataUrl: string
-  loading: boolean
-}
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiClientError ? cause.message : fallback
@@ -65,8 +43,8 @@ export function MySubscriptionsPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [tokenNotice, setTokenNotice] = useState<{ name: string; token: string; warning: string } | null>(null)
-  const [qr, setQr] = useState<QrState | null>(null)
-  const [primaryQr, setPrimaryQr] = useState<{ dataUrl: string; loading: boolean } | null>(null)
+  const [client, setClient] = useState('')
+  const [linkQr, setLinkQr] = useState<{ dataUrl: string; loading: boolean } | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
 
   const load = useCallback(async () => {
@@ -130,57 +108,38 @@ export function MySubscriptionsPage() {
   )
   const platforms = useEnabledPlatforms()
   const linkEntries = selected
-    ? orderLinkEntries(Object.entries(selected.links).filter(([client]) => client !== 'generic'), platforms)
+    ? orderLinkEntries(Object.entries(selected.links).filter(([entryClient]) => entryClient !== 'generic'), platforms)
     : []
   const diagnostics = selected ? Object.entries(selected.diagnostics) : []
   const primaryLink = selected ? pickPrimaryLink(selected.links, selected.defaultClient, platforms) : ''
+  const primaryClient = linkEntries.find(([, link]) => link === primaryLink)?.[0] ?? ''
+  const activeClient = linkEntries.some(([entryClient]) => entryClient === client)
+    ? client
+    : primaryClient || linkEntries[0]?.[0] || ''
+  const activeLink = linkEntries.find(([entryClient]) => entryClient === activeClient)?.[1] ?? ''
   const expiry = selected ? getExpiryState(selected) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
   useEffect(() => {
-    if (!primaryLink) {
-      setPrimaryQr(null)
+    if (!activeLink) {
+      setLinkQr(null)
       return
     }
     let cancelled = false
-    setPrimaryQr({ dataUrl: '', loading: true })
+    setLinkQr({ dataUrl: '', loading: true })
     void import('qrcode')
-      .then(({ default: QRCode }) => QRCode.toDataURL(primaryLink, { width: 240, margin: 2, errorCorrectionLevel: 'M' }))
+      .then(({ default: QRCode }) => QRCode.toDataURL(activeLink, { width: 240, margin: 2, errorCorrectionLevel: 'M' }))
       .then((dataUrl) => {
-        if (!cancelled) setPrimaryQr({ dataUrl, loading: false })
+        if (!cancelled) setLinkQr({ dataUrl, loading: false })
       })
       .catch(() => {
         if (cancelled) return
-        setPrimaryQr(null)
+        setLinkQr(null)
         setMessage('')
         setError('二维码生成失败')
       })
     return () => { cancelled = true }
-  }, [primaryLink])
-
-  const copyText = async (value: string, success: string) => {
-    try {
-      await copyToClipboard(value)
-      setMessage(success)
-      setError('')
-    } catch {
-      setMessage('')
-      setError('浏览器未允许复制，请手动选择内容')
-    }
-  }
-
-  const showQr = async (client: string, link: string) => {
-    setQr({ client, link, dataUrl: '', loading: true })
-    try {
-      const { default: QRCode } = await import('qrcode')
-      const dataUrl = await QRCode.toDataURL(link, { width: 240, margin: 2, errorCorrectionLevel: 'M' })
-      setQr((current) => current?.link === link ? { ...current, dataUrl, loading: false } : current)
-    } catch {
-      setQr(null)
-      setMessage('')
-      setError('二维码生成失败')
-    }
-  }
+  }, [activeLink])
 
   const resetToken = async () => {
     if (!selected || busy) return
@@ -206,7 +165,7 @@ export function MySubscriptionsPage() {
 
   return (
     <div className="page-stack del-user-page">
-      <PageHeader title="我的订阅" description={`${subscriptions.length} 个订阅 · 选择一个订阅查看客户端链接`} actions={<Select
+      <PageHeader title="我的订阅" actions={<Select
           label="选择订阅"
           value={selectedId}
           options={subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))}
@@ -220,14 +179,14 @@ export function MySubscriptionsPage() {
         />} />
 
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-      {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</button></div> : null}
+      {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
 
       <div className="del-user-column">
-        {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><button className="icon-button" type="button" aria-label="复制新订阅令牌" title="复制令牌" onClick={() => copyText(tokenNotice.token, '令牌已复制')}><Copy aria-hidden="true" size={17} /></button></section> : null}
+        {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton iconOnly value={tokenNotice.token} label="复制令牌" /></section> : null}
 
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
         {!loading && loadError && subscriptions.length === 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-        {!loading && !loadError && !selected ? <EmptyState title="暂无可用订阅" description="管理员创建订阅后，它会出现在这里" /> : null}
+        {!loading && !loadError && !selected ? <EmptyState title="暂无可用订阅" /> : null}
         {loadError && selected ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
 
         {selected && expiry && expiryBadge ? <>
@@ -248,57 +207,49 @@ export function MySubscriptionsPage() {
               <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
               {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
             </dl>
-            {!selected.enabled ? <StatusMessage tone="warning">此订阅已停用，链接暂时不会提供内容</StatusMessage> : null}
             {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
           </section>
 
           <section className="data-section del-link-card" aria-labelledby="subscription-link-title">
             <h2 id="subscription-link-title">订阅链接</h2>
-            {primaryLink ? (
+            {linkEntries.length ? (
               <>
+                <div className="del-seg-scroll">
+                  <SegmentedControl
+                    label="客户端平台"
+                    value={activeClient}
+                    options={linkEntries.map(([entryClient]) => ({ value: entryClient, label: platforms.names[entryClient] ?? CLIENT_LABELS[entryClient] ?? entryClient }))}
+                    onChange={setClient}
+                  />
+                </div>
                 <div className="del-link-line">
-                  <p className="del-link-text">{primaryLink}</p>
-                  <button className="button secondary" type="button" aria-label="复制订阅链接" title="复制链接" onClick={() => { copyText(primaryLink, '订阅链接已复制').catch(() => undefined) }}><Copy aria-hidden="true" size={16} />复制</button>
+                  <p className="del-link-text">{activeLink}</p>
+                  <CopyButton value={activeLink} />
                 </div>
                 <div className="del-qr-slot">
-                  {primaryQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
-                  {primaryQr?.dataUrl ? <img className="del-qr" src={primaryQr.dataUrl} alt="订阅二维码" /> : null}
+                  {linkQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
+                  {linkQr?.dataUrl ? <img className="del-qr" src={linkQr.dataUrl} alt="订阅二维码" /> : null}
                 </div>
               </>
-            ) : <p className="del-link-missing">暂无订阅链接</p>}
-          </section>
-
-          <section className="data-section user-subscription-section" aria-labelledby="client-links-title">
-            <DataHeader id="client-links-title" title="客户端链接" />
-            <div className="user-link-list">
-              {platforms.status === 'ready' && linkEntries.length === 0 && !selected.linkError ? <p className="section-empty">当前暂无可用的订阅入口</p> : null}
-              {linkEntries.map(([client, link]) => {
-                const label = platforms.names[client] ?? CLIENT_LABELS[client] ?? client
-                const accessibleLabel = client === 'auto' ? '自动' : label
-                return <div className="user-link-row" key={client}>
-                  <div className="user-link-label"><strong>{label}</strong><span>{client === 'auto' ? '自动识别' : '专用格式'}</span></div>
-                  <input aria-label={`${accessibleLabel}订阅链接`} value={link} readOnly />
-                  <div className="user-link-actions"><button className="icon-button" type="button" aria-label={`复制${accessibleLabel}订阅链接`} title="复制链接" onClick={() => copyText(link, '链接已复制')}><Copy aria-hidden="true" size={16} /></button><button className="icon-button" type="button" aria-label={`显示 ${label} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></div>
-                </div>
-              })}
-            </div>
+            ) : platforms.status === 'ready' && !selected.linkError ? (
+              <p className="section-empty">当前暂无可用的订阅入口</p>
+            ) : (
+              <p className="del-link-missing">暂无订阅链接</p>
+            )}
           </section>
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
             <summary id="diagnostics-title">兼容诊断</summary>
-            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
+            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
           </details>
 
           <section className="data-section del-reset" aria-labelledby="reset-token-title">
             <h2 id="reset-token-title">令牌重置</h2>
-            <button className="button secondary" type="button" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</button>
+            <Button variant="danger" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</Button>
           </section>
         </> : null}
       </div>
 
-      <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={selected?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { copyText(qr.link, '链接已复制').catch(() => undefined); setQr(null) } }}>
-        {qr?.loading ? <p className="qr-loading" role="status">正在生成二维码</p> : qr?.dataUrl ? <img className="qr-image" src={qr.dataUrl} alt={`${CLIENT_LABELS[qr.client] ?? qr.client} 订阅二维码`} /> : null}
-      </ConfirmDialog>
       <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" busy={busy} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
       <ShareDrawer
         subscription={subscriptions.find((subscription) => subscription.id === shareParam) ?? null}

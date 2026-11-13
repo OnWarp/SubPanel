@@ -1,6 +1,7 @@
 import { KeyRound, LogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
+import { Button } from '../../ui/Button'
 import { useSession } from '../../app/session'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
@@ -60,7 +61,7 @@ export function AccountPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="个人中心" description="资料、头像与账户安全" />
+      <PageHeader title="个人中心" />
       {profile ? (
         <ProfileCard profile={profile} />
       ) : profileError ? (
@@ -82,7 +83,7 @@ export function AccountPage() {
           </FormField>
           {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
           {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-          <div><button className="button primary" type="submit"><KeyRound aria-hidden="true" size={17} />更新密码</button></div>
+          <div className="form-actions"><Button variant="primary" type="submit"><KeyRound aria-hidden="true" size={17} />更新密码</Button></div>
         </form>
       </section>
       {profile ? (
@@ -115,10 +116,10 @@ export function AccountPage() {
             <p className="profile-hint">会话信息加载中</p>
           )}
           <div>
-            <button className="button danger" type="button" onClick={() => setConfirmLogoutAll(true)}>
+            <Button variant="danger" onClick={() => setConfirmLogoutAll(true)}>
               <LogOut aria-hidden="true" size={17} />
               退出全部设备
-            </button>
+            </Button>
           </div>
         </div>
       </section>
