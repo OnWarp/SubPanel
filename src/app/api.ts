@@ -9,6 +9,25 @@ export type UserSummary = {
   updatedAt?: string
 }
 
+export type AccountAvatar = {
+  kind: 'gravatar' | 'dicebear'
+  url: string
+  seed: string
+}
+
+export type AccountProfile = {
+  user: UserSummary & {
+    email: string | null
+    emailVerifiedAt: string | null
+  }
+  emailBound: boolean
+  avatar: AccountAvatar
+  session: {
+    issuedAt: string
+    expiresAt: string
+  } | null
+}
+
 export type CatalogSource = {
   id: string
   name: string
