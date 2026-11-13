@@ -38,7 +38,7 @@
 .app-chip-label {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-  font-weight: 700;
+  font-weight: var(--weight-strong);
 }
 
 .app-empty-wrap {
@@ -60,11 +60,11 @@
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--color-primary-soft);
   color: var(--color-text);
   font-size: var(--font-sm);
-  font-weight: 750;
+  font-weight: var(--weight-strong);
 }
 
 .app-mark img {
@@ -135,8 +135,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--font-body);
+  font-weight: var(--weight-strong);
 }
 
 .app-flag input {
@@ -160,7 +160,7 @@
 
 .app-platforms-heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .app-note {
@@ -214,7 +214,7 @@
 
 .app-platform-editor h4 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-body);
 }
 
 .app-inline-confirm {

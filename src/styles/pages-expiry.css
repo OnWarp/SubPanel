@@ -7,7 +7,6 @@
 .exp-remaining,
 .exp-user-subs,
 .exp-user-sub,
-.exp-soon-item,
 .exp-status-meta div,
 .exp-status-meta dd {
   min-width: 0;
@@ -26,64 +25,6 @@
 .exp-enabled-note {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
-}
-
-.exp-expiry-grid {
-  --font-xl: 30px;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-
-.exp-expiry-stat {
-  display: grid;
-  min-width: 0;
-  padding: var(--space-4);
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.exp-expiry-stat:hover { border-color: var(--color-primary); }
-
-.exp-expiry-stat span {
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
-
-.exp-expiry-stat strong {
-  font-size: var(--font-xl);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.05;
-}
-
-.exp-soon-list {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 0 var(--space-4) var(--space-3);
-  list-style: none;
-}
-
-.exp-soon-item {
-  display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.4fr) minmax(0, 1.1fr) auto;
-  gap: var(--space-3);
-  align-items: center;
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.exp-soon-list li:last-child { border-bottom: 0; }
-
-.exp-soon-days {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .exp-status-meta {

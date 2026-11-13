@@ -7,6 +7,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
+import { Switch } from '../../ui/Switch'
 import { StatusBadge } from '../../ui/StatusBadge'
 
 type DomainKind = 'panel' | 'subscription'
@@ -51,27 +52,6 @@ function formatTime(value: string | null): string {
   return date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function Switch({ checked, onChange, disabled, label }: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  disabled?: boolean
-  label: string
-}) {
-  return (
-    <label className="sys-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
-      <span className="sys-switch-track" aria-hidden="true"><span className="sys-switch-thumb" /></span>
-      <span className="sys-switch-label">{checked ? '已开启' : '已关闭'}</span>
-    </label>
-  )
-}
 
 const VERIFICATION_BADGE: Record<VerificationStatus, { tone: 'success' | 'warning' | 'danger'; text: string }> = {
   verified: { tone: 'success', text: '已验证' },
@@ -149,7 +129,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
               <div className="dom-actions">
                 <button className="button secondary" type="button" disabled={busy} onClick={() => onVerify(kind, item)}><ShieldCheck aria-hidden="true" size={16} />验证</button>
                 <button className="button secondary" type="button" disabled={busy || isPrimary || !item.enabled || item.verificationStatus !== 'verified'} onClick={() => onSetPrimary(kind, item)}><Star aria-hidden="true" size={16} />设为主域名</button>
-                <Switch checked={item.enabled} disabled={busy} label={`${item.hostname} 启用状态`} onChange={(enabled) => onToggleEnabled(kind, item, enabled)} />
+                <Switch checked={item.enabled} disabled={busy} ariaLabel={`${item.hostname} 启用状态`} onChange={(enabled) => onToggleEnabled(kind, item, enabled)} />
                 <button className="button danger" type="button" disabled={busy || isPrimary} title={isPrimary ? '主域名不能删除' : '删除域名'} onClick={() => onDelete(kind, item)}><Trash2 aria-hidden="true" size={16} />删除</button>
               </div>
             </li>
@@ -277,14 +257,14 @@ export function DomainSettingsSection() {
     <section className="data-section sys-section" aria-labelledby="sys-domains-title">
       <DataHeader id="sys-domains-title" title="域名与平台展示" />
       {loading ? <LoadingState label="正在加载域名设置" /> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && domains ? (
         <div className="dom-stack">
           {feedback ? <InlineMessage tone={feedback.tone}>{feedback.text}</InlineMessage> : null}
 
           <div className="dom-block">
             <FormField label="域名限制">
-              <Switch checked={domains.restrictionEnabled} disabled={busyId === 'all'} label="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
+              <Switch checked={domains.restrictionEnabled} disabled={busyId === 'all'} ariaLabel="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
             </FormField>
             <p className="sys-hint">开启后，面板只接受已启用的面板域名访问，订阅与分享只接受已启用的订阅域名访问；某一类没有已启用的域名时，该类不做限制，不会把任何人锁在门外</p>
           </div>
@@ -300,7 +280,7 @@ export function DomainSettingsSection() {
                     <span className="dom-platform-actions">
                       <button className="icon-button" type="button" aria-label={`上移 ${entry.displayName}`} disabled={platformSaving || index === 0} onClick={() => movePlatform(index, -1)}><ArrowUp aria-hidden="true" size={16} /></button>
                       <button className="icon-button" type="button" aria-label={`下移 ${entry.displayName}`} disabled={platformSaving || index === platforms.length - 1} onClick={() => movePlatform(index, 1)}><ArrowDown aria-hidden="true" size={16} /></button>
-                      <Switch checked={entry.enabled} disabled={platformSaving} label={`${entry.displayName} 展示`} onChange={(enabled) => { void savePlatforms(platforms.map((item) => item.platform === entry.platform ? { ...item, enabled } : item)) }} />
+                      <Switch checked={entry.enabled} disabled={platformSaving} ariaLabel={`${entry.displayName} 展示`} onChange={(enabled) => { void savePlatforms(platforms.map((item) => item.platform === entry.platform ? { ...item, enabled } : item)) }} />
                     </span>
                   </li>
                 ))}

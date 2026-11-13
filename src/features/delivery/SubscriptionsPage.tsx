@@ -1,9 +1,10 @@
-import { CheckCircle2, Copy, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
+import { CopyButton } from '../../ui/CopyButton'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { PageHeader } from '../../ui/PageHeader'
@@ -16,6 +17,7 @@ import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
+import { Switch } from '../../ui/Switch'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
@@ -144,7 +146,6 @@ export function SubscriptionsPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [progress, setProgress] = useState('')
   const [qr, setQr] = useState<{ client: string; link: string; dataUrl: string; loading: boolean } | null>(null)
-  const selectAllRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -184,13 +185,6 @@ export function SubscriptionsPage() {
       return matchesText(subscription.name, query) || matchesText(user, query) || matchesText(groupLabel, query)
     })
   }, [enabledOnly, expiryFilter, groupNames, query, statusFilter, subscriptions, userNames])
-  const allFilteredSelected = filtered.length > 0 && filtered.every((subscription) => selected.has(subscription.id))
-  const someFilteredSelected = filtered.some((subscription) => selected.has(subscription.id))
-
-  useEffect(() => {
-    if (selectAllRef.current) selectAllRef.current.indeterminate = someFilteredSelected && !allFilteredSelected
-  }, [allFilteredSelected, someFilteredSelected])
-
   const selectExpiry = (filter: ExpiryFilter) => {
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
@@ -303,17 +297,6 @@ export function SubscriptionsPage() {
       else setDrawerError(message)
     } finally {
       setBusy(false)
-    }
-  }
-
-  const copyText = async (value: string, success: string) => {
-    try {
-      await copyToClipboard(value)
-      setMessage(success)
-      setError('')
-    } catch {
-      setMessage('')
-      setError('浏览器未允许复制，请手动选择内容')
     }
   }
 
@@ -464,48 +447,33 @@ export function SubscriptionsPage() {
         <span className="row-actions">
           <button className="icon-button" type="button" aria-label="查看详情" title="查看详情" onClick={() => { setDrawerError(''); setDrawer({ kind: 'details', subscription }) }}><Eye aria-hidden="true" size={16} /></button>
           <button className="icon-button" type="button" aria-label="编辑" title="编辑" onClick={() => openEdit(subscription)}><Pencil aria-hidden="true" size={16} /></button>
-          <button className="icon-button" type="button" aria-label="删除" title="删除" onClick={() => { setSelected(new Set([subscription.id])); setConfirmAction('delete') }}><Trash2 aria-hidden="true" size={16} /></button>
         </span>
       ),
     },
   ], [busy, groupNames, selected, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
-  const enabledCount = subscriptions.filter((subscription) => subscription.enabled).length
 
   return (
     <div className="page-stack del-admin-page">
-      <PageHeader title="订阅" description={`${subscriptions.length} 个订阅 · ${enabledCount} 个启用`} actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
+      <PageHeader title="订阅" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
 
-      {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><button className="icon-button" type="button" aria-label="复制新订阅令牌" title="复制令牌" onClick={() => copyText(tokenNotice.token, '令牌已复制')}><Copy aria-hidden="true" size={17} /></button></section> : null}
+      {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
+      <FilterBar className="del-filters">
+        <SearchInput value={query} onChange={setQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
+        <div className="del-status-filters" role="group" aria-label="订阅状态">
+          {UNIFIED_FILTERS.map((filter) => (
+            <FilterChip key={filter.key} active={activeUnified === filter.key} onClick={() => selectUnified(filter.key)}>{filter.label}</FilterChip>
+          ))}
+        </div>
+        {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
+      </FilterBar>
       <section className="data-section del-admin" aria-labelledby="subscriptions-title">
         <DataHeader
           id="subscriptions-title"
           title="订阅列表"
-          filters={subscriptions.length > 0 ? (
-            <FilterBar className="del-filters">
-              <SearchInput value={query} onChange={setQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
-              <div className="del-status-filters" role="group" aria-label="订阅状态">
-                {UNIFIED_FILTERS.map((filter) => (
-                  <FilterChip key={filter.key} active={activeUnified === filter.key} onClick={() => selectUnified(filter.key)}>{filter.label}</FilterChip>
-                ))}
-              </div>
-              {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
-              <label className="del-select-all">
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
-                  aria-label="选择全部订阅"
-                  checked={allFilteredSelected}
-                  disabled={busy || filtered.length === 0}
-                  onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filtered.map((subscription) => subscription.id)) : new Set())}
-                />
-                全选
-              </label>
-            </FilterBar>
-          ) : undefined}
           actions={<BatchToolbar selectedCount={selected.size} totalCount={filtered.length} onSelectAll={() => setSelected(new Set(filtered.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
         />
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
@@ -522,7 +490,7 @@ export function SubscriptionsPage() {
           <label className="field"><span>所属用户</span><select aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'} required>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</select></label>
           <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><input type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
           <label className="field"><span>默认客户端</span><select aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</select></label>
-          <label className="toggle-field"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} /><span>启用订阅</span></label>
+          <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
           <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
             <input id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
               const startsAt = event.currentTarget.value
@@ -554,13 +522,13 @@ export function SubscriptionsPage() {
       <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer}>
         {details ? <div className="subscription-details">
           <section><div className="detail-heading"><div><h3>{details.name}</h3><p>{userNames.get(details.userId) ?? details.userId} · {details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</p></div><button className="button secondary" type="button" onClick={() => resetToken(details)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置令牌</button></div></section>
-          <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><input aria-label={`${CLIENT_LABELS[client] ?? client} 链接`} value={link} readOnly /><span className="row-actions"><button className="icon-button" type="button" aria-label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} title="复制链接" onClick={() => copyText(link, `${CLIENT_LABELS[client] ?? client} 链接已复制`)}><Copy aria-hidden="true" size={16} /></button><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
+          <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><input aria-label={`${CLIENT_LABELS[client] ?? client} 链接`} value={link} readOnly /><span className="row-actions"><CopyButton value={link} iconOnly label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
           <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </div> : null}
       </EditDrawer>
 
-      <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={details?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { copyText(qr.link, '链接已复制').catch(() => undefined); setQr(null) } }}>
+      <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={details?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { const link = qr.link; setQr(null); void copyToClipboard(link).then(() => setMessage('链接已复制')).catch(() => setError('浏览器未允许复制，请手动选择内容')) } }}>
         {qr?.loading ? <p className="qr-loading" role="status">正在生成二维码</p> : qr?.dataUrl ? <img className="qr-image" src={qr.dataUrl} alt={`${CLIENT_LABELS[qr.client] ?? qr.client} 订阅二维码`} /> : null}
       </ConfirmDialog>
 

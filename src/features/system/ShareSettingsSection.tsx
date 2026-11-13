@@ -4,6 +4,7 @@ import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 
 export type ShareSettings = {
@@ -91,28 +92,6 @@ function parseSettingsForm(form: SettingsForm): { settings: ShareSettings | null
   }
 }
 
-function Switch({ checked, onChange, disabled, label }: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  disabled?: boolean
-  label: string
-}) {
-  return (
-    <label className="sys-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
-      <span className="sys-switch-track" aria-hidden="true"><span className="sys-switch-thumb" /></span>
-      <span className="sys-switch-label">{checked ? '已开启' : '已关闭'}</span>
-    </label>
-  )
-}
-
 export function ShareSettingsSection() {
   const [form, setForm] = useState<SettingsForm | null>(null)
   const [errors, setErrors] = useState<SettingsErrors>({})
@@ -165,22 +144,22 @@ export function ShareSettingsSection() {
     <section className="data-section sys-section" aria-labelledby="sys-share-title">
       <DataHeader id="sys-share-title" title="分享设置" />
       {loading ? <LoadingState label="正在加载分享设置" /> : null}
-      {!loading && loadError ? <div className="sys-state"><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && form ? (
         <form className="sys-form" onSubmit={save} noValidate>
           <p className="sys-hint">关闭分享功能后，所有分享链接会立即失效</p>
           <div className="sys-toggles">
             <FormField label="分享功能">
-              <Switch checked={form.enabled} disabled={saving} label="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
+              <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
             </FormField>
             <FormField label="创建分享">
-              <Switch checked={form.createAllowed} disabled={saving} label="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
+              <Switch checked={form.createAllowed} disabled={saving} ariaLabel="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
             </FormField>
             <FormField label="默认允许原始链接">
-              <Switch checked={form.defaultAllowOriginalLink} disabled={saving} label="默认允许原始链接" onChange={(defaultAllowOriginalLink) => setForm({ ...form, defaultAllowOriginalLink })} />
+              <Switch checked={form.defaultAllowOriginalLink} disabled={saving} ariaLabel="默认允许原始链接" onChange={(defaultAllowOriginalLink) => setForm({ ...form, defaultAllowOriginalLink })} />
             </FormField>
             <FormField label="默认要求登录">
-              <Switch checked={form.requireLoginDefault} disabled={saving} label="默认要求登录" onChange={(requireLoginDefault) => setForm({ ...form, requireLoginDefault })} />
+              <Switch checked={form.requireLoginDefault} disabled={saving} ariaLabel="默认要求登录" onChange={(requireLoginDefault) => setForm({ ...form, requireLoginDefault })} />
             </FormField>
           </div>
           <div className="sys-grid">

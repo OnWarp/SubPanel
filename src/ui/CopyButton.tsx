@@ -9,21 +9,29 @@ type CopyButtonProps = {
   variant?: 'ghost' | 'secondary'
   iconOnly?: boolean
   className?: string
+  onError?: (cause: unknown) => void
+  onCopied?: () => void
 }
 
 /**
  * Copy action with in-place feedback: the button itself flips to the copied
  * label for 1.5s instead of raising a toast (plan section 5.3).
  */
-export function CopyButton({ value, label = '复制', copiedLabel = '已复制', variant = 'ghost', iconOnly = false, className }: CopyButtonProps) {
+export function CopyButton({ value, label = '复制', copiedLabel = '已复制', variant = 'ghost', iconOnly = false, className, onError, onCopied }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearTimeout(timer.current), [])
 
   const copy = async () => {
-    await copyToClipboard(value)
+    try {
+      await copyToClipboard(value)
+    } catch (cause) {
+      onError?.(cause)
+      return
+    }
     setCopied(true)
+    onCopied?.()
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setCopied(false), 1500)
   }

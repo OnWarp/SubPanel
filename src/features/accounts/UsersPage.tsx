@@ -16,8 +16,10 @@ import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
+import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
+import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 
@@ -316,7 +318,6 @@ export function UsersPage() {
         body: jsonBody({ newPassword }),
       })
       setUsers((current) => current.map((candidate) => candidate.id === resetUser.id ? result.user : candidate))
-      // The temporary password is revealed exactly once, in this dialog.
       setTempPassword(result.temporaryPassword)
       setResetError('')
       form.reset()
@@ -422,23 +423,23 @@ export function UsersPage() {
         />
       ),
     },
-    { key: 'id', header: '用户 ID', render: (user) => <span className="usr-id">{user.id}</span> },
-    { key: 'username', header: '用户名', render: (user) => <strong className="usr-name">{user.username}</strong> },
-    { key: 'email', header: '邮箱', render: (user) => <span className="usr-email">{user.email ?? '—'}</span> },
+    { key: 'id', header: '用户 ID', render: (user) => <span>{user.id}</span> },
+    { key: 'username', header: '用户名', render: (user) => <strong>{user.username}</strong> },
+    { key: 'email', header: '邮箱', render: (user) => <span>{user.email ?? '—'}</span> },
     { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
     {
       key: 'status',
       header: '状态',
       render: (user) => <StatusBadge tone={user.enabled ? 'success' : 'muted'} size="sm">{user.enabled ? '正常' : '已停用'}</StatusBadge>,
     },
-    { key: 'createdAt', header: '创建时间', render: (user) => <span className="usr-time">{formatDate(user.createdAt)}</span> },
+    { key: 'createdAt', header: '创建时间', render: (user) => <span>{formatDate(user.createdAt)}</span> },
     {
       key: 'subscriptions',
       header: '订阅',
       render: (user) => {
-        if (!subscriptionsReady) return <span className="exp-user-none">—</span>
+        if (!subscriptionsReady) return <span>—</span>
         const owned = subscriptionsByUser.get(user.id) ?? []
-        if (owned.length === 0) return <span className="exp-user-none">—</span>
+        if (owned.length === 0) return <span>—</span>
         return <UserSubscriptionList items={owned} />
       },
     },
@@ -456,17 +457,13 @@ export function UsersPage() {
               <button className="icon-button" type="button" disabled={mutating} aria-label={`将 ${user.username} 设为管理员`} title="设为管理员" onClick={() => setConfirmAction({ kind: 'promote', user })}>
                 <Crown aria-hidden="true" size={16} />
               </button>
-              <button className="icon-button danger" type="button" disabled={mutating} aria-label={`删除 ${user.username}`} title="移入回收站" onClick={() => setConfirmAction({ kind: 'soft-delete', user })}>
-                <Trash2 aria-hidden="true" size={16} />
-              </button>
             </>
           ) : null}
-          <input
-            type="checkbox"
+          <Switch
             checked={user.enabled}
+            onChange={(checked) => setEnabled(user, checked)}
             disabled={user.role === 'admin' || mutating}
-            aria-label={`启用 ${user.username}`}
-            onChange={(event) => setEnabled(user, event.currentTarget.checked)}
+            ariaLabel={`启用 ${user.username}`}
           />
         </span>
       ),
@@ -474,16 +471,16 @@ export function UsersPage() {
   ]
 
   const trashColumns: Array<DataTableColumn<UserSummary>> = [
-    { key: 'id', header: '用户 ID', render: (user) => <span className="usr-id">{user.id}</span> },
-    { key: 'username', header: '用户名', render: (user) => <strong className="usr-name">{user.username}</strong> },
-    { key: 'email', header: '邮箱', render: (user) => <span className="usr-email">{user.email ?? '—'}</span> },
+    { key: 'id', header: '用户 ID', render: (user) => <span>{user.id}</span> },
+    { key: 'username', header: '用户名', render: (user) => <strong>{user.username}</strong> },
+    { key: 'email', header: '邮箱', render: (user) => <span>{user.email ?? '—'}</span> },
     { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
     {
       key: 'status',
       header: '状态',
       render: () => <StatusBadge tone="danger" size="sm">已删除</StatusBadge>,
     },
-    { key: 'deletedAt', header: '删除时间', render: (user) => <span className="usr-time">{formatDate(user.deletedAt ?? undefined)}</span> },
+    { key: 'deletedAt', header: '删除时间', render: (user) => <span>{formatDate(user.deletedAt ?? undefined)}</span> },
     {
       key: 'subscriptions',
       header: '订阅',
@@ -521,8 +518,8 @@ export function UsersPage() {
         />
       ),
     },
-    { key: 'username', header: '用户名', render: (invite) => <strong className="usr-name">{invite.username}</strong> },
-    { key: 'expiresAt', header: '到期时间', render: (invite) => <span className="usr-time">{formatDate(invite.expiresAt)}</span> },
+    { key: 'username', header: '用户名', render: (invite) => <strong>{invite.username}</strong> },
+    { key: 'expiresAt', header: '到期时间', render: (invite) => <span>{formatDate(invite.expiresAt)}</span> },
     {
       key: 'actions',
       header: '操作',
@@ -560,15 +557,11 @@ export function UsersPage() {
     : null
 
   return (
-    <div className="page-stack usr-page">
-      <PageHeader
-        title="用户与邀请"
-        description={`${total} 个用户 · ${invites.length} 个有效邀请`}
-        actions={<button className="button primary" type="submit" form="invite-form" disabled={mutating}><Plus aria-hidden="true" size={17} />创建邀请</button>}
-      />
+    <div className="page-stack">
+      <PageHeader title="用户与邀请" actions={<button className="button primary" type="submit" form="invite-form" disabled={mutating}><Plus aria-hidden="true" size={17} />创建邀请</button>} />
 
       {newLink ? (
-        <section className="link-strip usr-link-strip" aria-label="新邀请链接">
+        <section className="link-strip" aria-label="新邀请链接">
           <div><strong>邀请链接</strong><span>24 小时内有效</span></div>
           <input aria-label="邀请链接" value={newLink} readOnly />
           <button className="icon-button" type="button" aria-label="复制邀请链接" title="复制邀请链接" onClick={copyLink}>
@@ -577,17 +570,17 @@ export function UsersPage() {
         </section>
       ) : null}
 
-      {loading ? <div className="usr-state"><LoadingState label="正在加载用户与邀请" /></div> : null}
+      {loading ? <div><LoadingState label="正在加载用户与邀请" /></div> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={retry} /> : null}
 
       {!loading && !loadError ? (
         <>
-          <section className="data-section usr-section" aria-labelledby="users-title">
+          <section className="data-section" aria-labelledby="users-title">
             <DataHeader
               id="users-title"
               title={view === 'trash' ? '回收站' : '用户'}
               filters={(
-                <form id="invite-form" className="invite-form usr-invite-form" onSubmit={createInvite}>
+                <form id="invite-form" className="invite-form" onSubmit={createInvite}>
                   <FormField label="邀请用户名" htmlFor="invite-username">
                     <input id="invite-username" name="username" placeholder="输入用户名" minLength={3} maxLength={32} required />
                   </FormField>
@@ -598,25 +591,30 @@ export function UsersPage() {
                 : undefined}
             />
             {subscriptionNote ? <StatusMessage tone="warning">{subscriptionNote}</StatusMessage> : null}
-            <FilterBar className="usr-filters">
-              <div className="usr-chips" role="group" aria-label="用户视图">
-                <FilterChip active={view === 'active'} onClick={() => switchView('active')}>用户</FilterChip>
-                <FilterChip active={view === 'trash'} onClick={() => switchView('trash')}>回收站</FilterChip>
-              </div>
-              <SearchInput className="usr-search" label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={changeQuery} />
-              <div className="usr-chips" role="group" aria-label="用户状态">
+            <FilterBar>
+              <SegmentedControl
+                label="用户视图"
+                options={[
+                  { value: 'active', label: '用户' },
+                  { value: 'trash', label: '回收站' },
+                ]}
+                value={view}
+                onChange={switchView}
+              />
+              <SearchInput label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={changeQuery} />
+              <div role="group" aria-label="用户状态">
                 {STATUS_FILTERS.map((item) => (
                   <FilterChip key={item.value} active={statusFilter === item.value} onClick={() => changeStatusFilter(item.value)}>{item.label}</FilterChip>
                 ))}
               </div>
             </FilterBar>
             {total === 0 ? (
-              <div className="usr-empty"><EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户'} description={view === 'trash' ? '移入回收站的用户会显示在这里' : '创建邀请并完成注册后，用户会显示在这里'} /></div>
+              <div><EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户'} description={view === 'trash' ? '移入回收站的用户会显示在这里' : '创建邀请并完成注册后，用户会显示在这里'} /></div>
             ) : (
               <>
                 {view === 'active' ? (
                   <div className="usr-tools">
-                    <label className="usr-select-all">
+                    <label>
                       <input
                         type="checkbox"
                         aria-label="选择全部用户"
@@ -629,7 +627,6 @@ export function UsersPage() {
                   </div>
                 ) : null}
                 <DataTable
-                  className="usr-table"
                   columns={view === 'trash' ? trashColumns : userColumns}
                   rows={users}
                   rowKey={(user) => user.id}
@@ -640,18 +637,18 @@ export function UsersPage() {
             )}
           </section>
 
-          <section className="data-section usr-section" aria-labelledby="invites-title">
+          <section className="data-section" aria-labelledby="invites-title">
             <DataHeader
               id="invites-title"
               title="有效邀请"
               actions={<BatchToolbar selectedCount={selectedInvites.size} totalCount={invites.length} onSelectAll={() => setSelectedInvites(new Set(invites.map((invite) => invite.id)))} onClear={() => setSelectedInvites(new Set())} actions={inviteActions} busy={mutating} progress={batchProgress} />}
             />
             {invites.length === 0 ? (
-              <div className="usr-empty"><EmptyState icon={Mail} title="暂无有效邀请" /></div>
+              <div><EmptyState icon={Mail} title="暂无有效邀请" /></div>
             ) : (
               <>
                 <div className="usr-tools">
-                  <label className="usr-select-all">
+                  <label>
                     <input
                       type="checkbox"
                       aria-label="选择全部邀请"
@@ -662,7 +659,7 @@ export function UsersPage() {
                     <span>全选</span>
                   </label>
                 </div>
-                <DataTable className="usr-table" columns={inviteColumns} rows={invites} rowKey={(invite) => invite.id} empty="暂无有效邀请" />
+                <DataTable columns={inviteColumns} rows={invites} rowKey={(invite) => invite.id} empty="暂无有效邀请" />
               </>
             )}
           </section>
@@ -685,10 +682,10 @@ export function UsersPage() {
             )}
       >
         {tempPassword ? (
-          <div className="form-stack usr-reset-form">
-            <p className="usr-reset-user">{resetUser?.username}</p>
+          <div className="form-stack">
+            <p>{resetUser?.username}</p>
             <StatusMessage tone="success">密码已重置，旧会话已退出。临时密码只显示这一次，请复制后交给用户</StatusMessage>
-            <div className="link-strip usr-link-strip">
+            <div className="link-strip">
               <input aria-label="临时密码" value={tempPassword} readOnly />
               <button className="icon-button" type="button" aria-label="复制临时密码" title="复制临时密码" onClick={copyTempPassword}>
                 <Copy aria-hidden="true" size={17} />
@@ -696,8 +693,8 @@ export function UsersPage() {
             </div>
           </div>
         ) : (
-          <form id="reset-password-form" className="form-stack usr-reset-form" onSubmit={resetPassword}>
-            {resetUser ? <p className="usr-reset-user">{resetUser.username}</p> : null}
+          <form id="reset-password-form" className="form-stack" onSubmit={resetPassword}>
+            {resetUser ? <p>{resetUser.username}</p> : null}
             <FormField label="新密码" htmlFor="reset-new-password">
               <input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
             </FormField>

@@ -6,8 +6,10 @@ import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
+import { FilterBar } from '../../ui/FilterBar'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { SearchInput } from '../../ui/SearchInput'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
@@ -48,6 +50,7 @@ export function GroupsPage() {
   const [drawerError, setDrawerError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [progress, setProgress] = useState('')
+  const [query, setQuery] = useState('')
   const toast = useToast()
 
   const load = useCallback(async () => {
@@ -76,6 +79,12 @@ export function GroupsPage() {
   const nodeNames = useMemo(() => new Map(nodes.map((node) => [node.id, node.displayName])), [nodes])
   const groupNodeCounts = useMemo(() => new Map(groups.map((group) => [group.id, groupNodeIds(group, sources, nodes).size])), [groups, nodes, sources])
   const affectedSubscriptions = useMemo(() => subscriptions.filter((subscription) => subscription.groupIds.some((id) => selected.has(id))).length, [selected, subscriptions])
+
+  const filteredGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return groups
+    return groups.filter((group) => group.name.toLowerCase().includes(needle))
+  }, [groups, query])
 
   const openCreate = () => {
     setForm({ ...emptyForm(), nodeOrder: nodes.map((node) => node.id) })
@@ -206,7 +215,6 @@ export function GroupsPage() {
       render: (group) => (
         <span className="row-actions">
           <button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(group)}><Pencil aria-hidden="true" size={16} /></button>
-          <button className="icon-button danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => { setSelected(new Set([group.id])); setConfirmDelete(true) }}><Trash2 aria-hidden="true" size={16} /></button>
         </span>
       ),
     },
@@ -214,29 +222,26 @@ export function GroupsPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="分组" description={`${groups.length} 个分组 · 组合来源与节点生成订阅内容`} actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+      <PageHeader title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
 
       {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
-      <section className="data-section cat-data-section" aria-labelledby="groups-title">
+
+      <FilterBar className="groups-filter-bar">
+        <SearchInput label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
+      </FilterBar>
+
+      <section className="data-section" aria-labelledby="groups-title">
         <DataHeader
           id="groups-title"
           title="分组列表"
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={groups.length} onSelectAll={() => setSelected(new Set(groups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
+          actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
         />
         {loading && !catalog ? (
           <div className="cat-empty-wrap"><LoadingState label="正在加载分组" /></div>
-        ) : groups.length === 0 ? (
-          <div className="cat-empty-wrap"><EmptyState title="暂无分组" description="创建分组后即可组合来源与节点" /></div>
+        ) : filteredGroups.length === 0 ? (
+          <div className="cat-empty-wrap"><EmptyState title="暂无分组" description={query ? '换个关键词试试' : '创建分组后即可组合来源与节点'} /></div>
         ) : (
-          <>
-            <div className="cat-table-tools">
-              <label className="cat-select-all">
-                <input type="checkbox" aria-label="选择全部分组" checked={groups.length > 0 && selected.size === groups.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(groups.map((group) => group.id)) : new Set())} />
-                <span>全选</span>
-              </label>
-            </div>
-            <DataTable columns={columns} rows={groups} rowKey={(group) => group.id} empty="暂无匹配分组" />
-          </>
+          <DataTable columns={columns} rows={filteredGroups} rowKey={(group) => group.id} empty="暂无匹配分组" />
         )}
       </section>
 
