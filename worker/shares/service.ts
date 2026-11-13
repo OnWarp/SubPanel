@@ -153,7 +153,7 @@ async function liveSubscription(env: DataEnv, share: ShareRecord): Promise<Subsc
   if (!subscription?.enabled || subscription.userId !== share.ownerUserId) return null
   const accounts = await readAccounts(env)
   const owner = accounts.users.find((user) => user.id === share.ownerUserId)
-  if (!owner?.enabled) return null
+  if (!owner?.enabled || owner.deletedAt) return null
   return subscription
 }
 

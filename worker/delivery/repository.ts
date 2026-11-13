@@ -36,20 +36,29 @@ export async function readDelivery(env: DataEnv): Promise<DeliverySnapshot> {
   return readDeliveryKv(env.DATA)
 }
 
+export async function writeDeliveryKv(
+  kv: KVNamespace,
+  snapshot: DeliverySnapshot,
+  now = new Date().toISOString(),
+): Promise<DeliverySnapshot> {
+  const next = prepareDeliveryWrite(snapshot, now)
+  await kv.put(DELIVERY_KEY, JSON.stringify(next))
+  return next
+}
+
 export async function writeDelivery(
   env: DataEnv,
   snapshot: DeliverySnapshot,
   now = new Date().toISOString(),
 ): Promise<DeliverySnapshot> {
-  const next = prepareDeliveryWrite(snapshot, now)
   // One backend only: the import flag selects D1, and its absence keeps KV.
   if (await isModuleReady(env.DB, DELIVERY_D1_READY_KEY)) {
+    const next = prepareDeliveryWrite(snapshot, now)
     const accounts = await readAccounts(env)
     await persistDeliverySnapshot(env.DB, next, accounts.users)
-  } else {
-    await env.DATA.put(DELIVERY_KEY, JSON.stringify(next))
+    return next
   }
-  return next
+  return writeDeliveryKv(env.DATA, snapshot, now)
 }
 
 export const compiledPrefix = (tokenHash: string): string => `compiled:${tokenHash}:`

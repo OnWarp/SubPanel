@@ -79,10 +79,11 @@ export async function findAccountUserForLogin(
   const username = identifier.trim().toLowerCase()
   if (await accountsUseD1(env)) {
     const byUsername = await findUserByUsername(env.DB, username)
-    if (byUsername) return byUsername
-    return findUserByEmailNormalized(env.DB, normalizeEmail(identifier))
+    if (byUsername) return byUsername.deletedAt ? null : byUsername
+    const byEmail = await findUserByEmailNormalized(env.DB, normalizeEmail(identifier))
+    return byEmail && !byEmail.deletedAt ? byEmail : null
   }
   const accounts = await readAccountsKv(env.DATA)
   const user = accounts.users.find((candidate) => candidate.username === username)
-  return user ? withNullEmail(user) : null
+  return user && !user.deletedAt ? withNullEmail(user) : null
 }

@@ -29,6 +29,7 @@ import {
   emptyDatabase,
   INIT_MIGRATION_NAME,
   initMigration,
+  SOFT_DELETE_MIGRATION_NAME,
   listTables,
   REGISTRATION_MIGRATION_NAME,
   SHARES_FK_MIGRATION_NAME,
@@ -52,12 +53,13 @@ describe('D1 migrations', () => {
       INIT_MIGRATION_NAME,
       EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME,
       SHARES_FK_MIGRATION_NAME,
+      SOFT_DELETE_MIGRATION_NAME,
       REGISTRATION_MIGRATION_NAME,
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(4)
+    expect(replayed?.count).toBe(5)
 
     await env.DB.prepare(
       `INSERT INTO users (
@@ -75,13 +77,15 @@ describe('D1 migrations', () => {
       ) VALUES ('usr_2', 'admin', 'user', 1, 'PBKDF2-SHA-256', 1000, 'salt', 'hash', 0, ?, ?)`,
     ).bind(NOW, NOW).run()).rejects.toThrow()
 
-    await expect(env.DB.prepare(
+    // Administrators may coexist since 0004 dropped the users_single_admin
+    // unique index, so a second admin row inserts cleanly.
+    await env.DB.prepare(
       `INSERT INTO users (
         id, username, role, enabled,
         password_algorithm, password_iterations, password_salt, password_hash,
         session_version, created_at, updated_at
       ) VALUES ('usr_2', 'other', 'admin', 1, 'PBKDF2-SHA-256', 1000, 'salt', 'hash', 0, ?, ?)`,
-    ).bind(NOW, NOW).run()).rejects.toThrow()
+    ).bind(NOW, NOW).run()
 
     await expect(env.DB.prepare(
       `INSERT INTO subscriptions (

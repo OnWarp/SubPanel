@@ -20,6 +20,10 @@ export const userSchema = z.object({
   enabled: z.boolean(),
   password: passwordHashSchema,
   sessionVersion: z.number().int().nonnegative(),
+  // Soft delete (batch 8): null while active, deletion timestamp while the
+  // account sits in the recycle bin. Defaulted so pre-batch-8 snapshots and
+  // fixtures without the field keep parsing.
+  deletedAt: z.iso.datetime().nullable().default(null),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 })
@@ -48,9 +52,8 @@ export const accountsSnapshotSchema = z
     if (snapshot.nextUserId <= maxUserId) {
       ctx.addIssue({ code: 'custom', path: ['nextUserId'], message: 'nextUserId must be greater than all existing user IDs' })
     }
-    if (adminCount > 1) ctx.addIssue({ code: 'custom', message: 'Only one administrator is allowed' })
-    if (snapshot.users.length > 0 && adminCount !== 1) {
-      ctx.addIssue({ code: 'custom', message: 'A non-empty account snapshot requires one administrator' })
+    if (snapshot.users.length > 0 && adminCount === 0) {
+      ctx.addIssue({ code: 'custom', message: 'A non-empty account snapshot requires an administrator' })
     }
   })
 
@@ -58,13 +61,14 @@ export type PasswordHash = z.infer<typeof passwordHashSchema>
 export type User = z.infer<typeof userSchema>
 export type AccountsSnapshot = z.infer<typeof accountsSnapshotSchema>
 
-export type PublicUser = Pick<User, 'id' | 'username' | 'role' | 'enabled' | 'createdAt' | 'updatedAt'>
+export type PublicUser = Pick<User, 'id' | 'username' | 'role' | 'enabled' | 'deletedAt' | 'createdAt' | 'updatedAt'>
 
 export const toPublicUser = (user: User): PublicUser => ({
   id: user.id,
   username: user.username,
   role: user.role,
   enabled: user.enabled,
+  deletedAt: user.deletedAt,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,
 })

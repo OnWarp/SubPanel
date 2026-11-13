@@ -6,7 +6,7 @@ import { clearAccountsStorage } from '../../../worker/accounts/d1-repository'
 import { setEmailVerificationDeliverer } from '../../../worker/accounts/email'
 import { ACCOUNTS_D1_READY_KEY, deleteSettings, markModuleReady } from '../../../worker/db/module-switch'
 import { putRegistrationMode, REGISTRATION_MODE_KEY } from '../../../worker/db/settings-repository'
-import { emailVerificationPurposeMigration, initMigration, splitSqlStatements } from './d1'
+import { emailVerificationPurposeMigration, initMigration, softDeleteMigration, splitSqlStatements } from './d1'
 import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const fetchApi = (path: string, init: RequestInit = {}) => exports.default.fetch(`${TEST_ORIGIN}${path}`, init)
@@ -20,7 +20,7 @@ let sentCodes: Array<{ to: string; code: string }> = []
 
 beforeEach(async () => {
   await resetData()
-  await applyD1Migrations(env.DB, [initMigration, emailVerificationPurposeMigration, registrationMigration])
+  await applyD1Migrations(env.DB, [initMigration, emailVerificationPurposeMigration, softDeleteMigration, registrationMigration])
   // Redemptions reference users and invite codes, so they go first.
   await env.DB.prepare('DELETE FROM invite_code_redemptions').run()
   await clearAccountsStorage(env.DB)

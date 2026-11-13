@@ -241,13 +241,7 @@ export async function registerUser(
     // cause instead of a bare 500.
     if (invite) {
       const fresh = await findInviteCodeByCode(db, input.inviteCode as string)
-      if (fresh) {
-        try {
-          assertInviteUsable(fresh, nowIso)
-        } catch (inviteError) {
-          throw inviteError
-        }
-      }
+      if (fresh) assertInviteUsable(fresh, nowIso)
     }
     if (await findUserByUsername(db, input.username)) {
       throw apiError(409, 'USERNAME_TAKEN', '用户名已存在')

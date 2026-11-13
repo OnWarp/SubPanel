@@ -121,15 +121,19 @@ export async function allocateShareId(env: DataEnv): Promise<string> {
   return allocateShareIdKv(env.DATA)
 }
 
-export async function readShare(env: DataEnv, tokenHash: string): Promise<ShareRecord | null> {
+export async function readShareKv(kv: KVNamespace, tokenHash: string): Promise<ShareRecord | null> {
   if (!tokenHashSchema.safeParse(tokenHash).success) return null
-  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return readShareFromD1(env.DB, tokenHash)
-  const raw = await env.DATA.get(shareEntityKey(tokenHash))
+  const raw = await kv.get(shareEntityKey(tokenHash))
   if (raw === null) return null
   return parseShare(raw)
 }
 
-async function writeShareKv(kv: KVNamespace, record: ShareRecord): Promise<void> {
+export async function readShare(env: DataEnv, tokenHash: string): Promise<ShareRecord | null> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return readShareFromD1(env.DB, tokenHash)
+  return readShareKv(env.DATA, tokenHash)
+}
+
+export async function writeShareKv(kv: KVNamespace, record: ShareRecord): Promise<void> {
   const parsed = shareRecordSchema.parse(record)
   await kv.put(shareEntityKey(parsed.tokenHash), JSON.stringify(parsed))
 }
@@ -143,12 +147,16 @@ export async function writeShare(env: DataEnv, record: ShareRecord): Promise<voi
   await writeShareKv(env.DATA, record)
 }
 
+export async function deleteShareKv(kv: KVNamespace, tokenHash: string): Promise<void> {
+  await kv.delete(shareEntityKey(tokenHash))
+}
+
 export async function deleteShare(env: DataEnv, tokenHash: string): Promise<void> {
   if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
     await deleteShareByTokenHash(env.DB, tokenHash)
     return
   }
-  await env.DATA.delete(shareEntityKey(tokenHash))
+  await deleteShareKv(env.DATA, tokenHash)
 }
 
 async function readIndex(kv: KVNamespace, key: string): Promise<string[]> {
@@ -214,15 +222,14 @@ export async function readShareValuesKv(kv: KVNamespace): Promise<unknown[]> {
   throw new Error('Share listing did not finish')
 }
 
-export async function listAllShares(env: DataEnv): Promise<ShareRecord[]> {
-  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return listSharesFromD1(env.DB)
+export async function listAllSharesKv(kv: KVNamespace): Promise<ShareRecord[]> {
   const records: ShareRecord[] = []
   let cursor: string | undefined
   for (let page = 0; page < 50; page += 1) {
-    const listed = await env.DATA.list({ prefix: 'share:', cursor })
+    const listed = await kv.list({ prefix: 'share:', cursor })
     const batch = await Promise.all(listed.keys.map(async ({ name }) => {
       if (!ENTITY_KEY.test(name)) return null
-      const raw = await env.DATA.get(name)
+      const raw = await kv.get(name)
       if (raw === null) return null
       return parseShare(raw)
     }))
@@ -233,18 +240,31 @@ export async function listAllShares(env: DataEnv): Promise<ShareRecord[]> {
   throw new Error('Share listing did not finish')
 }
 
+export async function listAllShares(env: DataEnv): Promise<ShareRecord[]> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return listSharesFromD1(env.DB)
+  return listAllSharesKv(env.DATA)
+}
+
+export async function addIndexHashKv(kv: KVNamespace, key: string, tokenHash: string): Promise<void> {
+  const hashes = await readIndex(kv, key)
+  if (hashes.includes(tokenHash)) return
+  await writeIndex(kv, key, [...hashes, tokenHash])
+}
+
 export async function addIndexHash(env: DataEnv, key: string, tokenHash: string): Promise<void> {
   if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return
-  const hashes = await readIndex(env.DATA, key)
-  if (hashes.includes(tokenHash)) return
-  await writeIndex(env.DATA, key, [...hashes, tokenHash])
+  await addIndexHashKv(env.DATA, key, tokenHash)
+}
+
+export async function removeIndexHashKv(kv: KVNamespace, key: string, tokenHash: string): Promise<void> {
+  const hashes = await readIndex(kv, key)
+  if (!hashes.includes(tokenHash)) return
+  await writeIndex(kv, key, hashes.filter((hash) => hash !== tokenHash))
 }
 
 export async function removeIndexHash(env: DataEnv, key: string, tokenHash: string): Promise<void> {
   if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return
-  const hashes = await readIndex(env.DATA, key)
-  if (!hashes.includes(tokenHash)) return
-  await writeIndex(env.DATA, key, hashes.filter((hash) => hash !== tokenHash))
+  await removeIndexHashKv(env.DATA, key, tokenHash)
 }
 
 export async function replaceIndexHash(

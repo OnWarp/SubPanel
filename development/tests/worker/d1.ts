@@ -3,9 +3,11 @@ import { env } from 'cloudflare:workers'
 import initSql from '../../../migrations/0001_init.sql?raw'
 import emailVerificationPurposeSql from '../../../migrations/0002_email_verification_purpose.sql?raw'
 import sharesFkSql from '../../../migrations/0003_shares_subscription_fk.sql?raw'
+import softDeleteSql from '../../../migrations/0004_user_soft_delete.sql?raw'
 import registrationSql from '../../../migrations/0005_registration.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
+export const SOFT_DELETE_MIGRATION_NAME = '0004_user_soft_delete.sql'
 
 export const D1_TABLES = [
   'allowed_email_domains',
@@ -122,6 +124,11 @@ export const sharesFkMigration = {
   queries: splitSqlStatements(sharesFkSql),
 }
 
+export const softDeleteMigration = {
+  name: SOFT_DELETE_MIGRATION_NAME,
+  queries: splitSqlStatements(softDeleteSql),
+}
+
 export const REGISTRATION_MIGRATION_NAME = '0005_registration.sql'
 
 export const registrationMigration = {
@@ -134,6 +141,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     initMigration,
     emailVerificationPurposeMigration,
     sharesFkMigration,
+    softDeleteMigration,
     registrationMigration,
   ])
 }
