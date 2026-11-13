@@ -22,7 +22,7 @@ beforeEach(async () => {
 
 describe('Delivery snapshot and token service', () => {
   it('rejects a next subscription ID that can collide with an existing subscription', async () => {
-    await createSubscription(env.DATA, { userId: 'usr_1', name: 'Existing', groupIds: [] }, { token: 'Z'.repeat(43) })
+    await createSubscription(env, { userId: 'usr_1', name: 'Existing', groupIds: [] }, { token: 'Z'.repeat(43) })
     const snapshot = await readDelivery(env.DATA)
     expect(deliverySnapshotSchema.safeParse({ ...snapshot, nextSubscriptionId: 1 }).success).toBe(false)
   })
@@ -62,7 +62,7 @@ describe('Delivery snapshot and token service', () => {
   })
 
   it('stores only a hash and encrypted recoverable token', async () => {
-    const result = await createSubscription(env.DATA, {
+    const result = await createSubscription(env, {
       userId: 'usr_1',
       name: 'Primary',
       groupIds: [],
@@ -80,7 +80,7 @@ describe('Delivery snapshot and token service', () => {
   })
 
   it('returns only the owner subscriptions and rotates the old token', async () => {
-    const first = await createSubscription(env.DATA, { userId: 'usr_1', name: 'One', groupIds: [] }, { token: 'B'.repeat(43) })
+    const first = await createSubscription(env, { userId: 'usr_1', name: 'One', groupIds: [] }, { token: 'B'.repeat(43) })
     expect((await listSubscriptionsForUser(env.DATA, 'usr_1')).map((item) => item.id)).toEqual([first.subscription.id])
 
     const rotated = await resetSubscriptionToken(env.DATA, first.subscription.id, { actorUserId: 'usr_1', token: 'D'.repeat(43) })
@@ -91,20 +91,20 @@ describe('Delivery snapshot and token service', () => {
   })
 
   it('rejects a non-owner token reset', async () => {
-    const created = await createSubscription(env.DATA, { userId: 'usr_1', name: 'Private', groupIds: [] }, { token: 'E'.repeat(43) })
+    const created = await createSubscription(env, { userId: 'usr_1', name: 'Private', groupIds: [] }, { token: 'E'.repeat(43) })
     await expect(resetSubscriptionToken(env.DATA, created.subscription.id, { actorUserId: 'usr_2', token: 'F'.repeat(43) }))
       .rejects.toThrow('SUBSCRIPTION_FORBIDDEN')
   })
 
   it('rejects a duplicate externally supplied token', async () => {
-    await createSubscription(env.DATA, { userId: 'usr_1', name: 'First', groupIds: [] }, { token: 'G'.repeat(43) })
-    await expect(createSubscription(env.DATA, { userId: 'usr_1', name: 'Second', groupIds: [] }, { token: 'G'.repeat(43) }))
+    await createSubscription(env, { userId: 'usr_1', name: 'First', groupIds: [] }, { token: 'G'.repeat(43) })
+    await expect(createSubscription(env, { userId: 'usr_1', name: 'Second', groupIds: [] }, { token: 'G'.repeat(43) }))
       .rejects.toThrow('SUBSCRIPTION_TOKEN_COLLISION')
   })
 
   it('reads subscriptions saved before validity fields as open-ended', async () => {
     expect(EXPIRY_SOON_DAYS).toBe(7)
-    await createSubscription(env.DATA, { userId: 'usr_1', name: 'Legacy', groupIds: [] }, { token: 'J'.repeat(43), now })
+    await createSubscription(env, { userId: 'usr_1', name: 'Legacy', groupIds: [] }, { token: 'J'.repeat(43), now })
     const raw = JSON.parse(await env.DATA.get('state:delivery') ?? '{}') as { subscriptions: Array<Record<string, unknown>> }
     delete raw.subscriptions[0].startsAt
     delete raw.subscriptions[0].expiresAt
@@ -135,7 +135,7 @@ describe('Delivery snapshot and token service', () => {
   })
 
   it('stores validity instants and rejects an inverted window', async () => {
-    const created = await createSubscription(env.DATA, {
+    const created = await createSubscription(env, {
       userId: 'usr_1',
       name: 'Window',
       groupIds: [],
@@ -144,16 +144,16 @@ describe('Delivery snapshot and token service', () => {
     }, { token: 'K'.repeat(43), now })
     expect(created.subscription.startsAt).toBe(1_000)
     expect(created.subscription.expiresAt).toBe(5_000)
-    await expect(updateSubscription(env.DATA, created.subscription.id, { expiresAt: 1_000 }, { actorRole: 'admin' }))
+    await expect(updateSubscription(env, created.subscription.id, { expiresAt: 1_000 }, { actorRole: 'admin' }))
       .rejects.toThrow('SUBSCRIPTION_WINDOW_INVALID')
-    const cleared = await updateSubscription(env.DATA, created.subscription.id, { startsAt: null, expiresAt: null }, { actorRole: 'admin' })
+    const cleared = await updateSubscription(env, created.subscription.id, { startsAt: null, expiresAt: null }, { actorRole: 'admin' })
     expect(cleared.startsAt).toBeNull()
     expect(cleared.expiresAt).toBeNull()
   })
 
   it('allocates unique IDs and preserves an explicitly disabled subscription', async () => {
-    const first = await createSubscription(env.DATA, { userId: 'usr_1', name: 'Disabled', groupIds: [], enabled: false }, { token: 'H'.repeat(43) })
-    const second = await createSubscription(env.DATA, { userId: 'usr_1', name: 'Enabled', groupIds: [] }, { token: 'I'.repeat(43) })
+    const first = await createSubscription(env, { userId: 'usr_1', name: 'Disabled', groupIds: [], enabled: false }, { token: 'H'.repeat(43) })
+    const second = await createSubscription(env, { userId: 'usr_1', name: 'Enabled', groupIds: [] }, { token: 'I'.repeat(43) })
     expect([first.subscription.id, second.subscription.id]).toEqual(['sub_1', 'sub_2'])
     expect(first.subscription.enabled).toBe(false)
   })

@@ -111,7 +111,7 @@ function toPublicApps(snapshot: AppsSnapshot) {
 export const adminAppRoutes = new Hono<AppEnv>()
 
 adminAppRoutes.get('/', async (c) => {
-  const snapshot = await run(() => readAppsState(c.env.DATA))
+  const snapshot = await run(() => readAppsState(c.env))
   return c.json({
     schemaVersion: snapshot.schemaVersion,
     revision: snapshot.revision,
@@ -123,27 +123,27 @@ adminAppRoutes.get('/', async (c) => {
 
 adminAppRoutes.post('/', async (c) => {
   const input = await readJson(c, appWriteSchema)
-  const app = await run(() => createApp(c.env.DATA, input))
+  const app = await run(() => createApp(c.env, input))
   return c.json({ app }, 201)
 })
 
 adminAppRoutes.put('/:id', async (c) => {
   const id = requireAppId(c.req.param('id'))
   const input = await readJson(c, appWriteSchema)
-  const app = await run(() => updateApp(c.env.DATA, id, input))
+  const app = await run(() => updateApp(c.env, id, input))
   return c.json({ app })
 })
 
 adminAppRoutes.delete('/:id', async (c) => {
   const id = requireAppId(c.req.param('id'))
-  await run(() => deleteApp(c.env.DATA, id))
+  await run(() => deleteApp(c.env, id))
   return c.body(null, 204)
 })
 
 adminAppRoutes.post('/:id/platforms', async (c) => {
   const appId = requireAppId(c.req.param('id'))
   const input = await readJson(c, platformWriteSchema)
-  const platform = await run(() => createPlatform(c.env.DATA, appId, input))
+  const platform = await run(() => createPlatform(c.env, appId, input))
   return c.json({ platform }, 201)
 })
 
@@ -151,27 +151,27 @@ adminAppRoutes.put('/:appId/platforms/:pid', async (c) => {
   const appId = requireAppId(c.req.param('appId'))
   const platformId = requirePlatformId(c.req.param('pid'))
   const input = await readJson(c, platformWriteSchema)
-  const platform = await run(() => updatePlatform(c.env.DATA, appId, platformId, input))
+  const platform = await run(() => updatePlatform(c.env, appId, platformId, input))
   return c.json({ platform })
 })
 
 adminAppRoutes.delete('/:appId/platforms/:pid', async (c) => {
   const appId = requireAppId(c.req.param('appId'))
   const platformId = requirePlatformId(c.req.param('pid'))
-  await run(() => deletePlatform(c.env.DATA, appId, platformId))
+  await run(() => deletePlatform(c.env, appId, platformId))
   return c.body(null, 204)
 })
 
 export const userAppRoutes = new Hono<AppEnv>()
 
 userAppRoutes.get('/', async (c) => {
-  const snapshot = await run(() => readAppsState(c.env.DATA))
+  const snapshot = await run(() => readAppsState(c.env))
   return c.json({ apps: toPublicApps(snapshot) })
 })
 
 userAppRoutes.get('/:id', async (c) => {
   const id = requireAppId(c.req.param('id'))
-  const snapshot = await run(() => readAppsState(c.env.DATA))
+  const snapshot = await run(() => readAppsState(c.env))
   const app = snapshot.apps.find((item) => item.id === id)
   if (!app || !app.flags.isEnabled || !app.flags.isPublic) throw apiError(404, 'APP_NOT_FOUND', '应用不存在')
   return c.json({ app: toPublicApp(app, snapshot.platforms) })

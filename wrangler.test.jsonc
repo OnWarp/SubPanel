@@ -14,8 +14,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "subpanel",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "subpanel-d1",
+      "database_id": "d8360141-8f44-4550-8656-5931231bb020",
       "migrations_dir": "migrations"
     }
   ],

@@ -47,7 +47,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   try {
     [delivery, catalog] = await Promise.all([
       readDelivery(c.env.DATA),
-      readCatalog(c.env.DATA),
+      readCatalog(c.env),
     ])
   } catch {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
@@ -73,7 +73,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   if (parsed.success) artifact = parsed.data
   else if (value !== null && typeof value === 'object' && !Array.isArray(value) && 'schemaVersion' in value && value.schemaVersion === 1) {
     try {
-      artifact = (await compileSubscription(c.env.DATA, subscription)).find((candidate) => candidate.client === client)
+      artifact = (await compileSubscription(c.env, subscription)).find((candidate) => candidate.client === client)
     } catch {
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }

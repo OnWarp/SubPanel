@@ -1,3 +1,4 @@
+import type { DataEnv } from '../db/module-switch.js'
 import { readApps, writeApps } from './repository.js'
 import {
   cleanDeveloper,
@@ -19,18 +20,18 @@ export class AppsError extends Error {
   }
 }
 
-async function readOrThrow(kv: KVNamespace): Promise<AppsSnapshot> {
+async function readOrThrow(env: DataEnv): Promise<AppsSnapshot> {
   try {
-    return await readApps(kv)
+    return await readApps(env)
   } catch (error) {
     if (error instanceof Error && error.message === 'Apps snapshot is corrupt') throw new AppsError('APPS_STATE_INVALID')
     throw error
   }
 }
 
-async function save(kv: KVNamespace, snapshot: AppsSnapshot, now: string): Promise<AppsSnapshot> {
+async function save(env: DataEnv, snapshot: AppsSnapshot, now: string): Promise<AppsSnapshot> {
   try {
-    return await writeApps(kv, snapshot, now)
+    return await writeApps(env, snapshot, now)
   } catch (error) {
     if (error instanceof Error && error.message === 'Apps snapshot is too large') throw new AppsError('APPS_SNAPSHOT_TOO_LARGE')
     if (error instanceof Error && error.message === 'Apps snapshot validation failed') throw new AppsError('APPS_STATE_INVALID')
@@ -91,14 +92,14 @@ function buildPlatform(id: string, appId: string, input: PlatformWrite, createdA
   }
 }
 
-export async function readAppsState(kv: KVNamespace): Promise<AppsSnapshot> {
-  return readOrThrow(kv)
+export async function readAppsState(env: DataEnv): Promise<AppsSnapshot> {
+  return readOrThrow(env)
 }
 
-export async function createApp(kv: KVNamespace, input: AppWrite, now = new Date().toISOString()): Promise<App> {
-  const snapshot = await readOrThrow(kv)
+export async function createApp(env: DataEnv, input: AppWrite, now = new Date().toISOString()): Promise<App> {
+  const snapshot = await readOrThrow(env)
   const app = buildApp(`app_${snapshot.nextAppId}`, input, now, now)
-  const saved = await save(kv, {
+  const saved = await save(env, {
     ...snapshot,
     nextAppId: snapshot.nextAppId + 1,
     apps: [...snapshot.apps, app],
@@ -108,11 +109,11 @@ export async function createApp(kv: KVNamespace, input: AppWrite, now = new Date
   return created
 }
 
-export async function updateApp(kv: KVNamespace, id: string, input: AppWrite, now = new Date().toISOString()): Promise<App> {
-  const snapshot = await readOrThrow(kv)
+export async function updateApp(env: DataEnv, id: string, input: AppWrite, now = new Date().toISOString()): Promise<App> {
+  const snapshot = await readOrThrow(env)
   const current = requireApp(snapshot, id)
   const updated = buildApp(current.id, input, current.createdAt, now)
-  const saved = await save(kv, {
+  const saved = await save(env, {
     ...snapshot,
     apps: snapshot.apps.map((item) => item.id === id ? updated : item),
   }, now)
@@ -121,10 +122,10 @@ export async function updateApp(kv: KVNamespace, id: string, input: AppWrite, no
   return stored
 }
 
-export async function deleteApp(kv: KVNamespace, id: string, now = new Date().toISOString()): Promise<void> {
-  const snapshot = await readOrThrow(kv)
+export async function deleteApp(env: DataEnv, id: string, now = new Date().toISOString()): Promise<void> {
+  const snapshot = await readOrThrow(env)
   requireApp(snapshot, id)
-  await save(kv, {
+  await save(env, {
     ...snapshot,
     apps: snapshot.apps.filter((item) => item.id !== id),
     platforms: snapshot.platforms.filter((item) => item.appId !== id),
@@ -132,15 +133,15 @@ export async function deleteApp(kv: KVNamespace, id: string, now = new Date().to
 }
 
 export async function createPlatform(
-  kv: KVNamespace,
+  env: DataEnv,
   appId: string,
   input: PlatformWrite,
   now = new Date().toISOString(),
 ): Promise<Platform> {
-  const snapshot = await readOrThrow(kv)
+  const snapshot = await readOrThrow(env)
   requireApp(snapshot, appId)
   const platform = buildPlatform(`plt_${snapshot.nextPlatformId}`, appId, input, now, now)
-  const saved = await save(kv, {
+  const saved = await save(env, {
     ...snapshot,
     nextPlatformId: snapshot.nextPlatformId + 1,
     platforms: [...snapshot.platforms, platform],
@@ -151,17 +152,17 @@ export async function createPlatform(
 }
 
 export async function updatePlatform(
-  kv: KVNamespace,
+  env: DataEnv,
   appId: string,
   platformId: string,
   input: PlatformWrite,
   now = new Date().toISOString(),
 ): Promise<Platform> {
-  const snapshot = await readOrThrow(kv)
+  const snapshot = await readOrThrow(env)
   requireApp(snapshot, appId)
   const current = requirePlatform(snapshot, appId, platformId)
   const updated = buildPlatform(current.id, appId, input, current.createdAt, now)
-  const saved = await save(kv, {
+  const saved = await save(env, {
     ...snapshot,
     platforms: snapshot.platforms.map((item) => item.id === platformId ? updated : item),
   }, now)
@@ -171,15 +172,15 @@ export async function updatePlatform(
 }
 
 export async function deletePlatform(
-  kv: KVNamespace,
+  env: DataEnv,
   appId: string,
   platformId: string,
   now = new Date().toISOString(),
 ): Promise<void> {
-  const snapshot = await readOrThrow(kv)
+  const snapshot = await readOrThrow(env)
   requireApp(snapshot, appId)
   requirePlatform(snapshot, appId, platformId)
-  await save(kv, {
+  await save(env, {
     ...snapshot,
     platforms: snapshot.platforms.filter((item) => item.id !== platformId),
   }, now)

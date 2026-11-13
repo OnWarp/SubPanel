@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { refreshSource } from '../catalog/import-service.js'
 import { readCatalog } from '../catalog/repository.js'
+import type { DataEnv } from '../db/module-switch.js'
 import { sourceIdSchema, type Source } from '../catalog/schema.js'
 
 export const CRON_KEY = 'state:cron'
@@ -49,10 +50,11 @@ export async function readCronStatus(kv: KVNamespace): Promise<CronStatus | null
   }
 }
 
-export async function runCron(kv: KVNamespace, options: CronRunOptions = {}): Promise<CronStatus> {
+export async function runCron(env: DataEnv, options: CronRunOptions = {}): Promise<CronStatus> {
+  const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
   try {
-    const catalog = await readCatalog(kv)
+    const catalog = await readCatalog(env)
     const selected = selectDueSource(catalog.sources, now)
     if (!selected) {
       return writeCronStatus(kv, {
@@ -64,8 +66,8 @@ export async function runCron(kv: KVNamespace, options: CronRunOptions = {}): Pr
       })
     }
 
-    const result = await refreshSource(kv, selected.id, { now, fetcher: options.fetcher })
-    const latest = await readCatalog(kv)
+    const result = await refreshSource(env, selected.id, { now, fetcher: options.fetcher })
+    const latest = await readCatalog(env)
     return writeCronStatus(kv, {
       schemaVersion: 1,
       status: result.success ? 'success' : 'failed',

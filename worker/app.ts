@@ -13,6 +13,7 @@ import { userNodeRoutes } from './delivery/user-nodes.js'
 import { adminAppRoutes, userAppRoutes } from './apps/routes.js'
 import { adminShareRoutes, shareRoutes } from './shares/routes.js'
 import { readCronStatus } from './operations/cron.js'
+import { migrationRoutes } from './migration/routes.js'
 import { publicSubscriptionRoutes } from './public-subscriptions.js'
 
 export const app = new Hono<AppEnv>()
@@ -51,6 +52,7 @@ app.use('/api/apps/*', requireAuth)
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
 app.route('/api/admin', adminAccountRoutes)
+app.route('/api/admin', migrationRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery', adminDeliveryRoutes)

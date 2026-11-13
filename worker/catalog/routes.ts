@@ -119,8 +119,8 @@ function validateReferences(snapshot: ReturnType<typeof catalogSnapshotSchema.pa
 export const catalogRoutes = new Hono<AppEnv>()
 
 catalogRoutes.get('/', async (c) => {
-  const snapshot = await readCatalog(c.env.DATA)
-  const sources = await summarizeSources(c.env.DATA, snapshot.sources)
+  const snapshot = await readCatalog(c.env)
+  const sources = await summarizeSources(c.env, snapshot.sources)
   return c.json({
     schemaVersion: snapshot.schemaVersion,
     revision: snapshot.revision,
@@ -146,7 +146,7 @@ catalogRoutes.post('/preview', async (c) => {
 catalogRoutes.post('/sources', async (c) => {
   const input = await readJson(c, createSourceSchema)
   if (input.type !== 'remote') assertContentSize(input.content)
-  const result = await run(() => createSource(c.env.DATA, input))
+  const result = await run(() => createSource(c.env, input))
   return c.json(result, 201)
 })
 
@@ -155,14 +155,14 @@ catalogRoutes.put('/sources/:sourceId', async (c) => {
   if (!id.success) throw apiError(404, 'CATALOG_SOURCE_NOT_FOUND', '来源不存在')
   const input = await readJson(c, updateSourceSchema)
   if (input.content !== undefined) assertContentSize(input.content)
-  const result = await run(() => updateSource(c.env.DATA, id.data, input))
+  const result = await run(() => updateSource(c.env, id.data, input))
   return c.json(result)
 })
 
 catalogRoutes.delete('/sources/:sourceId', async (c) => {
   const id = sourceIdSchema.safeParse(c.req.param('sourceId'))
   if (!id.success) throw apiError(404, 'CATALOG_SOURCE_NOT_FOUND', '来源不存在')
-  const warning = await run(() => deleteSource(c.env.DATA, id.data))
+  const warning = await run(() => deleteSource(c.env, id.data))
   if (warning) c.header('X-Catalog-Recompile', 'failed')
   return c.body(null, 204)
 })
@@ -170,7 +170,7 @@ catalogRoutes.delete('/sources/:sourceId', async (c) => {
 catalogRoutes.post('/sources/:sourceId/refresh', async (c) => {
   const id = sourceIdSchema.safeParse(c.req.param('sourceId'))
   if (!id.success) throw apiError(404, 'CATALOG_SOURCE_NOT_FOUND', '来源不存在')
-  const result = await run(() => refreshSource(c.env.DATA, id.data))
+  const result = await run(() => refreshSource(c.env, id.data))
   return c.json(result)
 })
 
@@ -178,18 +178,18 @@ catalogRoutes.patch('/nodes/:nodeId', async (c) => {
   const id = nodeIdSchema.safeParse(c.req.param('nodeId'))
   if (!id.success) throw apiError(404, 'CATALOG_NODE_NOT_FOUND', '节点不存在')
   const input = await readJson(c, nodePatchSchema)
-  const snapshot = await readCatalog(c.env.DATA)
+  const snapshot = await readCatalog(c.env)
   const node = snapshot.nodes.find(({ id: nodeId }) => nodeId === id.data)
   if (!node) throw apiError(404, 'CATALOG_NODE_NOT_FOUND', '节点不存在')
   const updated = { ...node, ...input, updatedAt: new Date().toISOString() }
-  const saved = await writeCatalog(c.env.DATA, { ...snapshot, nodes: snapshot.nodes.map((current) => current.id === id.data ? updated : current) }, updated.updatedAt)
-  const warning = await recompileDelivery(c.env.DATA)
+  const saved = await writeCatalog(c.env, { ...snapshot, nodes: snapshot.nodes.map((current) => current.id === id.data ? updated : current) }, updated.updatedAt)
+  const warning = await recompileDelivery(c.env)
   return c.json({ node: safeNode(saved.nodes.find(({ id: nodeId }) => nodeId === id.data)!), ...(warning ? { warning } : {}) })
 })
 
 catalogRoutes.post('/groups', async (c) => {
   const input = await readJson(c, groupInputSchema)
-  const snapshot = await readCatalog(c.env.DATA)
+  const snapshot = await readCatalog(c.env)
   validateReferences(snapshot, input)
   const now = new Date().toISOString()
   const group: Group = {
@@ -201,8 +201,8 @@ catalogRoutes.post('/groups', async (c) => {
   const candidate = { ...snapshot, nextGroupId: snapshot.nextGroupId + 1, groups: [...snapshot.groups, group] }
   const checked = catalogSnapshotSchema.safeParse(candidate)
   if (!checked.success) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
-  const saved = await writeCatalog(c.env.DATA, candidate, now)
-  const warning = await recompileDelivery(c.env.DATA)
+  const saved = await writeCatalog(c.env, candidate, now)
+  const warning = await recompileDelivery(c.env)
   return c.json({ group: saved.groups.find(({ id }) => id === group.id), ...(warning ? { warning } : {}) }, 201)
 })
 
@@ -210,31 +210,31 @@ catalogRoutes.put('/groups/:groupId', async (c) => {
   const id = groupIdSchema.safeParse(c.req.param('groupId'))
   if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   const input = await readJson(c, groupInputSchema)
-  const snapshot = await readCatalog(c.env.DATA)
+  const snapshot = await readCatalog(c.env)
   const current = snapshot.groups.find(({ id: groupId }) => groupId === id.data)
   if (!current) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   validateReferences(snapshot, input)
   const updated: Group = { ...current, ...input, updatedAt: new Date().toISOString() }
   const candidate = { ...snapshot, groups: snapshot.groups.map((group) => group.id === id.data ? updated : group) }
   if (!catalogSnapshotSchema.safeParse(candidate).success) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
-  const saved = await writeCatalog(c.env.DATA, candidate, updated.updatedAt)
-  const warning = await recompileDelivery(c.env.DATA)
+  const saved = await writeCatalog(c.env, candidate, updated.updatedAt)
+  const warning = await recompileDelivery(c.env)
   return c.json({ group: saved.groups.find(({ id: groupId }) => groupId === id.data), ...(warning ? { warning } : {}) })
 })
 
 catalogRoutes.delete('/groups/:groupId', async (c) => {
   const id = groupIdSchema.safeParse(c.req.param('groupId'))
   if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
-  const snapshot = await readCatalog(c.env.DATA)
+  const snapshot = await readCatalog(c.env)
   if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   try {
     await readDelivery(c.env.DATA)
   } catch {
     throw apiError(500, 'DELIVERY_STATE_INVALID', '订阅状态不可用，未删除分组')
   }
-  await writeCatalog(c.env.DATA, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })
+  await writeCatalog(c.env, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })
   await removeGroupReference(c.env.DATA, id.data)
-  const warning = await recompileDelivery(c.env.DATA)
+  const warning = await recompileDelivery(c.env)
   if (warning) c.header('X-Catalog-Recompile', 'failed')
   return c.body(null, 204)
 })

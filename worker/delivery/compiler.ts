@@ -1,4 +1,5 @@
 import { readCatalog } from '../catalog/repository.js'
+import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import { hashToken } from '../platform/crypto.js'
 import { CLIENT_IDS, renderClient, type RenderClient } from '../renderers/index.js'
@@ -72,12 +73,13 @@ async function artifactFor(
 }
 
 export async function compileSubscription(
-  kv: KVNamespace,
+  env: DataEnv,
   subscription: Subscription,
   options: CompileOptions = {},
 ): Promise<CompiledArtifact[]> {
+  const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
-  const catalog = await readCatalog(kv)
+  const catalog = await readCatalog(env)
   const nodes = selectedNodes(catalog, subscription)
   const artifacts = await Promise.all(CLIENT_IDS.map((client) => artifactFor(subscription, client, nodes, catalog.revision, now)))
   await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
@@ -88,10 +90,11 @@ export async function compileSubscription(
   return artifacts
 }
 
-export async function compileAllSubscriptions(kv: KVNamespace, options: CompileOptions = {}): Promise<void> {
+export async function compileAllSubscriptions(env: DataEnv, options: CompileOptions = {}): Promise<void> {
+  const kv = env.DATA
   const snapshot = await readDelivery(kv)
   for (const subscription of snapshot.subscriptions) {
-    if (subscription.enabled) await compileSubscription(kv, subscription, options)
+    if (subscription.enabled) await compileSubscription(env, subscription, options)
     else {
       const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
       if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }) => kv.delete(name)))
@@ -99,12 +102,12 @@ export async function compileAllSubscriptions(kv: KVNamespace, options: CompileO
   }
 }
 
-export async function compileSubscriptionById(kv: KVNamespace, id: string, options: CompileOptions = {}): Promise<CompiledArtifact[]> {
-  const snapshot = await readDelivery(kv)
+export async function compileSubscriptionById(env: DataEnv, id: string, options: CompileOptions = {}): Promise<CompiledArtifact[]> {
+  const snapshot = await readDelivery(env.DATA)
   const subscription = snapshot.subscriptions.find((candidate) => candidate.id === id)
   if (!subscription) throw new Error('SUBSCRIPTION_NOT_FOUND')
   if (!subscription.enabled) return []
-  return compileSubscription(kv, subscription, options)
+  return compileSubscription(env, subscription, options)
 }
 
-export const recompileAfterCatalogChange = (kv: KVNamespace, options: CompileOptions = {}) => compileAllSubscriptions(kv, options)
+export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOptions = {}) => compileAllSubscriptions(env, options)

@@ -5,6 +5,7 @@ import { decryptText, readCryptoMaterial } from '../../../worker/platform/crypto
 import {
   jsonRequest,
   login,
+  enableD1Modules,
   resetData,
   setupAdmin,
   TEST_ORIGIN,
@@ -30,6 +31,7 @@ async function createUserCookie(adminCookie: string): Promise<string> {
 
 beforeEach(async () => {
   await resetData()
+  await enableD1Modules()
   await setupAdmin()
 })
 
@@ -75,6 +77,8 @@ describe('administrator Catalog APIs', () => {
     expect(body.nodes[0]).not.toHaveProperty('raw')
     expect(body.nodes[0]).not.toHaveProperty('plugin')
     expect(await env.DATA.get('state:catalog')).toBeNull()
+    const sources = await env.DB.prepare('SELECT COUNT(*) AS count FROM sources').first<{ count: number }>()
+    expect(sources?.count).toBe(0)
   })
 
   it('creates manual and remote sources without returning secrets', async () => {
@@ -137,7 +141,7 @@ describe('administrator Catalog APIs', () => {
     expect(responseText).not.toContain('header-secret')
     expect(JSON.parse(responseText).source.refreshIntervalMinutes).toBe(30)
 
-    const source = (await readCatalog(env.DATA)).sources.find(({ id }) => id === sourceId)!
+    const source = (await readCatalog(env)).sources.find(({ id }) => id === sourceId)!
     const material = await readCryptoMaterial(env.DATA)
     await expect(decryptText(source.encryptedUrl!, material.encryptionKey)).resolves.toBe(url)
     await expect(decryptText(source.encryptedHeaders!, material.encryptionKey)).resolves.toBe(JSON.stringify({ Authorization: 'header-secret' }))

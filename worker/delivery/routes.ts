@@ -90,7 +90,7 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
 
 async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
   const token = await decryptSubscriptionToken(c.env.DATA, subscription)
-  const currentCatalogRevision = catalogRevision ?? (await readCatalog(c.env.DATA)).revision
+  const currentCatalogRevision = catalogRevision ?? (await readCatalog(c.env)).revision
   const origin = new URL(c.req.url).origin
   const links = Object.fromEntries(
     ['auto', 'mihomo', 'clash', 'clash-meta', 'stash', 'singbox', 'karing', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket']
@@ -141,42 +141,42 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
 export const adminDeliveryRoutes = new Hono<AppEnv>()
 
 adminDeliveryRoutes.get('/', async (c) => {
-  const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env.DATA), readCatalog(c.env.DATA)])
+  const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env.DATA), readCatalog(c.env)])
   return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, catalog.revision))) })
 })
 
 adminDeliveryRoutes.post('/', async (c) => {
   const input = await readJson(c, createSchema)
-  const result = await run(() => createSubscription(c.env.DATA, input, { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env.DATA, result.subscription) : undefined)
+  const result = await run(() => createSubscription(c.env, input, { actorRole: 'admin' }))
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
 })
 
 adminDeliveryRoutes.patch('/:id', async (c) => {
   const input = await readJson(c, updateSchema)
-  const subscription = await run(() => updateSubscription(c.env.DATA, c.req.param('id'), input, { actorRole: 'admin' }))
-  const warning = await mutationWarning(() => compileAllSubscriptions(c.env.DATA))
+  const subscription = await run(() => updateSubscription(c.env, c.req.param('id'), input, { actorRole: 'admin' }))
+  const warning = await mutationWarning(() => compileAllSubscriptions(c.env))
   return c.json({ subscription: await view(c, subscription), warning })
 })
 
 adminDeliveryRoutes.put('/:id', async (c) => {
   const input = await readJson(c, updateSchema)
-  const subscription = await run(() => updateSubscription(c.env.DATA, c.req.param('id'), input, { actorRole: 'admin' }))
-  const warning = await mutationWarning(() => compileAllSubscriptions(c.env.DATA))
+  const subscription = await run(() => updateSubscription(c.env, c.req.param('id'), input, { actorRole: 'admin' }))
+  const warning = await mutationWarning(() => compileAllSubscriptions(c.env))
   return c.json({ subscription: await view(c, subscription), warning })
 })
 
 adminDeliveryRoutes.post('/:id/token/reset', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env.DATA, result.subscription) : undefined)
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
 adminDeliveryRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env.DATA, result.subscription) : undefined)
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
@@ -190,7 +190,7 @@ export const userDeliveryRoutes = new Hono<AppEnv>()
 userDeliveryRoutes.get('/', async (c) => {
   const [subscriptions, catalog] = await Promise.all([
     listSubscriptionsForUser(c.env.DATA, c.get('principal').id),
-    readCatalog(c.env.DATA),
+    readCatalog(c.env),
   ])
   const views = await Promise.all(subscriptions.map(async (summary) => view(c, await getSubscription(c.env.DATA, summary.id), catalog.revision)))
   return c.json({ subscriptions: views })
@@ -202,7 +202,7 @@ userDeliveryRoutes.post('/:id/token/reset', async (c) => {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env.DATA, result.subscription) : undefined)
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
@@ -212,6 +212,6 @@ userDeliveryRoutes.post('/:id/reset-token', async (c) => {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env.DATA, result.subscription) : undefined)
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })

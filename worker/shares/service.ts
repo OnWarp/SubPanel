@@ -3,6 +3,7 @@ import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import { readCatalog } from '../catalog/repository.js'
+import type { DataEnv } from '../db/module-switch.js'
 import type { CatalogSnapshot } from '../catalog/schema.js'
 import { compileSubscription } from '../delivery/compiler.js'
 import { compiledKey, readDelivery } from '../delivery/repository.js'
@@ -395,14 +396,15 @@ function groupNames(catalog: CatalogSnapshot, subscription: Subscription): strin
 }
 
 export async function readShareMeta(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   actor: User | null,
   sessionHash: string | null,
   now = new Date(),
 ): Promise<ShareMeta> {
+  const kv = env.DATA
   const { share, subscription } = await guard(kv, token, 'meta', actor, sessionHash, undefined, now)
-  const catalog = await readCatalog(kv)
+  const catalog = await readCatalog(env)
   const preview = previewNodes(catalog, subscription)
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
   const meta: ShareMeta = { nodeCount: preview.count }
@@ -441,12 +443,13 @@ function parseArtifact(raw: string, subscription: Subscription, catalogRevision:
 }
 
 async function loadShareArtifact(
-  kv: KVNamespace,
+  env: DataEnv,
   share: ShareRecord,
   subscription: Subscription,
   client: ClientId,
 ): Promise<CompiledArtifact> {
-  const catalog = await readCatalog(kv)
+  const kv = env.DATA
+  const catalog = await readCatalog(env)
   const cachedRaw = await kv.get(shareCompiledKey(share.tokenHash, client))
   if (cachedRaw) {
     const cached = parseArtifact(cachedRaw, subscription, catalog.revision)
@@ -461,7 +464,7 @@ async function loadShareArtifact(
     }
   }
   // compileSubscription 会按原实现刷新订阅自己的 compiled 缓存。分享产物另外写到 compiled:share:{tokenHash}:{client}。
-  const artifacts = await compileSubscription(kv, subscription)
+  const artifacts = await compileSubscription(env, subscription)
   await Promise.all(artifacts.map((artifact) => kv.put(shareCompiledKey(share.tokenHash, artifact.client), JSON.stringify(artifact))))
   const artifact = artifacts.find((item) => item.client === client)
   if (!artifact) throw notFound()
@@ -469,7 +472,7 @@ async function loadShareArtifact(
 }
 
 export async function exportShare(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   type: string | undefined,
   client: string | undefined,
@@ -478,6 +481,7 @@ export async function exportShare(
   requestUrl: string,
   now = new Date(),
 ): Promise<ShareExportResult> {
+  const kv = env.DATA
   const guarded = await guard(kv, token, 'export', actor, sessionHash, undefined, now)
   const parsed = exportQuerySchema.safeParse({
     type: type === '' ? undefined : type,
@@ -495,7 +499,7 @@ export async function exportShare(
   const resolved = resolveShareClient(parsed.data.client ?? '')
   if (!resolved) throw notFound()
   assertSubscriptionAvailable(guarded.subscription, now.getTime())
-  const artifact = await loadShareArtifact(kv, guarded.share, guarded.subscription, resolved)
+  const artifact = await loadShareArtifact(env, guarded.share, guarded.subscription, resolved)
   if (!artifact.available) throw shareError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
   if (!(await readShareSettings(kv)).enabled || !(await claimExportAccess(kv, guarded.share.tokenHash, nowIso))) throw notFound()
   const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''

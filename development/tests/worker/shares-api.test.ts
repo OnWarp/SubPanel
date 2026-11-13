@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
 import { shareEntityKey } from '../../../worker/shares/repository'
 import { DEFAULT_SHARE_SETTINGS, type ShareSettings } from '../../../worker/shares/schema'
-import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 type ShareView = {
   id: string
@@ -32,6 +32,7 @@ type ErrorBody = { error: { code: string, message: string } }
 
 beforeEach(async () => {
   await resetData()
+  await enableD1Modules()
   await setupAdmin()
 })
 

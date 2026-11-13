@@ -1,5 +1,6 @@
 import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
+import type { DataEnv } from '../db/module-switch.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
 import { deleteCompiledArtifacts } from './repository.js'
 import { readDelivery, writeDelivery } from './repository.js'
@@ -72,10 +73,10 @@ function assertWindow(startsAt: number | null, expiresAt: number | null): void {
   if (startsAt !== null && expiresAt !== null && expiresAt <= startsAt) fail('SUBSCRIPTION_WINDOW_INVALID')
 }
 
-async function assertReferences(kv: KVNamespace, userId: string, groupIds: string[]): Promise<void> {
-  const accounts = await readAccounts(kv)
+async function assertReferences(env: DataEnv, userId: string, groupIds: string[]): Promise<void> {
+  const accounts = await readAccounts(env.DATA)
   if (!accounts.users.some((user) => user.id === userId)) fail('USER_NOT_FOUND')
-  const groups = new Set((await readCatalog(kv)).groups.map((group) => group.id))
+  const groups = new Set((await readCatalog(env)).groups.map((group) => group.id))
   if (groupIds.some((groupId) => !groups.has(groupId))) fail('GROUP_NOT_FOUND')
   if (new Set(groupIds).size !== groupIds.length) fail('SUBSCRIPTION_INVALID')
 }
@@ -102,11 +103,12 @@ async function createToken(kv: KVNamespace, token: string): Promise<Pick<Subscri
 }
 
 export async function createSubscription(
-  kv: KVNamespace,
+  env: DataEnv,
   input: SubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
-  await assertReferences(kv, input.userId, input.groupIds)
+  await assertReferences(env, input.userId, input.groupIds)
+  const kv = env.DATA
   const snapshot = await readDelivery(kv)
   const now = options.now ?? new Date().toISOString()
   const token = validToken(options.token ?? randomToken())
@@ -156,17 +158,18 @@ export async function getSubscription(kv: KVNamespace, id: string): Promise<Subs
 export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt'>>
 
 export async function updateSubscription(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   input: UpdateSubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
+  const kv = env.DATA
   const snapshot = await readDelivery(kv)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
   const nextGroups = input.groupIds === undefined ? current.groupIds : [...input.groupIds]
-  await assertReferences(kv, current.userId, nextGroups)
+  await assertReferences(env, current.userId, nextGroups)
   const startsAt = cleanEpoch(input.startsAt === undefined ? current.startsAt : input.startsAt)
   const expiresAt = cleanEpoch(input.expiresAt === undefined ? current.expiresAt : input.expiresAt)
   assertWindow(startsAt, expiresAt)
@@ -187,12 +190,12 @@ export async function updateSubscription(
 }
 
 export async function setSubscriptionEnabled(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   enabled: boolean,
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
-  return updateSubscription(kv, id, { enabled }, options)
+  return updateSubscription(env, id, { enabled }, options)
 }
 
 export async function resetSubscriptionToken(

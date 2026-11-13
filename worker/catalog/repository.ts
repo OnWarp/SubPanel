@@ -1,3 +1,5 @@
+import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { persistCatalogSnapshot, readCatalogFromD1 } from './d1-repository.js'
 import {
   catalogSnapshotSchema,
   emptyCatalogSnapshot,
@@ -11,7 +13,7 @@ export const CATALOG_KEY = 'state:catalog'
 export const MAX_CATALOG_BYTES = 20 * 1024 * 1024
 export { MAX_NODES }
 
-export async function readCatalog(kv: KVNamespace): Promise<CatalogSnapshot> {
+export async function readCatalogKv(kv: KVNamespace): Promise<CatalogSnapshot> {
   const raw = await kv.get(CATALOG_KEY)
   if (raw === null) return emptyCatalogSnapshot()
 
@@ -22,11 +24,11 @@ export async function readCatalog(kv: KVNamespace): Promise<CatalogSnapshot> {
   }
 }
 
-export async function writeCatalog(
-  kv: KVNamespace,
-  snapshot: CatalogSnapshotInput,
-  now = new Date().toISOString(),
-): Promise<CatalogSnapshot> {
+async function writeCatalogKv(kv: KVNamespace, serialized: string): Promise<void> {
+  await kv.put(CATALOG_KEY, serialized)
+}
+
+function prepareCatalogWrite(snapshot: CatalogSnapshotInput, now: string): CatalogSnapshot {
   let current: CatalogSnapshot
   try {
     current = upgradeCatalogSnapshot(snapshot)
@@ -44,8 +46,22 @@ export async function writeCatalog(
   if (new TextEncoder().encode(serialized).byteLength > MAX_CATALOG_BYTES) {
     throw new Error('Catalog snapshot is too large')
   }
-
-  // ponytail: KV is last-writer-wins; move Catalog writes to a Durable Object or D1 when concurrent writers or frequent refreshes become normal.
-  await kv.put(CATALOG_KEY, serialized)
   return result.data
+}
+
+export async function readCatalog(env: DataEnv): Promise<CatalogSnapshot> {
+  if (await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) return readCatalogFromD1(env.DB)
+  return readCatalogKv(env.DATA)
+}
+
+export async function writeCatalog(
+  env: DataEnv,
+  snapshot: CatalogSnapshotInput,
+  now = new Date().toISOString(),
+): Promise<CatalogSnapshot> {
+  const next = prepareCatalogWrite(snapshot, now)
+  // One backend only: the import flag selects D1, and its absence keeps KV.
+  if (await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) await persistCatalogSnapshot(env.DB, next)
+  else await writeCatalogKv(env.DATA, JSON.stringify(next))
+  return next
 }

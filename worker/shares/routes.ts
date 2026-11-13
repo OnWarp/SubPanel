@@ -141,7 +141,7 @@ shareRoutes.delete('/:id', async (c) => {
 shareRoutes.get('/:token/meta', async (c) => {
   const token = requireShareToken(c.req.param('token'))
   const [actor, sessionHash] = await Promise.all([resolveSessionUser(c), readShareSessionHash(c)])
-  const meta = await run(() => readShareMeta(c.env.DATA, token, actor, sessionHash))
+  const meta = await run(() => readShareMeta(c.env, token, actor, sessionHash))
   return c.json({ meta })
 })
 
@@ -158,7 +158,7 @@ shareRoutes.get('/:token/export', async (c) => {
   const token = requireShareToken(c.req.param('token'))
   const [actor, sessionHash] = await Promise.all([resolveSessionUser(c), readShareSessionHash(c)])
   const result = await run(() => exportShare(
-    c.env.DATA,
+    c.env,
     token,
     c.req.query('type'),
     c.req.query('client'),

@@ -5,6 +5,7 @@ import {
   type SourceId,
   type SourceWarning,
 } from './schema.js'
+import type { DataEnv } from '../db/module-switch.js'
 import { MAX_NODES, readCatalog, writeCatalog } from './repository.js'
 import { fetchRemoteText, RemoteFetchError, validateRemoteHeaders, validateRemoteUrl } from './remote.js'
 import {
@@ -90,9 +91,9 @@ function fail(code: ImportErrorCode): never {
 
 export const CATALOG_RECOMPILE_WARNING = 'Catalog 已保存，但订阅缓存编译失败，将在后续变更时重试'
 
-export async function recompileDelivery(kv: KVNamespace): Promise<string | undefined> {
+export async function recompileDelivery(env: DataEnv): Promise<string | undefined> {
   try {
-    await recompileAfterCatalogChange(kv)
+    await recompileAfterCatalogChange(env)
     return undefined
   } catch {
     // Catalog remains the source of truth; a later mutation can retry derived artifacts.
@@ -155,12 +156,12 @@ export function summarizeSource(source: Source, remoteUrl?: string): SourceSumma
   }
 }
 
-export async function summarizeSources(kv: KVNamespace, sources: Source[]): Promise<SourceSummary[]> {
+export async function summarizeSources(env: DataEnv, sources: Source[]): Promise<SourceSummary[]> {
   const remoteSources = sources.filter((source) => source.type === 'remote' && source.encryptedUrl)
   let material: Awaited<ReturnType<typeof readCryptoMaterial>> | null = null
   if (remoteSources.length > 0) {
     try {
-      material = await readCryptoMaterial(kv)
+      material = await readCryptoMaterial(env.DATA)
     } catch (error) {
       if (!(error instanceof Error && (error.message === 'Crypto material is missing' || error.message === 'Crypto material is corrupt'))) throw error
     }
@@ -278,18 +279,18 @@ function normalizedName(name: string): string {
 }
 
 export async function createSource(
-  kv: KVNamespace,
+  env: DataEnv,
   input: CreateSourceInput,
   options: ImportServiceOptions = {},
 ): Promise<SourceOperationResult> {
   const now = options.now ?? new Date().toISOString()
-  const snapshot = await readCatalog(kv)
+  const snapshot = await readCatalog(env)
   const id = newSourceId(snapshot)
   const name = normalizedName(input.name)
 
   if (input.type !== 'remote') {
     const parsed = safeImportResult(input.content)
-    const material = await getOrCreateCryptoMaterial(kv)
+    const material = await getOrCreateCryptoMaterial(env.DATA)
     const source: Source = {
       id,
       name,
@@ -304,8 +305,8 @@ export async function createSource(
       updatedAt: now,
     }
     const withSource = { ...snapshot, nextSourceId: snapshot.nextSourceId + 1, sources: [...snapshot.sources, source] }
-    const saved = await writeCatalog(kv, await applyImport(withSource, id, parsed, now), now)
-    const warning = await recompileDelivery(kv)
+    const saved = await writeCatalog(env, await applyImport(withSource, id, parsed, now), now)
+    const warning = await recompileDelivery(env)
     return { success: true, source: summarizeSource(sourceById(saved, id)), ...(warning ? { warning } : {}) }
   }
 
@@ -314,7 +315,7 @@ export async function createSource(
   }
   const safeUrl = validateRemoteUrl(input.url).href
   const safeHeaders = validateRemoteHeaders(input.headers ?? {})
-  const material = await getOrCreateCryptoMaterial(kv)
+  const material = await getOrCreateCryptoMaterial(env.DATA)
   let source: Source = {
     id,
     name,
@@ -347,22 +348,22 @@ export async function createSource(
     source = { ...source, lastErrorCode: safeErrorCode(error) }
     next = replaceSource(next, source)
   }
-  const saved = await writeCatalog(kv, next, now)
-  const warning = await recompileDelivery(kv)
+  const saved = await writeCatalog(env, next, now)
+  const warning = await recompileDelivery(env)
   return { success, source: summarizeSource(sourceById(saved, id), safeUrl), ...(warning ? { warning } : {}) }
 }
 
 export async function replaceSourceContent(
-  kv: KVNamespace,
+  env: DataEnv,
   sourceId: string,
   content: string,
   options: ImportServiceOptions = {},
 ): Promise<SourceOperationResult> {
   const now = options.now ?? new Date().toISOString()
-  const snapshot = await readCatalog(kv)
+  const snapshot = await readCatalog(env)
   const current = sourceById(snapshot, sourceId)
   if (current.type === 'remote') fail('CATALOG_SOURCE_TYPE_INVALID')
-  const material = await readCryptoMaterial(kv)
+  const material = await readCryptoMaterial(env.DATA)
   const parsed = safeImportResult(content)
   const source: Source = {
     ...current,
@@ -374,19 +375,19 @@ export async function replaceSourceContent(
     lastErrorCode: undefined,
     updatedAt: now,
   }
-  const saved = await writeCatalog(kv, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
-  const warning = await recompileDelivery(kv)
+  const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
+  const warning = await recompileDelivery(env)
   return { success: true, source: summarizeSource(sourceById(saved, current.id)), ...(warning ? { warning } : {}) }
 }
 
 export async function updateSource(
-  kv: KVNamespace,
+  env: DataEnv,
   sourceId: string,
   input: UpdateSourceInput,
   options: ImportServiceOptions = {},
 ): Promise<SourceOperationResult> {
   const now = options.now ?? new Date().toISOString()
-  const snapshot = await readCatalog(kv)
+  const snapshot = await readCatalog(env)
   const current = sourceById(snapshot, sourceId)
   const name = input.name === undefined ? current.name : normalizedName(input.name)
   let source: Source = { ...current, name, enabled: input.enabled ?? current.enabled, updatedAt: now }
@@ -398,7 +399,7 @@ export async function updateSource(
       fail('CATALOG_SOURCE_INVALID')
     }
     const material = input.url !== undefined || input.headers !== undefined
-      ? await readCryptoMaterial(kv)
+      ? await readCryptoMaterial(env.DATA)
       : null
     if (input.url !== undefined) {
       const url = validateRemoteUrl(input.url).href
@@ -410,8 +411,8 @@ export async function updateSource(
     }
     if (input.refreshIntervalMinutes !== undefined) source = { ...source, refreshIntervalMinutes: input.refreshIntervalMinutes }
     next = replaceSource(snapshot, source)
-    const saved = await writeCatalog(kv, next, now)
-    const warning = await recompileDelivery(kv)
+    const saved = await writeCatalog(env, next, now)
+    const warning = await recompileDelivery(env)
     let remoteUrl: string | undefined
     try {
       const encrypted = source.encryptedUrl
@@ -426,7 +427,7 @@ export async function updateSource(
     fail('CATALOG_SOURCE_TYPE_INVALID')
   }
   if (input.content !== undefined) {
-    const material = await readCryptoMaterial(kv)
+    const material = await readCryptoMaterial(env.DATA)
     const parsed = safeImportResult(input.content)
     source = {
       ...source,
@@ -439,8 +440,8 @@ export async function updateSource(
     }
     next = await applyImport(replaceSource(snapshot, source), current.id, parsed, now)
   }
-  const saved = await writeCatalog(kv, next, now)
-  const warning = await recompileDelivery(kv)
+  const saved = await writeCatalog(env, next, now)
+  const warning = await recompileDelivery(env)
   return { success: true, source: summarizeSource(sourceById(saved, current.id)), ...(warning ? { warning } : {}) }
 }
 
@@ -461,18 +462,18 @@ function parsedHeaders(value: string): Record<string, string> {
 }
 
 export async function refreshSource(
-  kv: KVNamespace,
+  env: DataEnv,
   sourceId: string,
   options: ImportServiceOptions = {},
 ): Promise<SourceOperationResult> {
   const now = options.now ?? new Date().toISOString()
-  const snapshot = await readCatalog(kv)
+  const snapshot = await readCatalog(env)
   const current = sourceById(snapshot, sourceId)
   if (current.type !== 'remote' || !current.encryptedUrl || !current.encryptedHeaders) fail('CATALOG_SOURCE_TYPE_INVALID')
 
   let remoteUrl: string | undefined
   try {
-    const material = await readCryptoMaterial(kv)
+    const material = await readCryptoMaterial(env.DATA)
     remoteUrl = await decryptText(current.encryptedUrl, material.encryptionKey)
     const headers = parsedHeaders(await decryptText(current.encryptedHeaders, material.encryptionKey))
     const content = await fetchRemoteText({ url: remoteUrl, headers }, options.fetcher)
@@ -487,8 +488,8 @@ export async function refreshSource(
       lastErrorCode: undefined,
       updatedAt: now,
     }
-    const saved = await writeCatalog(kv, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
-    const warning = await recompileDelivery(kv)
+    const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
+    const warning = await recompileDelivery(env)
     return { success: true, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
   } catch (error) {
     const source: Source = {
@@ -497,19 +498,19 @@ export async function refreshSource(
       lastErrorCode: safeErrorCode(error),
       updatedAt: now,
     }
-    const saved = await writeCatalog(kv, replaceSource(snapshot, source), now)
-    const warning = await recompileDelivery(kv)
+    const saved = await writeCatalog(env, replaceSource(snapshot, source), now)
+    const warning = await recompileDelivery(env)
     return { success: false, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
   }
 }
 
 export async function deleteSource(
-  kv: KVNamespace,
+  env: DataEnv,
   sourceId: string,
   options: ImportServiceOptions = {},
 ): Promise<string | undefined> {
   const now = options.now ?? new Date().toISOString()
-  const snapshot = structuredClone(await readCatalog(kv))
+  const snapshot = structuredClone(await readCatalog(env))
   const source = sourceById(snapshot, sourceId)
   snapshot.sources = snapshot.sources.filter(({ id }) => id !== source.id)
   const deletedIds = new Set<string>()
@@ -529,6 +530,6 @@ export async function deleteSource(
     group.nodeOrder = group.nodeOrder.filter((id) => !deletedIds.has(id))
     group.updatedAt = now
   }
-  await writeCatalog(kv, snapshot, now)
-  return recompileDelivery(kv)
+  await writeCatalog(env, snapshot, now)
+  return recompileDelivery(env)
 }

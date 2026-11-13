@@ -11,6 +11,14 @@
       "binding": "DATA"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "subpanel-d1",
+      "database_id": "d8360141-8f44-4550-8656-5931231bb020",
+      "migrations_dir": "migrations"
+    }
+  ],
   "observability": {
     "enabled": true
   },

@@ -67,7 +67,7 @@ describe('catalog snapshot migration', () => {
       groups: [],
     }))
 
-    const snapshot = await readCatalog(env.DATA)
+    const snapshot = await readCatalog(env)
 
     expect(snapshot.schemaVersion).toBe(2)
     expect(snapshot.revision).toBe(4)
@@ -83,6 +83,6 @@ describe('catalog snapshot migration', () => {
 
   it('rejects an unknown snapshot version as corrupt', async () => {
     await env.DATA.put(CATALOG_KEY, JSON.stringify({ schemaVersion: 99 }))
-    await expect(readCatalog(env.DATA)).rejects.toThrow('Catalog snapshot is corrupt')
+    await expect(readCatalog(env)).rejects.toThrow('Catalog snapshot is corrupt')
   })
 })

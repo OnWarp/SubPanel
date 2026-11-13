@@ -1,6 +1,6 @@
 import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 type Flags = {
   isRecommended: boolean
@@ -83,6 +83,7 @@ async function provisionUser(adminCookie: string): Promise<string> {
 
 beforeEach(async () => {
   await resetData()
+  await enableD1Modules()
   await setupAdmin()
 })
 

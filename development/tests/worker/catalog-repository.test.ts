@@ -1,7 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  catalogSnapshotSchema,
   emptyCatalogSnapshot,
   type CatalogSnapshot,
 } from '../../../worker/catalog/schema'
@@ -12,7 +11,7 @@ import {
   readCatalog,
   writeCatalog,
 } from '../../../worker/catalog/repository'
-import { resetData } from './helpers'
+import { enableD1Modules, resetData } from './helpers'
 
 const NOW = '2026-07-23T00:00:00.000Z'
 const ENCRYPTED = {
@@ -76,30 +75,34 @@ function validSnapshot(): CatalogSnapshot {
   }
 }
 
-beforeEach(resetData)
+beforeEach(async () => {
+  await resetData()
+  await enableD1Modules()
+})
 afterEach(() => vi.restoreAllMocks())
 
 describe('catalog snapshot repository', () => {
-  it('returns an empty catalog when state:catalog is absent', async () => {
-    expect(await readCatalog(env.DATA)).toEqual(emptyCatalogSnapshot())
+  it('returns an empty catalog when no rows are stored', async () => {
+    expect(await readCatalog(env)).toEqual(emptyCatalogSnapshot())
   })
 
   it('rejects corrupt JSON and invalid references', async () => {
-    await env.DATA.put(CATALOG_KEY, '{broken')
-    await expect(readCatalog(env.DATA)).rejects.toThrow('Catalog snapshot is corrupt')
+    await writeCatalog(env, validSnapshot(), NOW)
+    await env.DB.prepare(`UPDATE sources SET warnings = ? WHERE id = ?`).bind('[1]', 'src_1').run()
+    await expect(readCatalog(env)).rejects.toThrow('Catalog snapshot is corrupt')
 
-    await env.DATA.put(CATALOG_KEY, JSON.stringify({
-      ...validSnapshot(),
-      nodes: [{ ...validSnapshot().nodes[0], sourceIds: ['src_2'] }],
-    }))
-    await expect(readCatalog(env.DATA)).rejects.toThrow('Catalog snapshot is corrupt')
+    await enableD1Modules()
+    await writeCatalog(env, validSnapshot(), NOW)
+    await env.DB.prepare(`UPDATE nodes SET source_ids = ? WHERE id = ?`).bind('["src_2"]', 'node_1').run()
+    await expect(readCatalog(env)).rejects.toThrow('Catalog snapshot is corrupt')
   })
 
   it('increments revision after a validated write', async () => {
-    const saved = await writeCatalog(env.DATA, validSnapshot(), NOW)
+    const saved = await writeCatalog(env, validSnapshot(), NOW)
     expect(saved.revision).toBe(1)
     expect(saved.updatedAt).toBe(NOW)
-    expect(catalogSnapshotSchema.parse(JSON.parse((await env.DATA.get(CATALOG_KEY))!))).toEqual(saved)
+    expect(await readCatalog(env)).toEqual(saved)
+    expect(await env.DATA.get(CATALOG_KEY)).toBeNull()
   })
 
   it('rejects more than 100 logical nodes', async () => {
@@ -112,7 +115,7 @@ describe('catalog snapshot repository', () => {
       rawVariants: [{ ...snapshot.nodes[0].rawVariants[0] }],
     }))
     snapshot.nextNodeId = MAX_NODES + 2
-    await expect(writeCatalog(env.DATA, snapshot, NOW)).rejects.toThrow('Catalog snapshot validation failed')
+    await expect(writeCatalog(env, snapshot, NOW)).rejects.toThrow('Catalog snapshot validation failed')
   })
 
   it('rejects a serialized snapshot larger than 20 MiB before KV put', async () => {
@@ -120,7 +123,7 @@ describe('catalog snapshot repository', () => {
     snapshot.nodes[0].rawVariants[0].raw = 'x'.repeat(MAX_CATALOG_BYTES)
     const put = vi.spyOn(env.DATA, 'put')
 
-    await expect(writeCatalog(env.DATA, snapshot, NOW)).rejects.toThrow('Catalog snapshot is too large')
+    await expect(writeCatalog(env, snapshot, NOW)).rejects.toThrow('Catalog snapshot is too large')
     expect(put).not.toHaveBeenCalled()
   })
 })

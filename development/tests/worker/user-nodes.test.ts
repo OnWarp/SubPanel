@@ -2,7 +2,7 @@ import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { catalogSnapshotSchema, type CatalogSnapshot, type Node } from '../../../worker/catalog/schema'
 import { collectUserNodes, type UserNodeSubscription } from '../../../worker/delivery/user-nodes'
-import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const NOW = '2026-06-01T00:00:00.000Z'
 const NOW_MS = Date.parse(NOW)
@@ -153,6 +153,7 @@ function subscription(overrides: Partial<UserNodeSubscription> = {}): UserNodeSu
 
 beforeEach(async () => {
   await resetData()
+  await enableD1Modules()
   await setupAdmin()
 })
 

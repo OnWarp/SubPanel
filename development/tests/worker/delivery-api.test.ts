@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const ssLine = (name: string, host = 'ss.example.com') =>
   `ss://${btoa('aes-128-gcm:password')}@${host}:8388#${encodeURIComponent(name)}`
@@ -33,6 +33,7 @@ async function createUserCookie(adminCookie: string): Promise<string> {
 
 beforeEach(async () => {
   await resetData()
+  await enableD1Modules()
   await setupAdmin()
 })
 

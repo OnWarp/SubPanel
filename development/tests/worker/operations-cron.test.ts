@@ -5,7 +5,7 @@ import { createSource } from '../../../worker/catalog/import-service.js'
 import { readCatalog, writeCatalog } from '../../../worker/catalog/repository.js'
 import worker from '../../../worker/index.js'
 import { runCron, selectDueSource } from '../../../worker/operations/cron.js'
-import { resetData } from './helpers.js'
+import { enableD1Modules, resetData } from './helpers.js'
 
 const NOW = '2026-07-25T00:15:00.000Z'
 
@@ -20,7 +20,10 @@ function source(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
-beforeEach(resetData)
+beforeEach(async () => {
+  await resetData()
+  await enableD1Modules()
+})
 
 describe('Cron due-source selection', () => {
   it('selects the earliest due enabled remote source', () => {
@@ -45,10 +48,10 @@ describe('Cron due-source selection', () => {
   it('refreshes one due source from the scheduled Worker handler', async () => {
     const line = `ss://${btoa('aes-128-gcm:password')}@cron.example.com:8388#Cron`
     const fetcher = vi.fn(async () => new Response(line))
-    await createSource(env.DATA, { type: 'remote', name: 'First', url: 'https://one.example/source', headers: {}, refreshIntervalMinutes: 15 }, { now: '2026-07-25T00:00:00.000Z', fetcher })
-    await createSource(env.DATA, { type: 'remote', name: 'Second', url: 'https://two.example/source', headers: {}, refreshIntervalMinutes: 15 }, { now: '2026-07-25T00:00:00.000Z', fetcher })
-    const catalog = await readCatalog(env.DATA)
-    await writeCatalog(env.DATA, { ...catalog, sources: catalog.sources.map((item) => ({ ...item, lastAttemptAt: '2026-07-24T23:00:00.000Z' })) }, NOW)
+    await createSource(env, { type: 'remote', name: 'First', url: 'https://one.example/source', headers: {}, refreshIntervalMinutes: 15 }, { now: '2026-07-25T00:00:00.000Z', fetcher })
+    await createSource(env, { type: 'remote', name: 'Second', url: 'https://two.example/source', headers: {}, refreshIntervalMinutes: 15 }, { now: '2026-07-25T00:00:00.000Z', fetcher })
+    const catalog = await readCatalog(env)
+    await writeCatalog(env, { ...catalog, sources: catalog.sources.map((item) => ({ ...item, lastAttemptAt: '2026-07-24T23:00:00.000Z' })) }, NOW)
     vi.stubGlobal('fetch', fetcher)
 
     const scheduled = worker.scheduled
@@ -60,12 +63,12 @@ describe('Cron due-source selection', () => {
     expect(fetcher).toHaveBeenCalledTimes(3)
     const status = JSON.parse(await env.DATA.get('state:cron') ?? '{}')
     expect(status).toMatchObject({ schemaVersion: 1, status: 'success', sourceId: 'src_1' })
-    expect(status.catalogRevision).toBe((await readCatalog(env.DATA)).revision)
+    expect(status.catalogRevision).toBe((await readCatalog(env)).revision)
   })
 
   it('stores only sanitized failure data after a remote refresh error', async () => {
     const line = `ss://${btoa('aes-128-gcm:password')}@cron.example.com:8388#Cron`
-    await createSource(env.DATA, {
+    await createSource(env, {
       type: 'remote',
       name: 'Sensitive',
       url: 'https://cron.example/source?token=query-secret',
@@ -73,7 +76,7 @@ describe('Cron due-source selection', () => {
       refreshIntervalMinutes: 15,
     }, { now: '2026-07-25T00:00:00.000Z', fetcher: async () => new Response(line) })
 
-    await runCron(env.DATA, {
+    await runCron(env, {
       now: NOW,
       fetcher: async () => {
         throw new Error('thrown-secret-detail query-secret header-secret')

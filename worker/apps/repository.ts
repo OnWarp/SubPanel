@@ -1,3 +1,5 @@
+import { APPS_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { persistAppsSnapshot, readAppsFromD1 } from './d1-repository.js'
 import {
   APPS_KEY,
   MAX_APPS_BYTES,
@@ -8,7 +10,7 @@ import {
 
 export { APPS_KEY, MAX_APPS_BYTES }
 
-export async function readApps(kv: KVNamespace): Promise<AppsSnapshot> {
+export async function readAppsKv(kv: KVNamespace): Promise<AppsSnapshot> {
   const raw = await kv.get(APPS_KEY)
   if (raw === null) return emptyAppsSnapshot()
 
@@ -19,11 +21,7 @@ export async function readApps(kv: KVNamespace): Promise<AppsSnapshot> {
   }
 }
 
-export async function writeApps(
-  kv: KVNamespace,
-  snapshot: AppsSnapshot,
-  now = new Date().toISOString(),
-): Promise<AppsSnapshot> {
+function prepareAppsWrite(snapshot: AppsSnapshot, now: string): AppsSnapshot {
   const result = appsSnapshotSchema.safeParse({
     ...snapshot,
     revision: snapshot.revision + 1,
@@ -35,8 +33,21 @@ export async function writeApps(
   if (new TextEncoder().encode(serialized).byteLength > MAX_APPS_BYTES) {
     throw new Error('Apps snapshot is too large')
   }
-
-  // ponytail: KV is last-writer-wins. Concurrent admin edits can overwrite a snapshot; move app writes to a Durable Object if overlapping edits become normal.
-  await kv.put(APPS_KEY, serialized)
   return result.data
+}
+
+export async function readApps(env: DataEnv): Promise<AppsSnapshot> {
+  if (await isModuleReady(env.DB, APPS_D1_READY_KEY)) return readAppsFromD1(env.DB)
+  return readAppsKv(env.DATA)
+}
+
+export async function writeApps(
+  env: DataEnv,
+  snapshot: AppsSnapshot,
+  now = new Date().toISOString(),
+): Promise<AppsSnapshot> {
+  const next = prepareAppsWrite(snapshot, now)
+  if (await isModuleReady(env.DB, APPS_D1_READY_KEY)) await persistAppsSnapshot(env.DB, next)
+  else await env.DATA.put(APPS_KEY, JSON.stringify(next))
+  return next
 }
