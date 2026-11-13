@@ -4,6 +4,7 @@ import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { hashToken, randomToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
+import { primaryDomainOriginSafe } from '../domains/service.js'
 import { sendTestEmail } from './email.js'
 import { hashPassword } from './password.js'
 import { accountsUseD1, findAccountUserById, readAccounts, writeAccounts } from './repository.js'
@@ -396,11 +397,14 @@ adminAccountRoutes.post('/invites', async (c) => {
   await c.env.DATA.put(`${INVITE_PREFIX}${id}`, JSON.stringify(record), {
     expirationTtl: INVITE_TTL_SECONDS,
   })
+  // Panel absolute links use the primary panel domain when configured;
+  // the request origin is the only permitted fallback here.
+  const panelOrigin = await primaryDomainOriginSafe(c.env.DB, 'panel')
   return c.json({
     invite: {
       id,
       ...record,
-      link: new URL(`/invite/${token}`, c.req.url).toString(),
+      link: new URL(`/invite/${token}`, panelOrigin ?? c.req.url).toString(),
     },
   }, 201)
 })

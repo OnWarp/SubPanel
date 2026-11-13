@@ -19,6 +19,7 @@ import {
   type SystemStatus,
 } from './api'
 import { ShareSettingsSection } from './ShareSettingsSection'
+import { DomainSettingsSection } from './DomainSettingsSection'
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof ApiClientError ? cause.message : fallback
@@ -442,6 +443,7 @@ export function SystemPage() {
       <RegistrationSection />
       <MailSection />
       <ShareSettingsSection />
+      <DomainSettingsSection />
       <StatusSection />
     </div>
   )

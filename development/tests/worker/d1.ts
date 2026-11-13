@@ -5,6 +5,7 @@ import emailVerificationPurposeSql from '../../../migrations/0002_email_verifica
 import sharesFkSql from '../../../migrations/0003_shares_subscription_fk.sql?raw'
 import softDeleteSql from '../../../migrations/0004_user_soft_delete.sql?raw'
 import registrationSql from '../../../migrations/0005_registration.sql?raw'
+import domainsSql from '../../../migrations/0007_domain_stage.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
 export const SOFT_DELETE_MIGRATION_NAME = '0004_user_soft_delete.sql'
@@ -28,10 +29,13 @@ export const D1_TABLES = [
   'migration_runs',
   'node_raw_variants',
   'nodes',
+  'panel_domains',
   'rate_limits',
   'shares',
   'sources',
+  'subscription_domains',
   'subscription_groups',
+  'subscription_platform_settings',
   'subscriptions',
   'system_settings',
   'users',
@@ -136,6 +140,13 @@ export const registrationMigration = {
   queries: splitSqlStatements(registrationSql),
 }
 
+export const DOMAINS_MIGRATION_NAME = '0007_domain_stage.sql'
+
+export const domainsMigration = {
+  name: DOMAINS_MIGRATION_NAME,
+  queries: splitSqlStatements(domainsSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
   await applyD1Migrations(db, [
     initMigration,
@@ -143,6 +154,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     sharesFkMigration,
     softDeleteMigration,
     registrationMigration,
+    domainsMigration,
   ])
 }
 

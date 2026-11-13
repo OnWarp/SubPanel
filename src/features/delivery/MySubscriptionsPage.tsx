@@ -15,6 +15,7 @@ import { InlineMessage } from '../../ui/InlineMessage'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
+import { orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from './platforms'
 import { DIAGNOSTIC_HELP } from './diagnostics'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from './expiry'
 
@@ -127,11 +128,12 @@ export function MySubscriptionsPage() {
     () => subscriptions.find((subscription) => subscription.id === selectedId) ?? null,
     [selectedId, subscriptions],
   )
+  const platforms = useEnabledPlatforms()
   const linkEntries = selected
-    ? Object.entries(selected.links).filter(([client]) => client !== 'generic')
+    ? orderLinkEntries(Object.entries(selected.links).filter(([client]) => client !== 'generic'), platforms)
     : []
   const diagnostics = selected ? Object.entries(selected.diagnostics) : []
-  const primaryLink = selected?.links.auto || (selected ? selected.links[selected.defaultClient] ?? '' : '')
+  const primaryLink = selected ? pickPrimaryLink(selected.links, selected.defaultClient, platforms) : ''
   const expiry = selected ? getExpiryState(selected) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
@@ -247,6 +249,7 @@ export function MySubscriptionsPage() {
               {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
             </dl>
             {!selected.enabled ? <StatusMessage tone="warning">此订阅已停用，链接暂时不会提供内容</StatusMessage> : null}
+            {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
           </section>
 
           <section className="data-section del-link-card" aria-labelledby="subscription-link-title">
@@ -268,8 +271,9 @@ export function MySubscriptionsPage() {
           <section className="data-section user-subscription-section" aria-labelledby="client-links-title">
             <DataHeader id="client-links-title" title="客户端链接" />
             <div className="user-link-list">
+              {platforms.status === 'ready' && linkEntries.length === 0 && !selected.linkError ? <p className="section-empty">当前暂无可用的订阅入口</p> : null}
               {linkEntries.map(([client, link]) => {
-                const label = CLIENT_LABELS[client] ?? client
+                const label = platforms.names[client] ?? CLIENT_LABELS[client] ?? client
                 const accessibleLabel = client === 'auto' ? '自动' : label
                 return <div className="user-link-row" key={client}>
                   <div className="user-link-label"><strong>{label}</strong><span>{client === 'auto' ? '自动识别' : '专用格式'}</span></div>

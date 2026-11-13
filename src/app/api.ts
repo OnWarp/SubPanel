@@ -146,6 +146,7 @@ export type AdminSubscription = {
   createdAt: string
   updatedAt: string
   links: Record<string, string>
+  linkError?: string | null
   diagnostics: Record<string, SubscriptionDiagnostic>
 }
 

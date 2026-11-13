@@ -66,6 +66,7 @@ export function SharePage() {
   const [originalBlocked, setOriginalBlocked] = useState(false)
   const [manualOriginal, setManualOriginal] = useState('')
   const [pendingAction, setPendingAction] = useState('')
+  const [linkBaseUrl, setLinkBaseUrl] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!isShareToken(token)) {
@@ -75,6 +76,7 @@ export function SharePage() {
     setPhase({ kind: 'loading' })
     try {
       const result = await getShareMeta(token)
+      setLinkBaseUrl(result.linkBaseUrl ?? null)
       setPhase({ kind: 'ready', meta: result.meta })
     } catch (cause) {
       setPhase(phaseFromMetaError(cause))
@@ -94,6 +96,7 @@ export function SharePage() {
   const metaAlive = async () => {
     try {
       const result = await getShareMeta(token)
+      setLinkBaseUrl(result.linkBaseUrl ?? null)
       setPhase({ kind: 'ready', meta: result.meta })
       return true
     } catch (cause) {
@@ -201,7 +204,7 @@ export function SharePage() {
 
   const copyClientLink = async (client: ShareClientId, label: string) => {
     try {
-      await copyToClipboard(buildShareExportUrl(token, client))
+      await copyToClipboard(buildShareExportUrl(token, client, linkBaseUrl))
       setFeedback({ tone: 'success', text: `${label} 链接已复制` })
     } catch {
       setFeedback({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })

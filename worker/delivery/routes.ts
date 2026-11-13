@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
+import { primaryDomainOriginSafe } from '../domains/service.js'
+import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
 import { readCatalog } from '../catalog/repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
@@ -91,11 +93,20 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
 async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
   const token = await decryptSubscriptionToken(c.env.DATA, subscription)
   const currentCatalogRevision = catalogRevision ?? (await readCatalog(c.env)).revision
-  const origin = new URL(c.req.url).origin
-  const links = Object.fromEntries(
-    ['auto', 'mihomo', 'clash', 'clash-meta', 'stash', 'singbox', 'karing', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket']
-      .map((name) => [name, `${origin}/sub/${token}${name === 'auto' ? '' : `/${name}`}`]),
-  )
+  // Subscription links are always generated on the primary subscription
+  // domain (plan section 7.1). When no usable primary is configured the
+  // links stay empty and linkError tells the UI to prompt for domain
+  // configuration instead of silently falling back to the request Host.
+  const origin = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  const linkError = origin === null ? 'SUBSCRIPTION_DOMAIN_NOT_CONFIGURED' : null
+  const links = origin === null
+    ? {}
+    : Object.fromEntries(
+        SUBSCRIPTION_LINK_PLATFORMS.map(({ platform }) => [
+          platform,
+          `${origin}/sub/${token}${platform === 'auto' ? '' : `/${platform}`}`,
+        ]),
+      )
   const diagnostics: Record<string, unknown> = {}
   for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
     const raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
@@ -134,6 +145,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
     links,
+    linkError,
     diagnostics,
   }
 }
