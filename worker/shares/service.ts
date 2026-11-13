@@ -114,26 +114,26 @@ function resolveShareClient(value: string): ClientId | null {
   return parsed.success ? parsed.data : null
 }
 
-async function requireOwned(kv: KVNamespace, id: string, ownerUserId: string): Promise<ShareRecord> {
-  const shares = await listIndexedShares(kv, userIndexKey(ownerUserId))
+async function requireOwned(env: DataEnv, id: string, ownerUserId: string): Promise<ShareRecord> {
+  const shares = await listIndexedShares(env, userIndexKey(ownerUserId))
   const share = shares.find((item) => item.id === id && item.ownerUserId === ownerUserId)
   if (!share) throw notFound()
   return share
 }
 
-async function requireById(kv: KVNamespace, id: string): Promise<ShareRecord> {
-  const share = (await listAllShares(kv)).find((item) => item.id === id)
+async function requireById(env: DataEnv, id: string): Promise<ShareRecord> {
+  const share = (await listAllShares(env)).find((item) => item.id === id)
   if (!share) throw notFound()
   return share
 }
 
-async function assertActiveCapacity(kv: KVNamespace, settings: ShareSettings, userId: string): Promise<void> {
-  const active = (await listIndexedShares(kv, userIndexKey(userId))).filter((share) => share.status === 'active').length
+async function assertActiveCapacity(env: DataEnv, settings: ShareSettings, userId: string): Promise<void> {
+  const active = (await listIndexedShares(env, userIndexKey(userId))).filter((share) => share.status === 'active').length
   if (active >= settings.maxActiveSharesPerUser) throw shareError(409, 'SHARE_LIMIT_REACHED', '分享数量已达上限')
 }
 
-async function assertSubscriptionCapacity(kv: KVNamespace, settings: ShareSettings, subscriptionId: string): Promise<void> {
-  const shares = await listIndexedShares(kv, subscriptionIndexKey(subscriptionId))
+async function assertSubscriptionCapacity(env: DataEnv, settings: ShareSettings, subscriptionId: string): Promise<void> {
+  const shares = await listIndexedShares(env, subscriptionIndexKey(subscriptionId))
   if (shares.length >= settings.maxSharesPerSubscription) throw shareError(409, 'SHARE_LIMIT_REACHED', '分享数量已达上限')
 }
 
@@ -147,11 +147,11 @@ async function sealToken(kv: KVNamespace, token: string): Promise<Pick<ShareReco
   }
 }
 
-async function liveSubscription(kv: KVNamespace, share: ShareRecord): Promise<Subscription | null> {
-  const delivery = await readDelivery(kv)
+async function liveSubscription(env: DataEnv, share: ShareRecord): Promise<Subscription | null> {
+  const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === share.subscriptionId)
   if (!subscription?.enabled || subscription.userId !== share.ownerUserId) return null
-  const accounts = await readAccounts(kv)
+  const accounts = await readAccounts(env.DATA)
   const owner = accounts.users.find((user) => user.id === share.ownerUserId)
   if (!owner?.enabled) return null
   return subscription
@@ -160,7 +160,7 @@ async function liveSubscription(kv: KVNamespace, share: ShareRecord): Promise<Su
 // 访问保护按这个顺序失败即拒绝：存在 → 状态 → 到期 → 登录 → 密码关 → 次数 → 订阅和用户仍启用。
 // 原始链接开关只在 export?type=link 上检查。meta 与 export 未通过时统一 404，避免泄露分享是否存在。
 async function guard(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   kind: GuardKind,
   actor: User | null,
@@ -168,9 +168,9 @@ async function guard(
   password: string | undefined,
   now: Date,
 ): Promise<{ share: ShareRecord, subscription: Subscription, settings: ShareSettings }> {
-  const settings = await readShareSettings(kv)
+  const settings = await readShareSettings(env)
   if (!settings.enabled) throw notFound()
-  const share = await readShare(kv, await hashToken(token))
+  const share = await readShare(env, await hashToken(token))
   if (!share) throw notFound()
   if (share.status !== 'active') throw notFound()
   if (Date.parse(share.expiresAt) <= now.getTime()) throw notFound()
@@ -186,50 +186,50 @@ async function guard(
     throw notFound()
   }
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
-  const subscription = await liveSubscription(kv, share)
+  const subscription = await liveSubscription(env, share)
   if (!subscription) throw notFound()
   return { share, subscription, settings }
 }
 
-async function setStatus(kv: KVNamespace, share: ShareRecord, status: ShareStatus, now: Date): Promise<ShareRecord> {
+async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date): Promise<ShareRecord> {
   if (share.status === status) return share
   if (share.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能变更状态')
   if (status === 'active') {
-    const settings = await readShareSettings(kv)
+    const settings = await readShareSettings(env)
     assertFeatureEnabled(settings)
-    await assertActiveCapacity(kv, settings, share.ownerUserId)
+    await assertActiveCapacity(env, settings, share.ownerUserId)
   }
   const next: ShareRecord = { ...share, status, updatedAt: now.toISOString() }
-  await writeShare(kv, next)
-  if (status !== 'active') await deleteShareCompiled(kv, share.tokenHash)
+  await writeShare(env, next)
+  if (status !== 'active') await deleteShareCompiled(env.DATA, share.tokenHash)
   return next
 }
 
-export async function updateSettings(kv: KVNamespace, input: ShareSettings): Promise<ShareSettings> {
+export async function updateSettings(env: DataEnv, input: ShareSettings): Promise<ShareSettings> {
   const publicBaseUrl = canonicalPublicBaseUrl(input.publicBaseUrl)
   if (publicBaseUrl === null) throw shareError(422, 'SHARE_SETTINGS_INVALID', '分享设置无效')
   const settings = { ...input, publicBaseUrl }
-  await writeShareSettings(kv, settings)
+  await writeShareSettings(env, settings)
   return settings
 }
 
 export async function createShare(
-  kv: KVNamespace,
+  env: DataEnv,
   ownerUserId: string,
   input: CreateShareInput,
   now = new Date(),
 ): Promise<{ share: ShareView, token: string }> {
-  const settings = await readShareSettings(kv)
+  const settings = await readShareSettings(env)
   assertFeatureEnabled(settings)
   if (!settings.createAllowed) throw shareError(403, 'SHARE_CREATE_DISABLED', '当前不允许创建分享')
-  const delivery = await readDelivery(kv)
+  const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === input.subscriptionId)
   if (!subscription || subscription.userId !== ownerUserId) throw shareError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   if (!subscription.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
   const expiresAt = input.expiresAt ?? new Date(now.getTime() + settings.maxValidityDays * DAY_MS).toISOString()
   assertExpiry(expiresAt, now.getTime(), settings.maxValidityDays)
-  await assertSubscriptionCapacity(kv, settings, subscription.id)
-  await assertActiveCapacity(kv, settings, ownerUserId)
+  await assertSubscriptionCapacity(env, settings, subscription.id)
+  await assertActiveCapacity(env, settings, ownerUserId)
   const mode = input.accessControl ?? (input.password ? 'password' : settings.defaultAccessControl)
   let accessControl: ShareRecord['accessControl']
   if (mode === 'password') {
@@ -241,12 +241,12 @@ export async function createShare(
     accessControl = { mode: 'none' }
   }
   const token = randomToken()
-  const sealed = await sealToken(kv, token)
-  if (await readShare(kv, sealed.tokenHash)) throw shareError(409, 'SHARE_TOKEN_COLLISION', '分享令牌冲突')
+  const sealed = await sealToken(env.DATA, token)
+  if (await readShare(env, sealed.tokenHash)) throw shareError(409, 'SHARE_TOKEN_COLLISION', '分享令牌冲突')
   const nowIso = now.toISOString()
   const record: ShareRecord = {
     schemaVersion: 1,
-    id: await allocateShareId(kv),
+    id: await allocateShareId(env),
     ownerUserId,
     subscriptionId: subscription.id,
     ...sealed,
@@ -267,27 +267,27 @@ export async function createShare(
     createdAt: nowIso,
     updatedAt: nowIso,
   }
-  await writeShare(kv, record)
-  await addIndexHash(kv, userIndexKey(ownerUserId), record.tokenHash)
-  await addIndexHash(kv, subscriptionIndexKey(subscription.id), record.tokenHash)
+  await writeShare(env, record)
+  await addIndexHash(env, userIndexKey(ownerUserId), record.tokenHash)
+  await addIndexHash(env, subscriptionIndexKey(subscription.id), record.tokenHash)
   return { share: toShareView(record), token }
 }
 
-export async function listOwnShares(kv: KVNamespace, ownerUserId: string): Promise<ShareView[]> {
-  const records = await listIndexedShares(kv, userIndexKey(ownerUserId))
+export async function listOwnShares(env: DataEnv, ownerUserId: string): Promise<ShareView[]> {
+  const records = await listIndexedShares(env, userIndexKey(ownerUserId))
   return byNewest(records.filter((record) => record.ownerUserId === ownerUserId)).map(toShareView)
 }
 
 export async function updateShare(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   ownerUserId: string,
   input: UpdateShareInput,
   now = new Date(),
 ): Promise<ShareView> {
-  const current = await requireOwned(kv, id, ownerUserId)
+  const current = await requireOwned(env, id, ownerUserId)
   if (current.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能修改')
-  const settings = await readShareSettings(kv)
+  const settings = await readShareSettings(env)
   assertFeatureEnabled(settings)
   const next: ShareRecord = {
     ...current,
@@ -303,74 +303,74 @@ export async function updateShare(
     assertExpiry(input.expiresAt, now.getTime(), settings.maxValidityDays)
     next.expiresAt = input.expiresAt
   }
-  await writeShare(kv, next)
+  await writeShare(env, next)
   return toShareView(next)
 }
 
 export async function changeOwnStatus(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   ownerUserId: string,
   status: ShareStatus,
   now = new Date(),
 ): Promise<ShareView> {
-  return toShareView(await setStatus(kv, await requireOwned(kv, id, ownerUserId), status, now))
+  return toShareView(await setStatus(env, await requireOwned(env, id, ownerUserId), status, now))
 }
 
 export async function resetShareToken(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   ownerUserId: string,
   now = new Date(),
 ): Promise<{ share: ShareView, token: string }> {
-  const current = await requireOwned(kv, id, ownerUserId)
+  const current = await requireOwned(env, id, ownerUserId)
   if (current.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能重置令牌')
-  assertFeatureEnabled(await readShareSettings(kv))
+  assertFeatureEnabled(await readShareSettings(env))
   const token = randomToken()
-  const sealed = await sealToken(kv, token)
-  if (sealed.tokenHash !== current.tokenHash && await readShare(kv, sealed.tokenHash)) {
+  const sealed = await sealToken(env.DATA, token)
+  if (sealed.tokenHash !== current.tokenHash && await readShare(env, sealed.tokenHash)) {
     throw shareError(409, 'SHARE_TOKEN_COLLISION', '分享令牌冲突')
   }
   const next: ShareRecord = { ...current, ...sealed, updatedAt: now.toISOString() }
-  await writeShare(kv, next)
+  await writeShare(env, next)
   if (sealed.tokenHash !== current.tokenHash) {
-    await replaceIndexHash(kv, userIndexKey(current.ownerUserId), current.tokenHash, sealed.tokenHash)
-    await replaceIndexHash(kv, subscriptionIndexKey(current.subscriptionId), current.tokenHash, sealed.tokenHash)
-    await deleteShare(kv, current.tokenHash)
-    await deleteShareCompiled(kv, current.tokenHash)
+    await replaceIndexHash(env, userIndexKey(current.ownerUserId), current.tokenHash, sealed.tokenHash)
+    await replaceIndexHash(env, subscriptionIndexKey(current.subscriptionId), current.tokenHash, sealed.tokenHash)
+    await deleteShare(env, current.tokenHash)
+    await deleteShareCompiled(env.DATA, current.tokenHash)
   }
   return { share: toShareView(next), token }
 }
 
-export async function removeShare(kv: KVNamespace, id: string, ownerUserId: string): Promise<void> {
-  const current = await requireOwned(kv, id, ownerUserId)
-  await deleteShare(kv, current.tokenHash)
-  await removeIndexHash(kv, userIndexKey(current.ownerUserId), current.tokenHash)
-  await removeIndexHash(kv, subscriptionIndexKey(current.subscriptionId), current.tokenHash)
-  await deleteShareCompiled(kv, current.tokenHash)
+export async function removeShare(env: DataEnv, id: string, ownerUserId: string): Promise<void> {
+  const current = await requireOwned(env, id, ownerUserId)
+  await deleteShare(env, current.tokenHash)
+  await removeIndexHash(env, userIndexKey(current.ownerUserId), current.tokenHash)
+  await removeIndexHash(env, subscriptionIndexKey(current.subscriptionId), current.tokenHash)
+  await deleteShareCompiled(env.DATA, current.tokenHash)
 }
 
 export async function revealOriginalLink(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   ownerUserId: string,
   requestUrl: string,
   now = new Date(),
 ): Promise<{ link: string }> {
-  const current = await requireOwned(kv, id, ownerUserId)
-  assertFeatureEnabled(await readShareSettings(kv))
+  const current = await requireOwned(env, id, ownerUserId)
+  assertFeatureEnabled(await readShareSettings(env))
   if (current.status !== 'active' || Date.parse(current.expiresAt) <= now.getTime()) {
     throw shareError(409, 'SHARE_UNAVAILABLE', '分享当前不可用')
   }
   if (!current.allowOriginalLink) throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
-  const delivery = await readDelivery(kv)
+  const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
   if (!subscription?.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
-  const settings = await readShareSettings(kv)
-  const link = `${publicOrigin(settings, requestUrl)}/sub/${await decryptSubscriptionToken(kv, subscription)}`
+  const settings = await readShareSettings(env)
+  const link = `${publicOrigin(settings, requestUrl)}/sub/${await decryptSubscriptionToken(env.DATA, subscription)}`
   const nowIso = now.toISOString()
   // lastOriginalRevealAt 是审计占位：项目暂无审计表，这个字段不能当成完整审计日志。
-  await writeShare(kv, { ...current, lastOriginalRevealAt: nowIso, updatedAt: nowIso })
+  await writeShare(env, { ...current, lastOriginalRevealAt: nowIso, updatedAt: nowIso })
   return { link }
 }
 
@@ -402,8 +402,7 @@ export async function readShareMeta(
   sessionHash: string | null,
   now = new Date(),
 ): Promise<ShareMeta> {
-  const kv = env.DATA
-  const { share, subscription } = await guard(kv, token, 'meta', actor, sessionHash, undefined, now)
+  const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
   const catalog = await readCatalog(env)
   const preview = previewNodes(catalog, subscription)
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
@@ -416,17 +415,17 @@ export async function readShareMeta(
 }
 
 export async function verifyShare(
-  kv: KVNamespace,
+  env: DataEnv,
   token: string,
   password: string | undefined,
   actor: User | null,
   now = new Date(),
 ): Promise<{ tokenHash: string }> {
   const tokenHash = await hashToken(token)
-  if (!(await consumeVerifySlot(kv, tokenHash, now.getTime()))) {
+  if (!(await consumeVerifySlot(env, tokenHash, now.getTime()))) {
     throw shareError(429, 'SHARE_RATE_LIMITED', '尝试次数过多，请稍后再试')
   }
-  const guarded = await guard(kv, token, 'verify', actor, null, password, now)
+  const guarded = await guard(env, token, 'verify', actor, null, password, now)
   return { tokenHash: guarded.share.tokenHash }
 }
 
@@ -481,8 +480,7 @@ export async function exportShare(
   requestUrl: string,
   now = new Date(),
 ): Promise<ShareExportResult> {
-  const kv = env.DATA
-  const guarded = await guard(kv, token, 'export', actor, sessionHash, undefined, now)
+  const guarded = await guard(env, token, 'export', actor, sessionHash, undefined, now)
   const parsed = exportQuerySchema.safeParse({
     type: type === '' ? undefined : type,
     client: client === '' ? undefined : client,
@@ -492,8 +490,8 @@ export async function exportShare(
   if (parsed.data.type === 'link') {
     if (!guarded.share.allowOriginalLink) throw notFound()
     assertSubscriptionAvailable(guarded.subscription, now.getTime())
-    const link = `${publicOrigin(guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(kv, guarded.subscription)}`
-    if (!(await readShareSettings(kv)).enabled || !(await claimExportAccess(kv, guarded.share.tokenHash, nowIso))) throw notFound()
+    const link = `${publicOrigin(guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(env.DATA, guarded.subscription)}`
+    if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
     return { kind: 'link', link }
   }
   const resolved = resolveShareClient(parsed.data.client ?? '')
@@ -501,7 +499,7 @@ export async function exportShare(
   assertSubscriptionAvailable(guarded.subscription, now.getTime())
   const artifact = await loadShareArtifact(env, guarded.share, guarded.subscription, resolved)
   if (!artifact.available) throw shareError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
-  if (!(await readShareSettings(kv)).enabled || !(await claimExportAccess(kv, guarded.share.tokenHash, nowIso))) throw notFound()
+  if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
   const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
   const base = guarded.share.showSubscriptionName ? guarded.subscription.name : 'share'
   return {
@@ -516,12 +514,12 @@ export async function exportShare(
   }
 }
 
-export async function listAdminShares(kv: KVNamespace, filter: AdminShareQuery): Promise<ShareView[]> {
+export async function listAdminShares(env: DataEnv, filter: AdminShareQuery): Promise<ShareView[]> {
   const records = filter.user
-    ? await listIndexedShares(kv, userIndexKey(filter.user))
+    ? await listIndexedShares(env, userIndexKey(filter.user))
     : filter.subscription
-      ? await listIndexedShares(kv, subscriptionIndexKey(filter.subscription))
-      : await listAllShares(kv)
+      ? await listIndexedShares(env, subscriptionIndexKey(filter.subscription))
+      : await listAllShares(env)
   return byNewest(records.filter((record) => {
     if (filter.user && record.ownerUserId !== filter.user) return false
     if (filter.subscription && record.subscriptionId !== filter.subscription) return false
@@ -531,10 +529,10 @@ export async function listAdminShares(kv: KVNamespace, filter: AdminShareQuery):
 }
 
 export async function adminChangeStatus(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   status: 'disabled' | 'revoked',
   now = new Date(),
 ): Promise<ShareView> {
-  return toShareView(await setStatus(kv, await requireById(kv, id), status, now))
+  return toShareView(await setStatus(env, await requireById(env, id), status, now))
 }

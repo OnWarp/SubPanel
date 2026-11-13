@@ -1,4 +1,15 @@
 import { z } from 'zod'
+import { readAccounts } from '../accounts/repository.js'
+import { SHARES_D1_READY_KEY, SHARES_SETTING_KEYS, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { getShareSettings, putSetting, putShareSettings } from '../db/settings-repository.js'
+import {
+  consumeVerifySlotD1,
+  deleteShareByTokenHash,
+  listSharesFromD1,
+  readNextShareId,
+  readShareFromD1,
+  upsertShareRow,
+} from './d1-repository.js'
 import {
   canonicalPublicBaseUrl,
   DEFAULT_SHARE_SETTINGS,
@@ -31,7 +42,13 @@ function parseShare(raw: string): ShareRecord {
   }
 }
 
-export async function readShareSettings(kv: KVNamespace): Promise<ShareSettings> {
+function indexFilter(key: string): { ownerUserId?: string, subscriptionId?: string } | null {
+  if (key.startsWith('shareidx:user:')) return { ownerUserId: key.slice('shareidx:user:'.length) }
+  if (key.startsWith('shareidx:sub:')) return { subscriptionId: key.slice('shareidx:sub:'.length) }
+  return null
+}
+
+export async function readShareSettingsKv(kv: KVNamespace): Promise<ShareSettings> {
   const raw = await kv.get(SHARE_SETTINGS_KEY)
   if (raw === null) return { ...DEFAULT_SHARE_SETTINGS }
   let value: unknown
@@ -50,14 +67,27 @@ export async function readShareSettings(kv: KVNamespace): Promise<ShareSettings>
   return { ...parsed.data, publicBaseUrl }
 }
 
-export async function writeShareSettings(kv: KVNamespace, settings: ShareSettings): Promise<void> {
+async function writeShareSettingsKv(kv: KVNamespace, settings: ShareSettings): Promise<void> {
   const parsed = shareSettingsSchema.parse(settings)
   const publicBaseUrl = canonicalPublicBaseUrl(parsed.publicBaseUrl)
   if (publicBaseUrl === null) throw new Error('Share settings are corrupt')
   await kv.put(SHARE_SETTINGS_KEY, JSON.stringify({ ...parsed, publicBaseUrl }))
 }
 
-export async function allocateShareId(kv: KVNamespace): Promise<string> {
+export async function readShareSettings(env: DataEnv): Promise<ShareSettings> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return getShareSettings(env.DB)
+  return readShareSettingsKv(env.DATA)
+}
+
+export async function writeShareSettings(env: DataEnv, settings: ShareSettings): Promise<void> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    await putShareSettings(env.DB, settings)
+    return
+  }
+  await writeShareSettingsKv(env.DATA, settings)
+}
+
+async function allocateShareIdKv(kv: KVNamespace): Promise<string> {
   const raw = await kv.get(SHARE_SEQ_KEY)
   let next = 1
   if (raw !== null) {
@@ -67,25 +97,58 @@ export async function allocateShareId(kv: KVNamespace): Promise<string> {
       throw new Error('Share id sequence is corrupt')
     }
   }
-  // ponytail: the id counter is last-writer-wins. Concurrent creates can allocate the same id; token hashes still differ.
+  // The id counter is last-writer-wins. Concurrent creates can allocate the same id; token hashes still differ.
   await kv.put(SHARE_SEQ_KEY, JSON.stringify({ next: next + 1 }))
   return `shr_${next}`
 }
 
-export async function readShare(kv: KVNamespace, tokenHash: string): Promise<ShareRecord | null> {
+export async function readShareSeqKv(kv: KVNamespace): Promise<number> {
+  const raw = await kv.get(SHARE_SEQ_KEY)
+  if (raw === null) return 1
+  try {
+    return sequenceSchema.parse(JSON.parse(raw)).next
+  } catch {
+    throw new Error('Share id sequence is corrupt')
+  }
+}
+
+export async function allocateShareId(env: DataEnv): Promise<string> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    const next = await readNextShareId(env.DB)
+    await putSetting(env.DB, SHARES_SETTING_KEYS.nextShareId, next + 1)
+    return `shr_${next}`
+  }
+  return allocateShareIdKv(env.DATA)
+}
+
+export async function readShare(env: DataEnv, tokenHash: string): Promise<ShareRecord | null> {
   if (!tokenHashSchema.safeParse(tokenHash).success) return null
-  const raw = await kv.get(shareEntityKey(tokenHash))
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return readShareFromD1(env.DB, tokenHash)
+  const raw = await env.DATA.get(shareEntityKey(tokenHash))
   if (raw === null) return null
   return parseShare(raw)
 }
 
-export async function writeShare(kv: KVNamespace, record: ShareRecord): Promise<void> {
+async function writeShareKv(kv: KVNamespace, record: ShareRecord): Promise<void> {
   const parsed = shareRecordSchema.parse(record)
   await kv.put(shareEntityKey(parsed.tokenHash), JSON.stringify(parsed))
 }
 
-export async function deleteShare(kv: KVNamespace, tokenHash: string): Promise<void> {
-  await kv.delete(shareEntityKey(tokenHash))
+export async function writeShare(env: DataEnv, record: ShareRecord): Promise<void> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    const accounts = await readAccounts(env.DATA)
+    await upsertShareRow(env.DB, record, accounts.users)
+    return
+  }
+  await writeShareKv(env.DATA, record)
+}
+
+export async function deleteShare(env: DataEnv, tokenHash: string): Promise<void> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    await deleteShareByTokenHash(env.DB, tokenHash)
+    return
+  }
+  await env.DATA.delete(shareEntityKey(tokenHash))
 }
 
 async function readIndex(kv: KVNamespace, key: string): Promise<string[]> {
@@ -102,7 +165,7 @@ async function readIndex(kv: KVNamespace, key: string): Promise<string[]> {
 }
 
 async function writeIndex(kv: KVNamespace, key: string, hashes: string[]): Promise<void> {
-  // ponytail: shareidx:* 的值是 tokenHash 数组的整表 JSON。并发写入后写者胜，语义与 state:accounts / state:catalog / state:delivery 相同。
+  // shareidx values are the whole tokenHash array. Concurrent writes are last-writer-wins.
   const unique = [...new Set(hashes)]
   if (unique.length === 0) {
     await kv.delete(key)
@@ -111,20 +174,55 @@ async function writeIndex(kv: KVNamespace, key: string, hashes: string[]): Promi
   await kv.put(key, JSON.stringify(unique))
 }
 
-export async function listIndexedShares(kv: KVNamespace, key: string): Promise<ShareRecord[]> {
+async function listIndexedSharesKv(kv: KVNamespace, key: string): Promise<ShareRecord[]> {
   const hashes = await readIndex(kv, key)
-  const records = await Promise.all(hashes.map(async (hash) => readShare(kv, hash)))
+  const records = await Promise.all(hashes.map(async (hash) => {
+    const raw = await kv.get(shareEntityKey(hash))
+    if (raw === null) return null
+    return parseShare(raw)
+  }))
   return records.filter((record): record is ShareRecord => record !== null)
 }
 
-export async function listAllShares(kv: KVNamespace): Promise<ShareRecord[]> {
-  const records: ShareRecord[] = []
+export async function listIndexedShares(env: DataEnv, key: string): Promise<ShareRecord[]> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    const filter = indexFilter(key)
+    if (!filter) return []
+    return listSharesFromD1(env.DB, filter)
+  }
+  return listIndexedSharesKv(env.DATA, key)
+}
+
+export async function readShareValuesKv(kv: KVNamespace): Promise<unknown[]> {
+  const values: unknown[] = []
   let cursor: string | undefined
   for (let page = 0; page < 50; page += 1) {
     const listed = await kv.list({ prefix: 'share:', cursor })
+    for (const { name } of listed.keys) {
+      if (!ENTITY_KEY.test(name)) continue
+      const raw = await kv.get(name)
+      if (raw === null) continue
+      try {
+        values.push(JSON.parse(raw))
+      } catch {
+        values.push(raw)
+      }
+    }
+    if (listed.list_complete) return values
+    cursor = listed.cursor
+  }
+  throw new Error('Share listing did not finish')
+}
+
+export async function listAllShares(env: DataEnv): Promise<ShareRecord[]> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return listSharesFromD1(env.DB)
+  const records: ShareRecord[] = []
+  let cursor: string | undefined
+  for (let page = 0; page < 50; page += 1) {
+    const listed = await env.DATA.list({ prefix: 'share:', cursor })
     const batch = await Promise.all(listed.keys.map(async ({ name }) => {
       if (!ENTITY_KEY.test(name)) return null
-      const raw = await kv.get(name)
+      const raw = await env.DATA.get(name)
       if (raw === null) return null
       return parseShare(raw)
     }))
@@ -135,28 +233,31 @@ export async function listAllShares(kv: KVNamespace): Promise<ShareRecord[]> {
   throw new Error('Share listing did not finish')
 }
 
-export async function addIndexHash(kv: KVNamespace, key: string, tokenHash: string): Promise<void> {
-  const hashes = await readIndex(kv, key)
+export async function addIndexHash(env: DataEnv, key: string, tokenHash: string): Promise<void> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return
+  const hashes = await readIndex(env.DATA, key)
   if (hashes.includes(tokenHash)) return
-  await writeIndex(kv, key, [...hashes, tokenHash])
+  await writeIndex(env.DATA, key, [...hashes, tokenHash])
 }
 
-export async function removeIndexHash(kv: KVNamespace, key: string, tokenHash: string): Promise<void> {
-  const hashes = await readIndex(kv, key)
+export async function removeIndexHash(env: DataEnv, key: string, tokenHash: string): Promise<void> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return
+  const hashes = await readIndex(env.DATA, key)
   if (!hashes.includes(tokenHash)) return
-  await writeIndex(kv, key, hashes.filter((hash) => hash !== tokenHash))
+  await writeIndex(env.DATA, key, hashes.filter((hash) => hash !== tokenHash))
 }
 
 export async function replaceIndexHash(
-  kv: KVNamespace,
+  env: DataEnv,
   key: string,
   previousHash: string,
   nextHash: string,
 ): Promise<void> {
-  const hashes = await readIndex(kv, key)
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return
+  const hashes = await readIndex(env.DATA, key)
   const replaced = hashes.map((hash) => hash === previousHash ? nextHash : hash)
   if (!replaced.includes(nextHash)) replaced.push(nextHash)
-  await writeIndex(kv, key, replaced)
+  await writeIndex(env.DATA, key, replaced)
 }
 
 export async function deleteShareCompiled(kv: KVNamespace, tokenHash: string): Promise<void> {
@@ -178,24 +279,25 @@ const VERIFY_WINDOW_MS = 60_000
 const VERIFY_WINDOW_COUNT = 10
 const VERIFY_LIMIT = 10
 
-export async function consumeVerifySlot(kv: KVNamespace, tokenHash: string, nowMs: number): Promise<boolean> {
+export async function consumeVerifySlot(env: DataEnv, tokenHash: string, nowMs: number): Promise<boolean> {
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return consumeVerifySlotD1(env.DB, tokenHash, nowMs)
   const minute = Math.floor(nowMs / VERIFY_WINDOW_MS)
   const keys = Array.from({ length: VERIFY_WINDOW_COUNT }, (_, index) => shareLimitKey(tokenHash, minute - index))
-  const values = await Promise.all(keys.map((key) => kv.get(key)))
+  const values = await Promise.all(keys.map((key) => env.DATA.get(key)))
   const counts = values.map((value) => value !== null && /^\d+$/u.test(value) ? Number(value) : 0)
   if (counts.reduce((sum, count) => sum + count, 0) >= VERIFY_LIMIT) return false
-  // ponytail: sharelimit:{tokenHash}:{分钟窗} 按分钟分桶，合计最近 10 个桶得到 10 次/10 分钟。读改写后写者胜，并发 verify 下是尽力限制。
-  await kv.put(keys[0], String(counts[0] + 1), { expirationTtl: 11 * 60 })
+  // Minute buckets over the last 10 minutes. The read-modify-write is last-writer-wins.
+  await env.DATA.put(keys[0], String(counts[0] + 1), { expirationTtl: 11 * 60 })
   return true
 }
 
-export async function claimExportAccess(kv: KVNamespace, tokenHash: string, nowIso: string): Promise<boolean> {
-  const share = await readShare(kv, tokenHash)
+export async function claimExportAccess(env: DataEnv, tokenHash: string, nowIso: string): Promise<boolean> {
+  const share = await readShare(env, tokenHash)
   if (!share || share.status !== 'active') return false
   if (Date.parse(share.expiresAt) <= Date.parse(nowIso)) return false
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) return false
-  // ponytail: accessCount 随整条分享记录读改写。KV 后写者胜，次数上限在并发导出下是尽力保证。
-  await writeShare(kv, {
+  // accessCount is updated with the share row. Concurrent exports are best-effort.
+  await writeShare(env, {
     ...share,
     accessCount: share.accessCount + 1,
     lastAccessedAt: nowIso,

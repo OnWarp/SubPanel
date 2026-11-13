@@ -108,12 +108,11 @@ export async function createSubscription(
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
   await assertReferences(env, input.userId, input.groupIds)
-  const kv = env.DATA
-  const snapshot = await readDelivery(kv)
+  const snapshot = await readDelivery(env)
   const now = options.now ?? new Date().toISOString()
   const token = validToken(options.token ?? randomToken())
   const id = `sub_${snapshot.nextSubscriptionId}` as const
-  const tokenData = await createToken(kv, token)
+  const tokenData = await createToken(env.DATA, token)
   if (snapshot.subscriptions.some((item) => item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
   const startsAt = cleanEpoch(input.startsAt ?? null)
   const expiresAt = cleanEpoch(input.expiresAt ?? null)
@@ -132,7 +131,7 @@ export async function createSubscription(
     createdAt: now,
     updatedAt: now,
   }
-  await writeDelivery(kv, {
+  await writeDelivery(env, {
     ...snapshot,
     nextSubscriptionId: snapshot.nextSubscriptionId + 1,
     subscriptions: [...snapshot.subscriptions, subscription],
@@ -140,19 +139,19 @@ export async function createSubscription(
   return { subscription, token }
 }
 
-export async function listSubscriptionsForUser(kv: KVNamespace, userId: string): Promise<PublicSubscription[]> {
-  const snapshot = await readDelivery(kv)
+export async function listSubscriptionsForUser(env: DataEnv, userId: string): Promise<PublicSubscription[]> {
+  const snapshot = await readDelivery(env)
   return snapshot.subscriptions
     .filter((subscription) => subscription.userId === userId)
     .map(toPublicSubscription)
 }
 
-export async function listAllSubscriptions(kv: KVNamespace): Promise<Subscription[]> {
-  return (await readDelivery(kv)).subscriptions
+export async function listAllSubscriptions(env: DataEnv): Promise<Subscription[]> {
+  return (await readDelivery(env)).subscriptions
 }
 
-export async function getSubscription(kv: KVNamespace, id: string): Promise<Subscription> {
-  return findSubscription(await readDelivery(kv), id)
+export async function getSubscription(env: DataEnv, id: string): Promise<Subscription> {
+  return findSubscription(await readDelivery(env), id)
 }
 
 export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt'>>
@@ -163,8 +162,7 @@ export async function updateSubscription(
   input: UpdateSubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
-  const kv = env.DATA
-  const snapshot = await readDelivery(kv)
+  const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
@@ -185,7 +183,7 @@ export async function updateSubscription(
     revision: current.revision + 1,
     updatedAt: now,
   }
-  await writeDelivery(kv, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
   return updated
 }
 
@@ -199,16 +197,16 @@ export async function setSubscriptionEnabled(
 }
 
 export async function resetSubscriptionToken(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
-  const snapshot = await readDelivery(kv)
+  const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
   const now = options.now ?? new Date().toISOString()
   const token = validToken(options.token ?? randomToken())
-  const tokenData = await createToken(kv, token)
+  const tokenData = await createToken(env.DATA, token)
   if (snapshot.subscriptions.some((item) => item.id !== id && item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
   const updated: Subscription = {
     ...current,
@@ -216,21 +214,21 @@ export async function resetSubscriptionToken(
     revision: current.revision + 1,
     updatedAt: now,
   }
-  await writeDelivery(kv, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
-  await deleteCompiledArtifacts(kv, current.tokenHash)
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
+  await deleteCompiledArtifacts(env.DATA, current.tokenHash)
   return { subscription: updated, token }
 }
 
 export async function deleteSubscription(
-  kv: KVNamespace,
+  env: DataEnv,
   id: string,
   options: SubscriptionMutationOptions = {},
 ): Promise<void> {
-  const snapshot = await readDelivery(kv)
+  const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
-  await writeDelivery(kv, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) })
-  await deleteCompiledArtifacts(kv, current.tokenHash)
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) })
+  await deleteCompiledArtifacts(env.DATA, current.tokenHash)
 }
 
 export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Subscription): Promise<string> {
@@ -238,8 +236,8 @@ export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Su
   return decryptText(subscription.encryptedToken, material.encryptionKey)
 }
 
-export async function removeGroupReference(kv: KVNamespace, groupId: string): Promise<void> {
-  const snapshot = await readDelivery(kv)
+export async function removeGroupReference(env: DataEnv, groupId: string): Promise<void> {
+  const snapshot = await readDelivery(env)
   const subscriptions = snapshot.subscriptions.map((subscription) => {
     if (!subscription.groupIds.includes(groupId)) return subscription
     return {
@@ -250,5 +248,5 @@ export async function removeGroupReference(kv: KVNamespace, groupId: string): Pr
     }
   })
   if (subscriptions.every((subscription, index) => subscription === snapshot.subscriptions[index])) return
-  await writeDelivery(kv, { ...snapshot, subscriptions })
+  await writeDelivery(env, { ...snapshot, subscriptions })
 }

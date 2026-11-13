@@ -92,7 +92,7 @@ export async function compileSubscription(
 
 export async function compileAllSubscriptions(env: DataEnv, options: CompileOptions = {}): Promise<void> {
   const kv = env.DATA
-  const snapshot = await readDelivery(kv)
+  const snapshot = await readDelivery(env)
   for (const subscription of snapshot.subscriptions) {
     if (subscription.enabled) await compileSubscription(env, subscription, options)
     else {
@@ -103,7 +103,7 @@ export async function compileAllSubscriptions(env: DataEnv, options: CompileOpti
 }
 
 export async function compileSubscriptionById(env: DataEnv, id: string, options: CompileOptions = {}): Promise<CompiledArtifact[]> {
-  const snapshot = await readDelivery(env.DATA)
+  const snapshot = await readDelivery(env)
   const subscription = snapshot.subscriptions.find((candidate) => candidate.id === id)
   if (!subscription) throw new Error('SUBSCRIPTION_NOT_FOUND')
   if (!subscription.enabled) return []

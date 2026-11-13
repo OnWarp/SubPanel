@@ -93,7 +93,7 @@ export const userNodeRoutes = new Hono<AppEnv>()
 
 userNodeRoutes.get('/', async (c) => {
   const [delivery, catalog] = await Promise.all([
-    readDelivery(c.env.DATA),
+    readDelivery(c.env),
     readCatalog(c.env),
   ])
   return c.json({ nodes: collectUserNodes(delivery.subscriptions, catalog, c.get('principal').id) })

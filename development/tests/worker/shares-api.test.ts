@@ -426,9 +426,7 @@ describe('Share backend', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${rotated.token}/export?client=generic`)).status).toBe(200)
 
     const expiredHash = await hashToken(rotated.token)
-    const stored = JSON.parse(await env.DATA.get(shareEntityKey(expiredHash)) ?? '{}') as { expiresAt: string }
-    stored.expiresAt = new Date(Date.now() - 1_000).toISOString()
-    await env.DATA.put(shareEntityKey(expiredHash), JSON.stringify(stored))
+    await env.DB.prepare('UPDATE shares SET expires_at = ? WHERE token_hash = ?').bind(new Date(Date.now() - 1_000).toISOString(), expiredHash).run()
     await expectError(
       await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${rotated.token}/export?client=generic`),
       404,

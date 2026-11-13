@@ -1,9 +1,12 @@
+import { readAccounts } from '../accounts/repository.js'
+import { DELIVERY_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { persistDeliverySnapshot, readDeliveryFromD1 } from './d1-repository.js'
 import { deliverySnapshotSchema, emptyDeliverySnapshot, type DeliverySnapshot } from './schema.js'
 
 export const DELIVERY_KEY = 'state:delivery'
 export const MAX_DELIVERY_BYTES = 20 * 1024 * 1024
 
-export async function readDelivery(kv: KVNamespace): Promise<DeliverySnapshot> {
+export async function readDeliveryKv(kv: KVNamespace): Promise<DeliverySnapshot> {
   const raw = await kv.get(DELIVERY_KEY)
   if (raw === null) return emptyDeliverySnapshot()
   try {
@@ -13,11 +16,7 @@ export async function readDelivery(kv: KVNamespace): Promise<DeliverySnapshot> {
   }
 }
 
-export async function writeDelivery(
-  kv: KVNamespace,
-  snapshot: DeliverySnapshot,
-  now = new Date().toISOString(),
-): Promise<DeliverySnapshot> {
+function prepareDeliveryWrite(snapshot: DeliverySnapshot, now: string): DeliverySnapshot {
   const result = deliverySnapshotSchema.safeParse({
     ...snapshot,
     revision: snapshot.revision + 1,
@@ -29,10 +28,28 @@ export async function writeDelivery(
   if (new TextEncoder().encode(serialized).byteLength > MAX_DELIVERY_BYTES) {
     throw new Error('Delivery snapshot is too large')
   }
-
-  // ponytail: KV is last-writer-wins; move Delivery writes to a Durable Object or D1 when concurrent subscription writers become normal.
-  await kv.put(DELIVERY_KEY, serialized)
   return result.data
+}
+
+export async function readDelivery(env: DataEnv): Promise<DeliverySnapshot> {
+  if (await isModuleReady(env.DB, DELIVERY_D1_READY_KEY)) return readDeliveryFromD1(env.DB)
+  return readDeliveryKv(env.DATA)
+}
+
+export async function writeDelivery(
+  env: DataEnv,
+  snapshot: DeliverySnapshot,
+  now = new Date().toISOString(),
+): Promise<DeliverySnapshot> {
+  const next = prepareDeliveryWrite(snapshot, now)
+  // One backend only: the import flag selects D1, and its absence keeps KV.
+  if (await isModuleReady(env.DB, DELIVERY_D1_READY_KEY)) {
+    const accounts = await readAccounts(env.DATA)
+    await persistDeliverySnapshot(env.DB, next, accounts.users)
+  } else {
+    await env.DATA.put(DELIVERY_KEY, JSON.stringify(next))
+  }
+  return next
 }
 
 export const compiledPrefix = (tokenHash: string): string => `compiled:${tokenHash}:`

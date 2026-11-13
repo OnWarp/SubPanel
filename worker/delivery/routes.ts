@@ -141,7 +141,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
 export const adminDeliveryRoutes = new Hono<AppEnv>()
 
 adminDeliveryRoutes.get('/', async (c) => {
-  const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env.DATA), readCatalog(c.env)])
+  const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env), readCatalog(c.env)])
   return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, catalog.revision))) })
 })
 
@@ -168,20 +168,20 @@ adminDeliveryRoutes.put('/:id', async (c) => {
 
 adminDeliveryRoutes.post('/:id/token/reset', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), { actorRole: 'admin' }))
+  const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), { actorRole: 'admin' }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
 adminDeliveryRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), { actorRole: 'admin' }))
+  const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), { actorRole: 'admin' }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
 adminDeliveryRoutes.delete('/:id', async (c) => {
-  await run(() => deleteSubscription(c.env.DATA, c.req.param('id'), { actorRole: 'admin' }))
+  await run(() => deleteSubscription(c.env, c.req.param('id'), { actorRole: 'admin' }))
   return c.body(null, 204)
 })
 
@@ -189,16 +189,16 @@ export const userDeliveryRoutes = new Hono<AppEnv>()
 
 userDeliveryRoutes.get('/', async (c) => {
   const [subscriptions, catalog] = await Promise.all([
-    listSubscriptionsForUser(c.env.DATA, c.get('principal').id),
+    listSubscriptionsForUser(c.env, c.get('principal').id),
     readCatalog(c.env),
   ])
-  const views = await Promise.all(subscriptions.map(async (summary) => view(c, await getSubscription(c.env.DATA, summary.id), catalog.revision)))
+  const views = await Promise.all(subscriptions.map(async (summary) => view(c, await getSubscription(c.env, summary.id), catalog.revision)))
   return c.json({ subscriptions: views })
 })
 
 userDeliveryRoutes.post('/:id/token/reset', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), {
+  const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))
@@ -208,7 +208,7 @@ userDeliveryRoutes.post('/:id/token/reset', async (c) => {
 
 userDeliveryRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetSubscriptionToken(c.env.DATA, c.req.param('id'), {
+  const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))

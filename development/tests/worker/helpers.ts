@@ -1,7 +1,15 @@
 import { env, exports } from 'cloudflare:workers'
 import { clearAppsStorage } from '../../../worker/apps/d1-repository'
 import { clearCatalogStorage } from '../../../worker/catalog/d1-repository'
-import { APPS_D1_READY_KEY, CATALOG_D1_READY_KEY, markModuleReady } from '../../../worker/db/module-switch'
+import { clearDeliveryStorage } from '../../../worker/delivery/d1-repository'
+import {
+  APPS_D1_READY_KEY,
+  CATALOG_D1_READY_KEY,
+  DELIVERY_D1_READY_KEY,
+  SHARES_D1_READY_KEY,
+  markModuleReady,
+} from '../../../worker/db/module-switch'
+import { clearSharesStorage } from '../../../worker/shares/d1-repository'
 import { applyMigrations } from './d1'
 
 export const TEST_ORIGIN = 'https://subpanel.test'
@@ -10,11 +18,15 @@ export const ADMIN_PASSWORD = 'correct horse battery staple'
 
 export async function enableD1Modules(): Promise<void> {
   await applyMigrations()
+  await clearSharesStorage(env.DB)
+  await clearDeliveryStorage(env.DB)
   await clearCatalogStorage(env.DB)
   await clearAppsStorage(env.DB)
   const now = '1970-01-01T00:00:00.000Z'
   await markModuleReady(env.DB, CATALOG_D1_READY_KEY, now)
   await markModuleReady(env.DB, APPS_D1_READY_KEY, now)
+  await markModuleReady(env.DB, DELIVERY_D1_READY_KEY, now)
+  await markModuleReady(env.DB, SHARES_D1_READY_KEY, now)
 }
 
 export async function resetData(): Promise<void> {

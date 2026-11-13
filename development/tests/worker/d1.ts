@@ -1,8 +1,10 @@
 import { applyD1Migrations } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import initSql from '../../../migrations/0001_init.sql?raw'
+import sharesFkSql from '../../../migrations/0002_shares_subscription_fk.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
+export const SHARES_FK_MIGRATION_NAME = '0002_shares_subscription_fk.sql'
 
 export const D1_TABLES = [
   'allowed_email_domains',
@@ -96,8 +98,13 @@ export const initMigration = {
   queries: splitSqlStatements(initSql),
 }
 
+export const sharesFkMigration = {
+  name: SHARES_FK_MIGRATION_NAME,
+  queries: splitSqlStatements(sharesFkSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
-  await applyD1Migrations(db, [initMigration])
+  await applyD1Migrations(db, [initMigration, sharesFkMigration])
 }
 
 export async function listTables(db: D1Database = env.DB): Promise<string[]> {

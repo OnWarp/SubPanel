@@ -3,6 +3,8 @@ import { decodeSettingJson, getSetting, putSetting } from './settings-repository
 
 export const CATALOG_D1_READY_KEY = 'catalog_d1_ready'
 export const APPS_D1_READY_KEY = 'apps_d1_ready'
+export const DELIVERY_D1_READY_KEY = 'delivery_d1_ready'
+export const SHARES_D1_READY_KEY = 'shares_d1_ready'
 
 export const CATALOG_SETTING_KEYS = {
   schemaVersion: 'catalog_schema_version',
@@ -21,6 +23,18 @@ export const APPS_SETTING_KEYS = {
   nextAppId: 'next_app_id',
   nextPlatformId: 'next_platform_id',
   entityOrder: 'apps_entity_order',
+} as const
+
+export const DELIVERY_SETTING_KEYS = {
+  schemaVersion: 'delivery_schema_version',
+  revision: 'delivery_revision',
+  updatedAt: 'delivery_updated_at',
+  nextSubscriptionId: 'next_subscription_id',
+  entityOrder: 'delivery_entity_order',
+} as const
+
+export const SHARES_SETTING_KEYS = {
+  nextShareId: 'next_share_id',
 } as const
 
 export type DataEnv = {
