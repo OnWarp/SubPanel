@@ -23,6 +23,7 @@
   "observability": {
     "enabled": true
   },
+  "routes": [{ "pattern": "sub.warp.dpdns.org", "custom_domain": true }],
   "triggers": {
     "crons": ["*/15 * * * *"]
   },
