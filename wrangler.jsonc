@@ -8,7 +8,8 @@
   },
   "kv_namespaces": [
     {
-      "binding": "DATA"
+      "binding": "DATA",
+      "id": "98e99b0f74494d83808c6b54c66a99e2"
     }
   ],
   "d1_databases": [
