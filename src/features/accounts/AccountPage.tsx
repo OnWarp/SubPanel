@@ -1,16 +1,25 @@
-import { KeyRound } from 'lucide-react'
+import { KeyRound, LogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { useSession } from '../../app/session'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
+import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
+import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusMessage } from '../../ui/StatusMessage'
+import { EmailBindChangeForm } from './EmailBindChangeForm'
+import { ProfileCard } from './ProfileCard'
+import { formatProfileDate, useAccountProfile } from './profile'
 
 export function AccountPage() {
-  const { user, refresh } = useSession()
+  const { refresh } = useSession()
+  const { profile, error: profileError, reload } = useAccountProfile()
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false)
+  const [logoutBusy, setLogoutBusy] = useState(false)
 
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -29,16 +38,36 @@ export function AccountPage() {
         body: jsonBody({ currentPassword: form.get('currentPassword'), newPassword }),
       })
       await refresh()
+      await reload()
       formElement.reset()
-      setMessage('密码已更新，其他会话已退出。')
+      setMessage('密码已更新，其他会话已退出')
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : '密码更新失败')
     }
   }
 
+  const logoutAll = async () => {
+    setLogoutBusy(true)
+    try {
+      await api('/api/account/logout-all', { method: 'POST', body: '{}' })
+      window.location.assign('/login')
+    } catch (cause) {
+      setError(cause instanceof ApiClientError ? cause.message : '退出全部设备失败')
+      setLogoutBusy(false)
+      setConfirmLogoutAll(false)
+    }
+  }
+
   return (
     <div className="page-stack">
-      <PageHeader title="账户安全" description={<>当前账户：<strong>{user?.username}</strong></>} />
+      <PageHeader title="个人中心" description="资料、头像与账户安全" />
+      {profile ? (
+        <ProfileCard profile={profile} />
+      ) : profileError ? (
+        <ErrorState message={profileError} onRetry={() => { reload().catch(() => undefined) }} />
+      ) : (
+        <LoadingState label="正在加载账户资料" />
+      )}
       <section className="data-section security-section">
         <DataHeader title="修改密码" />
         <form className="security-form adm-account-form" onSubmit={changePassword}>
@@ -56,6 +85,53 @@ export function AccountPage() {
           <div><button className="button primary" type="submit"><KeyRound aria-hidden="true" size={17} />更新密码</button></div>
         </form>
       </section>
+      {profile ? (
+        <section className="data-section security-section">
+          <DataHeader title={profile.emailBound ? '更换邮箱' : '绑定邮箱'} />
+          <EmailBindChangeForm
+            profile={profile}
+            onUpdated={async () => {
+              await reload()
+              await refresh()
+            }}
+          />
+        </section>
+      ) : null}
+      <section className="data-section security-section">
+        <DataHeader title="会话与安全" />
+        <div className="security-form">
+          {profile?.session ? (
+            <dl className="profile-fields">
+              <div>
+                <dt>本次登录</dt>
+                <dd>{formatProfileDate(profile.session.issuedAt)}</dd>
+              </div>
+              <div>
+                <dt>会话过期</dt>
+                <dd>{formatProfileDate(profile.session.expiresAt)}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="profile-hint">会话信息加载中</p>
+          )}
+          <div>
+            <button className="button danger" type="button" onClick={() => setConfirmLogoutAll(true)}>
+              <LogOut aria-hidden="true" size={17} />
+              退出全部设备
+            </button>
+          </div>
+        </div>
+      </section>
+      <ConfirmDialog
+        open={confirmLogoutAll}
+        title="退出全部设备"
+        description="所有设备上的会话都会失效，包括当前设备，需要重新登录"
+        confirmLabel="退出全部设备"
+        danger
+        busy={logoutBusy}
+        onClose={() => setConfirmLogoutAll(false)}
+        onConfirm={() => { logoutAll().catch(() => undefined) }}
+      />
     </div>
   )
 }
