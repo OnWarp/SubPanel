@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, expect, it } from 'vitest'
 import { resetData } from './helpers.js'
-import staticHeaders from '../../public/_headers?raw'
+import staticHeaders from '../../../public/_headers?raw'
 
 beforeEach(resetData)
 

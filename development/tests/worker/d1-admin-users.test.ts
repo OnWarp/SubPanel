@@ -21,7 +21,6 @@ import {
 import type { ShareRecord } from '../../../worker/shares/schema'
 import { applyMigrations } from './d1'
 import {
-  ADMIN_PASSWORD,
   enableD1Modules,
   jsonRequest,
   login,
