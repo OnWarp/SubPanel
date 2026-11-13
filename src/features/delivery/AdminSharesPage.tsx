@@ -1,6 +1,7 @@
 import { Ban, Share2, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type AdminSubscription, type UserSummary } from '../../app/api'
+import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -8,7 +9,6 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
-import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
@@ -33,32 +33,6 @@ type AdminShare = {
   maxAccessCount: number | null
   createdAt: string
 }
-
-type ShareSettings = {
-  enabled: boolean
-  createAllowed: boolean
-  maxSharesPerSubscription: number
-  maxActiveSharesPerUser: number
-  maxValidityDays: number
-  defaultAllowOriginalLink: boolean
-  defaultAccessControl: 'none' | 'password'
-  requireLoginDefault: boolean
-  publicBaseUrl: string
-}
-
-type SettingsForm = {
-  enabled: boolean
-  createAllowed: boolean
-  maxSharesPerSubscription: string
-  maxActiveSharesPerUser: string
-  maxValidityDays: string
-  defaultAllowOriginalLink: boolean
-  defaultAccessControl: 'none' | 'password'
-  requireLoginDefault: boolean
-  publicBaseUrl: string
-}
-
-type SettingsErrors = Partial<Record<'maxSharesPerSubscription' | 'maxActiveSharesPerUser' | 'maxValidityDays' | 'publicBaseUrl', string>>
 
 const PAGE_SIZE = 20
 const EMPTY_SHARES: AdminShare[] = []
@@ -88,89 +62,10 @@ function effectiveStatus(share: AdminShare, now: number): EffectiveStatus {
   return share.status === 'active' && Date.parse(share.expiresAt) <= now ? 'expired' : share.status
 }
 
-function canonicalBaseUrl(value: string): string | null {
-  const trimmed = value.trim()
-  if (trimmed === '') return ''
-  try {
-    const url = new URL(trimmed)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    if (url.username || url.password || url.search || url.hash) return null
-    if (url.pathname !== '/' && url.pathname !== '') return null
-    return url.origin
-  } catch {
-    return null
-  }
-}
-
-function toSettingsForm(settings: ShareSettings): SettingsForm {
-  return {
-    enabled: settings.enabled,
-    createAllowed: settings.createAllowed,
-    maxSharesPerSubscription: String(settings.maxSharesPerSubscription),
-    maxActiveSharesPerUser: String(settings.maxActiveSharesPerUser),
-    maxValidityDays: String(settings.maxValidityDays),
-    defaultAllowOriginalLink: settings.defaultAllowOriginalLink,
-    defaultAccessControl: settings.defaultAccessControl,
-    requireLoginDefault: settings.requireLoginDefault,
-    publicBaseUrl: settings.publicBaseUrl,
-  }
-}
-
-function parseSettingsForm(form: SettingsForm): { settings: ShareSettings | null; errors: SettingsErrors } {
-  const errors: SettingsErrors = {}
-  const maxShares = Number(form.maxSharesPerSubscription)
-  if (!Number.isInteger(maxShares) || maxShares < 1 || maxShares > 100) errors.maxSharesPerSubscription = '请输入 1 到 100 的整数'
-  const maxActive = Number(form.maxActiveSharesPerUser)
-  if (!Number.isInteger(maxActive) || maxActive < 1 || maxActive > 1_000) errors.maxActiveSharesPerUser = '请输入 1 到 1000 的整数'
-  const maxDays = Number(form.maxValidityDays)
-  if (!Number.isInteger(maxDays) || maxDays < 1 || maxDays > 3_650) errors.maxValidityDays = '请输入 1 到 3650 的整数'
-  const publicBaseUrl = canonicalBaseUrl(form.publicBaseUrl)
-  if (publicBaseUrl === null) errors.publicBaseUrl = '请输入空值或 http(s) 源站地址，例如 https://share.example.com'
-  if (Object.keys(errors).length > 0) return { settings: null, errors }
-  return {
-    settings: {
-      enabled: form.enabled,
-      createAllowed: form.createAllowed,
-      maxSharesPerSubscription: maxShares,
-      maxActiveSharesPerUser: maxActive,
-      maxValidityDays: maxDays,
-      defaultAllowOriginalLink: form.defaultAllowOriginalLink,
-      defaultAccessControl: form.defaultAccessControl,
-      requireLoginDefault: form.requireLoginDefault,
-      publicBaseUrl: publicBaseUrl ?? '',
-    },
-    errors,
-  }
-}
-
-function Switch({ checked, onChange, disabled, label }: {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  disabled?: boolean
-  label: string
-}) {
-  return (
-    <label className="ashr-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
-      <span className="ashr-switch-track" aria-hidden="true"><span className="ashr-switch-thumb" /></span>
-      <span className="ashr-switch-label">{checked ? '已开启' : '已关闭'}</span>
-    </label>
-  )
-}
-
 export function AdminSharesPage() {
   const [shares, setShares] = useState<AdminShare[]>(EMPTY_SHARES)
   const [users, setUsers] = useState<UserSummary[]>(EMPTY_USERS)
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
-  const [form, setForm] = useState<SettingsForm | null>(null)
-  const [settingsErrors, setSettingsErrors] = useState<SettingsErrors>({})
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [userId, setUserId] = useState('')
@@ -178,9 +73,6 @@ export function AdminSharesPage() {
   const [page, setPage] = useState(1)
   const [sharesLoading, setSharesLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [settingsLoading, setSettingsLoading] = useState(true)
-  const [settingsError, setSettingsError] = useState('')
-  const [settingsSaving, setSettingsSaving] = useState(false)
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<{ share: AdminShare; action: PendingAction } | null>(null)
   const requestId = useRef(0)
@@ -208,23 +100,9 @@ export function AdminSharesPage() {
     }
   }, [statusFilter, subscriptionId, userId])
 
-  const loadSettings = useCallback(async () => {
-    setSettingsLoading(true)
-    setSettingsError('')
-    try {
-      const result = await api<{ settings: ShareSettings }>('/api/admin/share-settings')
-      setForm(toSettingsForm(result.settings))
-      setSettingsErrors({})
-    } catch (cause) {
-      setSettingsError(errorMessage(cause, '加载分享策略失败'))
-    } finally {
-      setSettingsLoading(false)
-    }
-  }, [])
 
   useEffect(() => { loadShares().catch(() => undefined) }, [loadShares])
 
-  useEffect(() => { loadSettings().catch(() => undefined) }, [loadSettings])
 
   useEffect(() => {
     let active = true
@@ -276,30 +154,6 @@ export function AdminSharesPage() {
       await loadShares()
     } finally {
       setBusy(false)
-    }
-  }
-
-  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!form || settingsSaving) return
-    const parsed = parseSettingsForm(form)
-    if (!parsed.settings) {
-      setSettingsErrors(parsed.errors)
-      return
-    }
-    setSettingsErrors({})
-    setSettingsSaving(true)
-    try {
-      const result = await api<{ settings: ShareSettings }>('/api/admin/share-settings', {
-        method: 'PUT',
-        body: jsonBody(parsed.settings),
-      })
-      setForm(toSettingsForm(result.settings))
-      toast.notify('分享策略已保存')
-    } catch (cause) {
-      toast.notifyError(errorMessage(cause, '保存分享策略失败'))
-    } finally {
-      setSettingsSaving(false)
     }
   }
 
@@ -460,53 +314,12 @@ export function AdminSharesPage() {
 
       <section className="data-section ashr-settings" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
-        {settingsLoading ? <LoadingState label="正在加载分享策略" /> : null}
-        {!settingsLoading && settingsError ? <div className="ashr-state"><ErrorState message={settingsError} onRetry={() => { loadSettings().catch(() => undefined) }} /></div> : null}
-        {!settingsLoading && !settingsError && form ? (
-          <form className="ashr-settings-form" onSubmit={saveSettings} noValidate>
-            <p className="ashr-settings-hint">关闭分享功能后，所有分享链接会立即失效</p>
-            <div className="ashr-toggles">
-              <FormField label="分享功能">
-                <Switch checked={form.enabled} disabled={settingsSaving} label="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
-              </FormField>
-              <FormField label="创建分享">
-                <Switch checked={form.createAllowed} disabled={settingsSaving} label="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
-              </FormField>
-              <FormField label="默认允许原始链接">
-                <Switch checked={form.defaultAllowOriginalLink} disabled={settingsSaving} label="默认允许原始链接" onChange={(defaultAllowOriginalLink) => setForm({ ...form, defaultAllowOriginalLink })} />
-              </FormField>
-              <FormField label="默认要求登录">
-                <Switch checked={form.requireLoginDefault} disabled={settingsSaving} label="默认要求登录" onChange={(requireLoginDefault) => setForm({ ...form, requireLoginDefault })} />
-              </FormField>
-            </div>
-            <div className="ashr-settings-grid">
-              <FormField label="单订阅分享上限" htmlFor="ashr-max-shares" error={settingsErrors.maxSharesPerSubscription}>
-                <input id="ashr-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={settingsSaving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
-              </FormField>
-              <FormField label="单用户有效分享上限" htmlFor="ashr-max-active" error={settingsErrors.maxActiveSharesPerUser}>
-                <input id="ashr-max-active" type="number" inputMode="numeric" min={1} max={1000} step={1} value={form.maxActiveSharesPerUser} disabled={settingsSaving} onChange={(event) => setForm({ ...form, maxActiveSharesPerUser: event.currentTarget.value })} />
-              </FormField>
-              <FormField label="最长有效期（天）" htmlFor="ashr-max-days" error={settingsErrors.maxValidityDays}>
-                <input id="ashr-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={settingsSaving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
-              </FormField>
-              <FormField label="默认访问保护" htmlFor="ashr-access-control">
-                <select id="ashr-access-control" value={form.defaultAccessControl} disabled={settingsSaving} onChange={(event) => setForm({ ...form, defaultAccessControl: event.currentTarget.value === 'password' ? 'password' : 'none' })}>
-                  <option value="none">无访问密码</option>
-                  <option value="password">访问密码</option>
-                </select>
-              </FormField>
-              <div className="ashr-field-wide">
-                <FormField label="公网基址" htmlFor="ashr-public-base" error={settingsErrors.publicBaseUrl}>
-                  <input id="ashr-public-base" type="url" placeholder="https://share.example.com" value={form.publicBaseUrl} disabled={settingsSaving} onChange={(event) => setForm({ ...form, publicBaseUrl: event.currentTarget.value })} />
-                </FormField>
-              </div>
-            </div>
-            <p className="ashr-settings-hint">公网基址留空时使用当前访问地址</p>
-            <div className="ashr-actions">
-              <button className="button primary" type="submit" disabled={settingsSaving}>{settingsSaving ? '保存中' : '保存策略'}</button>
-            </div>
-          </form>
-        ) : null}
+        <div className="ashr-settings-form">
+          <p className="ashr-settings-hint">分享策略已迁至系统管理页统一维护</p>
+          <div className="ashr-actions">
+            <Link className="button" to="/system">前往系统管理</Link>
+          </div>
+        </div>
       </section>
 
       <ConfirmDialog
