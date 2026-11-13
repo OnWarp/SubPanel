@@ -25,10 +25,12 @@ import {
 import {
   applyMigrations,
   D1_TABLES,
+  EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME,
   emptyDatabase,
   INIT_MIGRATION_NAME,
   initMigration,
   listTables,
+  SHARES_FK_MIGRATION_NAME,
 } from './d1'
 import { resetData } from './helpers'
 
@@ -45,11 +47,15 @@ describe('D1 migrations', () => {
     expect((await listTables(env.DB)).filter((name) => name !== 'd1_migrations')).toEqual([...D1_TABLES])
 
     const applied = await env.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>()
-    expect(applied.results.map((row) => row.name)).toEqual([INIT_MIGRATION_NAME, '0002_shares_subscription_fk.sql'])
+    expect(applied.results.map((row) => row.name)).toEqual([
+      INIT_MIGRATION_NAME,
+      EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME,
+      SHARES_FK_MIGRATION_NAME,
+    ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(2)
+    expect(replayed?.count).toBe(3)
 
     await env.DB.prepare(
       `INSERT INTO users (

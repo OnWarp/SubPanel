@@ -34,7 +34,7 @@
 
 - `subscription_groups.group_id` 仍引用 `groups(id)`，并 `ON DELETE CASCADE`。导入 delivery 时分组必须已经在 D1。分组不存在时 persist 失败，返回「订阅迁移校验未通过」，标记保持关闭，batch 回滚，读者继续读 KV。建议顺序是先 catalog，再 delivery，再 shares。
 - `subscriptions.user_id` 与 `shares.owner_user_id` 仍 `ON DELETE RESTRICT` 指向 `users`。accounts 本批不入库。`worker/db/ensure-users.ts` 在写入订阅或分享时，若 D1 还没有该用户，用 `INSERT OR IGNORE` 从 KV 账户快照抄入一行（密码哈希保留，邮箱三列是 NULL）。不更新、不删除 `users`，也不写 accounts 的 KV。用户不在账户快照里时抛出 `Referenced user is missing`，导入把它当成校验失败并且不置位。以后的 accounts 导入不能假设 `users` 是空表。
-- `migrations/0002_shares_subscription_fk.sql` 重建 `shares`，去掉 `subscription_id` 对 `subscriptions` 的外键，保留 `owner_user_id` 外键和原有索引。KV 删除订阅后分享行会留下并在访问时 404。`ON DELETE RESTRICT` 会让 D1 删除失败，`CASCADE` 会删掉分享并改变列表。重建表而不使用 `PRAGMA foreign_keys=OFF`。导入分享时不要求订阅行已经存在，悬空分享可以入库。
+- `migrations/0003_shares_subscription_fk.sql` 重建 `shares`，去掉 `subscription_id` 对 `subscriptions` 的外键，保留 `owner_user_id` 外键和原有索引。KV 删除订阅后分享行会留下并在访问时 404。`ON DELETE RESTRICT` 会让 D1 删除失败，`CASCADE` 会删掉分享并改变列表。重建表而不使用 `PRAGMA foreign_keys=OFF`。导入分享时不要求订阅行已经存在，悬空分享可以入库。
 - 删除分组的路由顺序未改：先 `readDelivery` 确认订阅快照可读，再 `writeCatalog`，再 `removeGroupReference`。catalog 删除分组会级联删掉 `subscription_groups`。随后的 `removeGroupReference` 读到的 `groupIds` 里已经没有该分组，于是直接返回，订阅 `revision` 不会加一。分组关系与下发内容仍然一致：catalog revision 会增加，`recompileDelivery` 会按剩余分组重写编译缓存。catalog 仍在 KV、delivery 已在 D1 不是支持的稳态，因为新的 `subscription_groups` 会因分组外键失败。
 - `sharelimit:*` 不导入。标记关闭时校验限流仍写 KV，TTL 11 分钟。标记打开后写入 `rate_limits`，bucket 为 `share_verify`，窗口 10 个，`expires_at <= now` 的窗口按 0 计，新窗口的过期时间是当前秒加 11 分钟。
 - Cron 状态键 `state:cron` 仍在 KV。`runCron` 读 catalog（第二批已按标记选择后端），刷新源时经 `compileAllSubscriptions` 读订阅，因此标记打开后编译使用 D1 里的订阅和分组。
@@ -71,7 +71,7 @@ KV 回退（标记置位后不执行）：
 
 - 新增完成标记 `delivery_d1_ready`、`shares_d1_ready`，值为 JSON `true`。
 - 新增 `delivery_entity_order`。subscriptions 没有父级 position 列，数组顺序放在 system_settings。`subscription_groups.position` 仍从 0 起，与 `groupIds` 下标一致。
-- `0002_shares_subscription_fk.sql` 去掉 `shares.subscription_id` 对 `subscriptions(id)` 的外键。SCHEMA 约定里「分享指向订阅」是 `ON DELETE RESTRICT`。这一处外键如果保留，就无法保持 KV 的悬空分享和删除订阅行为。`owner_user_id` 外键保留。
+- `0003_shares_subscription_fk.sql` 去掉 `shares.subscription_id` 对 `subscriptions(id)` 的外键。SCHEMA 约定里「分享指向订阅」是 `ON DELETE RESTRICT`。这一处外键如果保留，就无法保持 KV 的悬空分享和删除订阅行为。`owner_user_id` 外键保留。
 - 为满足用户外键，delivery 与 shares 写入可能预先 `INSERT OR IGNORE` 用户行。这些行的邮箱列为空。accounts 导入不能把 `users` 当成空表，也不能覆盖这些锚点行上的密码。
 - 任务书写「expiresAt 可空即永久」。现行 `shareRecordSchema` 要求 `z.iso.datetime()`，`shares.expires_at` 是 `TEXT NOT NULL`。创建分享时缺省值为当前时间加上 `maxValidityDays`。本批按现行代码和 SCHEMA 保存必填时间。
 - `sharelimit:*` 不导入。标记打开后的新限流写入已有的 `rate_limits` 表。`shareidx:*` 与两种 compiled 缓存按 SCHEMA「不进表」处理。

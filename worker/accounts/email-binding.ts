@@ -18,7 +18,7 @@ async function requireD1(env: DataEnv): Promise<AppDatabase> {
   return env.DB
 }
 
-async function assertEmailFree(db: AppDatabase, emailNormalized: string, userId: string, nowIso: string): Promise<void> {
+export async function assertEmailFree(db: AppDatabase, emailNormalized: string, userId: string, nowIso: string): Promise<void> {
   const owner = await findUserByEmailNormalized(db, emailNormalized)
   if (owner && owner.id !== userId) throw apiError(409, 'EMAIL_TAKEN', '该邮箱已被使用')
   // An unconsumed, unexpired verification by another account also occupies
