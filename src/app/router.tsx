@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AccountPage } from '../features/accounts/AccountPage'
 import { InvitePage } from '../features/accounts/InvitePage'
 import { LoginPage } from '../features/accounts/LoginPage'
+import { RegisterPage } from '../features/accounts/RegisterPage'
 import { SetupPage } from '../features/accounts/SetupPage'
 import { UsersPage } from '../features/accounts/UsersPage'
 import { DashboardPage } from '../features/dashboard/DashboardPage'
@@ -59,6 +60,7 @@ export function AppRouter() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="/invite/:token" element={<InvitePage />} />
       <Route path="/setup" element={initialized ? <Navigate to="/login" replace /> : <SetupPage />} />
+      <Route path="/register" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={home} replace /> : <RegisterPage />} />
       <Route path="/login" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={returnedShare ?? home} replace /> : <LoginPage />} />
       <Route path="/dashboard" element={user?.role === 'admin' ? shell(<DashboardPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/sources" element={user?.role === 'admin' ? shell(<SourcesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />

@@ -4,6 +4,7 @@ import { accountRoutes } from './accounts/account-routes.js'
 import { adminAccountRoutes } from './accounts/admin-routes.js'
 import { requireAdmin, requireAuth } from './accounts/auth.js'
 import { publicAccountRoutes } from './accounts/public-routes.js'
+import { adminRegistrationRoutes, registrationRoutes } from './accounts/registration-routes.js'
 import { catalogRoutes } from './catalog/routes.js'
 import { readAccounts } from './accounts/repository.js'
 import { ApiError } from './platform/api-error.js'
@@ -36,6 +37,7 @@ app.get('/api/health', async (c) => {
 })
 
 app.route('/api', publicAccountRoutes)
+app.route('/api', registrationRoutes)
 
 app.use('/api/account', requireAuth)
 app.use('/api/account/*', requireAuth)
@@ -52,6 +54,7 @@ app.use('/api/apps/*', requireAuth)
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
 app.route('/api/admin', adminAccountRoutes)
+app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscriptions', adminDeliveryRoutes)
