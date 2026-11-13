@@ -5,6 +5,7 @@ import type { AppEnv } from '../app-env.js'
 import { resolveSessionUser, requireAuth } from '../accounts/auth.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
+import { primaryDomainOriginSafe } from '../domains/service.js'
 import { readShareSettings } from './repository.js'
 import {
   adminShareQuerySchema,
@@ -94,7 +95,8 @@ shareRoutes.get('/', async (c) => {
 shareRoutes.post('/', async (c) => {
   const input = await readJson(c, createShareSchema)
   const result = await run(() => createShare(c.env, c.get('principal').id, input))
-  return c.json(result, 201)
+  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  return c.json({ ...result, linkBaseUrl }, 201)
 })
 
 shareRoutes.put('/:id', async (c) => {
@@ -124,7 +126,8 @@ shareRoutes.post('/:id/revoke', async (c) => {
 shareRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => resetShareToken(c.env, requireShareId(c.req.param('id')), c.get('principal').id))
-  return c.json(result)
+  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  return c.json({ ...result, linkBaseUrl })
 })
 
 shareRoutes.post('/:id/reveal', async (c) => {
@@ -142,7 +145,8 @@ shareRoutes.get('/:token/meta', async (c) => {
   const token = requireShareToken(c.req.param('token'))
   const [actor, sessionHash] = await Promise.all([resolveSessionUser(c), readShareSessionHash(c)])
   const meta = await run(() => readShareMeta(c.env, token, actor, sessionHash))
-  return c.json({ meta })
+  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  return c.json({ meta, linkBaseUrl })
 })
 
 shareRoutes.post('/:token/verify', async (c) => {

@@ -16,6 +16,8 @@ import { adminShareRoutes, shareRoutes } from './shares/routes.js'
 import { readCronStatus } from './operations/cron.js'
 import { migrationRoutes } from './migration/routes.js'
 import { adminSystemRoutes } from './system/routes.js'
+import { hostGate } from './domains/host-gate.js'
+import { adminDomainRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
 import { publicSubscriptionRoutes } from './public-subscriptions.js'
 
 export const app = new Hono<AppEnv>()
@@ -24,6 +26,7 @@ app.use('*', securityHeaders)
 app.use('/api/*', noStore)
 app.use('/api/*', originGuard)
 app.use('/sub/*', noStore)
+app.use('*', hostGate)
 
 app.get('/api/health', async (c) => {
   try {
@@ -58,6 +61,9 @@ app.route('/api/admin', adminAccountRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin', adminSystemRoutes)
+app.route('/api/admin', adminDomainRoutes)
+app.route('/api/account', userDomainRoutes)
+app.route('/api', publicSystemRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery', adminDeliveryRoutes)

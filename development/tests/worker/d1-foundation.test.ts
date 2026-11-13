@@ -26,6 +26,7 @@ import {
   applyMigrations,
   D1_TABLES,
   APP_REFACTOR_MIGRATION_NAME,
+  DOMAINS_MIGRATION_NAME,
   EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME,
   emptyDatabase,
   INIT_MIGRATION_NAME,
@@ -57,11 +58,12 @@ describe('D1 migrations', () => {
       SOFT_DELETE_MIGRATION_NAME,
       REGISTRATION_MIGRATION_NAME,
       APP_REFACTOR_MIGRATION_NAME,
+      DOMAINS_MIGRATION_NAME,
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(6)
+    expect(replayed?.count).toBe(7)
 
     await env.DB.prepare(
       `INSERT INTO users (

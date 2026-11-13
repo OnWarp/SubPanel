@@ -34,10 +34,15 @@ function currentOrigin(origin?: string): string {
 export function readPublicBaseUrl(source: unknown): string | undefined {
   if (!source || typeof source !== 'object') return undefined
   const record = source as Record<string, unknown>
+  // linkBaseUrl (the primary subscription domain origin) wins over the
+  // legacy share-settings publicBaseUrl when the API provides it.
+  if (typeof record.linkBaseUrl === 'string') return record.linkBaseUrl
   if (typeof record.publicBaseUrl === 'string') return record.publicBaseUrl
   const share = record.share
   if (share && typeof share === 'object') {
-    const nested = (share as Record<string, unknown>).publicBaseUrl
+    const nestedRecord = share as Record<string, unknown>
+    if (typeof nestedRecord.linkBaseUrl === 'string') return nestedRecord.linkBaseUrl
+    const nested = nestedRecord.publicBaseUrl
     if (typeof nested === 'string') return nested
   }
   return undefined
@@ -48,8 +53,8 @@ export function buildShareUrl(token: string, publicBaseUrl?: string | null, orig
   return `${base}/s/${token}`
 }
 
-export function buildShareExportUrl(token: string, client: string, origin?: string): string {
-  const base = currentOrigin(origin)
+export function buildShareExportUrl(token: string, client: string, baseUrl?: string | null, origin?: string): string {
+  const base = configuredOrigin(baseUrl) || currentOrigin(origin)
   return `${base}/api/shares/${encodeURIComponent(token)}/export?client=${encodeURIComponent(client)}`
 }
 

@@ -13,13 +13,14 @@ import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { EXPIRY_BADGE, EXPIRY_SOON_DAYS, formatExpiryTime, formatRemaining, getExpiryState, isWithinExpiryDays } from '../delivery/expiry'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
+import { pickPrimaryLink, useEnabledPlatforms, type EnabledPlatformsState } from '../delivery/platforms'
 
 function groupSummary(groupIds: string[]): string {
   return groupIds.length ? `${groupIds.length} 个分组` : '未选择分组'
 }
 
-function subscriptionLink(subscription: AdminSubscription): string {
-  return subscription.links.auto || subscription.links[subscription.defaultClient] || ''
+function subscriptionLink(subscription: AdminSubscription, platforms: EnabledPlatformsState): string {
+  return pickPrimaryLink(subscription.links, subscription.defaultClient, platforms)
 }
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -58,9 +59,10 @@ export function HomePage() {
     .filter((subscription) => isWithinExpiryDays(subscription, EXPIRY_SOON_DAYS, now))
     .sort((left, right) => (left.expiresAt ?? 0) - (right.expiresAt ?? 0))
 
+  const platforms = useEnabledPlatforms()
   const copyLink = async () => {
     if (!current) return
-    const link = subscriptionLink(current)
+    const link = subscriptionLink(current, platforms)
     if (!link) {
       setNotice('')
       setNoticeError('暂无订阅链接')

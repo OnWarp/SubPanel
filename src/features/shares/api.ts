@@ -65,12 +65,14 @@ export type UpdateShareInput = {
 }
 
 export type ShareIssued = {
+  linkBaseUrl?: string | null
   share: ShareView
   token: string
 }
 
 export type ShareMetaResponse = {
   meta: ShareMeta
+  linkBaseUrl?: string | null
 }
 
 export type ShareVerifyResponse = {
