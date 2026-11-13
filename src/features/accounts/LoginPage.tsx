@@ -1,7 +1,7 @@
 import { LogIn } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ApiClientError } from '../../app/api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { api, ApiClientError } from '../../app/api'
 import { useSession } from '../../app/session'
 import { FormField } from '../../ui/FormField'
 import { AuthLayout } from './AuthLayout'
@@ -11,6 +11,13 @@ export function LoginPage() {
   const { login } = useSession()
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [registrationOpen, setRegistrationOpen] = useState(false)
+
+  useEffect(() => {
+    api<{ mode: string }>('/api/register/config')
+      .then(({ mode }) => setRegistrationOpen(mode !== 'closed'))
+      .catch(() => setRegistrationOpen(false))
+  }, [])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -41,6 +48,7 @@ export function LoginPage() {
           <LogIn aria-hidden="true" size={17} />
           {submitting ? '正在登录' : '登录'}
         </button>
+        {registrationOpen ? <p className="form-message">没有账号？<Link to="/register">立即注册</Link></p> : null}
       </form>
     </AuthLayout>
   )

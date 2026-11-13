@@ -206,25 +206,34 @@ export async function issueVerificationCode(
   return { expiresAt }
 }
 
-export async function verifyVerificationCode(
+export type VerifyPendingResult =
+  | { ok: true; verification: PendingVerification }
+  | { ok: false; reason: 'none' | 'expired' | 'locked' | 'mismatch' }
+
+// Same locating, expiry and attempt accounting as verifyVerificationCode,
+// but a matching code is NOT consumed: the caller folds consumption into
+// its own atomic write via consumeVerificationStatement (registration
+// commits code consumption together with account creation and invite
+// redemption). Lockout is reported as a result instead of the 429 that
+// verifyVerificationCode throws, so the caller can map it onto its own
+// error surface.
+export async function verifyPendingVerification(
   db: AppDatabase,
   input: { email: string; purpose: VerificationPurpose; code: string },
-): Promise<boolean> {
+): Promise<VerifyPendingResult> {
   const email = normalizeEmail(input.email)
   const now = new Date()
   const row = await latestPendingRow(db, input.purpose, 'email_normalized', email)
-  if (!row) return false
-  if (Date.parse(row.expires_at) <= now.getTime()) return false
+  if (!row) return { ok: false, reason: 'none' }
+  if (Date.parse(row.expires_at) <= now.getTime()) return { ok: false, reason: 'expired' }
 
   // Failed attempts are counted on the shared rate_limits table, keyed by
   // the verification row with its creation time as the fixed window start
   // (the batch-4 scheme). Reaching the limit locks the code: even a correct
-  // code is then refused with a 429 so the caller can ask for a fresh one.
+  // code is then refused so the caller can ask for a fresh one.
   const windowStart = Math.floor(Date.parse(row.created_at) / 1_000)
   const attempts = await countWindowHits(db, ATTEMPT_BUCKET, String(row.id), windowStart)
-  if (attempts >= MAX_CODE_ATTEMPTS) {
-    throw apiError(429, 'TOO_MANY_ATTEMPTS', '验证码尝试次数过多，请重新获取')
-  }
+  if (attempts >= MAX_CODE_ATTEMPTS) return { ok: false, reason: 'locked' }
   if ((await hashVerificationCode(input.purpose, email, input.code)) !== row.token_hash) {
     await recordWindowHit(
       db,
@@ -233,13 +242,38 @@ export async function verifyVerificationCode(
       windowStart,
       Math.floor(Date.parse(row.expires_at) / 1_000),
     )
+    return { ok: false, reason: 'mismatch' }
+  }
+  return { ok: true, verification: toPending(row) }
+}
+
+// Statement that consumes a verified row; include it in the caller's batch
+// so consumption shares the caller's transaction.
+export function consumeVerificationStatement(
+  db: AppDatabase,
+  id: number,
+  now: string,
+): D1PreparedStatement {
+  return db
+    .prepare('UPDATE email_verifications SET consumed_at = ? WHERE id = ? AND consumed_at IS NULL')
+    .bind(now, id)
+}
+
+export async function verifyVerificationCode(
+  db: AppDatabase,
+  input: { email: string; purpose: VerificationPurpose; code: string },
+): Promise<boolean> {
+  const result = await verifyPendingVerification(db, input)
+  if (!result.ok) {
+    if (result.reason === 'locked') {
+      throw apiError(429, 'TOO_MANY_ATTEMPTS', '验证码尝试次数过多，请重新获取')
+    }
     return false
   }
-
   await db
     .prepare('UPDATE email_verifications SET consumed_at = ? WHERE id = ?')
-    .bind(now.toISOString(), row.id)
+    .bind(new Date().toISOString(), result.verification.id)
     .run()
-  await clearWindowHits(db, ATTEMPT_BUCKET, String(row.id))
+  await clearWindowHits(db, ATTEMPT_BUCKET, String(result.verification.id))
   return true
 }

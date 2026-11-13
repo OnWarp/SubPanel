@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers'
 import initSql from '../../../migrations/0001_init.sql?raw'
 import emailVerificationPurposeSql from '../../../migrations/0002_email_verification_purpose.sql?raw'
 import sharesFkSql from '../../../migrations/0003_shares_subscription_fk.sql?raw'
+import registrationSql from '../../../migrations/0005_registration.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
 
@@ -20,6 +21,8 @@ export const D1_TABLES = [
   'groups',
   'invitation_redemptions',
   'invitations',
+  'invite_code_redemptions',
+  'invite_codes',
   'migration_runs',
   'node_raw_variants',
   'nodes',
@@ -119,8 +122,20 @@ export const sharesFkMigration = {
   queries: splitSqlStatements(sharesFkSql),
 }
 
+export const REGISTRATION_MIGRATION_NAME = '0005_registration.sql'
+
+export const registrationMigration = {
+  name: REGISTRATION_MIGRATION_NAME,
+  queries: splitSqlStatements(registrationSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
-  await applyD1Migrations(db, [initMigration, emailVerificationPurposeMigration, sharesFkMigration])
+  await applyD1Migrations(db, [
+    initMigration,
+    emailVerificationPurposeMigration,
+    sharesFkMigration,
+    registrationMigration,
+  ])
 }
 
 export async function listTables(db: D1Database = env.DB): Promise<string[]> {

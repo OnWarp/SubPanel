@@ -26,7 +26,7 @@ export const MAIL_SETTING_KEYS = {
 export const registrationModeSchema = z.enum(['closed', 'invite', 'open'])
 export type RegistrationMode = z.infer<typeof registrationModeSchema>
 
-export const DEFAULT_REGISTRATION_MODE: RegistrationMode = 'invite'
+export const DEFAULT_REGISTRATION_MODE: RegistrationMode = 'closed'
 
 type SettingRow = {
   value: string

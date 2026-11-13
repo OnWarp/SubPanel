@@ -46,7 +46,7 @@ describe('system registration settings', () => {
   it('reads the default mode and persists changes immediately', async () => {
     const initial = await getJson('/api/admin/system/registration')
     expect(initial.response.status).toBe(200)
-    expect(initial.body).toEqual({ mode: 'invite' })
+    expect(initial.body).toEqual({ mode: 'closed' })
 
     const put = await putJson('/api/admin/system/registration', { mode: 'open' })
     expect(put.status).toBe(200)
