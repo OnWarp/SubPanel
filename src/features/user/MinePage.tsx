@@ -7,12 +7,14 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
+import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { ProfileCard } from '../accounts/ProfileCard'
 import { formatProfileDate, useAccountProfile } from '../accounts/profile'
 
 export function MinePage() {
   const { user, logout } = useSession()
   const { profile } = useAccountProfile()
+  const downloadsEnabled = useDownloadsEnabled()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -75,11 +77,13 @@ export function MinePage() {
           <span>我的节点</span>
           <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
         </Link>
-        <Link className="nav-menu-item" to="/apps">
-          <Download aria-hidden="true" size={18} />
-          <span>APP 下载</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
+        {downloadsEnabled ? (
+          <Link className="nav-menu-item" to="/apps">
+            <Download aria-hidden="true" size={18} />
+            <span>APP 下载</span>
+            <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
+          </Link>
+        ) : null}
       </nav>
       <section className="data-section nav-menu" aria-label="会话与安全">
         <div className="nav-menu-item nav-session-row">

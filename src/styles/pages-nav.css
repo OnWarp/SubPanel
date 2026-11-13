@@ -6,9 +6,7 @@
 
 .nav-home,
 .nav-mine {
-  width: min(100%, 720px);
   min-width: 0;
-  margin-inline: auto;
 }
 
 .nav-home > *,
@@ -159,9 +157,7 @@
 }
 
 .node-page {
-  width: min(100%, 960px);
   min-width: 0;
-  margin-inline: auto;
 }
 
 .node-page > * {

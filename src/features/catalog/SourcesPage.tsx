@@ -5,6 +5,7 @@ import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
+import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
@@ -406,7 +407,7 @@ export function SourcesPage() {
             <label className="field"><span>来源内容</span><textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
             <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button><span className="drawer-note">保存前会先验证可解析节点</span></div>
           </>}
-          <label className="toggle-field"><input type="checkbox" checked={form.enabled} onChange={(event) => updateForm('enabled', event.currentTarget.checked)} /><span>启用来源</span></label>
+          <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />
           {preview ? <section className="source-preview" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeDrawer} disabled={busy || previewBusy}>取消</button><button className="button primary" type="submit" disabled={busy || previewBusy}>{busy ? '保存中' : drawer === 'create' ? '保存来源' : '保存修改'}</button></div>

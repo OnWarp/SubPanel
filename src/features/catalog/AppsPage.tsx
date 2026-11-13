@@ -1,5 +1,6 @@
 import { Pencil, Plus, Power, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -10,6 +11,7 @@ import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { Switch } from '../../ui/Switch'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -334,7 +336,7 @@ export function AppsPage() {
       <PageHeader
         title="APP 管理"
         description={description}
-        actions={<button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加 APP</button>}
+        actions={<><Link className="button secondary" to="/apps">查看用户端</Link><button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加 APP</button></>}
       />
       <section className="data-section app-data" aria-label="APP 列表">
         {loading ? <LoadingState label="正在加载 APP" /> : null}
@@ -374,10 +376,7 @@ export function AppsPage() {
             <FormField label="简介" htmlFor="app-description">
               <textarea id="app-description" className="app-span-2" rows={3} maxLength={8000} value={form.description} disabled={busy} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} />
             </FormField>
-            <label className="app-flag">
-              <input type="checkbox" checked={form.enabled} disabled={busy} onChange={(event) => setForm({ ...form, enabled: event.currentTarget.checked })} />
-              启用
-            </label>
+            <Switch label="启用" checked={form.enabled} disabled={busy} onChange={(checked) => setForm({ ...form, enabled: checked })} />
           </div>
 
           <div className="app-platforms">

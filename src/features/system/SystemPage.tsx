@@ -1,5 +1,6 @@
 import { Database, Download, Info, Mail, Settings, Share2, User, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -20,6 +21,7 @@ import {
   type SystemStatus,
 } from './api'
 import { DomainSettingsSection } from './DomainSettingsSection'
+import { InviteCodesSection } from './InviteCodesSection'
 import { ShareSettingsSection } from './ShareSettingsSection'
 
 function errorMessage(cause: unknown, fallback: string) {
@@ -93,6 +95,7 @@ function RegistrationSection() {
           </div>
           <p className="sys-hint">{REGISTRATION_MODES.find((option) => option.value === mode)?.hint}，切换后立即生效</p>
           <EmailDomains />
+          <InviteCodesSection />
         </div>
       ) : null}
     </section>
@@ -417,6 +420,9 @@ function AppDownloadsSection() {
             <FormField label="显示 APP 下载板块">
               <Switch checked={enabled} onChange={(checked) => { toggle(checked).catch(() => undefined) }} disabled={saving} ariaLabel="显示 APP 下载板块" />
             </FormField>
+          </div>
+          <div className="sys-actions">
+            <Link className="button ghost" to="/catalog/apps">前往 APP 管理</Link>
           </div>
         </div>
       ) : null}

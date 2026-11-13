@@ -5,6 +5,7 @@ import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
+import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
@@ -268,8 +269,8 @@ export function NodesPage() {
         <form className="form-stack" onSubmit={saveNode}>
           <label className="field"><span>节点名称</span><input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
           <p className="drawer-note">服务器、协议和认证字段由来源内容决定</p>
-          <label className="toggle-field"><input type="checkbox" checked={nodeForm.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; setNodeForm((current) => ({ ...current, enabled })) }} /><span>启用节点</span></label>
-          <label className="toggle-field"><input type="checkbox" checked={nodeForm.retained} onChange={(event) => { const retained = event.currentTarget.checked; setNodeForm((current) => ({ ...current, retained })) }} /><span>无来源时保留</span></label>
+          <Switch label="启用节点" checked={nodeForm.enabled} onChange={(enabled) => setNodeForm((current) => ({ ...current, enabled }))} />
+          <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeEdit} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : '保存修改'}</button></div>
         </form>
