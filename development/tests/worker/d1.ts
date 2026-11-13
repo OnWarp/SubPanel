@@ -1,6 +1,7 @@
 import { applyD1Migrations } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import initSql from '../../../migrations/0001_init.sql?raw'
+import emailVerificationPurposeSql from '../../../migrations/0002_email_verification_purpose.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
 
@@ -91,9 +92,31 @@ export function splitSqlStatements(sql: string): string[] {
   return statements
 }
 
+// The harness records the whole current schema under the 0001 name:
+// initMigration carries the 0001 statements plus the batch-5 0002
+// statements, so every test database gets the purpose-aware
+// email_verifications table while the d1_migrations bookkeeping stays as
+// the foundation tests expect. Production applies the real migration files
+// in order through wrangler; baseInitMigration and
+// emailVerificationPurposeMigration exist so tests can still exercise the
+// 0001 -> 0002 upgrade path explicitly.
+const baseInitQueries = splitSqlStatements(initSql)
+
+export const baseInitMigration = {
+  name: INIT_MIGRATION_NAME,
+  queries: baseInitQueries,
+}
+
 export const initMigration = {
   name: INIT_MIGRATION_NAME,
-  queries: splitSqlStatements(initSql),
+  queries: [...baseInitQueries, ...splitSqlStatements(emailVerificationPurposeSql)],
+}
+
+export const EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME = '0002_email_verification_purpose.sql'
+
+export const emailVerificationPurposeMigration = {
+  name: EMAIL_VERIFICATION_PURPOSE_MIGRATION_NAME,
+  queries: splitSqlStatements(emailVerificationPurposeSql),
 }
 
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {

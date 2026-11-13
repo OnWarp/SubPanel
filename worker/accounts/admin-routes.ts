@@ -4,9 +4,11 @@ import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { hashToken, randomToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
+import { sendTestEmail } from './email.js'
 import { hashPassword } from './password.js'
 import { readAccounts, writeAccounts } from './repository.js'
 import {
+  emailInputSchema,
   inviteRecordSchema,
   passwordInputSchema,
   toPublicUser,
@@ -124,4 +126,19 @@ adminAccountRoutes.delete('/invites/:id', async (c) => {
   if (!id.success) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
   await c.env.DATA.delete(`${INVITE_PREFIX}${id.data}`)
   return c.body(null, 204)
+})
+
+const mailTestSchema = z.object({ email: emailInputSchema })
+
+// Send one test message through the configured mail provider (batch 5).
+// The response reports the outcome instead of throwing, so the admin UI can
+// show "not configured" and provider failures as data.
+adminAccountRoutes.post('/mail/test', async (c) => {
+  const input = await readJson(c, mailTestSchema)
+  const result = await sendTestEmail(input.email)
+  return c.json({
+    ok: result.ok,
+    provider: result.provider,
+    ...(result.error ? { error: result.error } : {}),
+  })
 })

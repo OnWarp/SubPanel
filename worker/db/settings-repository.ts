@@ -10,6 +10,19 @@ import { queryFirst, type AppDatabase } from './db.js'
 export const REGISTRATION_MODE_KEY = 'registration_mode'
 export const SHARE_SETTINGS_KEY = 'share_settings'
 
+// Mail configuration keys (batch 5). Read by worker/accounts/email.ts when
+// no Worker secret covers the same setting; the admin settings UI that
+// writes them lands in batch 9.
+export const MAIL_SETTING_KEYS = {
+  provider: 'mail_provider',
+  from: 'mail_from',
+  smtpHost: 'mail_smtp_host',
+  smtpPort: 'mail_smtp_port',
+  smtpUser: 'mail_smtp_user',
+  smtpPass: 'mail_smtp_pass',
+  resendApiKey: 'mail_resend_api_key',
+} as const
+
 export const registrationModeSchema = z.enum(['closed', 'invite', 'open'])
 export type RegistrationMode = z.infer<typeof registrationModeSchema>
 

@@ -3,6 +3,9 @@ declare global {
     DB: D1Database
     DATA_ENCRYPTION_KEY?: string
     SESSION_KEY?: string
+    RESEND_API_KEY?: string
+    SMTP_URL?: string
+    MAIL_FROM?: string
   }
 
   namespace Cloudflare {
@@ -10,6 +13,9 @@ declare global {
       DB: D1Database
       DATA_ENCRYPTION_KEY?: string
       SESSION_KEY?: string
+      RESEND_API_KEY?: string
+      SMTP_URL?: string
+      MAIL_FROM?: string
     }
   }
 }
