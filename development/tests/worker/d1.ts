@@ -146,6 +146,8 @@ export const APP_REFACTOR_MIGRATION_NAME = '0006_app_downloads_refactor.sql'
 export const appRefactorMigration = {
   name: APP_REFACTOR_MIGRATION_NAME,
   queries: splitSqlStatements(appRefactorSql),
+}
+
 export const DOMAINS_MIGRATION_NAME = '0007_domain_stage.sql'
 
 export const domainsMigration = {
