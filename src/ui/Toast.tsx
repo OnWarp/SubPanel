@@ -13,8 +13,8 @@ export type ToastApi = {
   dismiss: () => void
 }
 
-const NOTE_DURATION = 3400
-const ERROR_DURATION = 8000
+const NOTE_DURATION = 2500
+const ERROR_DURATION = 5000
 
 const ToastContext = createContext<ToastApi | null>(null)
 

@@ -59,8 +59,8 @@ export function ConfirmDialog({
         </header>
         {children}
         <div className="dialog-actions">
-          <button className="button secondary" type="button" onClick={close} disabled={busy}>取消</button>
-          <button className={`button ${danger ? 'danger' : 'primary'}`} type="button" onClick={onConfirm} disabled={busy}>{busy ? '处理中' : confirmLabel}</button>
+          <button className="button ghost" type="button" onClick={close} disabled={busy}>取消</button>
+          <button className={`button ${danger ? 'danger-fill' : 'primary'}`} type="button" onClick={onConfirm} disabled={busy}>{busy ? '处理中' : confirmLabel}</button>
         </div>
       </div>
     </dialog>

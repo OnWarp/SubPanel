@@ -1,76 +1,97 @@
 /*
- * Design tokens.
- * Names stay stable so existing call sites keep working; new semantic names are
- * additive. Every derived color is generated with color-mix instead of a
- * hand-picked approximation.
+ * Design tokens — Apple x Linear system (UI upgrade plan, sections 3/5/7).
+ * One token set for the whole app: pages and components must reference these
+ * variables instead of hard-coding colors, radii, shadows or weights.
+ * Names stay stable so existing call sites keep working; new semantic names
+ * are additive. Derived colors are generated with color-mix.
+ *
+ * Light theme follows the Apple route (parchment canvas, single blue accent);
+ * dark theme follows the Linear route (near-black canvas, surface ladder,
+ * hairline borders instead of shadows, single indigo accent).
  */
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --color-canvas: #f8f8f6;
+  --color-canvas: #f5f5f7;
   --color-surface: #ffffff;
-  --color-surface-subtle: #efefec;
+  --color-surface-1: var(--color-surface);
+  --color-surface-subtle: #e9e9ee;
   --color-surface-raised: #ffffff;
-  --color-text: #16161a;
-  --color-text-muted: #6b6b73;
-  --color-text-faint: #c4c4c8;
-  --color-border: #e3e3df;
+  --color-surface-2: var(--color-surface-raised);
+  --color-text: #1d1d1f;
+  --color-text-muted: #6e6e73;
+  --color-text-faint: #86868b;
+  --color-border: rgb(0 0 0 / 0.08);
+  --color-border-strong: rgb(0 0 0 / 0.16);
 
-  --color-primary: #b8acf2;
+  --color-primary: #0071e3;
+  --color-accent: var(--color-primary);
+  --color-accent-text: var(--color-accent);
   --color-primary-hover: color-mix(in srgb, var(--color-primary) 88%, var(--color-text));
-  --color-primary-soft: color-mix(in srgb, var(--color-primary) 24%, var(--color-canvas));
-  --color-primary-contrast: #0c0c0e;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas));
+  --color-primary-contrast: #ffffff;
 
-  --color-info: #8ec8ea;
-  --color-success: #7dd3a0;
-  --color-warning: #febc2e;
-  --color-danger: #ff5a5f;
-  --color-info-soft: color-mix(in srgb, var(--color-info) 24%, var(--color-canvas));
-  --color-success-soft: color-mix(in srgb, var(--color-success) 24%, var(--color-canvas));
-  --color-warning-soft: color-mix(in srgb, var(--color-warning) 24%, var(--color-canvas));
-  --color-danger-soft: color-mix(in srgb, var(--color-danger) 24%, var(--color-canvas));
+  --color-info: #0071e3;
+  --color-success: #008a2e;
+  --color-warning: #b26a00;
+  --color-danger: #d70015;
+  --color-info-soft: color-mix(in srgb, var(--color-info) 10%, var(--color-canvas));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 10%, var(--color-canvas));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 12%, var(--color-canvas));
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 8%, var(--color-canvas));
 
-  --color-border-strong: color-mix(in srgb, var(--color-primary) 65%, var(--color-border));
-  --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  --color-focus: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 38%, transparent);
   --color-overlay: rgb(12 12 14 / 48%);
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: -apple-system, "SF Pro Text", Inter, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --font-xs: 11px;
   --font-sm: 12px;
   --font-body: 13px;
   --font-md: 14px;
   --font-lg: 15px;
-  --font-title: 26px;
+  --font-title: 20px;
+  --font-display: 28px;
   --leading-body: 1.5;
+  --leading-tight: 1.25;
+
+  --weight-regular: 400;
+  --weight-medium: 510;
+  --weight-semibold: 590;
+  --weight-strong: 600;
 
   --space-1: 4px;
-  --space-2: 6px;
-  --space-3: 8px;
-  --space-4: 12px;
-  --space-5: 16px;
-  --space-6: 24px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
 
-  --radius-ctl: 11px;
-  --radius-field: 14px;
-  --radius-card: 16px;
-  --radius-card-lg: 18px;
-  --radius-dock: 20px;
-  --radius-sheet: 22px;
+  --radius-ctl: 6px;
+  --radius-field: 6px;
+  --radius-card: 8px;
+  --radius-card-lg: 12px;
+  --radius-dock: 12px;
+  --radius-sheet: 12px;
+  --radius-pill: 999px;
   --radius-control: var(--radius-ctl);
   --radius-panel: var(--radius-card);
 
-  --size-sidebar: 224px;
-  --size-topbar: 56px;
+  --size-sidebar: 216px;
+  --size-sidebar-collapsed: 56px;
+  --size-topbar: 48px;
   --size-bar: 36px;
-  --size-content-max: 1360px;
+  --size-content-max: 1080px;
 
-  --shadow-float: 0 10px 30px -12px rgb(0 0 0 / 0.18);
+  --shadow-float: 3px 5px 30px 0 rgb(0 0 0 / 0.22);
   --shadow-panel: none;
 
-  --duration-ui: 200ms;
-  --ease-spring: cubic-bezier(.3, 1.5, .5, 1);
+  --duration-ui: 160ms;
+  --ease-out: cubic-bezier(.2, .7, .3, 1);
+  --ease-spring: var(--ease-out);
 
   --z-topbar: 20;
   --z-overlay: 25;
@@ -82,33 +103,39 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 
-  --color-canvas: #0c0c0e;
-  --color-surface: #141417;
-  --color-surface-subtle: #1d1d22;
-  --color-surface-raised: #1d1d22;
-  --color-text: #f3f3f5;
-  --color-text-muted: #8b8b94;
-  --color-text-faint: #4a4a52;
-  --color-border: #25252b;
+  --color-canvas: #08090a;
+  --color-surface: #0f1011;
+  --color-surface-1: var(--color-surface);
+  --color-surface-subtle: #141516;
+  --color-surface-raised: #191a1b;
+  --color-surface-2: var(--color-surface-raised);
+  --color-text: #f7f8f8;
+  --color-text-muted: #8a8f98;
+  --color-text-faint: #62666d;
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-border-strong: rgb(255 255 255 / 0.16);
 
-  --color-primary: #b8acf2;
+  --color-primary: #5e6ad2;
+  --color-accent: #7170ff;
+  --color-accent-text: var(--color-accent);
   --color-primary-hover: color-mix(in srgb, var(--color-primary) 88%, var(--color-text));
-  --color-primary-soft: color-mix(in srgb, var(--color-primary) 14%, var(--color-canvas));
-  --color-primary-contrast: #0c0c0e;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 16%, var(--color-canvas));
+  --color-primary-contrast: #ffffff;
 
-  --color-info: #8ec8ea;
-  --color-success: #7dd3a0;
-  --color-warning: #febc2e;
-  --color-danger: #ff5a5f;
-  --color-info-soft: color-mix(in srgb, var(--color-info) 14%, var(--color-canvas));
-  --color-success-soft: color-mix(in srgb, var(--color-success) 14%, var(--color-canvas));
-  --color-warning-soft: color-mix(in srgb, var(--color-warning) 14%, var(--color-canvas));
-  --color-danger-soft: color-mix(in srgb, var(--color-danger) 14%, var(--color-canvas));
+  --color-info: #7170ff;
+  --color-success: #4cb782;
+  --color-warning: #e5a13d;
+  --color-danger: #f2555a;
+  --color-info-soft: color-mix(in srgb, var(--color-info) 16%, var(--color-canvas));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 16%, var(--color-canvas));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 16%, var(--color-canvas));
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 16%, var(--color-canvas));
 
-  --color-border-strong: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
-  --color-focus: color-mix(in srgb, var(--color-primary) 55%, transparent);
+  --color-focus: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
   --color-overlay: rgb(0 0 0 / 68%);
 
-  --shadow-float: 0 14px 30px -10px rgb(0 0 0 / 0.5);
+  /* Dark surfaces separate by luminance, not shadow (Linear route). */
+  --shadow-float: none;
   --shadow-panel: none;
 }

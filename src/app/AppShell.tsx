@@ -1,4 +1,4 @@
-import { Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
@@ -50,6 +50,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation()
   const [sheetOpen, setSheetOpen] = useState(false)
   const [mobile, setMobile] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('subpanel:sidebar-collapsed') === '1' } catch { return false }
+  })
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current
+      try { localStorage.setItem('subpanel:sidebar-collapsed', next ? '1' : '0') } catch { /* storage unavailable */ }
+      return next
+    })
+  }
   const moreButton = useRef<HTMLButtonElement>(null)
   const sheet = useRef<HTMLElement>(null)
   const touchStart = useRef(0)
@@ -114,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <img className="brand-mark" src="/logo.png" alt="" />
@@ -125,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {adminSections.map((section) => <section className="nav-section" key={section.label}>
               <p className="nav-label">{section.label}</p>
               {section.items.map(({ to, label, icon: Icon }) => (
-                <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+                <Link key={to} to={to} title={label} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
                   <Icon aria-hidden="true" size={17} /><span>{label}</span>
                 </Link>
               ))}
@@ -134,7 +144,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : (
           <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
             {visibleUserSidebar.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} end className={({ isActive }) => isActive ? 'active' : undefined}>
+              <NavLink key={to} to={to} end title={label} className={({ isActive }) => isActive ? 'active' : undefined}>
                 <Icon aria-hidden="true" size={17} /><span>{label}</span>
               </NavLink>
             ))}
@@ -144,6 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="workspace">
         <header className="workspace-topbar">
+          <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>
           <div id="page-title-slot" className="topbar-context" />
           <ThemeMenu />
           <div id="page-actions-slot" className="topbar-page-actions" />
@@ -188,7 +199,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="dock-sheet-handle" aria-hidden="true" />
           {(isAdmin ? sheetItems : visibleUserSheetItems).length ? <nav className="dock-sheet-nav" aria-label="主导航">
             {(isAdmin ? sheetItems : visibleUserSheetItems).map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+              <Link key={to} to={to} title={label} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
                 <Icon aria-hidden="true" size={19} /><span>{label}</span>
               </Link>
             ))}
