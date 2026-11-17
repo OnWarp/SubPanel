@@ -1,4 +1,6 @@
 import { createFixtureAccount } from './helpers'
+import { createShare, exportShare } from '../../../worker/shares/service'
+import { runCron } from '../../../worker/operations/cron'
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,6 +39,76 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Delivery APIs and public subscriptions', () => {
+  it('allocates from the pool, transfers with token rotation, and recycles without changing subscription data or entitlements', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    await createUserCookie(admin)
+    const target = await env.DB.prepare("SELECT id FROM users WHERE username = 'delivery-user'").first<{ id: string }>()
+    await grantDeliveryFixture(target!.id, [groupId])
+    const expiresAt = Date.now() + 86400000
+    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ name: 'Pool', groupIds: [groupId], expiresAt }, withCookie(admin)))
+    expect(created.status).toBe(201)
+    type Result = { subscription: { id: string; userId: string | null; expiresAt: number; groupIds: string[] }; token: string }
+    const pool = await created.json() as Result
+    expect(pool.subscription.userId).toBeNull()
+    const pull = (token: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
+    expect((await pull(pool.token)).status).toBe(404)
+    const rights = (await env.DB.prepare('SELECT * FROM user_entitlements ORDER BY id').all()).results
+    const transfer = async (userId: string | null) => {
+      const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${pool.subscription.id}/transfer`, jsonRequest({ userId }, withCookie(admin)))
+      expect(response.status).toBe(200)
+      const result = await response.json() as Result
+      expect(result.subscription).toMatchObject({ userId, expiresAt, groupIds: [groupId] })
+      return result
+    }
+    const assigned = await transfer('usr_1')
+    expect((await pull(pool.token)).status).toBe(404)
+    expect((await pull(assigned.token)).status).toBe(200)
+    const moved = await transfer(target!.id)
+    expect((await pull(assigned.token)).status).toBe(404)
+    expect((await pull(moved.token)).status).toBe(200)
+    const recycled = await transfer(null)
+    expect((await pull(moved.token)).status).toBe(404)
+    expect((await pull(recycled.token)).status).toBe(404)
+    expect((await env.DB.prepare('SELECT * FROM user_entitlements ORDER BY id').all()).results).toEqual(rights)
+    const audits = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action = 'post.subscriptions.transfer'").all<{ detail: string }>()
+    expect(audits.results).toHaveLength(3)
+    expect(JSON.stringify(audits.results)).not.toContain(moved.token)
+  })
+
+  it('creates temporary admin shares through the shared mechanism and rejects them at expiry', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Share', groupIds: [groupId] }, withCookie(admin)))
+    const { subscription } = await response.json() as { subscription: { id: string } }
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + 3600000).toISOString()
+    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/shares`, jsonRequest({ subscriptionId: subscription.id, expiresAt }, withCookie(admin)))
+    expect(created.status).toBe(201)
+    const result = await created.json() as { token: string; share: { expiresAt: string } }
+    expect(result.share.expiresAt).toBe(expiresAt)
+    expect((await exportShare(env, result.token, undefined, 'mihomo', null, null, TEST_ORIGIN, now)).kind).toBe('client')
+    await expect(exportShare(env, result.token, undefined, 'mihomo', null, null, TEST_ORIGIN, new Date(expiresAt))).rejects.toMatchObject({ code: 'SHARE_NOT_FOUND' })
+    const other = await createShare(env, 'usr_1', { subscriptionId: subscription.id }, now)
+    expect(other.share.status).toBe('active')
+  })
+
+  it('cron disables expired subscriptions without deleting them and admin extension restores delivery', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    const now = Date.now()
+    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Retained', groupIds: [groupId], expiresAt: now + 10000 }, withCookie(admin)))
+    const { subscription, token } = await created.json() as { subscription: { id: string }; token: string }
+    await runCron(env, { now: new Date(now + 10001).toISOString() })
+    expect(await env.DB.prepare('SELECT enabled FROM subscriptions WHERE id = ?').bind(subscription.id).first()).toEqual({ enabled: 0 })
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(404)
+    const mine = await (await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ id: string; enabled: boolean }> }
+    expect(mine.subscriptions).toContainEqual(expect.objectContaining({ id: subscription.id, enabled: false }))
+    const updated = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${subscription.id}`, jsonRequest({ expiresAt: now + 86400000, enabled: true }, withCookie(admin, { method: 'PATCH' })))
+    expect(updated.status).toBe(200)
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(200)
+  })
+
   it('creates a subscription, precompiles artifacts, and serves conditional responses', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
@@ -404,12 +476,11 @@ describe('Delivery APIs and public subscriptions', () => {
     const pendingShare = await shareExport(pending.subscription.id)
     expect(pendingShare.status).toBe(403)
     expect(await pendingShare.json()).toEqual({ error: { code: 'SUB_NOT_STARTED', message: '订阅尚未生效' } })
-    const expiredShare = await shareExport(expired.subscription.id)
-    expect(expiredShare.status).toBe(410)
-    expect(await expiredShare.json()).toEqual({ error: { code: 'SUB_EXPIRED', message: '订阅已过期' } })
+    const expiredShare = await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ subscriptionId: expired.subscription.id }, withCookie(userCookie)))
+    expect(expiredShare.status).toBe(409)
     expect((await shareExport(forever.subscription.id)).status).toBe(200)
 
-    await env.DB.prepare('UPDATE subscriptions SET starts_at = NULL, expires_at = NULL').run()
+    await env.DB.prepare('UPDATE subscriptions SET starts_at = NULL, expires_at = NULL, enabled = 1').run()
     const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ startsAt: number | null; expiresAt: number | null }> }
     expect(listed.subscriptions.every((subscription) => subscription.startsAt === null && subscription.expiresAt === null)).toBe(true)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${expired.token}/mihomo`)).status).toBe(200)
@@ -510,8 +581,8 @@ describe('Admin subscriptions list pagination', () => {
     const namesOf = (body: AdminSubscriptionListBody) => body.subscriptions.map((subscription) => subscription.name)
 
     const disabled = await listAdminSubscriptions(admin, '?status=disabled')
-    expect(disabled.total).toBe(1)
-    expect(namesOf(disabled)).toEqual(['Beta'])
+    expect(disabled.total).toBe(2)
+    expect(namesOf(disabled)).toEqual(['Beta', 'Gamma'])
 
     expect(namesOf(await listAdminSubscriptions(admin, '?expiry=expired'))).toEqual(['Gamma'])
     expect(namesOf(await listAdminSubscriptions(admin, '?expiry=permanent'))).toEqual(['Alpha', 'Beta'])
@@ -526,10 +597,10 @@ describe('Admin subscriptions list pagination', () => {
     expect(namesOf(await listAdminSubscriptions(admin, '?q=delivery group'))).toHaveLength(5)
 
     const enabledSecondPage = await listAdminSubscriptions(admin, '?status=enabled&pageSize=2&page=2')
-    expect(enabledSecondPage.total).toBe(4)
-    expect(namesOf(enabledSecondPage)).toEqual(['Delta', 'Echo'])
+    expect(enabledSecondPage.total).toBe(3)
+    expect(namesOf(enabledSecondPage)).toEqual(['Echo'])
 
     const enabledOnlyExpired = await listAdminSubscriptions(admin, '?enabled=1&expiry=expired')
-    expect(namesOf(enabledOnlyExpired)).toEqual(['Gamma'])
+    expect(namesOf(enabledOnlyExpired)).toEqual([])
   })
 })

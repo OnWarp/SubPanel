@@ -132,8 +132,8 @@ export function listShares(): Promise<{ shares: ShareView[] }> {
   return api('/api/shares')
 }
 
-export function createShare(input: CreateShareInput): Promise<ShareIssued> {
-  return api('/api/shares', { method: 'POST', body: jsonBody(input) })
+export function createShare(input: CreateShareInput, admin = false): Promise<ShareIssued> {
+  return api(admin ? '/api/admin/shares' : '/api/shares', { method: 'POST', body: jsonBody(input) })
 }
 
 export function updateShare(id: string, input: UpdateShareInput): Promise<{ share: ShareView }> {

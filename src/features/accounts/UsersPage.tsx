@@ -157,6 +157,7 @@ export function UsersPage() {
   const subscriptionsByUser = useMemo(() => {
     const grouped = new Map<string, AdminSubscription[]>()
     for (const subscription of subscriptions) {
+      if (!subscription.userId) continue
       const owned = grouped.get(subscription.userId) ?? []
       owned.push(subscription)
       grouped.set(subscription.userId, owned)

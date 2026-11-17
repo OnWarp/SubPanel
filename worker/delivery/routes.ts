@@ -12,6 +12,8 @@ import { readJson } from '../platform/http.js'
 import { compileAllSubscriptions, compileSubscription } from './compiler.js'
 import {
   createSubscription,
+  transferSubscription,
+  disableExpiredSubscriptions,
   decryptSubscriptionToken,
   deleteSubscription,
   getSubscription,
@@ -28,7 +30,7 @@ import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
 const createSchema = z.object({
-  userId: z.string().regex(/^usr_[1-9]\d*$/),
+  userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
   name: z.string().trim().min(1).max(128),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)),
   enabled: z.boolean().optional(),
@@ -135,7 +137,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     }
   }
   return {
-    entitlement: await getUserEntitlement(c.env.DB, subscription.userId),
+    entitlement: await getUserEntitlement(c.env.DB, subscription.userId ?? ''),
     id: subscription.id,
     userId: subscription.userId,
     name: subscription.name,
@@ -216,7 +218,7 @@ function matchesAdminSubscriptionFilters(
     } else if (subscriptionExpiryKind(subscription, now) !== filters.expiry) return false
   }
   if (filters.query !== null) {
-    const user = userNames.get(subscription.userId) ?? subscription.userId
+    const user = (subscription.userId ? userNames.get(subscription.userId) ?? subscription.userId : '未分配')
     const groupLabel = subscription.groupIds.map((id) => groupNames.get(id) ?? id).join(' ')
     const hit = [subscription.name, user, groupLabel].some((value) => value.toLowerCase().includes(filters.query!))
     if (!hit) return false
@@ -227,6 +229,7 @@ function matchesAdminSubscriptionFilters(
 export const adminDeliveryRoutes = new Hono<AppEnv>()
 
 adminDeliveryRoutes.get('/', async (c) => {
+  await disableExpiredSubscriptions(c.env)
   const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env), readCatalog(c.env)])
   const query = c.req.query()
   if (!hasAdminSubscriptionParams(query)) {
@@ -254,6 +257,13 @@ adminDeliveryRoutes.post('/', async (c) => {
   const result = await run(() => createSubscription(c.env, input, { actorRole: 'admin' }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
+})
+
+adminDeliveryRoutes.post('/:id/transfer', async (c) => {
+  const input = await readJson(c, z.object({ userId: z.string().regex(/^usr_[1-9]\d*$/).nullable() }))
+  const result = await run(() => transferSubscription(c.env, c.req.param('id'), input.userId))
+  const warning = await mutationWarning(() => compileSubscription(c.env, result.subscription))
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
 })
 
 adminDeliveryRoutes.patch('/:id', async (c) => {
@@ -292,6 +302,7 @@ adminDeliveryRoutes.delete('/:id', async (c) => {
 export const userDeliveryRoutes = new Hono<AppEnv>()
 
 userDeliveryRoutes.get('/', async (c) => {
+  await disableExpiredSubscriptions(c.env)
   const [subscriptions, catalog] = await Promise.all([
     listSubscriptionsForUser(c.env, c.get('principal').id),
     readCatalog(c.env),

@@ -16,7 +16,7 @@ export interface DeliveryConversionResult {
 
 export interface SubscriptionRow {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   token_hash: string
   token_prefix: string

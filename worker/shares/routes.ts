@@ -1,3 +1,4 @@
+import { getSubscription, DeliveryError } from '../delivery/service.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
@@ -180,6 +181,19 @@ shareRoutes.get('/:token/export', async (c) => {
 })
 
 export const adminShareRoutes = new Hono<AppEnv>()
+
+adminShareRoutes.post('/shares', async (c) => {
+  const input = await readJson(c, createShareSchema)
+  const subscription = await getSubscription(c.env, input.subscriptionId).catch(error => {
+    if (error instanceof DeliveryError) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    throw error
+  })
+  const ownerUserId = subscription.userId
+  if (!ownerUserId) throw apiError(409, 'SUBSCRIPTION_UNASSIGNED', '请先分配订阅')
+  const result = await run(() => createShare(c.env, ownerUserId, input))
+  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  return c.json({ ...result, linkBaseUrl }, 201)
+})
 
 adminShareRoutes.get('/shares', async (c) => {
   const parsed = adminShareQuerySchema.safeParse({

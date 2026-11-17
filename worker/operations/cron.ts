@@ -1,3 +1,4 @@
+import { disableExpiredSubscriptions } from '../delivery/service.js'
 import { z } from 'zod'
 import { refreshSource } from '../catalog/import-service.js'
 import { readCatalog } from '../catalog/repository.js'
@@ -54,6 +55,7 @@ export async function runCron(env: DataEnv, options: CronRunOptions = {}): Promi
   const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
   try {
+    await disableExpiredSubscriptions(env, now)
     const catalog = await readCatalog(env)
     const selected = selectDueSource(catalog.sources, now)
     if (!selected) {

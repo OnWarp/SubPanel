@@ -134,7 +134,7 @@ export type SubscriptionDiagnostic = {
 
 export type AdminSubscription = {
   id: string
-  userId: string
+  userId: string | null
   name: string
   groupIds: string[]
   tokenPrefix: string

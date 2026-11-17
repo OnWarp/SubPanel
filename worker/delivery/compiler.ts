@@ -115,7 +115,7 @@ export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOption
 // Public requests repeat the live decision even when a cached artifact exists:
 // entitlement expiry and plan edits do not change subscription/catalog revisions.
 async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
-  const rights = await getUserEntitlement(env.DB, subscription.userId, now)
+  const rights = await getUserEntitlement(env.DB, subscription.userId ?? '', now)
   const catalog = await readCatalog(env)
   const nodes = rights.current
     ? selectedNodes(catalog, { ...subscription, groupIds: subscription.groupIds.filter((id) => rights.current!.plan.groupIds.includes(id)) })
