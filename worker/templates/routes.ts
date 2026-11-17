@@ -91,8 +91,9 @@ templateRoutes.post('/preview', async c => {
  if (!input.subscriptionId) return c.json({ignored,groups:template['proxy-groups'],rules:template.rules,subscriptionName:null,outputNodes:null})
  const subscription = await getSubscription(c.env,input.subscriptionId)
  const artifact = await renderEntitledSubscription(c.env,subscription,'mihomo',undefined,template)
- const rights = await getUserEntitlement(c.env.DB,subscription.userId)
- const reason = artifact.outputNodes ? null : !rights.current ? '无有效权益' : !subscription.groupIds.some(id => rights.current!.plan.groupIds.includes(id)) ? '分组无交集' : artifact.inputNodes === 0 ? '组内无启用节点' : '格式不兼容'
+ const rights = await getUserEntitlement(c.env.DB,subscription.userId ?? '')
+ const current = rights.current
+ const reason = artifact.outputNodes ? null : !current ? '无有效权益' : !subscription.groupIds.some(id => current.plan.groupIds.includes(id)) ? '分组无交集' : artifact.inputNodes === 0 ? '组内无启用节点' : '格式不兼容'
  const output = parse(artifact.body) as Record<string,unknown>
  // Only policy structure is returned. Never serialize node addresses or credentials.
  return c.json({subscriptionName:subscription.name,outputNodes:artifact.outputNodes,reason,ignored,groups:output['proxy-groups'],rules:output.rules, yaml:stringify({'proxy-groups':output['proxy-groups'],rules:output.rules})})
