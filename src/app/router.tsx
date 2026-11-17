@@ -1,3 +1,4 @@
+import { AuditLogsPage } from '../features/admin/AuditLogsPage'
 import { PlansPage } from '../features/entitlements/PlansPage'
 import type { ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -68,6 +69,7 @@ export function AppRouter() {
       <Route path="/setup" element={initialized ? <Navigate to="/login" replace /> : <SetupPage />} />
       <Route path="/register" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={home} replace /> : <RegisterPage />} />
       <Route path="/login" element={!initialized ? <Navigate to="/setup" replace /> : user ? <Navigate to={returnedShare ?? home} replace /> : <LoginPage />} />
+      <Route path="/audit-logs" element={user?.role === 'admin' ? shell(<AuditLogsPage />) : <Navigate to={signedOut} replace />} />
       <Route path="/dashboard" element={user?.role === 'admin' ? shell(<DashboardPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/sources" element={user?.role === 'admin' ? shell(<SourcesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/apps" element={user?.role === 'admin' ? shell(<AppsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />

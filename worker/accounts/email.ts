@@ -1,3 +1,4 @@
+import { templateContent } from '../admin/templates.js'
 import { env as workerEnv } from 'cloudflare:workers'
 import { readSettingMap } from '../db/module-switch.js'
 import { MAIL_SETTING_KEYS } from '../db/settings-repository.js'
@@ -222,7 +223,9 @@ export async function sendEmailVerificationCode(message: EmailVerificationMessag
     await deliverer(message)
     return
   }
-  const result = await sendMail({ to: message.to, ...verificationEmailContent(message) })
+  const fallback = verificationEmailContent(message)
+  const content = await templateContent(workerEnv.DB, 'verification', { username: message.username ?? '你好', code: message.code, purpose: PURPOSE_LINES[message.purpose ?? 'bind_email'].zh }, { subject: fallback.subject, body: fallback.text })
+  const result = await sendMail({ to: message.to, ...content })
   if (!result.ok) {
     console.warn(`[email] verification code for ${message.to} was not delivered (${result.error ?? 'unknown error'})`)
   }

@@ -7,6 +7,7 @@ import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 
 type DashboardData = {
+  stats: Record<string,number>
   catalog: CatalogResponse
   subscriptions: AdminSubscription[]
   users: UserSummary[]
@@ -21,12 +22,13 @@ export function DashboardPage() {
     setError('')
     setLoading(true)
     try {
-      const [catalog, subscriptionResult, userResult] = await Promise.all([
+      const [stats, catalog, subscriptionResult, userResult] = await Promise.all([
+        api<Record<string,number>>('/api/admin/stats'),
         api<CatalogResponse>('/api/admin/catalog'),
         api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
         api<{ users: UserSummary[] }>('/api/admin/users'),
       ])
-      setData({ catalog, subscriptions: subscriptionResult.subscriptions, users: userResult.users })
+      setData({ stats, catalog, subscriptions: subscriptionResult.subscriptions, users: userResult.users })
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : '加载概览失败')
     } finally {
@@ -61,6 +63,7 @@ export function DashboardPage() {
       {loading && !data ? <section className="data-section"><LoadingState label="正在加载概览" /></section> : null}
       {data ? (
         <>
+          <section className="adm-stat-grid" aria-label="系统统计">{Object.entries({users:'总用户',activeEntitlements:'有效权益',expiringEntitlements:'7 日内到期',pendingTickets:'待处理工单',plans:'计划',groups:'分组',nodes:'节点'}).map(([key,label])=><div className="adm-stat" key={key}><span className="adm-stat-label">{label}</span><strong className="adm-stat-value">{data.stats[key]}</strong></div>)}</section>
           <section className="adm-stat-grid" aria-label="资源统计">
             <Link className="adm-stat" to="/catalog/sources">
               <span className="adm-stat-label">来源</span>

@@ -24,7 +24,7 @@ const adminSections: NavSection[] = [
     { to: '/catalog/apps', label: 'APP 管理', icon: Download },
     { to: '/delivery/tickets', label: '工单', icon: MessageSquare },
   ] },
-  { label: '系统管理', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }, { to: '/system', label: '系统管理', icon: Settings }] },
+  { label: '系统管理', items: [{ to: '/audit-logs', label: '审计日志', icon: ShieldCheck }, { to: '/account', label: '账户安全', icon: ShieldCheck }, { to: '/system', label: '系统管理', icon: Settings }] },
 ]
 
 const userDock: NavItem[] = [
