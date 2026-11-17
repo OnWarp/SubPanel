@@ -101,9 +101,24 @@ app.route('/api/notices', noticeRoutes)
 app.route('/api/kb', userKbRoutes)
 app.route('/', publicSubscriptionRoutes)
 
-app.notFound((c) =>
-  c.json({ error: { code: 'NOT_FOUND', message: '请求的资源不存在' } }, 404),
-)
+// SPA fallback: browser navigations (GET/HEAD, non-API path, Accept
+// includes text/html) to client-side routes receive the app shell with a
+// 200; everything else keeps the JSON 404 so API and subscription
+// clients are unaffected.
+app.notFound(async (c) => {
+  const { pathname } = new URL(c.req.url)
+  const accept = c.req.header('Accept') ?? ''
+  const isApiPath = pathname === '/api' || pathname.startsWith('/api/')
+  if (
+    (c.req.method === 'GET' || c.req.method === 'HEAD') &&
+    !isApiPath &&
+    accept.includes('text/html')
+  ) {
+    const shell = await c.env.ASSETS.fetch(new URL('/index.html', c.req.url))
+    if (shell.ok) return shell
+  }
+  return c.json({ error: { code: 'NOT_FOUND', message: '请求的资源不存在' } }, 404)
+})
 
 app.onError((error, c) => {
   if (error instanceof ApiError) {
