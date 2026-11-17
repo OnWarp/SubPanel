@@ -7,6 +7,7 @@ export default defineConfig({
     pool: 'threads',
     include: [
       'development/tests/ui/invite-routes.test.ts',
+      'development/tests/ui/navigation-structure.test.ts',
       'development/tests/worker/catalog-counts.test.ts',
       'development/tests/worker/catalog-remote.test.ts',
       'development/tests/worker/delivery-renderers-compat.test.ts',

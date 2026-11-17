@@ -1,7 +1,7 @@
 import { AdminMailSection } from './AdminMailSection'
-import { Database, Download, Info, Mail, Megaphone, Settings, Share2, User, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
-import { Link } from 'react-router-dom'
+import { Database, Info, Mail, Settings, User, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -10,7 +10,6 @@ import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
-import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 import { formatDate } from '../catalog/catalog-utils'
 import {
@@ -22,7 +21,6 @@ import {
   type SystemStatus,
 } from './api'
 import { DomainSettingsSection } from './DomainSettingsSection'
-import { NoticesSection } from './NoticesSection'
 import { ShareSettingsSection } from './ShareSettingsSection'
 
 function errorMessage(cause: unknown, fallback: string) {
@@ -38,8 +36,6 @@ const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string; hint: 
   { value: 'invite', label: '邀请注册', hint: '只能凭邀请码注册' },
   { value: 'closed', label: '关闭注册', hint: '暂停新用户注册' },
 ]
-
-type SysSection = 'registration' | 'mail' | 'app-downloads' | 'share' | 'domain' | 'status' | 'notices' | 'admin-mail'
 
 function RegistrationSection() {
   const [mode, setMode] = useState<RegistrationMode | null>(null)
@@ -370,64 +366,25 @@ function MailSection() {
   )
 }
 
-function AppDownloadsSection() {
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
-  const [saving, setSaving] = useState(false)
-  const toast = useToast()
+type ServiceHealth = { ok: boolean; version: string; cron: { status: 'idle' | 'success' | 'failed'; ranAt: string; finishedAt: string; errorCode?: string } | null }
 
+function HealthSection() {
+  const [health, setHealth] = useState<ServiceHealth | null>(null)
+  const [error, setError] = useState('')
   const load = useCallback(async () => {
-    setLoading(true)
-    setLoadError('')
-    try {
-      const data = await api<{ enabled: boolean }>('/api/admin/system/app-downloads')
-      setEnabled(data.enabled)
-    } catch (cause) {
-      setLoadError(errorMessage(cause, '加载 APP 下载设置失败'))
-    } finally {
-      setLoading(false)
-    }
+    setError('')
+    try { setHealth(await api<ServiceHealth>('/api/health')) }
+    catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
-
-  useEffect(() => { load().catch(() => undefined) }, [load])
-
-  const toggle = async (next: boolean) => {
-    setSaving(true)
-    try {
-      const data = await api<{ enabled: boolean }>('/api/admin/system/app-downloads', {
-        method: 'PUT',
-        body: jsonBody({ enabled: next }),
-      })
-      setEnabled(data.enabled)
-      toast.notify(data.enabled ? '已显示 APP 下载板块' : '已隐藏 APP 下载板块')
-    } catch (cause) {
-      toast.notifyError(errorMessage(cause, '保存 APP 下载设置失败'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <section className="data-section sys-section" aria-labelledby="sys-app-downloads-title">
-      <DataHeader id="sys-app-downloads-title" title="APP 下载" />
-      {loading ? <LoadingState label="正在加载 APP 下载设置" /> : null}
-      {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-      {!loading && !loadError && enabled !== null ? (
-        <div>
-          <p className="sys-hint">开启后，普通用户可以在用户端查看各平台的 APP 下载入口；关闭后，用户端隐藏整个 APP 下载板块，但不会删除已配置的 APP</p>
-          <div className="sys-toggles">
-            <FormField label="显示 APP 下载板块">
-              <Switch checked={enabled} onChange={(checked) => { toggle(checked).catch(() => undefined) }} disabled={saving} ariaLabel="显示 APP 下载板块" />
-            </FormField>
-          </div>
-          <div className="sys-actions">
-            <Link className="button ghost" to="/catalog/apps">前往 APP 管理</Link>
-          </div>
-        </div>
-      ) : null}
-    </section>
-  )
+  useEffect(() => { void load() }, [load])
+  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button ghost" onClick={() => { void load() }}>刷新</button>} />
+    <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
+      <p>服务健康：{health.ok ? '正常' : '异常'} · 版本 {health.version}</p>
+      <h3 className="sys-subtitle">来源刷新定时任务</h3>
+      <p className="sys-hint">每 15 分钟检查需要刷新的来源</p>
+      {health.cron ? <><p>最近结果：{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</p><p>开始于 {formatDate(health.cron.ranAt)} · 完成于 {formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</p></> : <p className="sys-hint">暂无任务运行记录</p>}
+    </>}</div>
+  </section>
 }
 
 function StatusSection() {
@@ -500,54 +457,38 @@ function StatusSection() {
   )
 }
 
-const SECTIONS: Array<{ key: SysSection; label: string; icon: LucideIcon }> = [
-  { key: 'registration', label: '账户与注册', icon: User },
-  { key: 'admin-mail', label: '模板与群发', icon: Mail },
+const SECTIONS: Array<{ key: string; label: string; icon: LucideIcon }> = [
+  { key: 'registration', label: '注册', icon: User },
   { key: 'mail', label: '邮件', icon: Mail },
-  { key: 'app-downloads', label: 'APP 下载', icon: Download },
-  { key: 'share', label: '分享策略', icon: Share2 },
-  { key: 'domain', label: '域名策略', icon: Settings },
-  { key: 'status', label: '系统状态', icon: Info },
-  { key: 'notices', label: '公告', icon: Megaphone },
+  { key: 'distribution', label: '订阅分发', icon: Settings },
+  { key: 'status', label: '运行状态', icon: Info },
 ]
 
 export function SystemPage() {
-  const [activeSection, setActiveSection] = useState<SysSection>('registration')
-
-  const sections: Record<SysSection, ReactElement> = {
-    registration: <RegistrationSection />,
-    mail: <MailSection />,
-    'admin-mail': <AdminMailSection />,
-    'app-downloads': <AppDownloadsSection />,
-    share: <ShareSettingsSection />,
-    domain: <DomainSettingsSection />,
-    status: <StatusSection />,
-    notices: <NoticesSection />,
+  const { section } = useParams()
+  const location = useLocation()
+  const query = new URLSearchParams(location.search)
+  const legacy = query.get('section') ?? query.get('tab') ?? location.hash.slice(1)
+  const aliases: Record<string, string> = { 'admin-mail': 'mail', share: 'distribution', domain: 'distribution', 'app-downloads': '/catalog/apps', notices: '/operations/notices' }
+  const requested = section ?? legacy ?? 'registration'
+  const active = aliases[requested] ?? requested
+  if (!section || active !== requested || !SECTIONS.some(item => item.key === active)) {
+    query.delete('section'); query.delete('tab')
+    const search = query.size ? `?${query}` : ''
+    return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.some(item => item.key === active) ? active : 'registration'}`) + search} />
   }
-
-  return (
-    <div className="page-stack sys-page">
-      <PageHeader title="系统管理" />
-      <div className="sys-layout">
-        <nav className="sys-sidebar" aria-label="系统管理导航">
-          <ul role="list">
-            {SECTIONS.map(({ key, label, icon: Icon }) => (
-              <li key={key}>
-                <button
-                  className={`sys-nav-item${activeSection === key ? ' active' : ''}`}
-                  onClick={() => setActiveSection(key)}
-                >
-                  <Icon aria-hidden="true" size={18} />
-                  <span>{label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <div className="sys-content">
-          {sections[activeSection]}
-        </div>
+  return <div className="page-stack sys-page">
+    <PageHeader title="系统设置" />
+    <div className="sys-layout">
+      <nav className="sys-sidebar" aria-label="系统设置导航"><ul role="list">
+        {SECTIONS.map(({ key, label, icon: Icon }) => <li key={key}><Link className={`sys-nav-item${active === key ? ' active' : ''}`} aria-current={active === key ? 'page' : undefined} to={`/system/${key}${location.search}`}><Icon aria-hidden="true" size={18} /><span>{label}</span></Link></li>)}
+      </ul></nav>
+      <div className="sys-content">
+        {active === 'registration' ? <RegistrationSection /> : null}
+        {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
+        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /></> : null}
+        {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
       </div>
     </div>
-  )
+  </div>
 }

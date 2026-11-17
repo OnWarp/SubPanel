@@ -101,7 +101,7 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .sidebar-collapsed .sidebar { padding: 10px 8px; }
 .sidebar-collapsed .sidebar-brand { justify-content: center; }
 .sidebar-collapsed .sidebar-brand > div { display: none; }
-.sidebar-collapsed .nav-label { display: none; }
+.sidebar-collapsed .sidebar .nav-label { display: none; }
 .sidebar-collapsed .sidebar-nav a { justify-content: center; padding: 0; }
 .sidebar-collapsed .sidebar-nav a span { display: none; }
 .sidebar-collapsed .sidebar-account { justify-content: center; }
