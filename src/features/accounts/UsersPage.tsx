@@ -416,6 +416,9 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
             disabled={user.role === 'admin' || mutating}
             ariaLabel={`启用 ${user.username}`}
           />
+          <button className="icon-button danger" type="button" disabled={mutating} aria-label={`将 ${user.username} 移入回收站`} title="移入回收站" onClick={() => setConfirmAction({ kind: 'soft-delete', user })}>
+            <Trash2 aria-hidden="true" size={16} />
+          </button>
         </span>
       ),
     },
@@ -522,6 +525,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
                   </div>
                 ) : null}
                 <DataTable
+                  className="usr-table"
                   columns={view === 'trash' ? trashColumns : userColumns}
                   rows={users}
                   rowKey={(user) => user.id}

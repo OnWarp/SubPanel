@@ -173,6 +173,17 @@ describe('registration modes', () => {
     expect(attempted.status).toBe(410)
   })
 
+  it('allows a fresh code after expiry while enforcing the resend cooldown', async () => {
+    await setupAdmin()
+    await putRegistrationMode(env.DB, 'open')
+    expect((await sendCode('retry@example.com')).status).toBe(200)
+    expect((await sendCode('retry@example.com')).status).toBe(429)
+    await env.DB.prepare("UPDATE email_verifications SET expires_at = '2000-01-01T00:00:00.000Z' WHERE email_normalized = 'retry@example.com'").run()
+    expect((await sendCode('retry@example.com')).status).toBe(200)
+    expect(sentCodes).toHaveLength(2)
+    expect((await register({ username: 'retry', password: PASSWORD, email: 'retry@example.com', code: codeFor('retry@example.com') })).status).toBe(201)
+  })
+
   it('locks the code after five wrong attempts', async () => {
     await setupAdmin()
     await putRegistrationMode(env.DB, 'open')
@@ -367,6 +378,30 @@ describe('invitation codes', () => {
       inviteCode: expired.invitations[0].code,
     })
     expect(expiredAttempt.status).toBe(410)
+  })
+
+  it('distinguishes invalid, disabled and exhausted codes and only deletes unused disabled codes', async () => {
+    await setupAdmin()
+    const cookie = await login()
+    await putRegistrationMode(env.DB, 'invite')
+    const attempt = (code: string, name: string) => register({ username: name, password: PASSWORD, email: `${name}@example.com`, inviteCode: code })
+    const invalid = await attempt('X'.repeat(43), 'invalid')
+    expect((await invalid.json() as { error: { code: string } }).error.code).toBe('INVALID_INVITE_CODE')
+    const made = await adminInvitations(cookie, { type: 'batch', count: 2 })
+    const { invitations } = await made.json() as { invitations: Array<{ id: string; code: string }> }
+    const disable = (id: string) => fetchApi(`/api/admin/invitations/${id}`, withCookie(cookie, { method: 'DELETE', headers: { origin: TEST_ORIGIN } }))
+    const remove = (id: string) => fetchApi(`/api/admin/invitations/${id}/delete`, withCookie(cookie, jsonRequest({})))
+    expect((await remove(invitations[0].id)).status).toBe(409)
+    await disable(invitations[0].id)
+    const disabled = await attempt(invitations[0].code, 'disabled')
+    expect((await disabled.json() as { error: { code: string } }).error.code).toBe('INVITE_CODE_DISABLED')
+    expect((await remove(invitations[0].id)).status).toBe(204)
+    expect((await attempt(invitations[1].code, 'first')).status).toBe(201)
+    const exhausted = await attempt(invitations[1].code, 'second')
+    expect((await exhausted.json() as { error: { code: string } }).error.code).toBe('INVITE_CODE_EXHAUSTED')
+    await disable(invitations[1].id)
+    expect((await remove(invitations[1].id)).status).toBe(409)
+    expect(await countRows('invite_code_redemptions')).toBe(1)
   })
 
   it('creates exactly one account when the same single-use code is submitted concurrently', async () => {

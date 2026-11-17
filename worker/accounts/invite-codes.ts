@@ -131,6 +131,17 @@ export async function disableInviteCode(db: AppDatabase, id: string): Promise<vo
   await db.prepare('UPDATE invite_codes SET disabled = 1 WHERE id = ?').bind(id).run()
 }
 
+// Preserve redemption history: only disabled codes that were never used can be removed.
+export async function deleteUnusedInviteCode(db: AppDatabase, id: string): Promise<void> {
+  const result = await db.prepare(`DELETE FROM invite_codes WHERE id = ? AND disabled = 1 AND used_count = 0
+    AND NOT EXISTS (SELECT 1 FROM invite_code_redemptions WHERE code_id = invite_codes.id)`).bind(id).run()
+  if (result.meta.changes === 0) {
+    const existing = await queryFirst<{ id: string }>(db.prepare('SELECT id FROM invite_codes WHERE id = ?').bind(id))
+    if (!existing) throw apiError(404, 'INVITE_CODE_NOT_FOUND', '邀请码不存在')
+    throw apiError(409, 'INVITE_CODE_HAS_HISTORY', '仅可删除已停用且未使用的邀请码，已使用的记录须保留')
+  }
+}
+
 // KV invitations store only the token hash. Import that hash as a one-use
 // qualification; deliberately ignore the old reserved username and user id.
 // INSERT OR IGNORE makes retries/concurrent imports preserve consumption and

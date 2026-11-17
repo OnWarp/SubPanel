@@ -4,7 +4,7 @@ import { primaryDomainOriginSafe } from '../domains/service.js'
 import type { AppEnv } from '../app-env.js'
 import { getOrCreateCryptoMaterial } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
-import { createInviteCodes, disableInviteCode, importLegacyInvites, listInviteCodes } from './invite-codes.js'
+import { createInviteCodes, deleteUnusedInviteCode, disableInviteCode, importLegacyInvites, listInviteCodes } from './invite-codes.js'
 import {
   addEmailDomain,
   getPublicRegistrationConfig,
@@ -91,6 +91,12 @@ adminRegistrationRoutes.delete('/invitations/:id', async (c) => {
   // Deleting a code disables it; redemption history stays intact.
   await importLegacyInvites(c.env)
   await disableInviteCode(c.env.DB, c.req.param('id'))
+  return c.body(null, 204)
+})
+
+adminRegistrationRoutes.post('/invitations/:id/delete', async (c) => {
+  await importLegacyInvites(c.env)
+  await deleteUnusedInviteCode(c.env.DB, c.req.param('id'))
   return c.body(null, 204)
 })
 
