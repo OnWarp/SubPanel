@@ -431,3 +431,107 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(listed.subscriptions.find((item) => item.id === subscriptionId)?.groupIds).toEqual([])
   })
 })
+
+type AdminSubscriptionListBody = {
+  subscriptions: Array<{ id: string, name: string, enabled: boolean }>
+  total?: number
+  page?: number
+  pageSize?: number
+}
+
+async function createSubscriptionRecord(admin: string, name: string, groupId: string, extra: Record<string, unknown> = {}): Promise<string> {
+  const created = await exports.default.fetch(
+    `${TEST_ORIGIN}/api/admin/subscriptions`,
+    jsonRequest({ userId: 'usr_1', name, groupIds: [groupId], defaultClient: 'mihomo', ...extra }, withCookie(admin)),
+  )
+  expect(created.status).toBe(201)
+  return (await created.json() as { subscription: { id: string } }).subscription.id
+}
+
+async function listAdminSubscriptions(admin: string, queryString = ''): Promise<AdminSubscriptionListBody> {
+  const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions${queryString}`, withCookie(admin))
+  expect(response.status).toBe(200)
+  return response.json() as Promise<AdminSubscriptionListBody>
+}
+
+describe('Admin subscriptions list pagination', () => {
+  it('keeps the legacy full-list response when no parameters are passed', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    await createSubscriptionRecord(admin, 'Legacy A', groupId)
+    await createSubscriptionRecord(admin, 'Legacy B', groupId)
+
+    const body = await listAdminSubscriptions(admin)
+    expect(body.subscriptions.map((subscription) => subscription.name)).toEqual(['Legacy A', 'Legacy B'])
+    expect(body).not.toHaveProperty('total')
+    expect(body).not.toHaveProperty('page')
+    expect(body).not.toHaveProperty('pageSize')
+  })
+
+  it('pages through subscriptions and returns an empty page out of range', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    for (const name of ['Page A', 'Page B', 'Page C', 'Page D', 'Page E']) {
+      await createSubscriptionRecord(admin, name, groupId)
+    }
+    const legacy = await listAdminSubscriptions(admin)
+
+    const first = await listAdminSubscriptions(admin, '?page=1&pageSize=2')
+    expect(first.total).toBe(5)
+    expect(first.page).toBe(1)
+    expect(first.pageSize).toBe(2)
+    expect(first.subscriptions).toHaveLength(2)
+
+    const second = await listAdminSubscriptions(admin, '?page=2&pageSize=2')
+    const third = await listAdminSubscriptions(admin, '?page=3&pageSize=2')
+    expect(third.subscriptions).toHaveLength(1)
+    const pagedIds = [...first.subscriptions, ...second.subscriptions, ...third.subscriptions].map((subscription) => subscription.id)
+    expect(pagedIds).toEqual(legacy.subscriptions.map((subscription) => subscription.id))
+
+    const beyond = await listAdminSubscriptions(admin, '?page=4&pageSize=2')
+    expect(beyond.subscriptions).toEqual([])
+    expect(beyond.total).toBe(5)
+    expect(beyond.page).toBe(4)
+
+    const clamped = await listAdminSubscriptions(admin, '?pageSize=500')
+    expect(clamped.pageSize).toBe(100)
+    expect(clamped.page).toBe(1)
+    expect(clamped.subscriptions).toHaveLength(5)
+  })
+
+  it('filters by status, expiry and search text before paging', async () => {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    const now = Date.now()
+    await createSubscriptionRecord(admin, 'Alpha', groupId)
+    await createSubscriptionRecord(admin, 'Beta', groupId, { enabled: false })
+    await createSubscriptionRecord(admin, 'Gamma', groupId, { expiresAt: now - 60_000 })
+    await createSubscriptionRecord(admin, 'Delta', groupId, { expiresAt: now + 20 * 86_400_000 })
+    await createSubscriptionRecord(admin, 'Echo', groupId, { expiresAt: now + 3 * 86_400_000 })
+
+    const namesOf = (body: AdminSubscriptionListBody) => body.subscriptions.map((subscription) => subscription.name)
+
+    const disabled = await listAdminSubscriptions(admin, '?status=disabled')
+    expect(disabled.total).toBe(1)
+    expect(namesOf(disabled)).toEqual(['Beta'])
+
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=expired'))).toEqual(['Gamma'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=permanent'))).toEqual(['Alpha', 'Beta'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?enabled=1&expiry=permanent'))).toEqual(['Alpha'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=active'))).toEqual(['Delta'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=soon'))).toEqual(['Echo'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=7'))).toEqual(['Echo'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?expiry=30'))).toEqual(['Delta', 'Echo'])
+
+    expect(namesOf(await listAdminSubscriptions(admin, '?q=alpha'))).toEqual(['Alpha'])
+    expect(namesOf(await listAdminSubscriptions(admin, '?q=ADMIN'))).toHaveLength(5)
+    expect(namesOf(await listAdminSubscriptions(admin, '?q=delivery group'))).toHaveLength(5)
+
+    const enabledSecondPage = await listAdminSubscriptions(admin, '?status=enabled&pageSize=2&page=2')
+    expect(enabledSecondPage.total).toBe(4)
+    expect(namesOf(enabledSecondPage)).toEqual(['Delta', 'Echo'])
+
+    const enabledOnlyExpired = await listAdminSubscriptions(admin, '?enabled=1&expiry=expired')
+    expect(namesOf(enabledOnlyExpired)).toEqual(['Gamma'])
+  })
+})

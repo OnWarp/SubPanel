@@ -1,5 +1,5 @@
 import { Network } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
@@ -10,6 +10,7 @@ import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
+import { Pagination } from '../../ui/Pagination'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
@@ -27,18 +28,20 @@ type UserNode = {
   subscriptions: NodeRef[]
 }
 
-function errorMessage(cause: unknown, fallback: string): string {
-  return cause instanceof ApiClientError ? cause.message : fallback
+type UserNodesResponse = {
+  nodes: UserNode[]
+  total: number
+  page: number
+  pageSize: number
+  subscriptionOptions: NodeRef[]
+  groupOptions: NodeRef[]
 }
 
-function uniqueRefs(nodes: UserNode[], key: 'groups' | 'subscriptions'): NodeRef[] {
-  const refs = new Map<string, string>()
-  for (const node of nodes) {
-    for (const item of node[key]) {
-      if (!refs.has(item.id)) refs.set(item.id, item.name)
-    }
-  }
-  return [...refs].map(([id, name]) => ({ id, name }))
+const PAGE_SIZE = 20
+const EMPTY_REFS: NodeRef[] = []
+
+function errorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof ApiClientError ? cause.message : fallback
 }
 
 function joinedNames(items: NodeRef[]): string {
@@ -47,41 +50,64 @@ function joinedNames(items: NodeRef[]): string {
 
 export function MyNodesPage() {
   const [nodes, setNodes] = useState<UserNode[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const [subscriptionOptions, setSubscriptionOptions] = useState<NodeRef[]>(EMPTY_REFS)
+  const [groupOptions, setGroupOptions] = useState<NodeRef[]>(EMPTY_REFS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [subscriptionId, setSubscriptionId] = useState('all')
   const [groupId, setGroupId] = useState('all')
+  const requestSeq = useRef(0)
+
+  const activeSubscription = subscriptionId !== 'all' && subscriptionOptions.some((item) => item.id === subscriptionId) ? subscriptionId : 'all'
+  const activeGroup = groupId !== 'all' && groupOptions.some((item) => item.id === groupId) ? groupId : 'all'
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+    const needle = query.trim()
+    if (needle) params.set('q', needle)
+    params.set('subscriptionId', activeSubscription)
+    params.set('groupId', activeGroup)
+    const seq = ++requestSeq.current
     try {
-      const result = await api<{ nodes: UserNode[] }>('/api/user/nodes')
+      const result = await api<UserNodesResponse>(`/api/user/nodes?${params.toString()}`)
+      if (seq !== requestSeq.current) return
       setNodes(result.nodes)
+      setTotal(result.total)
+      setSubscriptionOptions(result.subscriptionOptions)
+      setGroupOptions(result.groupOptions)
+      setError('')
     } catch (cause) {
-      setNodes([])
+      if (seq !== requestSeq.current) return
       setError(errorMessage(cause, '加载节点失败'))
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
-  }, [])
+  }, [activeGroup, activeSubscription, page, query])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 
-  const subscriptionOptions = useMemo(() => uniqueRefs(nodes, 'subscriptions'), [nodes])
-  const groupOptions = useMemo(() => uniqueRefs(nodes, 'groups'), [nodes])
-  const activeSubscription = subscriptionId !== 'all' && subscriptionOptions.some((item) => item.id === subscriptionId) ? subscriptionId : 'all'
-  const activeGroup = groupId !== 'all' && groupOptions.some((item) => item.id === groupId) ? groupId : 'all'
-  const visibleNodes = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase()
-    return nodes.filter((node) => {
-      const nameHit = node.name.toLocaleLowerCase().includes(needle)
-      const subscriptionHit = activeSubscription === 'all' || node.subscriptions.some((item) => item.id === activeSubscription)
-      const groupHit = activeGroup === 'all' || node.groups.some((item) => item.id === activeGroup)
-      return nameHit && subscriptionHit && groupHit
-    })
-  }, [nodes, query, activeSubscription, activeGroup])
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const filtersActive = query.trim() !== '' || activeSubscription !== 'all' || activeGroup !== 'all'
+
+  useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
+
+  const changeQuery = (value: string) => {
+    setQuery(value)
+    setPage(1)
+  }
+
+  const changeSubscription = (value: string) => {
+    setSubscriptionId(value)
+    setPage(1)
+  }
+
+  const changeGroup = (value: string) => {
+    setGroupId(value)
+    setPage(1)
+  }
 
   const columns: Array<DataTableColumn<UserNode>> = [
     { key: 'name', header: '节点名', width: '28%', render: (node) => <strong className="node-name">{node.name}</strong> },
@@ -102,23 +128,23 @@ export function MyNodesPage() {
       <PageHeader title="我的节点" />
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
-      {!loading && !error && nodes.length === 0 ? (
+      {!loading && !error && total === 0 && !filtersActive ? (
         <EmptyState icon={Network} title="暂无可用节点">
           <Link className="button primary" to="/subscriptions">去订阅</Link>
         </EmptyState>
       ) : null}
-      {!loading && !error && nodes.length > 0 ? (
+      {!loading && !error && (total > 0 || filtersActive) ? (
         <>
           <section className="data-section node-list" aria-labelledby="node-list-title">
             <DataHeader id="node-list-title" title="节点列表" />
             <div className="node-toolbar">
-              <SearchInput className="node-search" label="搜索节点名称" placeholder="搜索节点名称" value={query} onChange={setQuery} />
+              <SearchInput className="node-search" label="搜索节点名称" placeholder="搜索节点名称" value={query} onChange={changeQuery} />
               <FilterBar className="node-filters">
                 <div className="node-filter-row" role="group" aria-label="按订阅筛选">
                   <span className="node-filter-label">订阅</span>
-                  <FilterChip active={activeSubscription === 'all'} onClick={() => setSubscriptionId('all')}>全部</FilterChip>
+                  <FilterChip active={activeSubscription === 'all'} onClick={() => changeSubscription('all')}>全部</FilterChip>
                   {subscriptionOptions.map((item) => (
-                    <FilterChip key={item.id} active={activeSubscription === item.id} onClick={() => setSubscriptionId(item.id)}>{item.name}</FilterChip>
+                    <FilterChip key={item.id} active={activeSubscription === item.id} onClick={() => changeSubscription(item.id)}>{item.name}</FilterChip>
                   ))}
                 </div>
                 <div className="node-filter-row">
@@ -128,13 +154,14 @@ export function MyNodesPage() {
                       label="按分组筛选"
                       value={activeGroup}
                       options={[{ value: 'all', label: '全部' }, ...groupOptions.map((item) => ({ value: item.id, label: item.name }))]}
-                      onChange={setGroupId}
+                      onChange={changeGroup}
                     />
                   </div>
                 </div>
               </FilterBar>
             </div>
-            <DataTable className="node-table" columns={columns} rows={visibleNodes} rowKey={(node) => node.id} empty="没有匹配的节点" />
+            <DataTable className="node-table" columns={columns} rows={nodes} rowKey={(node) => node.id} empty="没有匹配的节点" />
+            {pageCount > 1 ? <Pagination page={page} pageCount={pageCount} onPageChange={setPage} /> : null}
           </section>
         </>
       ) : null}

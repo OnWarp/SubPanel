@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { primaryDomainOriginSafe } from '../domains/service.js'
 import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
+import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
@@ -20,7 +21,8 @@ import {
   DeliveryError,
 } from './service.js'
 import { compiledKey } from './repository.js'
-import { compiledArtifactSchema, epochMillisSchema } from './schema.js'
+import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
+import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
@@ -150,11 +152,99 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
   }
 }
 
+
+// Copied from the admin users list (worker/accounts/admin-routes.ts) so every
+// paginated list shares one parameter contract: page defaults to 1 and
+// pageSize defaults to 20, clamped to 100.
+const parsePagination = (query: Record<string, string | undefined>): { page: number, pageSize: number } => {
+  const page = Number.parseInt(query.page ?? '', 10)
+  const pageSize = Number.parseInt(query.pageSize ?? '', 10)
+  return {
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20,
+  }
+}
+
+type AdminSubscriptionFilters = {
+  query: string | null
+  status: boolean | null
+  expiry: SubscriptionExpiryKind | '7' | '15' | '30' | null
+  enabledOnly: boolean
+}
+
+const EXPIRY_KINDS: SubscriptionExpiryKind[] = ['active', 'pending', 'soon', 'expired', 'permanent']
+const EXPIRY_WINDOWS = ['7', '15', '30']
+
+const parseAdminSubscriptionFilters = (query: Record<string, string | undefined>): AdminSubscriptionFilters => {
+  const needle = query.q?.trim().toLowerCase()
+  const expiry = query.expiry ?? ''
+  return {
+    query: needle ? needle : null,
+    status: query.status === 'enabled' ? true : query.status === 'disabled' ? false : null,
+    expiry: (EXPIRY_KINDS as string[]).includes(expiry) || EXPIRY_WINDOWS.includes(expiry)
+      ? expiry as AdminSubscriptionFilters['expiry']
+      : null,
+    enabledOnly: query.enabled === '1',
+  }
+}
+
+// The list endpoint keeps its historical full-list response for callers that
+// pass no parameters (dashboard counts, group counts, share pickers and the
+// user page all read the whole set). Any pagination or filter parameter
+// switches it to the paginated contract the admin subscriptions page uses.
+const hasAdminSubscriptionParams = (query: Record<string, string | undefined>): boolean =>
+  ['page', 'pageSize', 'q', 'status', 'expiry', 'enabled'].some((key) => query[key] !== undefined)
+
+// Same matching the admin page applied client-side before pagination: status
+// and the enabled-only flag first, then the expiry classification (worker
+// mirror of the UI helper), then a case-insensitive substring over the
+// subscription name, the owner's username and its group names.
+function matchesAdminSubscriptionFilters(
+  subscription: Subscription,
+  filters: AdminSubscriptionFilters,
+  userNames: ReadonlyMap<string, string>,
+  groupNames: ReadonlyMap<string, string>,
+  now: number,
+): boolean {
+  if (filters.status !== null && subscription.enabled !== filters.status) return false
+  if (filters.enabledOnly && !subscription.enabled) return false
+  if (filters.expiry !== null) {
+    if (filters.expiry === '7' || filters.expiry === '15' || filters.expiry === '30') {
+      if (!isWithinExpiryDays(subscription, Number(filters.expiry), now)) return false
+    } else if (subscriptionExpiryKind(subscription, now) !== filters.expiry) return false
+  }
+  if (filters.query !== null) {
+    const user = userNames.get(subscription.userId) ?? subscription.userId
+    const groupLabel = subscription.groupIds.map((id) => groupNames.get(id) ?? id).join(' ')
+    const hit = [subscription.name, user, groupLabel].some((value) => value.toLowerCase().includes(filters.query!))
+    if (!hit) return false
+  }
+  return true
+}
+
 export const adminDeliveryRoutes = new Hono<AppEnv>()
 
 adminDeliveryRoutes.get('/', async (c) => {
   const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env), readCatalog(c.env)])
-  return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, catalog.revision))) })
+  const query = c.req.query()
+  if (!hasAdminSubscriptionParams(query)) {
+    return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, catalog.revision))) })
+  }
+  const { page, pageSize } = parsePagination(query)
+  const filters = parseAdminSubscriptionFilters(query)
+  const accounts = await readAccounts(c.env)
+  const userNames = new Map(accounts.users.map((user) => [user.id, user.username]))
+  const groupNames = new Map(catalog.groups.map((group) => [group.id, group.name]))
+  const now = Date.now()
+  const filtered = subscriptions.filter((subscription) =>
+    matchesAdminSubscriptionFilters(subscription, filters, userNames, groupNames, now))
+  const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize)
+  return c.json({
+    subscriptions: await Promise.all(pageItems.map((subscription) => view(c, subscription, catalog.revision))),
+    total: filtered.length,
+    page,
+    pageSize,
+  })
 })
 
 adminDeliveryRoutes.post('/', async (c) => {

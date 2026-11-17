@@ -89,6 +89,57 @@ export function collectUserNodes(
   return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans') || left.id.localeCompare(right.id))
 }
 
+// Copied from the admin users list (worker/accounts/admin-routes.ts) so every
+// paginated list shares one parameter contract: page defaults to 1 and
+// pageSize defaults to 20, clamped to 100.
+const parsePagination = (query: Record<string, string | undefined>): { page: number, pageSize: number } => {
+  const page = Number.parseInt(query.page ?? '', 10)
+  const pageSize = Number.parseInt(query.pageSize ?? '', 10)
+  return {
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+    pageSize: Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20,
+  }
+}
+
+export type UserNodeFilters = {
+  query: string | null
+  subscriptionId: string | null
+  groupId: string | null
+}
+
+const parseUserNodeFilters = (query: Record<string, string | undefined>): UserNodeFilters => {
+  const needle = query.q?.trim().toLowerCase()
+  return {
+    query: needle ? needle : null,
+    subscriptionId: query.subscriptionId && query.subscriptionId !== 'all' ? query.subscriptionId : null,
+    groupId: query.groupId && query.groupId !== 'all' ? query.groupId : null,
+  }
+}
+
+// Same matching the "我的节点" page applied client-side before pagination:
+// a case-insensitive name substring plus exact subscription/group membership.
+export function filterUserNodes(nodes: readonly UserNodeDto[], filters: UserNodeFilters): UserNodeDto[] {
+  return nodes.filter((node) => {
+    if (filters.query !== null && !node.name.toLowerCase().includes(filters.query)) return false
+    if (filters.subscriptionId !== null && !node.subscriptions.some((item) => item.id === filters.subscriptionId)) return false
+    if (filters.groupId !== null && !node.groups.some((item) => item.id === filters.groupId)) return false
+    return true
+  })
+}
+
+function uniqueNodeRefs(nodes: readonly UserNodeDto[], key: 'groups' | 'subscriptions'): UserNodeRef[] {
+  const refs = new Map<string, string>()
+  for (const node of nodes) {
+    for (const item of node[key]) {
+      if (!refs.has(item.id)) refs.set(item.id, item.name)
+    }
+  }
+  return [...refs].map(([id, name]) => ({ id, name }))
+}
+
+const hasUserNodeParams = (query: Record<string, string | undefined>): boolean =>
+  ['page', 'pageSize', 'q', 'subscriptionId', 'groupId'].some((key) => query[key] !== undefined)
+
 export const userNodeRoutes = new Hono<AppEnv>()
 
 userNodeRoutes.get('/', async (c) => {
@@ -96,5 +147,17 @@ userNodeRoutes.get('/', async (c) => {
     readDelivery(c.env),
     readCatalog(c.env),
   ])
-  return c.json({ nodes: collectUserNodes(delivery.subscriptions, catalog, c.get('principal').id) })
+  const nodes = collectUserNodes(delivery.subscriptions, catalog, c.get('principal').id)
+  const query = c.req.query()
+  if (!hasUserNodeParams(query)) return c.json({ nodes })
+  const { page, pageSize } = parsePagination(query)
+  const filtered = filterUserNodes(nodes, parseUserNodeFilters(query))
+  return c.json({
+    nodes: filtered.slice((page - 1) * pageSize, page * pageSize),
+    total: filtered.length,
+    page,
+    pageSize,
+    subscriptionOptions: uniqueNodeRefs(nodes, 'subscriptions'),
+    groupOptions: uniqueNodeRefs(nodes, 'groups'),
+  })
 })

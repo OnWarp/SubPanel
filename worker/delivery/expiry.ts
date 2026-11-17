@@ -20,3 +20,29 @@ export function assertSubscriptionAvailable(subscription: WindowSubscription, no
     throw apiError(403, 'SUB_NOT_STARTED', '订阅尚未生效')
   }
 }
+
+const DAY_MS = 86_400_000
+
+export type SubscriptionExpiryKind = 'permanent' | 'pending' | 'active' | 'soon' | 'expired'
+
+// Mirrors the admin UI's getExpiryState classification so server-side list
+// filters agree with the badges the page renders for the same subscription.
+export function subscriptionExpiryKind(subscription: WindowSubscription, now = Date.now()): SubscriptionExpiryKind {
+  const startsAt = effectiveStartsAt(subscription)
+  if (subscription.expiresAt !== null && now > subscription.expiresAt) return 'expired'
+  if (now < startsAt) return 'pending'
+  if (subscription.expiresAt === null) return 'permanent'
+  return subscription.expiresAt - now <= EXPIRY_SOON_DAYS * DAY_MS ? 'soon' : 'active'
+}
+
+// Mirrors the admin UI's isWithinExpiryDays: disabled subscriptions never
+// match, and expired or permanent ones have no remaining window to fall into.
+export function isWithinExpiryDays(
+  subscription: WindowSubscription & { enabled: boolean },
+  days: number,
+  now = Date.now(),
+): boolean {
+  if (!subscription.enabled) return false
+  if (subscriptionExpiryKind(subscription, now) === 'expired' || subscription.expiresAt === null) return false
+  return subscription.expiresAt - now <= days * DAY_MS
+}

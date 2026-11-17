@@ -1,5 +1,5 @@
 import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
@@ -8,6 +8,7 @@ import { CopyButton } from '../../ui/CopyButton'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { PageHeader } from '../../ui/PageHeader'
+import { Pagination } from '../../ui/Pagination'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { EmptyState } from '../../ui/EmptyState'
@@ -22,7 +23,7 @@ import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
 import { DIAGNOSTIC_HELP } from './diagnostics'
-import { formatDate, matchesText } from '../catalog/catalog-utils'
+import { formatDate } from '../catalog/catalog-utils'
 import {
   EXPIRY_BADGE,
   addExpiryDays,
@@ -30,7 +31,6 @@ import {
   formatRemaining,
   fromDatetimeLocal,
   getExpiryState,
-  isWithinExpiryDays,
   toDatetimeLocal,
   type ExpiryKind,
 } from './expiry'
@@ -106,13 +106,8 @@ function validateWindow(startsAt: string, expiresAt: string): FieldErrors {
   return {}
 }
 
-function matchesExpiry(subscription: AdminSubscription, filter: ExpiryFilter, enabledOnly: boolean, now: number): boolean {
-  if (enabledOnly && !subscription.enabled) return false
-  if (filter === '7' || filter === '15' || filter === '30') return isWithinExpiryDays(subscription, Number(filter), now)
-  if (filter === 'all') return true
-  return getExpiryState(subscription, now).kind === filter
-}
 const EMPTY_SUBSCRIPTIONS: AdminSubscription[] = []
+const PAGE_SIZE = 20
 const EMPTY_GROUPS: CatalogGroup[] = []
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -138,6 +133,9 @@ export function SubscriptionsPage() {
   const expiryFilter = parseExpiryFilter(searchParams.get('expiry'))
   const enabledOnly = searchParams.get('enabled') === '1'
   const [tokenNotice, setTokenNotice] = useState<{ name: string; token: string; warning: string } | null>(null)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const listRequestSeq = useRef(0)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
@@ -147,45 +145,72 @@ export function SubscriptionsPage() {
   const [progress, setProgress] = useState('')
   const [qr, setQr] = useState<{ client: string; link: string; dataUrl: string; loading: boolean } | null>(null)
 
+  const loadList = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+    const needle = query.trim()
+    if (needle) params.set('q', needle)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (expiryFilter !== 'all') params.set('expiry', expiryFilter)
+    if (enabledOnly) params.set('enabled', '1')
+    const seq = ++listRequestSeq.current
+    const result = await api<{ subscriptions: AdminSubscription[]; total: number }>(`/api/admin/subscriptions?${params.toString()}`)
+    if (seq !== listRequestSeq.current) return
+    setSubscriptions(result.subscriptions)
+    setTotal(result.total)
+    setSelected((current) => new Set([...current].filter((id) => result.subscriptions.some((subscription) => subscription.id === id))))
+  }, [enabledOnly, expiryFilter, page, query, statusFilter])
+
+  const loadMeta = useCallback(async () => {
+    const [userResult, nextCatalog] = await Promise.all([
+      api<{ users: UserSummary[] }>('/api/admin/users'),
+      api<CatalogResponse>('/api/admin/catalog'),
+    ])
+    setUsers(userResult.users)
+    setCatalog(nextCatalog)
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError('')
     setError('')
     try {
-      const [subscriptionResult, userResult, nextCatalog] = await Promise.all([
-        api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
-        api<{ users: UserSummary[] }>('/api/admin/users'),
-        api<CatalogResponse>('/api/admin/catalog'),
-      ])
-      setSubscriptions(subscriptionResult.subscriptions)
-      setUsers(userResult.users)
-      setCatalog(nextCatalog)
-      setSelected((current) => new Set([...current].filter((id) => subscriptionResult.subscriptions.some((subscription) => subscription.id === id))))
+      await Promise.all([loadList(), loadMeta()])
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载订阅失败'))
     } finally {
       setLoading(false)
     }
+  }, [loadList, loadMeta])
+
+  useEffect(() => {
+    load().catch(() => undefined)
+    // Mount-only: parameter changes reload through loadList below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => { load().catch(() => undefined) }, [load])
+  const paramsFirstRun = useRef(true)
+  useEffect(() => {
+    if (paramsFirstRun.current) {
+      paramsFirstRun.current = false
+      return
+    }
+    loadList().catch((cause) => setError(errorMessage(cause, '刷新订阅列表失败')))
+  }, [loadList])
 
   const groups = catalog?.groups ?? EMPTY_GROUPS
   const userNames = useMemo(() => new Map(users.map((user) => [user.id, user.username])), [users])
   const groupNames = useMemo(() => new Map(groups.map((group) => [group.id, group.name])), [groups])
-  const filtered = useMemo(() => {
-    const now = Date.now()
-    return subscriptions.filter((subscription) => {
-      if (statusFilter === 'enabled' && !subscription.enabled) return false
-      if (statusFilter === 'disabled' && subscription.enabled) return false
-      if (!matchesExpiry(subscription, expiryFilter, enabledOnly, now)) return false
-      if (!query.trim()) return true
-      const user = userNames.get(subscription.userId) ?? subscription.userId
-      const groupLabel = subscription.groupIds.map((id) => groupNames.get(id) ?? id).join(' ')
-      return matchesText(subscription.name, query) || matchesText(user, query) || matchesText(groupLabel, query)
-    })
-  }, [enabledOnly, expiryFilter, groupNames, query, statusFilter, subscriptions, userNames])
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const filtersActive = query.trim() !== '' || statusFilter !== 'all' || expiryFilter !== 'all' || enabledOnly
+
+  useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
+  const changeQuery = (value: string) => {
+    setQuery(value)
+    setPage(1)
+  }
+
   const selectExpiry = (filter: ExpiryFilter) => {
+    setPage(1)
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       if (filter === 'all') next.delete('expiry')
@@ -462,7 +487,7 @@ export function SubscriptionsPage() {
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       <FilterBar className="del-filters">
-        <SearchInput value={query} onChange={setQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
+        <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
         <div className="del-status-filters" role="group" aria-label="订阅状态">
           {UNIFIED_FILTERS.map((filter) => (
             <FilterChip key={filter.key} active={activeUnified === filter.key} onClick={() => selectUnified(filter.key)}>{filter.label}</FilterChip>
@@ -474,14 +499,15 @@ export function SubscriptionsPage() {
         <DataHeader
           id="subscriptions-title"
           title="订阅列表"
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={filtered.length} onSelectAll={() => setSelected(new Set(filtered.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
+          actions={<BatchToolbar selectedCount={selected.size} totalCount={total} onSelectAll={() => setSelected(new Set(subscriptions.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
         />
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
         {!loading && loadError && subscriptions.length === 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-        {!loading && !loadError && subscriptions.length === 0 ? <EmptyState title="暂无订阅" /> : null}
+        {!loading && !loadError && total === 0 && !filtersActive ? <EmptyState title="暂无订阅" /> : null}
         {loadError && subscriptions.length > 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-        {subscriptions.length > 0 && filtered.length === 0 ? <EmptyState title="没有符合条件的订阅" /> : null}
-        {filtered.length > 0 ? <DataTable className="del-table" columns={columns} rows={filtered} rowKey={(subscription) => subscription.id} /> : null}
+        {total === 0 && filtersActive ? <EmptyState title="没有符合条件的订阅" /> : null}
+        {subscriptions.length > 0 ? <DataTable className="del-table" columns={columns} rows={subscriptions} rowKey={(subscription) => subscription.id} /> : null}
+        {pageCount > 1 ? <Pagination page={page} pageCount={pageCount} onPageChange={setPage} /> : null}
       </section>
 
       <EditDrawer open={drawer === 'create' || (drawer !== null && drawer.kind === 'edit')} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>

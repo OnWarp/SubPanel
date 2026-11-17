@@ -297,3 +297,100 @@ describe('GET /api/user/nodes', () => {
     expect(JSON.stringify(nodes)).not.toContain('node_1.example.com')
   })
 })
+
+type PagedNodes = {
+  nodes: UserNode[]
+  total: number
+  page: number
+  pageSize: number
+  subscriptionOptions: Array<{ id: string, name: string }>
+  groupOptions: Array<{ id: string, name: string }>
+}
+
+async function listPagedNodes(cookie: string, queryString: string): Promise<PagedNodes> {
+  const response = await exports.default.fetch(`${TEST_ORIGIN}/api/user/nodes?${queryString}`, withCookie(cookie))
+  expect(response.status).toBe(200)
+  const body = await response.json() as PagedNodes
+  expectWhitelist(body.nodes)
+  return body
+}
+
+describe('GET /api/user/nodes pagination', () => {
+  async function provisionPagedUser(adminCookie: string) {
+    const user = await provisionUser(adminCookie, 'page-user', 'page user password')
+    const main = await importSource(adminCookie, 'Main source', [
+      ssLine('节点甲', 'a.example'),
+      ssLine('节点乙', 'b.example'),
+      ssLine('节点丙', 'c.example'),
+      ssLine('节点丁', 'd.example'),
+      ssLine('节点戊', 'e.example'),
+    ])
+    const extra = await importSource(adminCookie, 'Extra source', [ssLine('节点己', 'f.example')])
+    const mainGroup = await createGroup(adminCookie, '主分组', [main.sourceId], [], main.nodes.map((node) => node.id))
+    const extraGroup = await createGroup(adminCookie, '副分组', [extra.sourceId], [], extra.nodes.map((node) => node.id))
+    const mainSubscription = await createSubscription(adminCookie, user.id, '主订阅', [mainGroup])
+    const extraSubscription = await createSubscription(adminCookie, user.id, '副订阅', [extraGroup])
+    return { user, mainGroup, extraGroup, mainSubscription, extraSubscription }
+  }
+
+  it('pages through the full set with total and filter options', async () => {
+    const admin = await login()
+    const { user } = await provisionPagedUser(admin)
+
+    const first = await listPagedNodes(user.cookie, 'page=1&pageSize=2')
+    expect(first.total).toBe(6)
+    expect(first.page).toBe(1)
+    expect(first.pageSize).toBe(2)
+    expect(first.nodes).toHaveLength(2)
+    expect(first.subscriptionOptions.map((item) => item.name).sort()).toEqual(['主订阅', '副订阅'])
+    expect(first.groupOptions.map((item) => item.name).sort()).toEqual(['主分组', '副分组'])
+
+    const second = await listPagedNodes(user.cookie, 'page=2&pageSize=2')
+    const third = await listPagedNodes(user.cookie, 'page=3&pageSize=2')
+    expect(second.nodes).toHaveLength(2)
+    expect(third.nodes).toHaveLength(2)
+    const pagedNames = [...first.nodes, ...second.nodes, ...third.nodes].map((node) => node.name)
+    expect(pagedNames).toEqual(names(await listNodes(user.cookie)))
+
+    const beyond = await listPagedNodes(user.cookie, 'page=4&pageSize=2')
+    expect(beyond.nodes).toEqual([])
+    expect(beyond.total).toBe(6)
+    expect(beyond.page).toBe(4)
+  })
+
+  it('filters by search text, subscription and group before paging', async () => {
+    const admin = await login()
+    const { user, mainGroup, extraSubscription } = await provisionPagedUser(admin)
+
+    const searched = await listPagedNodes(user.cookie, 'q=节点甲')
+    expect(searched.total).toBe(1)
+    expect(names(searched.nodes)).toEqual(['节点甲'])
+
+    const bySubscription = await listPagedNodes(user.cookie, `subscriptionId=${extraSubscription}`)
+    expect(bySubscription.total).toBe(1)
+    expect(names(bySubscription.nodes)).toEqual(['节点己'])
+
+    const byGroupLastPage = await listPagedNodes(user.cookie, `groupId=${mainGroup}&pageSize=2&page=3`)
+    expect(byGroupLastPage.total).toBe(5)
+    expect(byGroupLastPage.nodes).toHaveLength(1)
+
+    const combined = await listPagedNodes(user.cookie, `groupId=${mainGroup}&q=节点乙`)
+    expect(combined.total).toBe(1)
+    expect(names(combined.nodes)).toEqual(['节点乙'])
+  })
+
+  it('clamps pageSize and falls back to page defaults like the admin users list', async () => {
+    const admin = await login()
+    const { user } = await provisionPagedUser(admin)
+
+    const clamped = await listPagedNodes(user.cookie, 'pageSize=500')
+    expect(clamped.pageSize).toBe(100)
+    expect(clamped.page).toBe(1)
+    expect(clamped.nodes).toHaveLength(6)
+
+    const fallback = await listPagedNodes(user.cookie, 'page=0&pageSize=0')
+    expect(fallback.page).toBe(1)
+    expect(fallback.pageSize).toBe(20)
+    expect(fallback.nodes).toHaveLength(6)
+  })
+})
