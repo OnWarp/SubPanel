@@ -8,6 +8,7 @@ import {
   readSettingMap,
   upsertSettingStatement,
 } from '../db/module-switch.js'
+import { getSetting } from '../db/settings-repository.js'
 import { convertDelivery, type SubscriptionGroupRow, type SubscriptionRow } from '../migration/delivery.js'
 import { deliverySnapshotSchema, emptyDeliverySnapshot, type DeliverySnapshot } from './schema.js'
 
@@ -58,15 +59,40 @@ function parseJson(raw: string): unknown {
   }
 }
 
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) corrupt()
-  return value
+function parseStoredOrder(raw: string | null): unknown {
+  if (raw === null) return undefined
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
 }
 
-function orderExactly<T extends { id: string }>(rows: T[], order: string[]): T[] {
+// Fallback for a missing or out-of-sync delivery_entity_order (a legacy import
+// once dropped the key and took every delivery page down): keep the stored
+// relative order for subscriptions that still exist, drop stale ids, and
+// append any missing subscriptions by ascending id instead of rejecting the
+// whole snapshot. Read-only: the derived order is never written back.
+function resolveSubscriptionOrder<T extends { id: string }>(rows: T[], storedOrder: unknown): T[] {
   const byId = new Map(rows.map((row) => [row.id, row]))
-  if (order.length !== rows.length || order.some((id) => !byId.has(id))) corrupt()
-  return order.map((id) => byId.get(id)!)
+  const kept: string[] = []
+  if (Array.isArray(storedOrder)) {
+    for (const item of storedOrder) {
+      if (typeof item === 'string' && byId.has(item) && !kept.includes(item)) kept.push(item)
+    }
+  }
+  const missing = rows
+    .map((row) => row.id)
+    .filter((id) => !kept.includes(id))
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+  const resolved = [...kept, ...missing]
+  const intact = Array.isArray(storedOrder)
+    && storedOrder.length === resolved.length
+    && storedOrder.every((id, index) => id === resolved[index])
+  if (!intact) {
+    console.warn('[delivery] delivery_entity_order missing or out of sync; using derived subscription order')
+  }
+  return resolved.map((id) => byId.get(id)!)
 }
 
 function idsByPosition(rows: { position: number, id: string }[]): string[] {
@@ -91,12 +117,13 @@ export async function deliveryCounts(db: AppDatabase): Promise<DeliveryCounts> {
 
 export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnapshot> {
   try {
-    const [subscriptions, groups, settings] = await Promise.all([
+    const [subscriptions, groups, settings, storedOrderRaw] = await Promise.all([
       db.prepare('SELECT * FROM subscriptions').all<SubscriptionSql>(),
       db.prepare(
         'SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position',
       ).all<SubscriptionGroupSql>(),
-      readSettingMap(db, DELIVERY_META_KEYS),
+      readSettingMap(db, DELIVERY_META_KEYS.filter((key) => key !== DELIVERY_SETTING_KEYS.entityOrder)),
+      getSetting(db, DELIVERY_SETTING_KEYS.entityOrder),
     ])
     const subscriptionRows = subscriptions.results
     const revision = settings.get(DELIVERY_SETTING_KEYS.revision)
@@ -105,16 +132,14 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
     const schemaVersion = settings.get(DELIVERY_SETTING_KEYS.schemaVersion)
     const updatedAt = settings.get(DELIVERY_SETTING_KEYS.updatedAt)
     const nextSubscriptionId = settings.get(DELIVERY_SETTING_KEYS.nextSubscriptionId)
-    const storedOrder = settings.get(DELIVERY_SETTING_KEYS.entityOrder)
     if (
       schemaVersion !== 1 ||
       typeof revision !== 'number' ||
       typeof updatedAt !== 'string' ||
-      typeof nextSubscriptionId !== 'number' ||
-      !Array.isArray(storedOrder)
+      typeof nextSubscriptionId !== 'number'
     ) corrupt()
 
-    const ordered = orderExactly(subscriptionRows, asStringArray(storedOrder))
+    const ordered = resolveSubscriptionOrder(subscriptionRows, parseStoredOrder(storedOrderRaw))
     const snapshot = {
       schemaVersion: 1 as const,
       revision,
