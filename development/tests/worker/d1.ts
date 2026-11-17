@@ -7,6 +7,7 @@ import softDeleteSql from '../../../migrations/0004_user_soft_delete.sql?raw'
 import registrationSql from '../../../migrations/0005_registration.sql?raw'
 import appRefactorSql from '../../../migrations/0006_app_downloads_refactor.sql?raw'
 import domainsSql from '../../../migrations/0007_domain_stage.sql?raw'
+import ticketsNoticesSql from '../../../migrations/0009_tickets_notices.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
 export const SOFT_DELETE_MIGRATION_NAME = '0004_user_soft_delete.sql'
@@ -30,6 +31,7 @@ export const D1_TABLES = [
   'migration_runs',
   'node_raw_variants',
   'nodes',
+  'notices',
   'panel_domains',
   'rate_limits',
   'shares',
@@ -39,6 +41,8 @@ export const D1_TABLES = [
   'subscription_platform_settings',
   'subscriptions',
   'system_settings',
+  'ticket_replies',
+  'tickets',
   'users',
 ] as const
 
@@ -155,6 +159,13 @@ export const domainsMigration = {
   queries: splitSqlStatements(domainsSql),
 }
 
+export const TICKETS_NOTICES_MIGRATION_NAME = '0009_tickets_notices.sql'
+
+export const ticketsNoticesMigration = {
+  name: TICKETS_NOTICES_MIGRATION_NAME,
+  queries: splitSqlStatements(ticketsNoticesSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
   await applyD1Migrations(db, [
     initMigration,
@@ -164,6 +175,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     registrationMigration,
     appRefactorMigration,
     domainsMigration,
+    ticketsNoticesMigration,
   ])
 }
 

@@ -10,6 +10,7 @@ import {
   markModuleReady,
 } from '../../../worker/db/module-switch'
 import { clearSharesStorage } from '../../../worker/shares/d1-repository'
+import { clearTicketsStorage } from '../../../worker/tickets/repository'
 import { applyMigrations } from './d1'
 
 export const TEST_ORIGIN = 'https://subpanel.test'
@@ -22,6 +23,7 @@ export async function enableD1Modules(): Promise<void> {
   await clearDeliveryStorage(env.DB)
   await clearCatalogStorage(env.DB)
   await clearAppsStorage(env.DB)
+  await clearTicketsStorage(env.DB)
   const now = '1970-01-01T00:00:00.000Z'
   await markModuleReady(env.DB, CATALOG_D1_READY_KEY, now)
   await markModuleReady(env.DB, APPS_D1_READY_KEY, now)

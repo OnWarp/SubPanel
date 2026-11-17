@@ -14,6 +14,7 @@ import { StatusBadge } from '../../ui/StatusBadge'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
+import { formatNoticeTime, type Notice } from '../notices/types'
 
 function groupSummary(groupIds: string[]): string {
   return groupIds.length ? `${groupIds.length} 个分组` : '未选择分组'
@@ -26,6 +27,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 export function HomePage() {
   const downloadsEnabled = useDownloadsEnabled()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
+  const [notices, setNotices] = useState<Notice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [client, setClient] = useState('')
@@ -46,6 +48,12 @@ export function HomePage() {
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 
+  useEffect(() => {
+    api<{ notices: Notice[] }>('/api/notices')
+      .then((result) => setNotices(result.notices))
+      .catch(() => setNotices([]))
+  }, [])
+
   const current = subscriptions[0] ?? null
   const expiry = current ? getExpiryState(current, Date.now()) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
@@ -65,6 +73,25 @@ export function HomePage() {
   return (
     <div className="page-stack nav-home">
       <PageHeader title="首页" />
+      {notices.length > 0 ? (
+        <section className="data-section nav-notices" aria-labelledby="nav-notices-title">
+          <DataHeader
+            id="nav-notices-title"
+            title="公告"
+            actions={<Link className="button ghost" to="/notices">查看全部</Link>}
+          />
+          <ul className="nav-notice-list">
+            {notices.slice(0, 3).map((notice) => (
+              <li key={notice.id}>
+                <Link className="nav-notice-item" to="/notices">
+                  <span className="nav-notice-title">{notice.title}</span>
+                  <time dateTime={notice.publishedAt}>{formatNoticeTime(notice.publishedAt)}</time>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {loading ? <LoadingState label="正在加载订阅" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && !current ? (
