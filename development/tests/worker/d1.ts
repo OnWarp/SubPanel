@@ -10,6 +10,7 @@ import registrationSql from '../../../migrations/0005_registration.sql?raw'
 import appRefactorSql from '../../../migrations/0006_app_downloads_refactor.sql?raw'
 import domainsSql from '../../../migrations/0007_domain_stage.sql?raw'
 import ticketsNoticesSql from '../../../migrations/0009_tickets_notices.sql?raw'
+import knowledgeBaseSql from '../../../migrations/0011_knowledge_base.sql?raw'
 
 export const INIT_MIGRATION_NAME = '0001_init.sql'
 export const SOFT_DELETE_MIGRATION_NAME = '0004_user_soft_delete.sql'
@@ -30,6 +31,8 @@ export const D1_TABLES = [
   'invitations',
   'invite_code_redemptions',
   'invite_codes',
+  'kb_articles',
+  'kb_categories',
   'mail_broadcasts',
   'mail_templates',
   'migration_runs',
@@ -173,6 +176,13 @@ export const ticketsNoticesMigration = {
   queries: splitSqlStatements(ticketsNoticesSql),
 }
 
+export const KNOWLEDGE_BASE_MIGRATION_NAME = '0011_knowledge_base.sql'
+
+export const knowledgeBaseMigration = {
+  name: KNOWLEDGE_BASE_MIGRATION_NAME,
+  queries: splitSqlStatements(knowledgeBaseSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
   await applyD1Migrations(db, [
     initMigration,
@@ -185,6 +195,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0008_entitlements.sql', queries: splitSqlStatements(entitlementsSql) },
     ticketsNoticesMigration,
     { name: '0010_stage3_admin.sql', queries: splitSqlStatements(stage3Sql) },
+    knowledgeBaseMigration,
   ])
 }
 

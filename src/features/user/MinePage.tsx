@@ -1,5 +1,5 @@
 import { EntitlementInfo } from '../entitlements/EntitlementInfo'
-import { ChevronRight, Download, LogOut, Megaphone, MessageSquare, Network, Share2, ShieldCheck } from 'lucide-react'
+import { BookOpen, ChevronRight, Download, LogOut, Megaphone, MessageSquare, Network, Share2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiClientError } from '../../app/api'
@@ -89,6 +89,11 @@ export function MinePage() {
         <Link className="nav-menu-item" to="/notices">
           <Megaphone aria-hidden="true" size={18} />
           <span>公告</span>
+          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
+        </Link>
+        <Link className="nav-menu-item" to="/kb">
+          <BookOpen aria-hidden="true" size={18} />
+          <span>知识库</span>
           <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
         </Link>
         <Link className="nav-menu-item" to="/tickets">
