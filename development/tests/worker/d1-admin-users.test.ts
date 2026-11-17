@@ -204,6 +204,58 @@ describe('D1 admin user management (batch 8)', () => {
     expect(((await missing.json()) as ErrorBody).error.code).toBe('USER_NOT_FOUND')
   })
 
+  it('directly sets trusted email and enables immediate email login without sending codes', async () => {
+    const admin = await login()
+    const alice = await createAccountUser('alice', 'alice password 1')
+    await bindEmailD1(alice.id, 'old@example.com')
+    const before = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(alice.id).first()
+    const response = await adminCall(admin, `/api/admin/users/${alice.id}`, jsonRequest({ email: ' New@Outside.example ' }, { method: 'PATCH' }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ user: { email: 'new@outside.example', role: 'user' } })
+    const after = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(alice.id).first()
+    expect(after).toMatchObject({ ...before, email: 'new@outside.example', email_normalized: 'new@outside.example', email_verified_at: expect.any(String), updated_at: expect.any(String) })
+    await login('new@outside.example', 'alice password 1')
+    expect((await fetchApi('/api/login', jsonRequest({ username: 'old@example.com', password: 'alice password 1' }))).status).toBe(401)
+    expect(await countRows('SELECT COUNT(*) AS count FROM email_verifications WHERE user_id = ?', alice.id)).toBe(0)
+    expect(await countRows("SELECT COUNT(*) AS count FROM audit_logs WHERE target_id = ? AND action = 'patch.users'", alice.id)).toBe(1)
+  })
+
+  it('allows editing another administrator, self and the unchanged address', async () => {
+    const admin = await login()
+    // The sole administrator may edit their own email.
+    expect((await adminCall(admin, '/api/admin/users/usr_1', jsonRequest({ email: 'self@outside.example' }, { method: 'PATCH' }))).status).toBe(200)
+    await login('self@outside.example', 'correct horse battery staple')
+    const alice = await createAccountUser('alice', 'alice password 1')
+    expect((await adminCall(admin, `/api/admin/users/${alice.id}`, jsonRequest({ role: 'admin', email: 'other@outside.example' }, { method: 'PATCH' }))).status).toBe(200)
+    await login('other@outside.example', 'alice password 1')
+    expect((await adminCall(admin, `/api/admin/users/${alice.id}`, jsonRequest({ email: 'OTHER@outside.example' }, { method: 'PATCH' }))).status).toBe(200)
+  })
+
+  it('rejects email edits from a non-administrator', async () => {
+    await createAccountUser('alice', 'alice password 1')
+    const cookie = await login('alice', 'alice password 1')
+    expect((await adminCall(cookie, '/api/admin/users/usr_1', jsonRequest({ email: 'forbidden@example.com' }, { method: 'PATCH' }))).status).toBe(403)
+  })
+
+  it('rejects another account current email, including deleted accounts', async () => {
+    const admin = await login()
+    const alice = await createAccountUser('alice', 'alice password 1')
+    await bindEmailD1(alice.id, 'taken@example.com')
+    for (const deleted of [false, true]) {
+      if (deleted) await deleteCall(admin, `/api/admin/users/${alice.id}`)
+      const response = await adminCall(admin, '/api/admin/users/usr_1', jsonRequest({ email: 'TAKEN@example.com' }, { method: 'PATCH' }))
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ error: { code: 'EMAIL_TAKEN' } })
+    }
+  })
+
+  it('rejects invalid email format without changing the account', async () => {
+    const admin = await login()
+    const response = await adminCall(admin, '/api/admin/users/usr_1', jsonRequest({ email: 'invalid' }, { method: 'PATCH' }))
+    expect(response.status).toBe(422)
+    expect((await listUsers(admin)).body.users[0].email).toBeNull()
+  })
+
   it('protects the last administrator from demotion, disable and deletion', async () => {
     const admin = await login()
     for (const [init, label] of [
