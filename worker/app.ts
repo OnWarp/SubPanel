@@ -1,3 +1,5 @@
+import { adminManagementRoutes } from './admin/routes.js'
+import { auditAdminMutation } from './admin/audit.js'
 import { adminEntitlementRoutes, userEntitlementRoutes } from './entitlements/routes.js'
 import { Hono } from 'hono'
 import type { AppEnv } from './app-env.js'
@@ -63,6 +65,8 @@ app.use('/api/notices/*', requireAuth)
 
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
+app.use('/api/admin/*', auditAdminMutation)
+app.route('/api/admin', adminManagementRoutes)
 app.route('/api/admin', adminAccountRoutes)
 app.route('/api/admin', adminEntitlementRoutes)
 app.route('/api/account', userEntitlementRoutes)

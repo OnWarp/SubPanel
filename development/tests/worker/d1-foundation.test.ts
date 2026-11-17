@@ -62,11 +62,12 @@ describe('D1 migrations', () => {
       DOMAINS_MIGRATION_NAME,
       '0008_entitlements.sql',
       TICKETS_NOTICES_MIGRATION_NAME,
+      '0010_stage3_admin.sql',
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(9)
+    expect(replayed?.count).toBe(10)
 
     await env.DB.prepare(
       `INSERT INTO users (

@@ -1,3 +1,4 @@
+import stage3Sql from '../../../migrations/0010_stage3_admin.sql?raw'
 import entitlementsSql from '../../../migrations/0008_entitlements.sql?raw'
 import { applyD1Migrations } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
@@ -29,6 +30,8 @@ export const D1_TABLES = [
   'invitations',
   'invite_code_redemptions',
   'invite_codes',
+  'mail_broadcasts',
+  'mail_templates',
   'migration_runs',
   'node_raw_variants',
   'nodes',
@@ -181,6 +184,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     domainsMigration,
     { name: '0008_entitlements.sql', queries: splitSqlStatements(entitlementsSql) },
     ticketsNoticesMigration,
+    { name: '0010_stage3_admin.sql', queries: splitSqlStatements(stage3Sql) },
   ])
 }
 
