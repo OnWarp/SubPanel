@@ -1,3 +1,5 @@
+import type { EntitlementState } from '../entitlements/types'
+import { EntitlementInfo } from '../entitlements/EntitlementInfo'
 import { Rss } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -24,6 +26,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 export function HomePage() {
+  const [rights, setRights] = useState<EntitlementState | null>(null)
   const downloadsEnabled = useDownloadsEnabled()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +68,7 @@ export function HomePage() {
   return (
     <div className="page-stack nav-home">
       <PageHeader title="首页" />
+      <EntitlementInfo onLoad={setRights} />
       {loading ? <LoadingState label="正在加载订阅" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && !current ? (
@@ -72,7 +76,7 @@ export function HomePage() {
           {downloadsEnabled ? <Link className="button primary" to="/apps">看 APP 下载</Link> : null}
         </EmptyState>
       ) : null}
-      {!loading && !error && current && expiry && expiryBadge ? (
+      {!loading && !error && rights?.current && current && expiry && expiryBadge ? (
         <>
           <section className="data-section nav-status" aria-labelledby="nav-current-title">
             <DataHeader id="nav-current-title" title="当前订阅" />

@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { grantDeliveryFixture, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const ssLine = (name: string, host = 'ss.example.com') =>
   `ss://${btoa('aes-128-gcm:password')}@${host}:8388#${encodeURIComponent(name)}`
@@ -17,7 +17,9 @@ async function createCatalogGroup(cookie: string, content = ssLine('Delivery nod
     `${TEST_ORIGIN}/api/admin/catalog/groups`,
     jsonRequest({ name: 'Delivery group', sourceIds: [sourceId], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [catalog.nodes[0].id] }, withCookie(cookie)),
   )
-  return (await groupResponse.json() as { group: { id: string } }).group.id
+  const id = (await groupResponse.json() as { group: { id: string } }).group.id
+  await grantDeliveryFixture('usr_1',[id])
+  return id
 }
 
 async function createUserCookie(adminCookie: string): Promise<string> {

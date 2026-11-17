@@ -1,3 +1,4 @@
+import { trialGrantStatement } from '../entitlements/service.js'
 import { batch, queryFirst, type AppDatabase } from '../db/db.js'
 import { ACCOUNTS_SETTING_KEYS, upsertSettingStatement } from '../db/module-switch.js'
 import { getRegistrationMode, type RegistrationMode } from '../db/settings-repository.js'
@@ -212,6 +213,8 @@ export async function registerUser(
         nowIso,
       ),
   )
+  const trial = await trialGrantStatement(db, userId, nowIso)
+  if (trial) statements.push(trial)
   if (invite) {
     // Guarded by changes() of the user insert above: the redemption is only
     // written when this batch actually created the user. An unconditional

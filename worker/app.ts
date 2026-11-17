@@ -1,3 +1,4 @@
+import { adminEntitlementRoutes, userEntitlementRoutes } from './entitlements/routes.js'
 import { Hono } from 'hono'
 import type { AppEnv } from './app-env.js'
 import { accountRoutes } from './accounts/account-routes.js'
@@ -58,6 +59,8 @@ app.use('/api/apps/*', requireAuth)
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
 app.route('/api/admin', adminAccountRoutes)
+app.route('/api/admin', adminEntitlementRoutes)
+app.route('/api/account', userEntitlementRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin', adminSystemRoutes)
