@@ -72,8 +72,9 @@ function ShareToggle({ label, checked, onChange, disabled }: {
   )
 }
 
-function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated }: {
+export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated, admin = false }: {
   subscriptionId: string
+  admin?: boolean
   onCancel: () => void
   onPending: (pending: boolean) => void
   onCreated: (share: ShareView, url: string) => void
@@ -121,7 +122,7 @@ function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated }: {
         showNodeNames,
         accessControl: secret === '' ? 'none' : 'password',
         password: secret === '' ? undefined : secret,
-      })
+      }, admin)
       setPassword('')
       onCreated(result.share, buildShareUrl(result.token, readPublicBaseUrl(result)))
     } catch (cause) {
@@ -315,7 +316,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
       key: 'status',
       header: '状态',
       render: (share) => {
-        const view = statusView(share.status)
+        const view = share.status === 'active' && Date.parse(share.expiresAt) <= Date.now() ? { label: '已到期', tone: 'muted' as const } : statusView(share.status)
         return <StatusBadge tone={view.tone} size="sm">{view.label}</StatusBadge>
       },
     },

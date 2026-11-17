@@ -22,7 +22,7 @@ export type UserNodeDto = {
 
 export type UserNodeSubscription = {
   id: string
-  userId: string
+  userId: string | null
   name: string
   groupIds: readonly string[]
   enabled: boolean

@@ -1,3 +1,4 @@
+import subscriptionPoolSql from '../../../migrations/0014_subscription_pool.sql?raw'
 import stage3Sql from '../../../migrations/0010_stage3_admin.sql?raw'
 import entitlementsSql from '../../../migrations/0008_entitlements.sql?raw'
 import { applyD1Migrations } from 'cloudflare:test'
@@ -196,6 +197,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     ticketsNoticesMigration,
     { name: '0010_stage3_admin.sql', queries: splitSqlStatements(stage3Sql) },
     knowledgeBaseMigration,
+    { name: '0014_subscription_pool.sql', queries: splitSqlStatements(subscriptionPoolSql) },
   ])
 }
 

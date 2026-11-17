@@ -7,12 +7,12 @@ export async function logAudit(db: D1Database, actor: string, action: string, ta
 export const auditAdminMutation: MiddlewareHandler<AppEnv> = async (c,next) => {
  let changes: Record<string,unknown> = {}
  if (c.req.header('content-type')?.includes('application/json')) {
-  try { const body = await c.req.raw.clone().json() as Record<string,unknown>; changes = Object.fromEntries(['action','role','enabled','planId'].filter(key => key in body).map(key => [key,body[key]])) } catch { /* Route validates malformed input. */ }
+  try { const body = await c.req.raw.clone().json() as Record<string,unknown>; changes = Object.fromEntries(['action','role','enabled','planId','userId'].filter(key => key in body).map(key => [key,body[key]])) } catch { /* Route validates malformed input. */ }
  }
  await next()
  if (!['POST','PUT','PATCH','DELETE'].includes(c.req.method) || c.res.status >= 400) return
  const path = c.req.path.replace(/^\/api\/admin\//,'')
- if (!/^(users|invitations|invites|invite-codes|email-domains|share-settings|system|plans|entitlements|tickets|notices|mail-templates|mail-broadcasts|jobs)(\/|$)/.test(path)) return
+ if (!/^(subscriptions|delivery|shares|users|invitations|invites|invite-codes|email-domains|share-settings|system|plans|entitlements|tickets|notices|mail-templates|mail-broadcasts|jobs)(\/|$)/.test(path)) return
  const parts = path.split('/')
  let targetId = parts[1] ?? null
  if (!targetId && c.res.headers.get('content-type')?.includes('application/json')) {

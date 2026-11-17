@@ -17,7 +17,7 @@ export { toPublicSubscription }
 export type { PublicSubscription }
 
 export type SubscriptionInput = {
-  userId: string
+  userId?: string | null
   name: string
   groupIds: string[]
   enabled?: boolean
@@ -73,9 +73,9 @@ function assertWindow(startsAt: number | null, expiresAt: number | null): void {
   if (startsAt !== null && expiresAt !== null && expiresAt <= startsAt) fail('SUBSCRIPTION_WINDOW_INVALID')
 }
 
-async function assertReferences(env: DataEnv, userId: string, groupIds: string[]): Promise<void> {
+async function assertReferences(env: DataEnv, userId: string | null | undefined, groupIds: string[]): Promise<void> {
   const accounts = await readAccounts(env)
-  if (!accounts.users.some((user) => user.id === userId && !user.deletedAt)) fail('USER_NOT_FOUND')
+  if (userId != null && !accounts.users.some((user) => user.id === userId && !user.deletedAt)) fail('USER_NOT_FOUND')
   const groups = new Set((await readCatalog(env)).groups.map((group) => group.id))
   if (groupIds.some((groupId) => !groups.has(groupId))) fail('GROUP_NOT_FOUND')
   if (new Set(groupIds).size !== groupIds.length) fail('SUBSCRIPTION_INVALID')
@@ -119,7 +119,7 @@ export async function createSubscription(
   assertWindow(startsAt, expiresAt)
   const subscription: Subscription = {
     id,
-    userId: input.userId as Subscription['userId'],
+    userId: (input.userId ?? null) as Subscription['userId'],
     name: normalizedName(input.name),
     groupIds: [...input.groupIds] as Subscription['groupIds'],
     ...tokenData,
@@ -194,6 +194,32 @@ export async function setSubscriptionEnabled(
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
   return updateSubscription(env, id, { enabled }, options)
+}
+
+export async function transferSubscription(env: DataEnv, id: string, userId: string | null): Promise<SubscriptionMutationResult> {
+  const snapshot = await readDelivery(env)
+  const current = findSubscription(snapshot, id)
+  await assertReferences(env, userId, current.groupIds)
+  const token = randomToken()
+  const tokenData = await createToken(env.DATA, token)
+  if (snapshot.subscriptions.some(item => item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
+  const now = new Date().toISOString()
+  const updated = { ...current, userId, ...tokenData, revision: current.revision + 1, updatedAt: now }
+  // Ownership and token are written in the same D1 batch (or single KV snapshot).
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map(item => item.id === id ? updated : item) }, now)
+  await deleteCompiledArtifacts(env.DATA, current.tokenHash)
+  return { subscription: updated, token }
+}
+
+export async function disableExpiredSubscriptions(env: DataEnv, now = new Date().toISOString()): Promise<void> {
+  const snapshot = await readDelivery(env)
+  let changed = false
+  const subscriptions = snapshot.subscriptions.map(item => {
+    if (!item.enabled || item.expiresAt === null || item.expiresAt > Date.parse(now)) return item
+    changed = true
+    return { ...item, enabled: false, revision: item.revision + 1, updatedAt: now }
+  })
+  if (changed) await writeDelivery(env, { ...snapshot, subscriptions }, now)
 }
 
 export async function resetSubscriptionToken(

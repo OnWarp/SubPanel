@@ -158,6 +158,7 @@ async function liveSubscription(env: DataEnv, share: ShareRecord): Promise<Subsc
   const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === share.subscriptionId)
   if (!subscription?.enabled || subscription.userId !== share.ownerUserId) return null
+
   const accounts = await readAccounts(env)
   const owner = accounts.users.find((user) => user.id === share.ownerUserId)
   if (!owner?.enabled || owner.deletedAt) return null
@@ -459,7 +460,7 @@ async function loadShareArtifact(
   // Live delivery rechecks rights on every export: a cached artifact compiled
   // while the owner had no rights must not stay empty after a grant, and a
   // populated artifact must not survive a revocation.
-  if (!(await getUserEntitlement(env.DB, subscription.userId)).current) {
+  if (!(await getUserEntitlement(env.DB, subscription.userId ?? '')).current) {
     return renderEntitledSubscription(env, subscription, client)
   }
   const cachedRaw = await kv.get(shareCompiledKey(share.tokenHash, client))

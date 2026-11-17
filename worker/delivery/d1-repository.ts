@@ -18,7 +18,7 @@ export type DeliveryCounts = {
 
 type SubscriptionSql = {
   id: string
-  user_id: string
+  user_id: string | null
   name: string
   token_hash: string
   token_prefix: string
@@ -199,7 +199,7 @@ export async function persistDeliverySnapshot(
   const ids = converted.rows.subscriptions.map((row) => row.id)
   const idJson = JSON.stringify(ids)
   const statements: D1PreparedStatement[] = [
-    ...userAnchorStatements(db, users, converted.rows.subscriptions.map((row) => row.user_id)),
+    ...userAnchorStatements(db, users, converted.rows.subscriptions.flatMap((row) => row.user_id ? [row.user_id] : [])),
     db.prepare('DELETE FROM subscriptions WHERE id NOT IN (SELECT value FROM json_each(?))').bind(idJson),
     ...converted.rows.subscriptions.map((row) => subscriptionInsert(db, row)),
     db.prepare('DELETE FROM subscription_groups WHERE subscription_id IN (SELECT value FROM json_each(?))').bind(idJson),

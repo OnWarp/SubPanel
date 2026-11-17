@@ -36,7 +36,7 @@ const uniqueGroupIds = z.array(groupIdSchema).refine(
 
 export const subscriptionSchema = z.object({
   id: subscriptionIdSchema,
-  userId: userIdSchema,
+  userId: userIdSchema.nullable(),
   name: z.string().trim().min(1).max(128),
   groupIds: uniqueGroupIds,
   tokenHash: tokenHashSchema,

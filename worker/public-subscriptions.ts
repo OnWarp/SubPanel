@@ -1,3 +1,4 @@
+import { disableExpiredSubscriptions } from './delivery/service.js'
 import { getUserEntitlement } from './entitlements/service.js'
 import type { RenderClient } from './renderers/index.js'
 import { Hono } from 'hono'
@@ -56,7 +57,11 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
   const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
-  if (!subscription?.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  if (subscription && subscription.expiresAt !== null && subscription.expiresAt <= Date.now()) {
+    await disableExpiredSubscriptions(c.env)
+    throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
+  }
+  if (!subscription?.userId || !subscription.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   // A soft-deleted owner loses public delivery immediately: their
   // subscriptions stop serving even while compiled artifacts remain cached.
   let ownerDeleted = false

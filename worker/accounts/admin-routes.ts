@@ -159,6 +159,7 @@ adminAccountRoutes.get('/users', async (c) => {
   const delivery = await readDelivery(c.env).catch(() => null)
   const counts = new Map<string, number>()
   for (const subscription of delivery?.subscriptions ?? []) {
+    if (!subscription.userId) continue
     counts.set(subscription.userId, (counts.get(subscription.userId) ?? 0) + 1)
   }
   const filtered = accounts.users.filter((user) => {
