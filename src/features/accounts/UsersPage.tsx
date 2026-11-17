@@ -18,7 +18,6 @@ import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
-import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
@@ -77,7 +76,7 @@ function toggleId(current: Set<string>, id: string) {
   return next
 }
 
-export function UsersPage() {
+export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -94,7 +93,6 @@ export function UsersPage() {
   const [batchProgress, setBatchProgress] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [view, setView] = useState<UsersView>('active')
   const [page, setPage] = useState(1)
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
@@ -188,13 +186,6 @@ export function UsersPage() {
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '刷新用户列表失败'))
     }
-  }
-
-  const switchView = (next: UsersView) => {
-    if (next === view) return
-    setView(next)
-    setPage(1)
-    setSelectedUsers(new Set())
   }
 
   const changeQuery = (value: string) => {
@@ -488,7 +479,7 @@ export function UsersPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="用户" />
+      <PageHeader title="用户管理" />
 
       {loading ? <div><LoadingState label="正在加载用户" /></div> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={retry} /> : null}
@@ -505,15 +496,6 @@ export function UsersPage() {
             />
             {subscriptionNote ? <StatusMessage tone="warning">{subscriptionNote}</StatusMessage> : null}
             <FilterBar>
-              <SegmentedControl
-                label="用户视图"
-                options={[
-                  { value: 'active', label: '用户' },
-                  { value: 'trash', label: '回收站' },
-                ]}
-                value={view}
-                onChange={switchView}
-              />
               <SearchInput label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={changeQuery} />
               <div role="group" aria-label="用户状态">
                 {STATUS_FILTERS.map((item) => (

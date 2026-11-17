@@ -22,7 +22,7 @@ function renderRoute(path: string) {
     createElement(ToastProvider, null, createElement(AppRouter))))
 }
 
-describe('separate administrator user and invite routes', () => {
+describe('administrator user-management subpage routes', () => {
   it('renders users without invitation management and retains the email editor', () => {
     const html = renderRoute('/users')
     expect(html).toContain('正在加载用户')
@@ -33,7 +33,7 @@ describe('separate administrator user and invite routes', () => {
     expect(html).toContain('href="/users"')
     expect(html).toContain('href="/invites"')
   })
-  it('renders the dedicated invite route with its own navigation and no user editor', () => {
+  it('renders the invite subpage at its legacy route with no user editor', () => {
     const html = renderRoute('/invites')
     expect(html).toContain('注册邀请码')
     expect(html).toContain('无需邮箱验证码')

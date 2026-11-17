@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
 import { Megaphone } from 'lucide-react'
@@ -14,6 +15,8 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 export function NoticesPage() {
+  const [params] = useSearchParams()
+  const selectedNotice = params.get('notice')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [notices, setNotices] = useState<Notice[]>([])
@@ -43,6 +46,10 @@ export function NoticesPage() {
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 
+  useEffect(() => {
+    if (selectedNotice && !loading) document.getElementById(`notice-${selectedNotice}`)?.scrollIntoView({ block: 'start' })
+  }, [selectedNotice, loading, notices])
+
   const pageCount = Math.max(1, Math.ceil(total / 10))
   const currentPage = Math.min(page, pageCount)
   useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount])
@@ -59,13 +66,13 @@ export function NoticesPage() {
       {!loading && !error && notices.length > 0 ? (
         <div className="ntc-list">
           {notices.map((notice) => (
-            <article key={notice.id} className="data-section ntc-card" aria-labelledby={`ntc-title-${notice.id}`}>
+            <article id={`notice-${notice.id}`} key={notice.id} className="data-section ntc-card" aria-labelledby={`ntc-title-${notice.id}`}>
               <header className="ntc-card-head">
                 <h2 id={`ntc-title-${notice.id}`}>{notice.title}</h2>
                 <time dateTime={notice.publishedAt}>{formatNoticeTime(notice.publishedAt)}</time>
               </header>
               <p className="ntc-body ntc-summary">{notice.body}</p>
-              <details className="ntc-full"><summary>阅读全文</summary><p className="ntc-body">{notice.body}</p></details>
+              <details className="ntc-full" open={String(notice.id) === selectedNotice ? true : undefined}><summary>阅读全文</summary><p className="ntc-body">{notice.body}</p></details>
             </article>
           ))}
           <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />

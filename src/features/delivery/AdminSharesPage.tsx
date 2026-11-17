@@ -309,9 +309,9 @@ export function AdminSharesPage() {
       <section className="data-section" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
         <div className="ashr-settings-form">
-          <p className="ashr-settings-hint">分享策略已迁至系统管理页统一维护</p>
+          <p className="ashr-settings-hint">分享策略在系统设置的订阅分发中维护</p>
           <div className="ashr-actions">
-            <Link className="button" to="/system">前往系统管理</Link>
+            <Link className="button" to="/system/distribution">分享策略</Link>
           </div>
         </div>
       </section>

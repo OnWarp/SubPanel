@@ -1,55 +1,13 @@
-import { BookOpen, ChevronDown, ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, type LucideIcon, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { ChevronDown, ChevronsLeft, ChevronsRight, Ellipsis, LogOut, UserRound } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
-import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountProfile } from '../features/accounts/profile'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
-import { useDownloadsEnabled } from '../features/apps/downloads-visibility'
+import { adminSections, userSidebar, navigationActive, type NavItem } from './navigation'
 
-type NavItem = { to: string; label: string; icon: LucideIcon }
-type NavSection = { label: string; items: NavItem[] }
-
-const adminSections: NavSection[] = [
-  { label: '仪表盘', items: [
-    { to: '/dashboard', label: '概览', icon: Gauge },
-    { to: '/catalog/nodes', label: '节点', icon: Network },
-    { to: '/catalog/sources', label: '来源', icon: Rss },
-    { to: '/catalog/groups', label: '分组', icon: FolderKanban },
-  ] },
-  { label: '交付与权限', items: [
-    { to: '/delivery/subscriptions', label: '订阅', icon: Send },
-    { to: '/delivery/shares', label: '分享管理', icon: Share2 },
-    { to: '/plans', label: '权益计划', icon: ShieldCheck },
-    { to: '/users', label: '用户', icon: Users },
-    { to: '/invites', label: '邀请', icon: Users },
-    { to: '/catalog/apps', label: 'APP 管理', icon: Download },
-    { to: '/delivery/tickets', label: '工单', icon: MessageSquare },
-  ] },
-  { label: '系统管理', items: [{ to: '/audit-logs', label: '审计日志', icon: ShieldCheck }, { to: '/kb/manage', label: '知识库', icon: BookOpen }, { to: '/account', label: '账户安全', icon: ShieldCheck }, { to: '/system', label: '系统管理', icon: Settings }] },
-]
-
-const userDock: NavItem[] = [
-  { to: '/home', label: '首页', icon: Home },
-  { to: '/nodes', label: '节点', icon: Network },
-  { to: '/subscriptions', label: '订阅', icon: Rss },
-]
-
-const userSheetItems: NavItem[] = [
-  { to: '/apps', label: 'APP 下载', icon: Download },
-  { to: '/notices', label: '公告', icon: Megaphone },
-  { to: '/kb', label: '知识库', icon: BookOpen },
-  { to: '/tickets', label: '工单', icon: MessageSquare },
-  { to: '/me', label: '我的', icon: UserRound },
-]
-
-const userSidebar: NavItem[] = [
-  { to: '/home', label: '首页', icon: Home },
-  { to: '/subscriptions', label: '订阅', icon: Rss },
-  { to: '/nodes', label: '节点', icon: Network },
-  { to: '/apps', label: 'APP 下载', icon: Download },
-  { to: '/me', label: '我的', icon: UserRound },
-]
+const userDock = userSidebar
 
 function UserCenter({ signOut }: { signOut: () => Promise<void> }) {
   const { user } = useSession()
@@ -67,6 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [signOutError, setSignOutError] = useState('')
   const [mobile, setMobile] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('subpanel:sidebar-collapsed') === '1' } catch { return false }
@@ -82,16 +41,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sheet = useRef<HTMLElement>(null)
   const touchStart = useRef(0)
   const isAdmin = user?.role === 'admin'
-  const downloadsEnabled = useDownloadsEnabled()
-  const visibleUserSheetItems = !isAdmin && !downloadsEnabled ? userSheetItems.filter((item) => item.to !== '/apps') : userSheetItems
-  const visibleUserSidebar = !isAdmin && !downloadsEnabled ? userSidebar.filter((item) => item.to !== '/apps') : userSidebar
+  const visibleUserSidebar = userSidebar
   const adminItems = adminSections.flatMap((section) => section.items)
   const dockPaths = ['/dashboard', '/catalog/groups', '/users']
   const dockItems = dockPaths
     .map((path) => adminItems.find((item) => item.to === path))
     .filter((item): item is NavItem => Boolean(item))
-    .map((item) => (item.to === '/users' ? { ...item, label: '用户' } : item))
-  const sheetItems = adminItems.filter((item) => !dockPaths.includes(item.to))
+    .map((item) => item)
+  const sheetItems = adminItems
 
   useEffect(() => setSheetOpen(false), [location.pathname])
 
@@ -151,9 +108,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         {isAdmin ? (
           <nav className="sidebar-nav" aria-label="主导航">
             {adminSections.map((section) => <section className="nav-section" key={section.label}>
-              <p className="nav-label">{section.label}</p>
+              {section.label ? <p className="nav-label">{section.label}</p> : null}
               {section.items.map(({ to, label, icon: Icon }) => (
-                <Link key={to} to={to} title={label} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
+                <Link key={to} to={to} title={label} className={navigationActive(location.pathname, to) ? 'active' : undefined} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
                   <Icon aria-hidden="true" size={17} /><span>{label}</span>
                 </Link>
               ))}
@@ -162,27 +119,27 @@ export function AppShell({ children }: { children: ReactNode }) {
         ) : (
           <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
             {visibleUserSidebar.map(({ to, label, icon: Icon }) => (
-              <NavLink key={to} to={to} end title={label} className={({ isActive }) => isActive ? 'active' : undefined}>
+              <Link key={to} to={to} title={label} className={navigationActive(location.pathname, to) ? 'active' : undefined} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
                 <Icon aria-hidden="true" size={17} /><span>{label}</span>
-              </NavLink>
+              </Link>
             ))}
           </nav>
         )}
-        {isAdmin ? <div className="sidebar-account"><UserRound aria-hidden="true" size={18} /><div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div><button className="sidebar-signout" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button></div> : <UserCenter key={location.pathname} signOut={signOut} />}
+        {isAdmin ? <div className="user-center" key={location.pathname}><details onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary title="管理员账号菜单"><UserRound size={24} aria-hidden="true" /><span>{user?.username}</span><ChevronDown size={16} /></summary><nav aria-label="管理员账号菜单"><Link to="/account">账户安全</Link><ThemeMenu id="admin-theme-menu" label="外观" /><button type="button" onClick={() => { signOut().catch(() => setSignOutError('退出登录失败，请重试')) }}>退出登录</button></nav></details></div> : <UserCenter key={location.pathname} signOut={signOut} />}
       </aside>
       <div className="workspace">
         <header className="workspace-topbar">
           <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>
           <div id="page-title-slot" className="topbar-context" />
-          <ThemeMenu />
+          {!isAdmin ? <ThemeMenu /> : null}
           <div id="page-actions-slot" className="topbar-page-actions" />
         </header>
-        <main key={location.pathname} className="workspace-content">{children}</main>
+        <main key={location.pathname} className="workspace-content">{signOutError ? <p role="alert">{signOutError}</p> : null}{children}</main>
       </div>
       {isAdmin ? (
         <nav className="dock" aria-label="快捷导航">
           {dockItems.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className={`dock-item ${location.pathname === to ? 'active' : ''}`} aria-current={location.pathname === to ? 'page' : undefined}>
+            <Link key={to} to={to} className={`dock-item ${navigationActive(location.pathname, to) ? 'active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
               <Icon aria-hidden="true" size={18} /><span>{label}</span>
             </Link>
           ))}
@@ -193,13 +150,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : (
         <nav className="dock nav-dock" aria-label="快捷导航">
           {userDock.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end className={({ isActive }) => `dock-item nav-dock-item${isActive ? ' active' : ''}`}>
+            <Link key={to} to={to} className={`dock-item nav-dock-item${navigationActive(location.pathname, to) ? ' active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
               <Icon aria-hidden="true" size={18} /><span>{label}</span>
-            </NavLink>
+            </Link>
           ))}
-          <button ref={moreButton} className="dock-item nav-dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
-            <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
-          </button>
         </nav>
       )}
       {sheetOpen ? <>
@@ -215,17 +169,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           onTouchEnd={finishSwipe}
         >
           <span className="dock-sheet-handle" aria-hidden="true" />
-          {(isAdmin ? sheetItems : visibleUserSheetItems).length ? <nav className="dock-sheet-nav" aria-label="主导航">
-            {(isAdmin ? sheetItems : visibleUserSheetItems).map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} title={label} className={location.pathname === to ? 'active' : undefined} aria-current={location.pathname === to ? 'page' : undefined}>
-                <Icon aria-hidden="true" size={19} /><span>{label}</span>
-              </Link>
-            ))}
+          {sheetItems.length ? <nav className="dock-sheet-nav" aria-label="主导航">
+            {adminSections.map(section => <section className="nav-section" key={section.label}>{section.label ? <p className="nav-label">{section.label}</p> : null}{section.items.map(({ to, label, icon: Icon }) => <Link key={to} to={to} className={navigationActive(location.pathname, to) ? 'active' : undefined}><Icon size={19} aria-hidden="true" /><span>{label}</span></Link>)}</section>)}
+            <Link to="/account">账户安全</Link><ThemeMenu id="mobile-theme-menu" label="外观" />
           </nav> : null}
           <div className="dock-sheet-account">
             <UserRound aria-hidden="true" size={18} />
             <div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div>
-            <button className="icon-button" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button>
+            <button className="icon-button" type="button" aria-label="退出登录" title="退出登录" onClick={() => { signOut().catch(() => setSignOutError('退出登录失败，请重试')) }}><LogOut aria-hidden="true" size={17} /></button>
           </div>
         </section>
       </> : null}

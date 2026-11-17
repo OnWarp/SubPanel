@@ -1,4 +1,5 @@
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
+import { AppDownloadsSection } from './AppDownloadsSection'
 import { Pencil, Plus, Power, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -335,10 +336,11 @@ export function AppsPage() {
   return (
     <div className="page-stack app-page">
       <PageHeader
-        title="APP 管理"
+        title="客户端下载"
         description={description}
         actions={<><Link className="button secondary" to="/apps">查看用户端</Link><button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加 APP</button></>}
       />
+      <AppDownloadsSection />
       <section className="data-section app-data" aria-label="APP 列表">
         {loading ? <LoadingState label="正在加载 APP" /> : null}
         {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}

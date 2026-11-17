@@ -1,4 +1,5 @@
 import { Input } from '../../ui/Controls'
+import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -32,6 +33,7 @@ function groupSummary(groupIds: string[]): string {
 }
 
 export function MySubscriptionsPage() {
+  const downloadsEnabled = useDownloadsEnabled()
   const [params, setParams] = useSearchParams()
   const shareParam = params.get('share') ?? ''
   const shareButtonRef = useRef<HTMLButtonElement>(null)
@@ -179,6 +181,7 @@ export function MySubscriptionsPage() {
           }}
         />} />
 
+      {downloadsEnabled ? <Link className="button secondary" to="/apps">下载客户端</Link> : null}
       <Link className="button secondary" to="/entitlements">查看我的权益</Link>
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
