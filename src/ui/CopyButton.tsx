@@ -6,7 +6,7 @@ type CopyButtonProps = {
   value: string
   label?: string
   copiedLabel?: string
-  variant?: 'ghost' | 'secondary'
+  variant?: 'ghost' | 'secondary' | 'full-width'
   iconOnly?: boolean
   className?: string
   onError?: (cause: unknown) => void
@@ -51,7 +51,7 @@ export function CopyButton({ value, label = '复制', copiedLabel = '已复制',
     )
   }
   return (
-    <button type="button" className={`button ${variant}${className ? ` ${className}` : ''}`} onClick={copy}>
+    <button type="button" className={`button ${variant === 'full-width' ? 'secondary sp-copy-full-width' : variant}${className ? ` ${className}` : ''}`} onClick={copy}>
       <Icon aria-hidden="true" size={16} />
       {copied ? copiedLabel : label}
     </button>

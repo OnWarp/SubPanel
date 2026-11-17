@@ -72,8 +72,9 @@
 
   --radius-ctl: 6px;
   --radius-field: 6px;
-  --radius-card: 8px;
-  --radius-card-lg: 12px;
+  --radius-card: 16px;
+  --radius-card-lg: 20px;
+  --radius-inset: 10px;
   --radius-dock: 12px;
   --radius-sheet: 12px;
   --radius-pill: 999px;
