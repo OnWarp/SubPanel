@@ -1,4 +1,4 @@
-import { ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { ThemeMenu } from '../theme/ThemeMenu'
@@ -22,6 +22,7 @@ const adminSections: NavSection[] = [
     { to: '/plans', label: '权益计划', icon: ShieldCheck },
     { to: '/users', label: '用户与邀请', icon: Users },
     { to: '/catalog/apps', label: 'APP 管理', icon: Download },
+    { to: '/delivery/tickets', label: '工单', icon: MessageSquare },
   ] },
   { label: '系统管理', items: [{ to: '/account', label: '账户安全', icon: ShieldCheck }, { to: '/system', label: '系统管理', icon: Settings }] },
 ]
@@ -34,6 +35,8 @@ const userDock: NavItem[] = [
 
 const userSheetItems: NavItem[] = [
   { to: '/apps', label: 'APP 下载', icon: Download },
+  { to: '/notices', label: '公告', icon: Megaphone },
+  { to: '/tickets', label: '工单', icon: MessageSquare },
   { to: '/me', label: '我的', icon: UserRound },
 ]
 

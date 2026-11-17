@@ -1,4 +1,4 @@
-import { Database, Download, Info, Mail, Settings, Share2, User, type LucideIcon } from 'lucide-react'
+import { Database, Download, Info, Mail, Megaphone, Settings, Share2, User, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -22,6 +22,7 @@ import {
 } from './api'
 import { DomainSettingsSection } from './DomainSettingsSection'
 import { InviteCodesSection } from './InviteCodesSection'
+import { NoticesSection } from './NoticesSection'
 import { ShareSettingsSection } from './ShareSettingsSection'
 
 function errorMessage(cause: unknown, fallback: string) {
@@ -38,7 +39,7 @@ const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string; hint: 
   { value: 'closed', label: '关闭注册', hint: '暂停新用户注册' },
 ]
 
-type SysSection = 'registration' | 'mail' | 'app-downloads' | 'share' | 'domain' | 'status'
+type SysSection = 'registration' | 'mail' | 'app-downloads' | 'share' | 'domain' | 'status' | 'notices'
 
 function RegistrationSection() {
   const [mode, setMode] = useState<RegistrationMode | null>(null)
@@ -507,6 +508,7 @@ const SECTIONS: Array<{ key: SysSection; label: string; icon: LucideIcon }> = [
   { key: 'share', label: '分享策略', icon: Share2 },
   { key: 'domain', label: '域名策略', icon: Settings },
   { key: 'status', label: '系统状态', icon: Info },
+  { key: 'notices', label: '公告', icon: Megaphone },
 ]
 
 export function SystemPage() {
@@ -519,6 +521,7 @@ export function SystemPage() {
     share: <ShareSettingsSection />,
     domain: <DomainSettingsSection />,
     status: <StatusSection />,
+    notices: <NoticesSection />,
   }
 
   return (

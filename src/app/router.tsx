@@ -15,6 +15,11 @@ import { NodesPage } from '../features/catalog/NodesPage'
 import { GroupsPage } from '../features/catalog/GroupsPage'
 import { SubscriptionsPage } from '../features/delivery/SubscriptionsPage'
 import { AdminSharesPage } from '../features/delivery/AdminSharesPage'
+import { NoticesPage } from '../features/notices/NoticesPage'
+import { AdminTicketDetailPage } from '../features/tickets/AdminTicketDetailPage'
+import { AdminTicketsPage } from '../features/tickets/AdminTicketsPage'
+import { TicketDetailPage } from '../features/tickets/TicketDetailPage'
+import { TicketsPage } from '../features/tickets/TicketsPage'
 import { SystemPage } from '../features/system/SystemPage'
 import { MySubscriptionsPage } from '../features/delivery/MySubscriptionsPage'
 import { SharePage } from '../features/shares/SharePage'
@@ -71,12 +76,17 @@ export function AppRouter() {
       <Route path="/delivery/subscriptions" element={user?.role === 'admin' ? shell(<SubscriptionsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/plans" element={user?.role === 'admin' ? shell(<PlansPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/delivery/tickets" element={user?.role === 'admin' ? shell(<AdminTicketsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/tickets/:id" element={user?.role === 'admin' ? shell(<AdminTicketDetailPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/users" element={user?.role === 'admin' ? shell(<UsersPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/apps" element={user ? shell(<UserAppsPage />) : <Navigate to={signedOut} replace />} />
       <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/nodes" element={user?.role === 'user' ? shell(<MyNodesPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/notices" element={user?.role === 'user' ? shell(<NoticesPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/tickets" element={user?.role === 'user' ? shell(<TicketsPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/tickets/:id" element={user?.role === 'user' ? shell(<TicketDetailPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/system" element={user?.role === 'admin' ? shell(<SystemPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/account" element={shell(<AccountPage />)} />
       <Route path="*" element={<Navigate to={user ? home : signedOut} replace />} />

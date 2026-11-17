@@ -15,6 +15,7 @@ import './styles/pages-admin.css'
 import './styles/pages-catalog.css'
 import './styles/pages-delivery.css'
 import './styles/pages-system.css'
+import './styles/pages-tickets.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

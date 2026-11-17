@@ -383,6 +383,10 @@ export async function purgeUserFromD1(
     db.prepare('DELETE FROM invitations WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM email_verifications WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM email_change_requests WHERE user_id = ?').bind(user.id),
+    // Replies reference their author; own tickets are removed next and their
+    // replies cascade, so deleting author replies first keeps every FK happy.
+    db.prepare('DELETE FROM ticket_replies WHERE author_id = ?').bind(user.id),
+    db.prepare('DELETE FROM tickets WHERE user_id = ?').bind(user.id),
   ]
   const subjects = [user.username, user.emailNormalized].filter((value): value is string => value !== null && value !== '')
   if (subjects.length > 0) {

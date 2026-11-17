@@ -1,0 +1,304 @@
+/*
+ * Tickets and notices. tk- prefixes ticket pages, ntc- prefixes notice
+ * surfaces. Shared primitives and shell rules stay in their own files.
+ */
+
+.tk-page,
+.ntc-page {
+  min-width: 0;
+}
+
+.tk-page > *,
+.ntc-page > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tk-title-link {
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.tk-title-link:hover {
+  color: var(--color-primary);
+}
+
+.tk-cell-time {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.tk-head-actions,
+.tk-badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tk-thread-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tk-thread-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.tk-thread-title h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-title);
+  font-weight: var(--weight-strong);
+  line-height: 1.2;
+}
+
+.tk-thread-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.tk-replies {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4);
+  list-style: none;
+}
+
+.tk-message {
+  display: grid;
+  max-width: min(88%, 760px);
+  gap: 6px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-subtle);
+}
+
+.tk-message-user {
+  margin-right: auto;
+}
+
+.tk-message-admin {
+  margin-left: auto;
+  border-color: color-mix(in srgb, var(--color-primary) 32%, transparent);
+  background: var(--color-primary-soft);
+}
+
+.tk-message-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.tk-message-head strong {
+  color: var(--color-text);
+}
+
+.tk-message-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: var(--leading-body);
+}
+
+.tk-composer {
+  position: sticky;
+  z-index: 2;
+  bottom: var(--space-3);
+  padding: var(--space-4);
+}
+
+.tk-closed-hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.tk-form {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.tk-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tk-form input[type='text'],
+.tk-form textarea,
+.ntc-admin-form input:not([type='checkbox']),
+.ntc-admin-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.tk-form textarea,
+.ntc-admin-form textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: var(--leading-body);
+}
+
+.tk-pagination {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Home notice strip ------------------------------------------------------- */
+.nav-notice-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav-notice-item {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.nav-notice-item:last-child {
+  border-bottom: 0;
+}
+
+.nav-notice-item:hover {
+  background: var(--color-surface-subtle);
+}
+
+.nav-notice-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: var(--weight-semibold);
+}
+
+.nav-notice-item time {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
+/* User notices page ------------------------------------------------------- */
+.ntc-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ntc-card {
+  padding: var(--space-5);
+}
+
+.ntc-card-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ntc-card-head h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-lg);
+  font-weight: var(--weight-strong);
+}
+
+.ntc-card-head time {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.ntc-body {
+  margin: var(--space-3) 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--color-text);
+  line-height: var(--leading-body);
+}
+
+/* Admin notices section --------------------------------------------------- */
+.ntc-admin-item {
+  align-items: flex-start;
+}
+
+.ntc-admin-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ntc-admin-title {
+  overflow-wrap: anywhere;
+  font-weight: var(--weight-semibold);
+}
+
+.ntc-admin-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ntc-admin-form {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 760px) {
+  .tk-message {
+    max-width: 100%;
+  }
+
+  .tk-composer {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .tk-cell-time {
+    white-space: normal;
+  }
+
+  .ntc-admin-item {
+    flex-wrap: wrap;
+  }
+
+  .ntc-admin-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}

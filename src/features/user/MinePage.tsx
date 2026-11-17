@@ -1,5 +1,5 @@
 import { EntitlementInfo } from '../entitlements/EntitlementInfo'
-import { ChevronRight, Download, LogOut, Network, Share2, ShieldCheck } from 'lucide-react'
+import { ChevronRight, Download, LogOut, Megaphone, MessageSquare, Network, Share2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiClientError } from '../../app/api'
@@ -86,6 +86,16 @@ export function MinePage() {
             <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
           </Link>
         ) : null}
+        <Link className="nav-menu-item" to="/notices">
+          <Megaphone aria-hidden="true" size={18} />
+          <span>公告</span>
+          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
+        </Link>
+        <Link className="nav-menu-item" to="/tickets">
+          <MessageSquare aria-hidden="true" size={18} />
+          <span>工单</span>
+          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
+        </Link>
       </nav>
       <section className="data-section nav-menu" aria-label="会话与安全">
         <div className="nav-menu-item nav-session-row">
