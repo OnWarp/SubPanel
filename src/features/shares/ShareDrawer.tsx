@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type RefObject } from 'react'
 import { ApiClientError } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
@@ -135,10 +136,10 @@ function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated }: {
   return (
     <form className="form-stack sh-form" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
       <FormField label="备注" htmlFor="share-remark">
-        <input id="share-remark" value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
+        <Input id="share-remark" value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
       </FormField>
       <FormField label="有效期（天）" htmlFor="share-days">
-        <input
+        <Input
           id="share-days"
           inputMode="numeric"
           value={days}
@@ -153,7 +154,7 @@ function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated }: {
         ))}
       </div>
       <FormField label="访问密码" htmlFor="share-password">
-        <input
+        <Input
           id="share-password"
           type="password"
           autoComplete="new-password"
@@ -376,7 +377,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
               <strong>{revealed.title}</strong>
               <p>请立即复制分享链接，离开页面前仍可在列表中复制</p>
               <div className="sh-reveal-line">
-                <input aria-label="分享链接" value={revealed.url} readOnly />
+                <Input aria-label="分享链接" value={revealed.url} readOnly />
                 <button className="button secondary" type="button" onClick={() => { copyToClipboard(revealed.url).then(() => setNotice({ tone: 'success', text: '分享链接已复制' })).catch(() => setNotice({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })) }}>复制链接</button>
               </div>
               <button className="button secondary" type="button" onClick={() => setRevealed(null)}>完成</button>

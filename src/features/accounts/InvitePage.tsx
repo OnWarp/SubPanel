@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -46,8 +47,8 @@ export function InvitePage() {
       {invite ? (
         <form className="form-stack" onSubmit={submit}>
           <p className="account-identifier">账户：<strong>{invite.username}</strong></p>
-          <FormField label="密码" htmlFor="invite-password"><input id="invite-password" name="password" type="password" minLength={12} maxLength={128} required /></FormField>
-          <FormField label="确认密码" htmlFor="invite-confirm-password"><input id="invite-confirm-password" name="confirmPassword" type="password" minLength={12} maxLength={128} required /></FormField>
+          <FormField label="密码" htmlFor="invite-password"><Input id="invite-password" name="password" type="password" minLength={12} maxLength={128} required /></FormField>
+          <FormField label="确认密码" htmlFor="invite-confirm-password"><Input id="invite-confirm-password" name="confirmPassword" type="password" minLength={12} maxLength={128} required /></FormField>
           {error ? <p className="form-message error" role="alert">{error}</p> : null}
           <button className="button primary" type="submit" disabled={submitting}>
             <UserPlus aria-hidden="true" size={17} />

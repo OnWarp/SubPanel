@@ -1,3 +1,4 @@
+import { Checkbox } from './Controls'
 type SwitchProps = {
   label?: string
   checked: boolean
@@ -13,7 +14,7 @@ type SwitchProps = {
 export function Switch({ label, checked, onChange, disabled = false, ariaLabel }: SwitchProps) {
   return (
     <label className="sp-switch">
-      <input
+      <Checkbox
         type="checkbox"
         role="switch"
         aria-label={ariaLabel ?? label}

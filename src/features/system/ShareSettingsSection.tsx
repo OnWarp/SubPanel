@@ -1,3 +1,4 @@
+import { Input, FormSelect } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
@@ -164,23 +165,23 @@ export function ShareSettingsSection() {
           </div>
           <div className="sys-grid">
             <FormField label="单订阅分享上限" htmlFor="sys-share-max-shares" error={errors.maxSharesPerSubscription}>
-              <input id="sys-share-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={saving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
+              <Input id="sys-share-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={saving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
             </FormField>
             <FormField label="单用户有效分享上限" htmlFor="sys-share-max-active" error={errors.maxActiveSharesPerUser}>
-              <input id="sys-share-max-active" type="number" inputMode="numeric" min={1} max={1000} step={1} value={form.maxActiveSharesPerUser} disabled={saving} onChange={(event) => setForm({ ...form, maxActiveSharesPerUser: event.currentTarget.value })} />
+              <Input id="sys-share-max-active" type="number" inputMode="numeric" min={1} max={1000} step={1} value={form.maxActiveSharesPerUser} disabled={saving} onChange={(event) => setForm({ ...form, maxActiveSharesPerUser: event.currentTarget.value })} />
             </FormField>
             <FormField label="最长有效期（天）" htmlFor="sys-share-max-days" error={errors.maxValidityDays}>
-              <input id="sys-share-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={saving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
+              <Input id="sys-share-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={saving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
             </FormField>
             <FormField label="默认访问保护" htmlFor="sys-share-access-control">
-              <select id="sys-share-access-control" value={form.defaultAccessControl} disabled={saving} onChange={(event) => setForm({ ...form, defaultAccessControl: event.currentTarget.value === 'password' ? 'password' : 'none' })}>
+              <FormSelect id="sys-share-access-control" value={form.defaultAccessControl} disabled={saving} onChange={(event) => setForm({ ...form, defaultAccessControl: event.currentTarget.value === 'password' ? 'password' : 'none' })}>
                 <option value="none">无访问密码</option>
                 <option value="password">访问密码</option>
-              </select>
+              </FormSelect>
             </FormField>
             <div className="sys-field-wide">
               <FormField label="公网基址" htmlFor="sys-share-public-base" error={errors.publicBaseUrl}>
-                <input id="sys-share-public-base" type="url" placeholder="https://share.example.com" value={form.publicBaseUrl} disabled={saving} onChange={(event) => setForm({ ...form, publicBaseUrl: event.currentTarget.value })} />
+                <Input id="sys-share-public-base" type="url" placeholder="https://share.example.com" value={form.publicBaseUrl} disabled={saving} onChange={(event) => setForm({ ...form, publicBaseUrl: event.currentTarget.value })} />
               </FormField>
             </div>
           </div>

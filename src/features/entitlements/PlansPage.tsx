@@ -1,3 +1,4 @@
+import { FormSelect, Input, Textarea, Checkbox } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, jsonBody } from '../../app/api'
 import { PageHeader } from '../../ui/PageHeader'
@@ -63,17 +64,17 @@ export function PlansPage() {
       { key: 'actions',header: '管理',render: (p) => <span className="row-actions"><button className="button ghost" onClick={() => { setError(''); setDraft({ ...p }) }}>编辑</button><button className="button ghost" onClick={() => setRemove(p)}>删除</button></span> },
     ]} /></section>}
     <section className="data-section"><form className="form-stack" onSubmit={(e) => { void saveTrial(e) }}><h2>注册试用</h2>
-      <FormField label="试用计划" htmlFor="trial-plan"><select id="trial-plan" value={trial.trialPlanId ?? ''} onChange={(e) => setTrial({ ...trial,trialPlanId: e.target.value || null })}><option value="">关闭</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></FormField>
-      <FormField label="试用天数" htmlFor="trial-days"><input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField><button className="button primary" disabled={busy}>保存试用设置</button>
+      <FormField label="试用计划" htmlFor="trial-plan"><FormSelect id="trial-plan" value={trial.trialPlanId ?? ''} onChange={(e) => setTrial({ ...trial,trialPlanId: e.target.value || null })}><option value="">关闭</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</FormSelect></FormField>
+      <FormField label="试用天数" htmlFor="trial-days"><Input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField><button className="button primary" disabled={busy}>保存试用设置</button>
     </form></section>
     <EditDrawer open={draft !== null} title={draft?.id ? '编辑计划' : '新增计划'} busy={busy} onClose={() => setDraft(null)}>
       {draft ? <form className="form-stack" onSubmit={(e) => { void save(e) }}>
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-        <FormField label="名称" htmlFor="plan-name"><input id="plan-name" required maxLength={128} value={draft.name} onChange={(e) => setDraft({ ...draft,name: e.target.value })} /></FormField>
-        <FormField label="说明" htmlFor="plan-description"><textarea id="plan-description" maxLength={2000} value={draft.description} onChange={(e) => setDraft({ ...draft,description: e.target.value })} /></FormField>
-        {([['durationDays','有效天数'],['trafficGb','流量 GB（0 不限，仅展示）'],['speedLimitMbps','限速 Mbps（0 不限）'],['deviceLimit','设备数（0 不限，仅记录）'],['sortOrder','排序']] as const).map(([key,label]) => <FormField key={key} label={label} htmlFor={`plan-${key}`}><input id={`plan-${key}`} type="number" required step={key === 'trafficGb' ? 'any' : 1} min={key === 'durationDays' ? 1 : key === 'sortOrder' ? -1000000 : 0} value={draft[key]} onChange={(e) => setDraft({ ...draft,[key]: Number(e.target.value) })} /></FormField>)}
-        <fieldset><legend>绑定分组</legend>{groups.map((g) => <label key={g.id}><input type="checkbox" checked={draft.groupIds.includes(g.id)} onChange={(e) => setDraft({ ...draft,groupIds: e.target.checked ? [...draft.groupIds,g.id] : draft.groupIds.filter((id) => id !== g.id) })} />{g.name}</label>)}</fieldset>
-        <label><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft,enabled: e.target.checked })} />启用</label>
+        <FormField label="名称" htmlFor="plan-name"><Input id="plan-name" required maxLength={128} value={draft.name} onChange={(e) => setDraft({ ...draft,name: e.target.value })} /></FormField>
+        <FormField label="说明" htmlFor="plan-description"><Textarea id="plan-description" maxLength={2000} value={draft.description} onChange={(e) => setDraft({ ...draft,description: e.target.value })} /></FormField>
+        {([['durationDays','有效天数'],['trafficGb','流量 GB（0 不限，仅展示）'],['speedLimitMbps','限速 Mbps（0 不限）'],['deviceLimit','设备数（0 不限，仅记录）'],['sortOrder','排序']] as const).map(([key,label]) => <FormField key={key} label={label} htmlFor={`plan-${key}`}><Input id={`plan-${key}`} type="number" required step={key === 'trafficGb' ? 'any' : 1} min={key === 'durationDays' ? 1 : key === 'sortOrder' ? -1000000 : 0} value={draft[key]} onChange={(e) => setDraft({ ...draft,[key]: Number(e.target.value) })} /></FormField>)}
+        <fieldset><legend>绑定分组</legend>{groups.map((g) => <label key={g.id}><Checkbox type="checkbox" checked={draft.groupIds.includes(g.id)} onChange={(e) => setDraft({ ...draft,groupIds: e.target.checked ? [...draft.groupIds,g.id] : draft.groupIds.filter((id) => id !== g.id) })} />{g.name}</label>)}</fieldset>
+        <label><Checkbox type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft,enabled: e.target.checked })} />启用</label>
         <button className="button primary" disabled={busy}>保存计划</button>
       </form> : null}
     </EditDrawer>

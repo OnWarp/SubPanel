@@ -1,3 +1,4 @@
+import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { CheckCircle2, Pencil, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
@@ -191,7 +192,7 @@ export function NodesPage() {
       key: 'select',
       header: '选择',
       width: 40,
-      render: (node) => <input type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} />,
+      render: (node) => <Checkbox type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} />,
     },
     { key: 'sequence', header: '序号', width: 60, render: (node) => node.sequence },
     { key: 'name', header: '名称', render: (node) => <strong>{node.displayName}</strong> },
@@ -233,8 +234,8 @@ export function NodesPage() {
           filters={(
             <FilterBar className="data-header-filters cat-filter-bar">
               <SearchInput className="cat-filter-search" label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
-              <label className="filter-field"><span>协议</span><select aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-              <label className="filter-field"><span>来源</span><select aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
+              <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
+              <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
               <div className="cat-chip-group" role="group" aria-label="节点状态">
                 {NODE_STATUS_FILTERS.map((item) => (
                   <FilterChip key={item.value} active={status === item.value} onClick={() => setStatus(item.value)}>{item.label}</FilterChip>
@@ -252,11 +253,11 @@ export function NodesPage() {
           <>
             <div className="cat-table-tools">
               <label className="cat-select-all">
-                <input type="checkbox" aria-label="选择当前页节点" checked={visibleNodes.length > 0 && visibleNodes.every((node) => selected.has(node.id))} disabled={busy} onChange={(event) => selectCurrentPage(event.currentTarget.checked)} />
+                <Checkbox type="checkbox" aria-label="选择当前页节点" checked={visibleNodes.length > 0 && visibleNodes.every((node) => selected.has(node.id))} disabled={busy} onChange={(event) => selectCurrentPage(event.currentTarget.checked)} />
                 <span>全选当前页</span>
               </label>
               <div className="cat-page-meta">
-                <label><span>每页显示</span><select aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+                <label><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</FormSelect></label>
                 <span>第 {page} / {pageCount} 页 · 共 {filteredNodes.length} 项</span>
               </div>
             </div>
@@ -267,7 +268,7 @@ export function NodesPage() {
 
       <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit}>
         <form className="form-stack" onSubmit={saveNode}>
-          <label className="field"><span>节点名称</span><input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
+          <label className="field"><span>节点名称</span><Input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
           <p className="drawer-note">服务器、协议和认证字段由来源内容决定</p>
           <Switch label="启用节点" checked={nodeForm.enabled} onChange={(enabled) => setNodeForm((current) => ({ ...current, enabled }))} />
           <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />

@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { PasswordInput } from '../../ui/PasswordInput'
 import { LogIn } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -40,7 +41,7 @@ export function LoginPage() {
     <AuthLayout title="登录">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="用户名" htmlFor="login-username">
-          <input id="login-username" name="username" autoComplete="username" autoFocus required />
+          <Input id="login-username" name="username" autoComplete="username" autoFocus required />
         </FormField>
         <FormField label="密码" htmlFor="login-password" error={error}>
           <PasswordInput id="login-password" name="password" autoComplete="current-password" required />

@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { KeyRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -38,10 +39,10 @@ export function SetupPage() {
     <AuthLayout title="初始化管理员">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="管理员用户名" htmlFor="setup-username">
-          <input id="setup-username" name="username" autoComplete="username" minLength={3} maxLength={32} required />
+          <Input id="setup-username" name="username" autoComplete="username" minLength={3} maxLength={32} required />
         </FormField>
         <FormField label="管理员密码" htmlFor="setup-password">
-          <input id="setup-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+          <Input id="setup-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
         </FormField>
         {error ? <p className="form-message error" role="alert">{error}</p> : null}
         <button className="button primary" type="submit" disabled={submitting}>

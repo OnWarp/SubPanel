@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus, ShieldCheck, Star, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -116,7 +117,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
                 {item.lastCheckError ? <span className="dom-error"> · {item.lastCheckError}</span> : null}
               </p>
               <div className="dom-note-row">
-                <input
+                <Input
                   aria-label={`${item.hostname} 备注`}
                   value={draft}
                   maxLength={200}
@@ -138,10 +139,10 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
       </ul>
       <form className="dom-add-form" onSubmit={submit}>
         <FormField label="域名" htmlFor={`${idPrefix}-hostname`}>
-          <input id={`${idPrefix}-hostname`} value={hostname} placeholder="例如 panel.example.com" autoComplete="off" disabled={adding} onChange={(event) => setHostname(event.currentTarget.value)} />
+          <Input id={`${idPrefix}-hostname`} value={hostname} placeholder="例如 panel.example.com" autoComplete="off" disabled={adding} onChange={(event) => setHostname(event.currentTarget.value)} />
         </FormField>
         <FormField label="备注" htmlFor={`${idPrefix}-note`}>
-          <input id={`${idPrefix}-note`} value={note} maxLength={200} autoComplete="off" disabled={adding} onChange={(event) => setNote(event.currentTarget.value)} />
+          <Input id={`${idPrefix}-note`} value={note} maxLength={200} autoComplete="off" disabled={adding} onChange={(event) => setNote(event.currentTarget.value)} />
         </FormField>
         <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}><Plus aria-hidden="true" size={16} />添加</button>
       </form>

@@ -27,3 +27,5 @@ createRoot(document.getElementById('root')!).render(
 )
 
 import './styles/user-shell.css'
+
+import './styles/controls.css'

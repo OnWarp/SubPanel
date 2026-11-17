@@ -1,3 +1,4 @@
+import { Textarea } from '../../ui/Controls'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -126,7 +127,7 @@ export function AdminTicketDetailPage() {
             {closed ? <p className="tk-closed-hint">工单已关闭，发送回复会自动重开</p> : null}
             <form className="tk-form" onSubmit={submitReply}>
               <FormField label="回复用户" htmlFor="tk-admin-reply-body">
-                <textarea
+                <Textarea
                   id="tk-admin-reply-body"
                   rows={4}
                   maxLength={5_000}

@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { MailCheck, Send } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AccountProfile } from '../../app/api'
@@ -64,7 +65,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
     return (
       <form className="security-form" onSubmit={confirm}>
         <FormField label="邮箱验证码" htmlFor="account-email-code">
-          <input
+          <Input
             id="account-email-code"
             name="code"
             inputMode="numeric"
@@ -94,7 +95,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
   return (
     <form className="security-form" onSubmit={sendCode}>
       <FormField label={bound ? '新邮箱' : '邮箱'} htmlFor="account-email-address">
-        <input
+        <Input
           id="account-email-address"
           name="email"
           type="email"

@@ -1,3 +1,4 @@
+import { Checkbox, Input } from '../../ui/Controls'
 import { UserEntitlement } from '../entitlements/UserEntitlement'
 import { CheckCircle2, Copy, Crown, KeyRound, Mail, Plus, RotateCcw, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -437,7 +438,7 @@ export function UsersPage() {
       header: '选择',
       width: 52,
       render: (user) => (
-        <input
+        <Checkbox
           type="checkbox"
           aria-label={`选择用户 ${user.username}`}
           checked={user.role === 'user' && selectedUsers.has(user.id)}
@@ -536,7 +537,7 @@ export function UsersPage() {
       header: '选择',
       width: 52,
       render: (invite) => (
-        <input
+        <Checkbox
           type="checkbox"
           aria-label={`选择邀请 ${invite.username}`}
           checked={selectedInvites.has(invite.id)}
@@ -590,7 +591,7 @@ export function UsersPage() {
       {newLink ? (
         <section className="link-strip" aria-label="新邀请链接">
           <div><strong>邀请链接</strong><span>24 小时内有效</span></div>
-          <input aria-label="邀请链接" value={newLink} readOnly />
+          <Input aria-label="邀请链接" value={newLink} readOnly />
           <button className="icon-button" type="button" aria-label="复制邀请链接" title="复制邀请链接" onClick={copyLink}>
             <Copy aria-hidden="true" size={17} />
           </button>
@@ -609,7 +610,7 @@ export function UsersPage() {
               filters={(
                 <form id="invite-form" className="invite-form" onSubmit={createInvite}>
                   <FormField label="邀请用户名" htmlFor="invite-username">
-                    <input id="invite-username" name="username" placeholder="输入用户名" minLength={3} maxLength={32} required />
+                    <Input id="invite-username" name="username" placeholder="输入用户名" minLength={3} maxLength={32} required />
                   </FormField>
                 </form>
               )}
@@ -642,7 +643,7 @@ export function UsersPage() {
                 {view === 'active' ? (
                   <div className="usr-tools">
                     <label>
-                      <input
+                      <Checkbox
                         type="checkbox"
                         aria-label="选择全部用户"
                         checked={usersAllSelected}
@@ -676,7 +677,7 @@ export function UsersPage() {
               <>
                 <div className="usr-tools">
                   <label>
-                    <input
+                    <Checkbox
                       type="checkbox"
                       aria-label="选择全部邀请"
                       checked={invitesAllSelected}
@@ -705,7 +706,7 @@ export function UsersPage() {
         <form id="edit-user-form" className="form-stack" onSubmit={saveUser}>
           <p>{editUser?.username}</p>
           <FormField label="邮箱" htmlFor="edit-user-email">
-            <input id="edit-user-email" name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} disabled={mutating} required />
+            <Input id="edit-user-email" name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} disabled={mutating} required />
           </FormField>
           <StatusMessage tone="warning">保存后立即生效，无需验证码或确认邮件</StatusMessage>
           {editError ? <StatusMessage tone="error">{editError}</StatusMessage> : null}
@@ -732,7 +733,7 @@ export function UsersPage() {
             <p>{resetUser?.username}</p>
             <StatusMessage tone="success">密码已重置，旧会话已退出。临时密码只显示这一次，请复制后交给用户</StatusMessage>
             <div className="link-strip">
-              <input aria-label="临时密码" value={tempPassword} readOnly />
+              <Input aria-label="临时密码" value={tempPassword} readOnly />
               <button className="icon-button" type="button" aria-label="复制临时密码" title="复制临时密码" onClick={copyTempPassword}>
                 <Copy aria-hidden="true" size={17} />
               </button>
@@ -742,10 +743,10 @@ export function UsersPage() {
           <form id="reset-password-form" className="form-stack" onSubmit={resetPassword}>
             {resetUser ? <p>{resetUser.username}</p> : null}
             <FormField label="新密码" htmlFor="reset-new-password">
-              <input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+              <Input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
             </FormField>
             <FormField label="确认新密码" htmlFor="reset-confirm-password">
-              <input id="reset-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+              <Input id="reset-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
             </FormField>
             {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
           </form>

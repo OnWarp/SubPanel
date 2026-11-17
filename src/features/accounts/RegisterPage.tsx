@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { PasswordInput } from '../../ui/PasswordInput'
 import { UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -114,20 +115,20 @@ export function RegisterPage() {
     <AuthLayout title="注册">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="用户名" htmlFor="register-username" error={errorField === 'username' ? error : undefined}>
-          <input id="register-username" name="username" autoComplete="username" autoFocus required />
+          <Input id="register-username" name="username" autoComplete="username" autoFocus required />
         </FormField>
         <FormField label="邮箱" htmlFor="register-email" error={errorField === 'email' ? error : undefined}>
-          <input id="register-email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          <Input id="register-email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
         </FormField>
         <FormField label="验证码" htmlFor="register-code" error={errorField === 'code' ? error : undefined}>
-          <input id="register-code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
+          <Input id="register-code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
         </FormField>
         <button className="button" type="button" disabled={sending || countdown > 0 || email === ''} onClick={sendCode}>
           {countdown > 0 ? `${countdown} 秒后可重新发送` : sending ? '正在发送' : '发送验证码'}
         </button>
         {mode === 'invite' ? (
           <FormField label="邀请码" htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
-            <input id="register-invite-code" name="inviteCode" autoComplete="off" required />
+            <Input id="register-invite-code" name="inviteCode" autoComplete="off" required />
           </FormField>
         ) : null}
         <FormField label="密码" htmlFor="register-password">

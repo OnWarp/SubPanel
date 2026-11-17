@@ -1,3 +1,4 @@
+import { Input, DateTimeInput } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -163,7 +164,7 @@ export function InviteCodesSection() {
             <div className="sys-invite-fields">
               {kind === 'multi' ? (
                 <FormField label="可用次数（留空不限）" htmlFor="sys-invite-max-uses">
-                  <input
+                  <Input
                     id="sys-invite-max-uses"
                     type="number"
                     min={1}
@@ -177,7 +178,7 @@ export function InviteCodesSection() {
                 </FormField>
               ) : (
                 <FormField label="生成数量" htmlFor="sys-invite-count">
-                  <input
+                  <Input
                     id="sys-invite-count"
                     type="number"
                     min={1}
@@ -191,7 +192,7 @@ export function InviteCodesSection() {
                 </FormField>
               )}
               <FormField label="过期时间（可空）" htmlFor="sys-invite-expires">
-                <input
+                <DateTimeInput
                   id="sys-invite-expires"
                   type="datetime-local"
                   value={expiresAt}

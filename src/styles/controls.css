@@ -1,0 +1,55 @@
+/* Shared controls use the same surface, border and focus tokens as Select */
+.sp-input, .sp-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+.sp-textarea { resize: vertical; }
+.sp-input:focus-visible, .sp-textarea:focus-visible {
+  border-color: var(--color-accent);
+  outline: 0;
+  box-shadow: var(--shadow-focus);
+}
+.sp-input:disabled, .sp-textarea:disabled { opacity: 0.55; cursor: default; }
+.sp-input[aria-invalid='true'], .sp-textarea[aria-invalid='true'], .sp-select-trigger[aria-invalid='true'],
+.sp-form-field:has(.sp-form-field-error) .sp-select-trigger { border-color: var(--color-danger); }
+input.sp-checkbox {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 18px;
+  vertical-align: middle;
+  border-radius: var(--radius-ctl);
+  cursor: pointer;
+}
+input.sp-checkbox:checked { background: var(--color-accent); border-color: var(--color-accent); }
+input.sp-checkbox:checked::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 9px;
+  margin: 1px 0 0 5px;
+  border: solid var(--color-primary-contrast);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.sp-file { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.sp-file > span { overflow-wrap: anywhere; }
+.sp-form-select { min-width: 0; }
+.sp-select-validation { min-height: 0; padding: 0; border: 0; position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.sp-input[type='number'] { appearance: textfield; }
+.sp-input::-webkit-inner-spin-button, .sp-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+
+.sp-form-select .sp-select-trigger { width: 100%; }
+.sp-switch input.sp-checkbox { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; }
+.sp-search input.sp-input { min-height: 0; box-shadow: none; }

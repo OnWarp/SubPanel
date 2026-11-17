@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { KeyRound, LogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -73,13 +74,13 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
         <DataHeader title="修改密码" />
         <form className="security-form adm-account-form" onSubmit={changePassword}>
           <FormField label="当前密码" htmlFor="account-current-password">
-            <input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
+            <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
           </FormField>
           <FormField label="新密码" htmlFor="account-new-password">
-            <input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+            <Input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
           </FormField>
           <FormField label="确认新密码" htmlFor="account-confirm-password">
-            <input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+            <Input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
           </FormField>
           {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
           {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
