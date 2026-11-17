@@ -1,3 +1,4 @@
+import { PasswordInput } from '../../ui/PasswordInput'
 import { UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -18,6 +19,7 @@ export function RegisterPage() {
   const [sending, setSending] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [errorField, setErrorField] = useState('confirmPassword')
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export function RegisterPage() {
 
   const sendCode = async () => {
     setError('')
+    setErrorField('email')
     setNotice('')
     setSending(true)
     try {
@@ -42,6 +45,7 @@ export function RegisterPage() {
       setCountdown(60)
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : '验证码发送失败')
+      document.getElementById('register-email')?.focus()
     } finally {
       setSending(false)
     }
@@ -53,7 +57,9 @@ export function RegisterPage() {
     const form = new FormData(event.currentTarget)
     const password = String(form.get('password'))
     if (password !== String(form.get('confirmPassword'))) {
+      setErrorField('confirmPassword')
       setError('两次输入的密码不一致')
+      document.getElementById('register-confirm-password')?.focus()
       return
     }
     setSubmitting(true)
@@ -71,7 +77,10 @@ export function RegisterPage() {
       await refresh()
       navigate('/', { replace: true })
     } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '注册失败')
+      const message = cause instanceof ApiClientError ? cause.message : '注册失败'
+      const field = /邮箱/.test(message) ? 'email' : /邀请码/.test(message) ? 'inviteCode' : /验证码/.test(message) ? 'code' : /用户名/.test(message) ? 'username' : 'confirmPassword'
+      setErrorField(field); setError(message)
+      document.querySelector<HTMLInputElement>(`[name="${field}"]`)?.focus()
     } finally {
       setSubmitting(false)
     }
@@ -104,31 +113,30 @@ export function RegisterPage() {
   return (
     <AuthLayout title="注册">
       <form className="form-stack" onSubmit={submit}>
-        <FormField label="用户名" htmlFor="register-username">
-          <input id="register-username" name="username" autoComplete="username" required />
+        <FormField label="用户名" htmlFor="register-username" error={errorField === 'username' ? error : undefined}>
+          <input id="register-username" name="username" autoComplete="username" autoFocus required />
         </FormField>
-        <FormField label="邮箱" htmlFor="register-email">
+        <FormField label="邮箱" htmlFor="register-email" error={errorField === 'email' ? error : undefined}>
           <input id="register-email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
         </FormField>
-        <FormField label="验证码" htmlFor="register-code">
+        <FormField label="验证码" htmlFor="register-code" error={errorField === 'code' ? error : undefined}>
           <input id="register-code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
         </FormField>
         <button className="button" type="button" disabled={sending || countdown > 0 || email === ''} onClick={sendCode}>
           {countdown > 0 ? `${countdown} 秒后可重新发送` : sending ? '正在发送' : '发送验证码'}
         </button>
         {mode === 'invite' ? (
-          <FormField label="邀请码" htmlFor="register-invite-code">
+          <FormField label="邀请码" htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
             <input id="register-invite-code" name="inviteCode" autoComplete="off" required />
           </FormField>
         ) : null}
         <FormField label="密码" htmlFor="register-password">
-          <input id="register-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+          <PasswordInput id="register-password" name="password" autoComplete="new-password" minLength={12} maxLength={128} required />
         </FormField>
-        <FormField label="确认密码" htmlFor="register-confirm-password">
-          <input id="register-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+        <FormField label="确认密码" htmlFor="register-confirm-password" error={errorField === 'confirmPassword' ? error : undefined}>
+          <PasswordInput id="register-confirm-password" name="confirmPassword" autoComplete="new-password" minLength={12} maxLength={128} required />
         </FormField>
         {notice ? <p className="form-message" role="status">{notice}</p> : null}
-        {error ? <p className="form-message error" role="alert">{error}</p> : null}
         <button className="button primary" type="submit" disabled={submitting}>
           <UserPlus aria-hidden="true" size={17} />
           {submitting ? '正在注册' : '注册'}

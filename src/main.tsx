@@ -25,3 +25,5 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>,
 )
+
+import './styles/user-shell.css'

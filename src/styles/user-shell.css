@@ -1,0 +1,32 @@
+.user-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.user-quick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.user-subscription-card, .user-account-card { padding: 24px; border-radius: var(--radius-card-lg); }
+.user-subscription-card h2, .user-account-card h2 { margin: 0 0 20px; font-size: var(--font-lg); }
+.user-subscription-content { display: flex; align-items: center; gap: 24px; }
+.user-subscription-main { min-width: 0; flex: 1; display: grid; gap: 16px; }
+.user-link-code { padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-inset); background: var(--color-surface-subtle); overflow-wrap: anywhere; }
+.user-link-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.user-qr { flex: 0 0 180px; }
+.user-qr img { display: block; max-width: 100%; height: auto; }
+.user-account-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.user-account-card .security-form { padding: 0; }
+.user-account-card .profile-fields { margin-top: 16px; }
+.user-center { margin-top: auto; padding: 12px; position: relative; }
+.user-center summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 40px; }
+.user-center summary img { border-radius: var(--radius-pill); }
+.user-center summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.user-center nav { position: absolute; bottom: 100%; left: 8px; right: 8px; padding: 8px; display: grid; gap: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-raised); z-index: 20; }
+.user-center nav a, .user-center nav button { display: block; text-align: left; padding: 10px; color: var(--color-text); background: transparent; border: 0; border-radius: var(--radius-ctl); font: inherit; cursor: pointer; }
+.user-center nav a:hover, .user-center nav button:hover { background: var(--color-surface-subtle); }
+.sidebar-collapsed .user-center summary span, .sidebar-collapsed .user-center summary > svg:last-child { display: none; }
+.sidebar-collapsed .user-center nav { width: 200px; }
+.password-input { display: flex; align-items: center; position: relative; }
+.password-input input { width: 100%; padding-right: 44px; }
+.password-input button { position: absolute; right: 6px; }
+@media (max-width: 767px) {
+  .user-stat-grid, .user-account-grid { grid-template-columns: 1fr; }
+  .user-subscription-content { flex-direction: column; align-items: stretch; }
+  .user-qr { flex-basis: auto; align-self: center; }
+  .user-link-actions { grid-template-columns: 1fr; }
+  .user-subscription-card, .user-account-card { padding: 20px; }
+}

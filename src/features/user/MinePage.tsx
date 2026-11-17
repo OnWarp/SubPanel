@@ -1,134 +1,46 @@
-import { EntitlementInfo } from '../entitlements/EntitlementInfo'
-import { BookOpen, ChevronRight, Download, LogOut, Megaphone, MessageSquare, Network, Share2, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { api } from '../../app/api'
 import { useSession } from '../../app/session'
-import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { PageHeader } from '../../ui/PageHeader'
-import { StatusBadge } from '../../ui/StatusBadge'
-import { StatusMessage } from '../../ui/StatusMessage'
-import { useDownloadsEnabled } from '../apps/downloads-visibility'
-import { ProfileCard } from '../accounts/ProfileCard'
-import { formatProfileDate, useAccountProfile } from '../accounts/profile'
+import { AccountPage } from '../accounts/AccountPage'
+import { useAccountProfile, formatProfileDate } from '../accounts/profile'
+import { entitlementLabels, type EntitlementState } from '../entitlements/types'
+import { ErrorState } from '../../ui/ErrorState'
+import { LoadingState } from '../../ui/LoadingState'
+import { PageHero } from '../../ui/PageHero'
+import { Switch } from '../../ui/Switch'
+import { SubscriptionReset } from './SubscriptionReset'
+import { reminderEnabled, reminderKey } from './reminder'
 
 export function MinePage() {
-  const { user, logout } = useSession()
-  const { profile } = useAccountProfile()
-  const downloadsEnabled = useDownloadsEnabled()
-  const navigate = useNavigate()
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false)
-  const roleLabel = user?.role === 'admin' ? '管理员' : '用户'
-
-  const signOut = async () => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    try {
-      await logout()
-      navigate('/login', { replace: true })
-    } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '退出登录失败')
-      setBusy(false)
-    }
+  const { user } = useSession()
+  const { profile, error, reload } = useAccountProfile()
+  const [rights, setRights] = useState<EntitlementState | null>(null)
+  const [rightsError, setRightsError] = useState('')
+  const [reminder, setReminder] = useState(() => reminderEnabled(user?.id))
+  const [preferenceError, setPreferenceError] = useState('')
+  const [reset, setReset] = useState(false)
+  useEffect(() => { api<EntitlementState>('/api/account/entitlement').then(setRights).catch(cause => setRightsError(cause instanceof Error ? cause.message : '加载权益失败')) }, [])
+  const updateReminder = (checked: boolean) => {
+    try { localStorage.setItem(reminderKey(user?.id), checked ? '1' : '0'); setReminder(checked); setPreferenceError('') }
+    catch { setPreferenceError('浏览器无法保存提醒设置') }
   }
-
-  const logoutAll = async () => {
-    try {
-      await api('/api/account/logout-all', { method: 'POST', body: '{}' })
-      window.location.assign('/login')
-    } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '退出全部设备失败')
-      setConfirmLogoutAll(false)
-    }
-  }
-
-  return (
-    <div className="page-stack nav-mine">
-      <PageHeader title="我的" />
-      <EntitlementInfo />
-      {profile ? (
-        <ProfileCard profile={profile} />
-      ) : (
-        <section className="data-section nav-profile" aria-label="当前用户">
-          <span className="nav-profile-mark" aria-hidden="true">
-            <ShieldCheck size={20} />
-          </span>
-          <div className="nav-profile-id">
-            <strong>{user?.username}</strong>
-            <StatusBadge tone={user?.role === 'admin' ? 'warning' : 'info'} size="sm">{roleLabel}</StatusBadge>
-          </div>
+  return <div className="page-stack">
+    <PageHero title="个人中心" subtitle={profile?.user.email ?? user?.username} actions={<Link className="button secondary" to="/subscriptions">管理订阅</Link>} />
+    <div className="user-account-grid">
+      <div className="page-stack">
+        <section className="data-section user-account-card" aria-label="账户信息"><h2>账户信息</h2>
+          {profile ? <><img className="profile-avatar" src={profile.avatar.url} alt="" width={56} height={56} /><dl className="profile-fields">
+            <div><dt>邮箱</dt><dd>{profile.user.email ?? '未绑定'}</dd></div>
+            <div><dt>权益</dt><dd>{rightsError || (rights ? rights.current?.plan.name ?? entitlementLabels[rights.state] : '正在加载权益')}</dd></div>
+            <div><dt>到期</dt><dd>{formatProfileDate((rights?.current ?? rights?.latest)?.expiresAt)}</dd></div>
+          </dl></> : error ? <ErrorState message={error} onRetry={() => { void reload() }} /> : <LoadingState label="正在加载账户资料" />}
         </section>
-      )}
-      {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-      <nav className="data-section nav-menu" aria-label="我的入口">
-        <Link className="nav-menu-item" to="/account">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <span>账户安全</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-        <Link className="nav-menu-item" to="/subscriptions">
-          <Share2 aria-hidden="true" size={18} />
-          <span>我的分享</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-        <Link className="nav-menu-item" to="/nodes">
-          <Network aria-hidden="true" size={18} />
-          <span>我的节点</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-        {downloadsEnabled ? (
-          <Link className="nav-menu-item" to="/apps">
-            <Download aria-hidden="true" size={18} />
-            <span>APP 下载</span>
-            <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-          </Link>
-        ) : null}
-        <Link className="nav-menu-item" to="/notices">
-          <Megaphone aria-hidden="true" size={18} />
-          <span>公告</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-        <Link className="nav-menu-item" to="/kb">
-          <BookOpen aria-hidden="true" size={18} />
-          <span>知识库</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-        <Link className="nav-menu-item" to="/tickets">
-          <MessageSquare aria-hidden="true" size={18} />
-          <span>工单</span>
-          <ChevronRight className="nav-menu-chevron" aria-hidden="true" size={16} />
-        </Link>
-      </nav>
-      <section className="data-section nav-menu" aria-label="会话与安全">
-        <div className="nav-menu-item nav-session-row">
-          <ShieldCheck aria-hidden="true" size={18} />
-          <span>
-            {profile?.session
-              ? `本次登录 ${formatProfileDate(profile.session.issuedAt)}，${formatProfileDate(profile.session.expiresAt)} 过期`
-              : '会话信息加载中'}
-          </span>
-        </div>
-        <button className="nav-menu-item danger" type="button" onClick={() => setConfirmLogoutAll(true)}>
-          <LogOut aria-hidden="true" size={18} />
-          <span>退出全部设备</span>
-        </button>
-      </section>
-      <button className="nav-logout" type="button" disabled={busy} onClick={() => { signOut().catch(() => undefined) }}>
-        退出登录
-      </button>
-      <ConfirmDialog
-        open={confirmLogoutAll}
-        title="退出全部设备"
-        description="所有设备上的会话都会失效，包括当前设备，需要重新登录"
-        confirmLabel="退出全部设备"
-        danger
-        busy={busy}
-        onClose={() => setConfirmLogoutAll(false)}
-        onConfirm={() => { logoutAll().catch(() => undefined) }}
-      />
+        <section className="data-section user-account-card"><h2>通知设置</h2><Switch label="到期提醒" checked={reminder} onChange={updateReminder} /><p className="profile-hint">仅保存在此浏览器，权益到期前 7 天在首页提醒</p>{preferenceError ? <p role="alert">{preferenceError}</p> : null}</section>
+        <section className="data-section user-account-card"><h2>订阅操作</h2><p>重置后旧链接立即失效，请重新添加到客户端</p><button className="button danger" onClick={() => setReset(true)}>重置订阅</button></section>
+      </div>
+      <section className="page-stack" aria-label="安全"><h2>安全</h2><AccountPage embedded /></section>
     </div>
-  )
+    <SubscriptionReset open={reset} onClose={() => setReset(false)} />
+  </div>
 }

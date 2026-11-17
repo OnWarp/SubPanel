@@ -1,6 +1,7 @@
-import { BookOpen, ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronsLeft, ChevronsRight, Download, Ellipsis, FolderKanban, Gauge, Home, LogOut, type LucideIcon, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useAccountProfile } from '../features/accounts/profile'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
@@ -48,6 +49,17 @@ const userSidebar: NavItem[] = [
   { to: '/apps', label: 'APP 下载', icon: Download },
   { to: '/me', label: '我的', icon: UserRound },
 ]
+
+function UserCenter({ signOut }: { signOut: () => Promise<void> }) {
+  const { user } = useSession()
+  const { profile } = useAccountProfile()
+  const [error, setError] = useState('')
+  return <div className="user-center"><details onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary title="用户中心">
+    {profile ? <img src={profile.avatar.url} alt="" width={32} height={32} /> : <UserRound size={24} aria-hidden="true" />}
+    <span>{profile?.user.email ?? user?.email ?? user?.username}</span><ChevronDown size={16} aria-hidden="true" />
+    </summary><nav aria-label="账号菜单"><Link to="/me">个人中心</Link><Link to="/entitlement">我的权益</Link><Link to="/account">安全与通知设置</Link><button type="button" onClick={() => { signOut().catch(() => setError('退出登录失败，请重试')) }}>退出登录</button></nav>
+    </details>{error ? <p role="alert">{error}</p> : null}</div>
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
@@ -155,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
         )}
-        <div className="sidebar-account"><UserRound aria-hidden="true" size={18} /><div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div><button className="sidebar-signout" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button></div>
+        {isAdmin ? <div className="sidebar-account"><UserRound aria-hidden="true" size={18} /><div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div><button className="sidebar-signout" type="button" aria-label="退出登录" title="退出登录" onClick={signOut}><LogOut aria-hidden="true" size={17} /></button></div> : <UserCenter key={location.pathname} signOut={signOut} />}
       </aside>
       <div className="workspace">
         <header className="workspace-topbar">
