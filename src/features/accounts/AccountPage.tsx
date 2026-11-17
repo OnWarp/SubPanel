@@ -72,7 +72,7 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
       ) : null}
       <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
         <DataHeader title="修改密码" />
-        <p className="profile-hint">用户名和头像目前不可修改，头像根据账户信息自动生成</p>
+        <p className="profile-hint">用户名不可修改，头像根据账户信息自动生成；新密码须为 12 至 128 个字符</p>
         <form className="security-form adm-account-form" onSubmit={changePassword}>
           <FormField label="当前密码" htmlFor="account-current-password">
             <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />

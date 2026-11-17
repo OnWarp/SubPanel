@@ -31,6 +31,7 @@ export function MinePage() {
       <div className="page-stack">
         <section className="data-section user-account-card" aria-label="账户信息"><h2>账户信息</h2>
           {profile ? <><img className="profile-avatar" src={profile.avatar.url} alt="" width={56} height={56} /><dl className="profile-fields">
+            <div><dt>用户名</dt><dd>{profile.user.username}</dd></div>
             <div><dt>邮箱</dt><dd>{profile.user.email ?? '未绑定'}</dd></div>
             <div><dt>权益</dt><dd>{rightsError || (rights ? rights.current?.plan.name ?? entitlementLabels[rights.state] : '正在加载权益')}</dd></div>
             <div><dt>到期</dt><dd>{formatProfileDate((rights?.current ?? rights?.latest)?.expiresAt)}</dd></div>

@@ -21,3 +21,21 @@
     padding-left: var(--space-3);
   }
 }
+
+/* Keep management navigation and invite rows usable on narrow screens. */
+@media (max-width: 760px) {
+  .sys-domain-item { flex-wrap: wrap; min-width: 0; }
+  .sys-invite-main { min-width: 0; overflow-wrap: anywhere; }
+  .sys-invite-code, .sys-invite-meta { overflow-wrap: anywhere; }
+  .profile-card-main, .security-form { min-width: 0; }
+  .profile-fields dd { overflow-wrap: anywhere; }
+}
+
+@media (max-width: 760px) {
+  .usr-table { overflow-x: visible; }
+  .usr-table .sp-table, .usr-table .sp-table tbody, .usr-table .sp-table tr, .usr-table .sp-table td { display: block; width: 100%; }
+  .usr-table .sp-table thead { display: none; }
+  .usr-table .sp-table tr { padding: var(--space-3); border-bottom: 1px solid var(--color-border); }
+  .usr-table .sp-table td { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; text-align: left; overflow-wrap: anywhere; }
+  .usr-table .sp-table td::before { content: attr(data-label); color: var(--color-text-muted); flex-shrink: 0; }
+}

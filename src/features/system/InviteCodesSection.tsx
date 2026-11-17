@@ -50,6 +50,7 @@ export function InviteCodesSection() {
   const [count, setCount] = useState('10')
   const [expiresAt, setExpiresAt] = useState('')
   const [created, setCreated] = useState<CreatedInviteCode[] | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<InviteCodeItem | null>(null)
   const [pendingDisable, setPendingDisable] = useState<InviteCodeItem[] | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [progress, setProgress] = useState('')
@@ -123,6 +124,21 @@ export function InviteCodesSection() {
     }
   }
 
+  const remove = async () => {
+    if (!pendingDelete || busy) return
+    setBusy(true)
+    try {
+      await api(`/api/admin/invitations/${pendingDelete.id}/delete`, { method: 'POST', body: '{}' })
+      setPendingDelete(null)
+      toast.notify('邀请码已删除')
+      await load()
+    } catch (cause) {
+      toast.notifyError(errorMessage(cause, '删除邀请码失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const selectable = items.filter((item) => !item.disabled)
 
   return (
@@ -157,7 +173,7 @@ export function InviteCodesSection() {
                     {item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? '已过期' : item.remaining === 0 ? '已用完' : '可使用'}
                   </StatusBadge> : null}
                   {item.disabled
-                    ? <StatusBadge tone="muted" size="sm">已停用</StatusBadge>
+                    ? <><StatusBadge tone="muted" size="sm">已停用</StatusBadge>{item.usedCount === 0 ? <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(item)}>删除</button> : null}</>
                     : <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDisable([item])}>停用</button>}
                 </li>
               ))}
@@ -231,6 +247,16 @@ export function InviteCodesSection() {
           </form>
         </>
       ) : null}
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="删除邀请码"
+        description="删除后邀请码无法恢复，已使用的邀请码保留消费记录"
+        confirmLabel="删除"
+        danger
+        busy={busy}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => { remove().catch(() => undefined) }}
+      />
       <ConfirmDialog
         open={pendingDisable !== null}
         title="停用邀请码"
