@@ -82,7 +82,7 @@ export function RegisterPage() {
       navigate('/', { replace: true })
     } catch (cause) {
       const message = cause instanceof ApiClientError ? cause.message : '注册失败'
-      const field = /邮箱/.test(message) ? 'email' : /邀请码/.test(message) ? 'inviteCode' : /验证码/.test(message) ? 'code' : /用户名/.test(message) ? 'username' : 'confirmPassword'
+      const field = /邀请码/.test(message) ? 'inviteCode' : /验证码/.test(message) ? 'code' : /邮箱/.test(message) ? 'email' : /用户名/.test(message) ? 'username' : /密码/.test(message) ? 'password' : 'confirmPassword'
       setErrorField(field); setError(message)
       document.querySelector<HTMLInputElement>(`[name="${field}"]`)?.focus()
     } finally {
@@ -118,7 +118,8 @@ export function RegisterPage() {
     <AuthLayout title="注册">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="用户名" htmlFor="register-username" error={errorField === 'username' ? error : undefined}>
-          <Input id="register-username" name="username" autoComplete="username" autoFocus required />
+          <Input id="register-username" name="username" autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoFocus required />
+          <p className="profile-hint">3 至 32 位字母、数字或 . _ -</p>
         </FormField>
         <FormField label="邮箱" htmlFor="register-email" error={errorField === 'email' ? error : undefined}>
           <Input id="register-email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
@@ -131,13 +132,13 @@ export function RegisterPage() {
           {countdown > 0 ? `${countdown} 秒后可重新发送` : sending ? '正在发送' : '发送验证码'}
         </button>
         </> : null}
-        {invited ? (
-          <FormField label="邀请码" htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
-            <Input id="register-invite-code" name="inviteCode" autoComplete="off" required value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
+        <FormField label={mode === 'invite' ? "邀请码" : "邀请码（选填）"} htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
+            <Input id="register-invite-code" name="inviteCode" autoComplete="off" required={mode === 'invite'} value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
           </FormField>
-        ) : null}
-        <FormField label="密码" htmlFor="register-password">
+        {mode === 'invite' ? <p className="profile-hint">当前仅接受邀请码注册，请向管理员获取邀请码</p> : null}
+        <FormField label="密码" htmlFor="register-password" error={errorField === 'password' ? error : undefined}>
           <PasswordInput id="register-password" name="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+          <p className="profile-hint">密码长度为 12 至 128 个字符</p>
         </FormField>
         <FormField label="确认密码" htmlFor="register-confirm-password" error={errorField === 'confirmPassword' ? error : undefined}>
           <PasswordInput id="register-confirm-password" name="confirmPassword" autoComplete="new-password" minLength={12} maxLength={128} required />
