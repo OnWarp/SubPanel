@@ -1,7 +1,7 @@
 import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
+import { loadAdminUserOptions, api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { CopyButton } from '../../ui/CopyButton'
@@ -162,7 +162,7 @@ export function SubscriptionsPage() {
 
   const loadMeta = useCallback(async () => {
     const [userResult, nextCatalog] = await Promise.all([
-      api<{ users: UserSummary[] }>('/api/admin/users'),
+      loadAdminUserOptions(),
       api<CatalogResponse>('/api/admin/catalog'),
     ])
     setUsers(userResult.users)

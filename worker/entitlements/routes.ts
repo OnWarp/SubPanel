@@ -9,7 +9,7 @@ import { userAnchorStatement } from '../db/ensure-users.js'
 import { batch } from '../db/db.js'
 import { upsertSettingStatement } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
-import { deletePlan, getPlan, getUserEntitlement, listPlans, operateEntitlement, planSchema, readTrialSettings, savePlan, trialSchema } from './service.js'
+import { deletePlan, getPlan, getUserEntitlement, listPlans, listPublicPlans, operateEntitlement, planSchema, readTrialSettings, savePlan, trialSchema } from './service.js'
 
 async function refreshDelivery(env: DataEnv): Promise<{ warning?: string }> {
   try { await compileAllSubscriptions(env); return {} }
@@ -54,3 +54,5 @@ adminEntitlementRoutes.post('/users/:id/entitlement', async (c) => {
 })
 export const userEntitlementRoutes = new Hono<AppEnv>()
 userEntitlementRoutes.get('/entitlement', async (c) => c.json(await getUserEntitlement(c.env.DB,c.get('principal').id)))
+
+userEntitlementRoutes.get('/plans', async (c) => c.json({ plans: await listPublicPlans(c.env.DB) }))

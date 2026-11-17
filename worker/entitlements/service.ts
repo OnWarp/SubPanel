@@ -28,6 +28,13 @@ export async function listPlans(db: D1Database): Promise<Plan[]> {
   ])
   return plans.results.map((p) => ({ id: p.id, name: p.name, description: p.description, durationDays: p.duration_days, trafficGb: p.traffic_gb, speedLimitMbps: p.speed_limit_mbps, deviceLimit: p.device_limit, enabled: p.enabled === 1, sortOrder: p.sort_order, createdAt: p.created_at, updatedAt: p.updated_at, groupIds: groups.results.filter((g) => g.plan_id === p.id).map((g) => g.group_id) }))
 }
+// Explicit public projection: never expose group membership or management metadata.
+export async function listPublicPlans(db: D1Database) {
+  const rows = await db.prepare(`SELECT id,name,description,duration_days,traffic_gb,speed_limit_mbps,device_limit
+    FROM plans WHERE enabled=1 ORDER BY sort_order,created_at,id`).all<Pick<PlanRow, 'id' | 'name' | 'description' | 'duration_days' | 'traffic_gb' | 'speed_limit_mbps' | 'device_limit'>>()
+  return rows.results.map((p) => ({ id: p.id, name: p.name, description: p.description,
+    durationDays: p.duration_days, trafficGb: p.traffic_gb, speedLimitMbps: p.speed_limit_mbps, deviceLimit: p.device_limit }))
+}
 export async function getPlan(db: D1Database, id: string): Promise<Plan> {
   const plan = (await listPlans(db)).find((p) => p.id === id)
   if (!plan) throw apiError(404, 'PLAN_NOT_FOUND', '计划不存在')

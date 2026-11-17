@@ -284,6 +284,25 @@ describe('tickets', () => {
 })
 
 describe('notices', () => {
+  it('searches visible titles and bodies with literal input and stable server pagination', async () => {
+    const admin = await login()
+    const reader = await provisionUser(admin, 'search-reader', 'search reader password')
+    await createNotice(admin,{ title: 'Secret match', body: 'Needle', visible: false })
+    const first = await createNotice(admin,{ title: 'NEEDLE title', body: 'First', sortOrder: 1 })
+    const second = await createNotice(admin,{ title: 'Body match', body: 'A needle in text', sortOrder: 2 })
+    const literal = await createNotice(admin,{ title: '100%_literal', body: '中文内容', sortOrder: 3 })
+    await createNotice(admin,{ title: 'Unrelated', body: 'Other' })
+    const query = (q: string, page = 1) => call(reader.cookie, 'GET', `/api/notices?q=${encodeURIComponent(q)}&page=${page}&pageSize=1`)
+    expect(await (await query(' needle ')).json()).toMatchObject({ notices: [{ id: first.id }], total: 2, page: 1, pageSize: 1 })
+    expect(await (await query('needle',2)).json()).toMatchObject({ notices: [{ id: second.id }], total: 2, page: 2 })
+    expect(await (await query('needle',3)).json()).toMatchObject({ notices: [], total: 2 })
+    expect(await (await query('%_')).json()).toMatchObject({ notices: [{ id: literal.id }], total: 1 })
+    expect(await (await query('中文')).json()).toMatchObject({ total: 1 })
+    expect(await (await query("' OR 1=1 --")).json()).toMatchObject({ notices: [], total: 0 })
+    const bounded = await call(reader.cookie, 'GET', '/api/notices?q=&page=-1&pageSize=999')
+    expect(await bounded.json()).toMatchObject({ total: 4, page: 1, pageSize: 100 })
+    await expectError(await exports.default.fetch(`${TEST_ORIGIN}/api/notices?q=needle`),401,'AUTH_REQUIRED')
+  })
   it('filters by visibility and orders by sort order then publish time', async () => {
     const admin = await login()
     const reader = await provisionUser(admin, 'notice-reader', 'notice reader password')
