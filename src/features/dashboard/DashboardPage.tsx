@@ -4,12 +4,17 @@ import { Link } from 'react-router-dom'
 import { api, ApiClientError, type AdminSubscription, type CatalogResponse, type UserSummary } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
+import { StatCard } from '../../ui/StatCard'
+import type { EntitlementState } from '../entitlements/types'
 import { PageHeader } from '../../ui/PageHeader'
 
 type DashboardData = {
   catalog: CatalogResponse
   subscriptions: AdminSubscription[]
   users: UserSummary[]
+  userTotal: number
+  rights: EntitlementState[] | null
+  pendingTickets: number | null
 }
 
 export function DashboardPage() {
@@ -24,9 +29,25 @@ export function DashboardPage() {
       const [catalog, subscriptionResult, userResult] = await Promise.all([
         api<CatalogResponse>('/api/admin/catalog'),
         api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
-        api<{ users: UserSummary[] }>('/api/admin/users'),
+        api<{ users: UserSummary[], total: number }>('/api/admin/users?pageSize=100'),
       ])
-      setData({ catalog, subscriptions: subscriptionResult.subscriptions, users: userResult.users })
+      const users = [...userResult.users]
+      for (let page = 2; users.length < userResult.total; page += 1) {
+        const result = await api<{ users: UserSummary[] }>(`/api/admin/users?pageSize=100&page=${page}`)
+        if (!result.users.length) throw new Error('用户列表不完整')
+        users.push(...result.users)
+      }
+      const [rightsResult, ticketsResult] = await Promise.allSettled([
+        (async () => {
+          const rights: EntitlementState[] = []
+          for (let start = 0; start < users.length; start += 8) {
+            rights.push(...await Promise.all(users.slice(start, start + 8).map((user) => api<EntitlementState>(`/api/admin/users/${user.id}/entitlement`))))
+          }
+          return rights
+        })(),
+        api<{ total: number }>('/api/admin/tickets?status=open&pageSize=1'),
+      ])
+      setData({ catalog, subscriptions: subscriptionResult.subscriptions, users, userTotal: userResult.total, rights: rightsResult.status === 'fulfilled' ? rightsResult.value : null, pendingTickets: ticketsResult.status === 'fulfilled' ? ticketsResult.value.total : null })
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : '加载概览失败')
     } finally {
@@ -61,6 +82,11 @@ export function DashboardPage() {
       {loading && !data ? <section className="data-section"><LoadingState label="正在加载概览" /></section> : null}
       {data ? (
         <>
+          <section className="ui3-stat-grid" aria-label="用户与权益统计">
+            <StatCard label="总用户" value={data.userTotal} />
+            {data.rights ? <><StatCard label="有效权益" value={data.rights.filter((right) => right.state === 'active' && right.current).length} /><StatCard label="7 日内到期" value={data.rights.filter((right) => right.state === 'active' && right.current && Date.parse(right.current.expiresAt) > Date.now() && Date.parse(right.current.expiresAt) <= Date.now() + 7 * 86400000).length} /></> : null}
+            {data.pendingTickets !== null ? <StatCard label="待处理工单" value={data.pendingTickets} sub="未关闭工单" /> : null}
+          </section>
           <section className="adm-stat-grid" aria-label="资源统计">
             <Link className="adm-stat" to="/catalog/sources">
               <span className="adm-stat-label">来源</span>

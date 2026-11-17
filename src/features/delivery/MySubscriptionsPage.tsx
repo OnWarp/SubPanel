@@ -1,6 +1,6 @@
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
 import { ShareDrawer } from '../shares/ShareDrawer'
 import { Button } from '../../ui/Button'
@@ -165,7 +165,7 @@ export function MySubscriptionsPage() {
 
   return (
     <div className="page-stack del-user-page">
-      <PageHeader title="我的订阅" actions={<Select
+      <PageHeader title="订阅详情" actions={<Select
           label="选择订阅"
           value={selectedId}
           options={subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))}
@@ -178,6 +178,7 @@ export function MySubscriptionsPage() {
           }}
         />} />
 
+      <Link className="button secondary" to="/entitlements">查看我的权益</Link>
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
 
@@ -238,19 +239,25 @@ export function MySubscriptionsPage() {
             )}
           </section>
 
+          <section className="data-section ui3-platform-list" aria-label="各平台订阅链接">
+            <h2>各平台链接</h2>
+            {linkEntries.map(([platform, link]) => <article key={platform} className="ui3-platform-row"><h3>{platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform}</h3><code>{link}</code><CopyButton value={link} variant="full-width" label={`复制 ${platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform} 链接`} /></article>)}
+          </section>
+
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
             <summary id="diagnostics-title">兼容诊断</summary>
             {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
           </details>
 
           <section className="data-section del-reset" aria-labelledby="reset-token-title">
-            <h2 id="reset-token-title">令牌重置</h2>
+            <h2 id="reset-token-title">重置订阅</h2>
+            <p>重置后旧链接立即失效，请重新添加到客户端</p>
             <Button variant="danger" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</Button>
           </section>
         </> : null}
       </div>
 
-      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" busy={busy} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
+      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
       <ShareDrawer
         subscription={subscriptions.find((subscription) => subscription.id === shareParam) ?? null}
         onClose={closeShare}
