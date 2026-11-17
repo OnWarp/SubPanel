@@ -229,6 +229,7 @@ export async function deleteSubscription(
   assertActor(current, options)
   await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) })
   await deleteCompiledArtifacts(env.DATA, current.tokenHash)
+  await env.DB.prepare('DELETE FROM subscription_template_bindings WHERE subscription_id=?').bind(id).run()
 }
 
 export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Subscription): Promise<string> {

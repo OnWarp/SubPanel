@@ -68,6 +68,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     ownerDeleted = true
   }
   if (ownerDeleted) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  assertSubscriptionAvailable(subscription)
   const rights = await getUserEntitlement(c.env.DB, subscription.userId)
   if (!rights.current) {
     const empty = await renderEntitledSubscription(c.env, subscription, client as RenderClient)
@@ -76,7 +77,6 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     c.header('profile-title', encodeURIComponent(subscription.name))
     return c.body(empty.body)
   }
-  assertSubscriptionAvailable(subscription)
   let raw: string | null
   try {
     raw = await c.env.DATA.get(compiledKey(tokenHash, client))

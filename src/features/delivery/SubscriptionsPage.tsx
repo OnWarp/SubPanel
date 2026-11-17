@@ -1,3 +1,4 @@
+import { TemplateBinding } from '../system/TemplateBinding'
 import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -512,6 +513,7 @@ export function SubscriptionsPage() {
 
       <EditDrawer open={drawer === 'create' || (drawer !== null && drawer.kind === 'edit')} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>
         <form className="form-stack" onSubmit={saveSubscription}>
+          {drawer !== null && drawer !== 'create' ? <TemplateBinding subscriptionId={drawer.subscription.id} /> : null}
           <label className="field"><span>订阅名称</span><input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
           <label className="field"><span>所属用户</span><select aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'} required>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</select></label>
           <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><input type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>

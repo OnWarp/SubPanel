@@ -1,3 +1,4 @@
+import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Download, Info, Mail, Megaphone, Settings, Share2, User, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
@@ -520,7 +521,7 @@ export function SystemPage() {
     'admin-mail': <AdminMailSection />,
     'app-downloads': <AppDownloadsSection />,
     share: <ShareSettingsSection />,
-    domain: <DomainSettingsSection />,
+    domain: <><DomainSettingsSection /><TemplatesSection /></>,
     status: <StatusSection />,
     notices: <NoticesSection />,
   }
