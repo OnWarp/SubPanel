@@ -7,13 +7,14 @@ import { readAccounts } from '../../../worker/accounts/repository'
 import { setEmailVerificationDeliverer } from '../../../worker/accounts/email'
 import { ACCOUNTS_D1_READY_KEY, markModuleReady } from '../../../worker/db/module-switch'
 import { putSetting, putRegistrationMode } from '../../../worker/db/settings-repository'
+import { clearAccountsStorage } from '../../../worker/accounts/d1-repository'
 import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const NOW = '2026-01-01T00:00:00.000Z'
 const fetchApi = (path: string, init: RequestInit = {}) => exports.default.fetch(`${TEST_ORIGIN}${path}`,init)
 let cookie: string
 beforeEach(async () => {
-  await resetData(); await enableD1Modules(); await setupAdmin(); cookie = await login()
+  await resetData(); await enableD1Modules(); await clearAccountsStorage(env.DB); await setupAdmin(); cookie = await login()
   await env.DB.prepare('DELETE FROM user_entitlements').run()
   await env.DB.prepare('DELETE FROM plans').run()
   await putSetting(env.DB,'trial_plan_id',null); await putSetting(env.DB,'trial_days',null)

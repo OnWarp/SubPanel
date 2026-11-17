@@ -349,6 +349,7 @@ describe('Delivery APIs and public subscriptions', () => {
     const userId = users.users.find((user) => user.username === 'delivery-user')?.id
     expect(userId).toBeTruthy()
     const groupId = await createCatalogGroup(admin)
+    await grantDeliveryFixture(userId, [groupId])
     const now = Date.now()
     const day = 86_400_000
 

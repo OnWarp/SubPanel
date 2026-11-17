@@ -5,7 +5,8 @@ import { resolveGroupNodes } from '../catalog/groups.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import type { CatalogSnapshot } from '../catalog/schema.js'
-import { compileSubscription } from '../delivery/compiler.js'
+import { compileSubscription, renderEntitledSubscription } from '../delivery/compiler.js'
+import { getUserEntitlement } from '../entitlements/service.js'
 import { compiledKey, readDelivery } from '../delivery/repository.js'
 import { compiledArtifactSchema, clientIdSchema, type ClientId, type CompiledArtifact, type Subscription } from '../delivery/schema.js'
 import { assertSubscriptionAvailable } from '../delivery/expiry.js'
@@ -455,15 +456,21 @@ async function loadShareArtifact(
 ): Promise<CompiledArtifact> {
   const kv = env.DATA
   const catalog = await readCatalog(env)
+  // Live delivery rechecks rights on every export: a cached artifact compiled
+  // while the owner had no rights must not stay empty after a grant, and a
+  // populated artifact must not survive a revocation.
+  if (!(await getUserEntitlement(env.DB, subscription.userId)).current) {
+    return renderEntitledSubscription(env, subscription, client)
+  }
   const cachedRaw = await kv.get(shareCompiledKey(share.tokenHash, client))
   if (cachedRaw) {
     const cached = parseArtifact(cachedRaw, subscription, catalog.revision)
-    if (cached) return cached
+    if (cached?.available) return cached
   }
   const subscriptionRaw = await kv.get(compiledKey(subscription.tokenHash, client))
   if (subscriptionRaw) {
     const cached = parseArtifact(subscriptionRaw, subscription, catalog.revision)
-    if (cached) {
+    if (cached?.available) {
       await kv.put(shareCompiledKey(share.tokenHash, client), JSON.stringify(cached))
       return cached
     }
