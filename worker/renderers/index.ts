@@ -183,7 +183,7 @@ function mihomoProxy(node: RenderNode): Record<string, unknown> {
     result['obfs-param'] = node.extensions['obfs-param'] ?? node.extensions.obfsparam
   } else if (node.protocol === 'vmess') {
     result.uuid = c.uuid
-    result['alter-id'] = Number(c.alterId ?? 0)
+    result.alterId = Number(c.alterId ?? 0)
     result.cipher = c.security ?? 'auto'
   } else if (node.protocol === 'vless') {
     result.uuid = c.uuid

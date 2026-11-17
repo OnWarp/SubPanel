@@ -82,10 +82,14 @@ describe('delivery renderers', () => {
     expect(parsedSs.plugin?.name).toBe('obfs-local')
   })
 
-  it("uses Mihomo's documented hyphenated VMess alter-id field", () => {
+  it("uses Mihomo's camelCase VMess alterId field", () => {
     const vmess = base({ protocol: 'vmess', credentials: { uuid: '11111111-1111-4111-8111-111111111111', alterId: '0', security: 'auto' } })
-    const document = parseYaml(renderClient('mihomo', [vmess]).body) as { proxies: Array<Record<string, unknown>> }
-    expect(document.proxies[0]['alter-id']).toBe(0)
+    const result = renderClient('mihomo', [vmess])
+    const document = parseYaml(result.body) as { proxies: Array<Record<string, unknown>> }
+    expect(document.proxies[0].alterId).toBe(0)
+    expect(document.proxies[0]).not.toHaveProperty('alter-id')
+    expect(result.body).toContain('alterId:')
+    expect(result.body).not.toContain('alter-id')
   })
 
   it('renders Mihomo SSR parameters without dropping the node', () => {
