@@ -10,6 +10,7 @@ import { sendTestEmail } from './email.js'
 import { hashPassword } from './password.js'
 import { accountsUseD1, findAccountUserById, readAccounts, writeAccounts } from './repository.js'
 import {
+  findUserByEmailNormalized,
   countAdminUsers,
   listAdminUserRedemptions,
   listAdminUserSubscriptions,
@@ -41,6 +42,7 @@ const INVITE_PREFIX = 'invite:'
 const INVITE_TTL_SECONDS = 24 * 60 * 60
 const createInviteSchema = z.object({ username: usernameInputSchema })
 const updateUserSchema = z.object({
+  email: emailInputSchema.optional(),
   enabled: z.boolean().optional(),
   role: roleSchema.optional(),
 })
@@ -220,7 +222,7 @@ adminAccountRoutes.get('/users/:id', async (c) => {
 
 adminAccountRoutes.patch('/users/:id', async (c) => {
   const input = await readJson(c, updateUserSchema)
-  if (input.enabled === undefined && input.role === undefined) {
+  if (input.email === undefined && input.enabled === undefined && input.role === undefined) {
     throw apiError(400, 'EMPTY_UPDATE', '没有可更新的字段')
   }
   const accounts = await readAccounts(c.env)
@@ -238,6 +240,15 @@ adminAccountRoutes.patch('/users/:id', async (c) => {
     throw apiError(409, 'USER_DISABLED', '停用中的用户不能设为管理员')
   }
 
+  if (input.email !== undefined) {
+    if (!(await accountsUseD1(c.env))) {
+      throw apiError(409, 'EMAIL_CHANGE_UNAVAILABLE', '邮箱更换暂不可用')
+    }
+    // Admin edits bypass registration domain rules and pending code reservations.
+    const owner = await findUserByEmailNormalized(c.env.DB, input.email)
+    if (owner && owner.id !== target.id) throw apiError(409, 'EMAIL_TAKEN', '该邮箱已被使用')
+  }
+
   const now = new Date().toISOString()
   const changed =
     (input.enabled !== undefined && input.enabled !== target.enabled) ||
@@ -250,8 +261,29 @@ adminAccountRoutes.patch('/users/:id', async (c) => {
     sessionVersion: changed ? target.sessionVersion + 1 : target.sessionVersion,
     updatedAt: now,
   }
-  await writeAccounts(c.env, { ...accounts, users: accounts.users.with(index, user) }, now)
-  return c.json({ user: toPublicUser(user) })
+  if (input.email !== undefined) {
+    try {
+      // One atomic write also covers combined email, role and status edits.
+      await c.env.DB.batch([
+        c.env.DB.prepare(`UPDATE users SET email = ?, email_normalized = ?, email_verified_at = ?,
+          enabled = ?, role = ?, session_version = ?, updated_at = ? WHERE id = ?`)
+          .bind(input.email, input.email, now, user.enabled ? 1 : 0, user.role, user.sessionVersion, now, user.id),
+        c.env.DB.prepare('DELETE FROM email_verifications WHERE user_id = ? AND consumed_at IS NULL').bind(user.id),
+        c.env.DB.prepare('DELETE FROM email_change_requests WHERE user_id = ?').bind(user.id),
+      ])
+    } catch (error) {
+      // The unique index also protects concurrent requests for the same address.
+      if (String(error).includes('UNIQUE constraint failed: users.email_normalized')) {
+        throw apiError(409, 'EMAIL_TAKEN', '该邮箱已被使用')
+      }
+      throw error
+    }
+  } else {
+    await writeAccounts(c.env, { ...accounts, users: accounts.users.with(index, user) }, now)
+  }
+  const updated = await findAccountUserById(c.env, user.id)
+  if (!updated) throw new Error('Accounts snapshot is corrupt')
+  return c.json({ user: toPublicAccountUser(updated) })
 })
 
 adminAccountRoutes.post('/users/:id/password', async (c) => {

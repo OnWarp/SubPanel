@@ -91,6 +91,9 @@ export function UsersPage() {
   const [newLink, setNewLink] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [editUser, setEditUser] = useState<UserSummary | null>(null)
+  const [editEmail, setEditEmail] = useState('')
+  const [editError, setEditError] = useState('')
   const [resetUser, setResetUser] = useState<UserSummary | null>(null)
   const [resetError, setResetError] = useState('')
   const [tempPassword, setTempPassword] = useState('')
@@ -255,6 +258,25 @@ export function UsersPage() {
       toast.notify('临时密码已复制')
     } catch {
       toast.notifyError('浏览器未允许复制，请手动选择密码')
+    }
+  }
+
+  const saveUser = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editUser || mutating) return
+    setMutating(true)
+    setEditError('')
+    try {
+      await api(`/api/admin/users/${editUser.id}`, {
+        method: 'PATCH', body: jsonBody({ email: editEmail }),
+      })
+      await loadUsers()
+      setEditUser(null)
+      toast.notify('邮箱已更新')
+    } catch (cause) {
+      setEditError(errorMessage(cause, '更新用户失败'))
+    } finally {
+      setMutating(false)
     }
   }
 
@@ -451,6 +473,9 @@ export function UsersPage() {
       align: 'right',
       render: (user) => (
         <span className="row-actions">
+          <button className="icon-button" type="button" disabled={mutating} aria-label={`编辑 ${user.username}`} title="编辑用户" onClick={() => { setEditUser(user); setEditEmail(user.email ?? ''); setEditError('') }}>
+            <Mail aria-hidden="true" size={16} />
+          </button>
           {user.role === 'user' ? (
             <>
               <button className="icon-button" type="button" disabled={mutating} aria-label={`重置 ${user.username} 的密码`} title="重置密码" onClick={() => openPasswordReset(user)}>
@@ -667,6 +692,25 @@ export function UsersPage() {
           </section>
         </>
       ) : null}
+
+      <Dialog
+        open={editUser !== null}
+        onClose={() => { if (!mutating) setEditUser(null) }}
+        title="编辑用户"
+        footer={<>
+          <button className="button secondary" type="button" disabled={mutating} onClick={() => setEditUser(null)}>取消</button>
+          <button className="button primary" type="submit" form="edit-user-form" disabled={mutating}>保存</button>
+        </>}
+      >
+        <form id="edit-user-form" className="form-stack" onSubmit={saveUser}>
+          <p>{editUser?.username}</p>
+          <FormField label="邮箱" htmlFor="edit-user-email">
+            <input id="edit-user-email" name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} disabled={mutating} required />
+          </FormField>
+          <StatusMessage tone="warning">保存后立即生效，无需验证码或确认邮件</StatusMessage>
+          {editError ? <StatusMessage tone="error">{editError}</StatusMessage> : null}
+        </form>
+      </Dialog>
 
       <Dialog
         open={resetUser !== null}
