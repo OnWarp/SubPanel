@@ -130,3 +130,26 @@ export async function disableInviteCode(db: AppDatabase, id: string): Promise<vo
   if (!existing) throw apiError(404, 'INVITE_CODE_NOT_FOUND', '邀请码不存在')
   await db.prepare('UPDATE invite_codes SET disabled = 1 WHERE id = ?').bind(id).run()
 }
+
+// KV invitations store only the token hash. Import that hash as a one-use
+// qualification; deliberately ignore the old reserved username and user id.
+// INSERT OR IGNORE makes retries/concurrent imports preserve consumption and
+// disabled state. Delete KV only after the D1 write succeeds.
+export async function importLegacyInvites(env: { DB: AppDatabase; DATA: KVNamespace }): Promise<void> {
+  let cursor: string | undefined
+  do {
+    const page = await env.DATA.list({ prefix: 'invite:', cursor })
+    for (const { name } of page.keys) {
+      const raw = await env.DATA.get(name)
+      if (raw === null) continue
+      const record = JSON.parse(raw) as { createdAt: string; expiresAt: string }
+      const hash = name.slice('invite:'.length)
+      await env.DB.prepare(`INSERT OR IGNORE INTO invite_codes
+        (id, token_hash, token_prefix, type, max_uses, used_count, expires_at, disabled, created_at)
+        VALUES (?, ?, 'legacy', 'single', 1, 0, ?, 0, ?)`)
+        .bind(hash, hash, record.expiresAt, record.createdAt).run()
+      await env.DATA.delete(name)
+    }
+    cursor = page.list_complete ? undefined : page.cursor
+  } while (cursor)
+}

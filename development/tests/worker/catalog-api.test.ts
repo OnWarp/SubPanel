@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readCatalog } from '../../../worker/catalog/repository'
@@ -15,17 +16,8 @@ import {
 const ssLine = (name: string, password = 'password', host = 'ss.example.com') =>
   `ss://${btoa(`aes-128-gcm:${password}`)}@${host}:8388#${encodeURIComponent(name)}`
 
-async function createUserCookie(adminCookie: string): Promise<string> {
-  const inviteResponse = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/admin/invites`,
-    jsonRequest({ username: 'catalog-user' }, withCookie(adminCookie)),
-  )
-  const link = (await inviteResponse.json() as { invite: { link: string } }).invite.link
-  const token = new URL(link).pathname.split('/').at(-1)!
-  await exports.default.fetch(
-    `${TEST_ORIGIN}/api/invites/${token}`,
-    jsonRequest({ password: 'catalog user password' }),
-  )
+async function createUserCookie(_adminCookie: string): Promise<string> {
+  await createFixtureAccount('catalog-user', 'catalog user password')
   return login('catalog-user', 'catalog user password')
 }
 

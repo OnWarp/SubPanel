@@ -65,11 +65,12 @@ describe('D1 migrations', () => {
       TICKETS_NOTICES_MIGRATION_NAME,
       '0010_stage3_admin.sql',
       KNOWLEDGE_BASE_MIGRATION_NAME,
+      '0012_invite_registration.sql',
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(11)
+    expect(replayed?.count).toBe(12)
 
     await env.DB.prepare(
       `INSERT INTO users (

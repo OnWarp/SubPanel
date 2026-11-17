@@ -3,7 +3,7 @@ import { batch, queryFirst, type AppDatabase } from '../db/db.js'
 import { ACCOUNTS_SETTING_KEYS, upsertSettingStatement } from '../db/module-switch.js'
 import { getRegistrationMode, type RegistrationMode } from '../db/settings-repository.js'
 import { apiError } from '../platform/api-error.js'
-import { findInviteCodeByCode, type InviteCodeRow } from './invite-codes.js'
+import { importLegacyInvites, findInviteCodeByCode, type InviteCodeRow } from './invite-codes.js'
 import {
   consumeVerificationStatement,
   issueVerificationCode,
@@ -100,7 +100,7 @@ export interface RegisterInput {
   username: string
   password: string
   email: string
-  code: string
+  code?: string
   inviteCode?: string
 }
 
@@ -137,41 +137,34 @@ export async function registerUser(
     throw apiError(409, 'EMAIL_TAKEN', '该邮箱已被注册')
   }
 
-  const verification = await verifyPendingVerification(db, { email, purpose: 'register', code: input.code })
-  if (!verification.ok) {
+  let invite: InviteCodeRow | null = null
+  if (mode === 'invite' || (input.inviteCode !== undefined && input.inviteCode !== '')) {
+    if (!input.inviteCode) throw apiError(400, 'INVITE_CODE_REQUIRED', '请输入邀请码')
+    if (!INVITE_CODE_FORMAT.test(input.inviteCode)) throw apiError(400, 'INVALID_INVITE_CODE', '邀请码无效')
+    await importLegacyInvites(env)
+    invite = await findInviteCodeByCode(db, input.inviteCode)
+    if (!invite) throw apiError(400, 'INVALID_INVITE_CODE', '邀请码无效')
+    assertInviteUsable(invite, nowIso)
+  }
+
+  const verification = invite ? null : await verifyPendingVerification(db, { email, purpose: 'register', code: input.code ?? '' })
+  if (verification && !verification.ok) {
     if (verification.reason === 'none') throw apiError(400, 'NO_PENDING_CODE', '请先获取验证码')
     if (verification.reason === 'expired') throw apiError(410, 'CODE_EXPIRED', '验证码已过期')
     if (verification.reason === 'locked') throw apiError(429, 'TOO_MANY_ATTEMPTS', '验证码尝试次数过多，请重新获取')
     throw apiError(401, 'INVALID_CODE', '验证码错误')
   }
 
-  let invite: InviteCodeRow | null = null
-  if (mode === 'invite' || (input.inviteCode !== undefined && input.inviteCode !== '')) {
-    if (!input.inviteCode) throw apiError(400, 'INVITE_CODE_REQUIRED', '请输入邀请码')
-    if (!INVITE_CODE_FORMAT.test(input.inviteCode)) throw apiError(400, 'INVALID_INVITE_CODE', '邀请码无效')
-    invite = await findInviteCodeByCode(db, input.inviteCode)
-    if (!invite) throw apiError(400, 'INVALID_INVITE_CODE', '邀请码无效')
-    assertInviteUsable(invite, nowIso)
-  }
-
   const snapshot = await readAccountsFromD1(db)
   const userId = `usr_${snapshot.nextUserId}`
   const password = await hashPassword(input.password)
 
-  // Atomic registration: one D1 batch, all-or-nothing.
-  //  S1 consumes the email verification code (conditional on unconsumed).
-  //  S2 consumes one invite use (conditional UPDATE: disabled / expiry /
-  //     max-uses are re-checked by the WHERE clause, so concurrent batches
-  //     cannot overspend a code).
-  //  S3 inserts the user only when the previous statement changed a row
-  //     (changes() = the consumption guard) AND the verification row shows
-  //     this batch's own consumption timestamp; unique indexes on username
-  //     and email_normalized reject duplicates and fail the whole batch.
-  //  S4 records the redemption, guarded by changes() of S3 so it is written
-  //     only when this batch inserted the user.
-  //  S5 advances the accounts metadata (next user id / revision).
+  // One D1 batch consumes either the invitation or email code, then inserts
+  // the user guarded by changes(). Unique failures roll back consumption.
+  // Keep redemption immediately after the user insert: trial grants also
+  // change SQLite's changes() value. Both are guarded against losing races.
   const statements: D1PreparedStatement[] = []
-  statements.push(consumeVerificationStatement(db, verification.verification.id, nowIso))
+  if (verification?.ok) statements.push(consumeVerificationStatement(db, verification.verification.id, nowIso))
   if (invite) {
     statements.push(
       db
@@ -195,7 +188,7 @@ export async function registerUser(
          )
          SELECT ?, ?, 'user', 1, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?
          WHERE (SELECT changes()) = 1
-           AND EXISTS (SELECT 1 FROM email_verifications WHERE id = ? AND consumed_at = ?)`,
+           ${invite ? '' : 'AND EXISTS (SELECT 1 FROM email_verifications WHERE id = ? AND consumed_at = ?)'}`,
       )
       .bind(
         userId,
@@ -209,12 +202,9 @@ export async function registerUser(
         nowIso,
         nowIso,
         nowIso,
-        verification.verification.id,
-        nowIso,
+        ...(verification?.ok ? [verification.verification.id, nowIso] : []),
       ),
   )
-  const trial = await trialGrantStatement(db, userId, nowIso)
-  if (trial) statements.push(trial)
   if (invite) {
     // Guarded by changes() of the user insert above: the redemption is only
     // written when this batch actually created the user. An unconditional
@@ -230,6 +220,8 @@ export async function registerUser(
         .bind(invite.id, userId, nowIso),
     )
   }
+  const trial = await trialGrantStatement(db, userId, nowIso)
+  if (trial) statements.push(trial)
   statements.push(
     upsertSettingStatement(db, ACCOUNTS_SETTING_KEYS.nextUserId, snapshot.nextUserId + 1, nowIso),
     upsertSettingStatement(db, ACCOUNTS_SETTING_KEYS.revision, snapshot.revision + 1, nowIso),

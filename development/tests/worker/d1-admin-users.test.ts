@@ -345,8 +345,8 @@ describe('D1 admin user management (batch 8)', () => {
     const everything = await listUsers(admin, '?deleted=all')
     expect(everything.body.users.some((user) => user.id === dave.id)).toBe(true)
 
-    const invite = await adminCall(admin, '/api/admin/invites', jsonRequest({ username: 'dave' }))
-    expect(invite.status).toBe(409)
+    const invite = await adminCall(admin, '/api/admin/invites', jsonRequest({}))
+    expect(invite.status).toBe(201)
 
     const deletedAgain = await deleteCall(admin, `/api/admin/users/${dave.id}`)
     expect(deletedAgain.status).toBe(409)

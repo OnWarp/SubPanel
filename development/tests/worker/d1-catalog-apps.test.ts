@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAppsStorage } from '../../../worker/apps/d1-repository'
@@ -312,13 +313,7 @@ describe('POST /api/admin/migration/run', () => {
     expect(anonymous.status).toBe(401)
 
     const admin = await login()
-    const invite = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/invites`,
-      jsonRequest({ username: 'migrator' }, withCookie(admin)),
-    )
-    const link = (await invite.json() as { invite: { link: string } }).invite.link
-    const token = new URL(link).pathname.split('/').at(-1) ?? ''
-    await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`, jsonRequest({ password: 'migrator-password' }))
+    await createFixtureAccount('migrator', 'migrator-password')
     const user = await login('migrator', 'migrator-password')
     const forbidden = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/migration/run`,

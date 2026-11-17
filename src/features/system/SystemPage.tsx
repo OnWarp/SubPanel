@@ -22,7 +22,6 @@ import {
   type SystemStatus,
 } from './api'
 import { DomainSettingsSection } from './DomainSettingsSection'
-import { InviteCodesSection } from './InviteCodesSection'
 import { NoticesSection } from './NoticesSection'
 import { ShareSettingsSection } from './ShareSettingsSection'
 
@@ -97,7 +96,6 @@ function RegistrationSection() {
           </div>
           <p className="sys-hint">{REGISTRATION_MODES.find((option) => option.value === mode)?.hint}，切换后立即生效</p>
           <EmailDomains />
-          <InviteCodesSection />
         </div>
       ) : null}
     </section>
