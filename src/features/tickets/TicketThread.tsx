@@ -1,3 +1,4 @@
+import { StatusPill } from '../../ui/StatusPill'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { formatTicketTime, levelLabel, ticketState, type Ticket, type TicketReply } from './types'
 
@@ -21,7 +22,7 @@ export function TicketThread({ ticket, replies, viewerRole }: TicketThreadProps)
           </span>
         </div>
         <span className="tk-badges">
-          <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+          <StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill>
           <StatusBadge tone={level.tone} size="sm">{level.label}</StatusBadge>
         </span>
       </div>

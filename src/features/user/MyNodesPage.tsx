@@ -1,3 +1,5 @@
+import { GateEmptyState } from '../../ui/GateEmptyState'
+import type { EntitlementState } from '../entitlements/types'
 import { Network } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -49,6 +51,7 @@ function joinedNames(items: NodeRef[]): string {
 }
 
 export function MyNodesPage() {
+  const [rights, setRights] = useState<EntitlementState | null>(null)
   const [nodes, setNodes] = useState<UserNode[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -72,6 +75,12 @@ export function MyNodesPage() {
     params.set('groupId', activeGroup)
     const seq = ++requestSeq.current
     try {
+      const entitlement = await api<EntitlementState>('/api/account/entitlement')
+      if (seq !== requestSeq.current) return
+      setRights(entitlement)
+      if (entitlement.state !== 'active' || !entitlement.current) {
+        setNodes([]); setTotal(0); setError(''); return
+      }
       const result = await api<UserNodesResponse>(`/api/user/nodes?${params.toString()}`)
       if (seq !== requestSeq.current) return
       setNodes(result.nodes)
@@ -122,6 +131,8 @@ export function MyNodesPage() {
     { key: 'groups', header: '所属分组', width: '27%', render: (node) => joinedNames(node.groups) },
     { key: 'subscriptions', header: '所属订阅', width: '27%', render: (node) => joinedNames(node.subscriptions) },
   ]
+
+  if (!loading && !error && rights && (rights.state !== 'active' || !rights.current)) return <GateEmptyState icon={<Network size={48} />} message="需要有效权益才能查看节点" />
 
   return (
     <div className="page-stack node-page">

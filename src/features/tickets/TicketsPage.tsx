@@ -2,7 +2,7 @@ import { Plus, Ticket as TicketIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
-import { DataTable, type DataTableColumn } from '../../ui/DataTable'
+import { StatusPill } from '../../ui/StatusPill'
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
@@ -73,40 +73,6 @@ export function TicketsPage() {
     }
   }
 
-  const columns: Array<DataTableColumn<Ticket>> = [
-    {
-      key: 'title',
-      header: '标题',
-      render: (ticket) => <Link className="tk-title-link" to={`/tickets/${ticket.id}`}>{ticket.title}</Link>,
-    },
-    {
-      key: 'state',
-      header: '状态',
-      render: (ticket) => {
-        const state = ticketState(ticket)
-        return <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-      },
-    },
-    {
-      key: 'level',
-      header: '等级',
-      render: (ticket) => {
-        const label = levelLabel(ticket.level)
-        return <StatusBadge tone={label.tone} size="sm">{label.label}</StatusBadge>
-      },
-    },
-    {
-      key: 'lastReply',
-      header: '最后回复',
-      render: (ticket) => ticket.lastReplyBy === 'admin' ? '管理员' : ticket.lastReplyBy === 'user' ? '我' : '-',
-    },
-    {
-      key: 'time',
-      header: '时间',
-      render: (ticket) => <span className="tk-cell-time">{formatTicketTime(ticketTime(ticket))}</span>,
-    },
-  ]
-
   return (
     <div className="page-stack tk-page">
       <PageHero subtitle="查看工单与支持回复"
@@ -122,8 +88,15 @@ export function TicketsPage() {
         </EmptyState>
       ) : null}
       {!loading && !loadError && tickets.length > 0 ? (
-        <section className="data-section" aria-label="我的工单">
-          <DataTable columns={columns} rows={tickets} rowKey={(ticket) => ticket.id} empty="暂无工单" />
+        <section className="tk-card-list" aria-label="我的工单">
+          {tickets.map((ticket) => {
+            const state = ticketState(ticket)
+            const level = levelLabel(ticket.level)
+            return <article className="data-section tk-list-card" key={ticket.id}>
+              <div className="ntc-card-head"><Link className="tk-title-link" to={`/tickets/${ticket.id}`}>{ticket.title}</Link><StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill></div>
+              <div className="tk-card-meta"><StatusBadge tone={level.tone} size="sm">{level.label}</StatusBadge><span>最后回复：{ticket.lastReplyBy === 'admin' ? '管理员' : ticket.lastReplyBy === 'user' ? '我' : '暂无回复'}</span><time dateTime={ticketTime(ticket)}>{formatTicketTime(ticketTime(ticket))}</time></div>
+            </article>
+          })}
         </section>
       ) : null}
 
