@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { primaryDomainOriginSafe } from '../domains/service.js'
 import type { AppEnv } from '../app-env.js'
 import { getOrCreateCryptoMaterial } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
-import { createInviteCodes, disableInviteCode, listInviteCodes } from './invite-codes.js'
+import { createInviteCodes, disableInviteCode, importLegacyInvites, listInviteCodes } from './invite-codes.js'
 import {
   addEmailDomain,
   getPublicRegistrationConfig,
@@ -21,7 +22,7 @@ const registerSchema = z.object({
   username: usernameInputSchema,
   password: passwordInputSchema,
   email: emailInputSchema,
-  code: z.string().regex(/^\d{6}$/),
+  code: z.string().regex(/^\d{6}$/).optional(),
   inviteCode: z.string().trim().max(128).optional(),
 })
 
@@ -77,15 +78,18 @@ adminRegistrationRoutes.post('/invitations', async (c) => {
     count: input.count,
   })
   // Plaintext codes appear only in this creation response.
-  return c.json({ invitations: codes }, 201)
+  const panelOrigin = await primaryDomainOriginSafe(c.env.DB, 'panel')
+  return c.json({ invitations: codes.map((code) => ({ ...code, link: new URL(`/invite/${code.code}`, panelOrigin ?? c.req.url).toString() })) }, 201)
 })
 
 adminRegistrationRoutes.get('/invitations', async (c) => {
+  await importLegacyInvites(c.env)
   return c.json({ invitations: await listInviteCodes(c.env.DB) })
 })
 
 adminRegistrationRoutes.delete('/invitations/:id', async (c) => {
   // Deleting a code disables it; redemption history stays intact.
+  await importLegacyInvites(c.env)
   await disableInviteCode(c.env.DB, c.req.param('id'))
   return c.body(null, 204)
 })

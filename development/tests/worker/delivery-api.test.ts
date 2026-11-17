@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -22,14 +23,8 @@ async function createCatalogGroup(cookie: string, content = ssLine('Delivery nod
   return id
 }
 
-async function createUserCookie(adminCookie: string): Promise<string> {
-  const inviteResponse = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/admin/invites`,
-    jsonRequest({ username: 'delivery-user' }, withCookie(adminCookie)),
-  )
-  const link = (await inviteResponse.json() as { invite: { link: string } }).invite.link
-  const token = new URL(link).pathname.split('/').at(-1)!
-  await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`, jsonRequest({ password: 'delivery user password' }))
+async function createUserCookie(_adminCookie: string): Promise<string> {
+  await createFixtureAccount('delivery-user', 'delivery user password')
   return login('delivery-user', 'delivery user password')
 }
 

@@ -1,5 +1,6 @@
 import { getUserEntitlement, savePlan, operateEntitlement } from '../../../worker/entitlements/service'
-import { readAccounts } from '../../../worker/accounts/repository'
+import { hashPassword } from '../../../worker/accounts/password'
+import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
 import { userAnchorStatement } from '../../../worker/db/ensure-users'
 import { env, exports } from 'cloudflare:workers'
 import { clearAppsStorage } from '../../../worker/apps/d1-repository'
@@ -94,4 +95,16 @@ export async function grantDeliveryFixture(userId: string, groupIds: string[], n
     const plan = await savePlan(env.DB,{ name: 'Delivery fixture',groupIds,durationDays: 3650 })
     await operateEntitlement(env.DB,userId,'grant',plan.id,'',now)
   }
+}
+
+// Non-registration suites need an account fixture in either KV or D1 mode.
+// Registration behavior itself is covered through HTTP in d1-registration.
+export async function createFixtureAccount(username: string, password: string): Promise<Response> {
+  const accounts = await readAccounts(env)
+  const now = new Date().toISOString()
+  const user = { id: `usr_${accounts.nextUserId}`, username, role: 'user' as const,
+    enabled: true, password: await hashPassword(password), sessionVersion: 0,
+    deletedAt: null, createdAt: now, updatedAt: now }
+  await writeAccounts(env, { ...accounts, users: [...accounts.users, user], nextUserId: accounts.nextUserId + 1 }, now)
+  return Response.json({ user }, { status: 201 })
 }

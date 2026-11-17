@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
@@ -49,13 +50,8 @@ async function expectError(response: Response, status: number, code: string): Pr
   expect(body.error.message.endsWith('.')).toBe(false)
 }
 
-async function provisionUser(adminCookie: string): Promise<string> {
-  const invite = await authed(adminCookie, 'POST', '/api/admin/invites', { username: 'reader' })
-  expect(invite.status).toBe(201)
-  const link = (await invite.json() as { invite: { link: string } }).invite.link
-  const token = new URL(link).pathname.split('/').at(-1) ?? ''
-  const redeemed = await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`, jsonRequest({ password: 'reader-password' }))
-  expect(redeemed.status).toBe(201)
+async function provisionUser(_adminCookie: string): Promise<string> {
+  await createFixtureAccount('reader', 'reader-password')
   return login('reader', 'reader-password')
 }
 

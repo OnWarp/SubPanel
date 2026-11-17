@@ -1,5 +1,5 @@
 import { UserEntitlement } from '../entitlements/UserEntitlement'
-import { CheckCircle2, Copy, Crown, KeyRound, Mail, Plus, RotateCcw, Trash2, Users, XCircle } from 'lucide-react'
+import { CheckCircle2, Copy, Crown, KeyRound, Mail, RotateCcw, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type AdminUsersResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
@@ -24,15 +24,7 @@ import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 
-type InviteSummary = {
-  id: string
-  username: string
-  createdAt: string
-  expiresAt: string
-}
-
-type BatchTarget = 'users' | 'invites'
-type BatchActionKind = 'disable' | 'revoke'
+type BatchActionKind = 'disable'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 type UsersView = 'active' | 'trash'
 type ConfirmKind = 'promote' | 'soft-delete' | 'purge'
@@ -87,8 +79,6 @@ function toggleId(current: Set<string>, id: string) {
 export function UsersPage() {
   const [users, setUsers] = useState<UserSummary[]>([])
   const [total, setTotal] = useState(0)
-  const [invites, setInvites] = useState<InviteSummary[]>([])
-  const [newLink, setNewLink] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [editUser, setEditUser] = useState<UserSummary | null>(null)
@@ -99,8 +89,7 @@ export function UsersPage() {
   const [tempPassword, setTempPassword] = useState('')
   const [mutating, setMutating] = useState(false)
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
-  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set())
-  const [batchConfirm, setBatchConfirm] = useState<{ target: BatchTarget; action: BatchActionKind } | null>(null)
+  const [batchConfirm, setBatchConfirm] = useState<BatchActionKind | null>(null)
   const [batchProgress, setBatchProgress] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -131,12 +120,7 @@ export function UsersPage() {
   }, [page, query, statusFilter, view])
 
   const load = useCallback(async () => {
-    const [, inviteResult] = await Promise.all([
-      loadUsers(),
-      api<{ invites: InviteSummary[] }>('/api/admin/invites'),
-    ])
-    setInvites(inviteResult.invites)
-    setSelectedInvites((current) => new Set([...current].filter((id) => inviteResult.invites.some((invite) => invite.id === id))))
+    await loadUsers()
     setLoadError('')
     try {
       const subscriptionResult = await api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions')
@@ -221,37 +205,6 @@ export function UsersPage() {
     setPage(1)
   }
 
-  const createInvite = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (mutating) return
-    const form = event.currentTarget
-    const data = new FormData(form)
-    setMutating(true)
-    try {
-      const result = await api<{ invite: InviteSummary & { link: string } }>('/api/admin/invites', {
-        method: 'POST',
-        body: jsonBody({ username: data.get('username') }),
-      })
-      setNewLink(result.invite.link)
-      toast.notify('邀请已创建。链接只在本次显示')
-      form.reset()
-      await load()
-    } catch (cause) {
-      toast.notifyError(errorMessage(cause, '创建邀请失败'))
-    } finally {
-      setMutating(false)
-    }
-  }
-
-  const copyLink = async () => {
-    try {
-      await copyToClipboard(newLink)
-      toast.notify('邀请链接已复制')
-    } catch {
-      toast.notifyError('浏览器未允许复制，请手动选择链接')
-    }
-  }
-
   const copyTempPassword = async () => {
     try {
       await copyToClipboard(tempPassword)
@@ -293,19 +246,6 @@ export function UsersPage() {
     } catch (cause) {
       setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, enabled: user.enabled } : candidate))
       toast.notifyError(errorMessage(cause, '更新用户失败'))
-    } finally {
-      setMutating(false)
-    }
-  }
-
-  const revokeInvite = async (id: string) => {
-    if (mutating) return
-    setMutating(true)
-    try {
-      await api(`/api/admin/invites/${id}`, { method: 'DELETE' })
-      setInvites((current) => current.filter((invite) => invite.id !== id))
-    } catch (cause) {
-      toast.notifyError(errorMessage(cause, '撤销邀请失败'))
     } finally {
       setMutating(false)
     }
@@ -389,8 +329,8 @@ export function UsersPage() {
     }
   }
 
-  const executeBatch = async (target: BatchTarget, action: BatchActionKind | 'enable') => {
-    const ids = [...(target === 'users' ? selectedUsers : selectedInvites)]
+  const executeBatch = async (action: BatchActionKind | 'enable') => {
+    const ids = [...selectedUsers]
     if (!ids.length || mutating) return
     setBatchConfirm(null)
     setMutating(true)
@@ -400,21 +340,16 @@ export function UsersPage() {
       for (const [index, id] of ids.entries()) {
         setBatchProgress(`正在处理 ${index + 1}/${ids.length}`)
         try {
-          if (target === 'users') {
-            await api(`/api/admin/users/${id}`, { method: 'PATCH', body: jsonBody({ enabled: action === 'enable' }) })
-          } else {
-            await api(`/api/admin/invites/${id}`, { method: 'DELETE' })
-          }
+          await api(`/api/admin/users/${id}`, { method: 'PATCH', body: jsonBody({ enabled: action === 'enable' }) })
         } catch (cause) {
           failed.add(id)
           if (!firstFailure) firstFailure = errorMessage(cause, '请求失败')
         }
       }
       await load()
-      if (target === 'users') setSelectedUsers(failed)
-      else setSelectedInvites(failed)
+      setSelectedUsers(failed)
       if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
-      else toast.notify(target === 'invites' ? '邀请已撤销' : '用户状态已更新')
+      else toast.notify('用户状态已更新')
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '批量操作失败'))
     } finally {
@@ -424,13 +359,9 @@ export function UsersPage() {
   }
 
   const userActions: BatchAction[] = [
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('users', 'enable') },
-    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setBatchConfirm({ target: 'users', action: 'disable' }) },
+    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
+    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setBatchConfirm('disable') },
   ]
-  const inviteActions: BatchAction[] = [
-    { key: 'revoke', label: '撤销', icon: Trash2, tone: 'danger', onClick: () => setBatchConfirm({ target: 'invites', action: 'revoke' }) },
-  ]
-
   const userColumns: Array<DataTableColumn<UserSummary>> = [
     {
       key: 'select',
@@ -530,37 +461,7 @@ export function UsersPage() {
     },
   ]
 
-  const inviteColumns: Array<DataTableColumn<InviteSummary>> = [
-    {
-      key: 'select',
-      header: '选择',
-      width: 52,
-      render: (invite) => (
-        <input
-          type="checkbox"
-          aria-label={`选择邀请 ${invite.username}`}
-          checked={selectedInvites.has(invite.id)}
-          disabled={mutating}
-          onChange={() => setSelectedInvites((current) => toggleId(current, invite.id))}
-        />
-      ),
-    },
-    { key: 'username', header: '用户名', render: (invite) => <strong>{invite.username}</strong> },
-    { key: 'expiresAt', header: '到期时间', render: (invite) => <span>{formatDate(invite.expiresAt)}</span> },
-    {
-      key: 'actions',
-      header: '操作',
-      align: 'right',
-      render: (invite) => (
-        <button className="icon-button danger" type="button" disabled={mutating} aria-label={`撤销 ${invite.username} 的邀请`} title="撤销邀请" onClick={() => revokeInvite(invite.id)}>
-          <Trash2 aria-hidden="true" size={17} />
-        </button>
-      ),
-    },
-  ]
-
   const usersAllSelected = selectableUsers.length > 0 && selectableUsers.every((user) => selectedUsers.has(user.id))
-  const invitesAllSelected = invites.length > 0 && selectedInvites.size === invites.length
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const confirmCopy = confirmAction
@@ -585,19 +486,9 @@ export function UsersPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="用户与邀请" actions={<button className="button primary" type="submit" form="invite-form" disabled={mutating}><Plus aria-hidden="true" size={17} />创建邀请</button>} />
+      <PageHeader title="用户" />
 
-      {newLink ? (
-        <section className="link-strip" aria-label="新邀请链接">
-          <div><strong>邀请链接</strong><span>24 小时内有效</span></div>
-          <input aria-label="邀请链接" value={newLink} readOnly />
-          <button className="icon-button" type="button" aria-label="复制邀请链接" title="复制邀请链接" onClick={copyLink}>
-            <Copy aria-hidden="true" size={17} />
-          </button>
-        </section>
-      ) : null}
-
-      {loading ? <div><LoadingState label="正在加载用户与邀请" /></div> : null}
+      {loading ? <div><LoadingState label="正在加载用户" /></div> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={retry} /> : null}
 
       {!loading && !loadError ? (
@@ -606,13 +497,6 @@ export function UsersPage() {
             <DataHeader
               id="users-title"
               title={view === 'trash' ? '回收站' : '用户'}
-              filters={(
-                <form id="invite-form" className="invite-form" onSubmit={createInvite}>
-                  <FormField label="邀请用户名" htmlFor="invite-username">
-                    <input id="invite-username" name="username" placeholder="输入用户名" minLength={3} maxLength={32} required />
-                  </FormField>
-                </form>
-              )}
               actions={view === 'active'
                 ? <BatchToolbar selectedCount={selectedUsers.size} totalCount={selectableUsers.length} onSelectAll={() => setSelectedUsers(new Set(selectableUsers.map((user) => user.id)))} onClear={() => setSelectedUsers(new Set())} actions={userActions} busy={mutating} progress={batchProgress} />
                 : undefined}
@@ -664,32 +548,6 @@ export function UsersPage() {
             )}
           </section>
 
-          <section className="data-section" aria-labelledby="invites-title">
-            <DataHeader
-              id="invites-title"
-              title="有效邀请"
-              actions={<BatchToolbar selectedCount={selectedInvites.size} totalCount={invites.length} onSelectAll={() => setSelectedInvites(new Set(invites.map((invite) => invite.id)))} onClear={() => setSelectedInvites(new Set())} actions={inviteActions} busy={mutating} progress={batchProgress} />}
-            />
-            {invites.length === 0 ? (
-              <div><EmptyState icon={Mail} title="暂无有效邀请" /></div>
-            ) : (
-              <>
-                <div className="usr-tools">
-                  <label>
-                    <input
-                      type="checkbox"
-                      aria-label="选择全部邀请"
-                      checked={invitesAllSelected}
-                      disabled={mutating}
-                      onChange={(event) => setSelectedInvites(event.currentTarget.checked ? new Set(invites.map((invite) => invite.id)) : new Set())}
-                    />
-                    <span>全选</span>
-                  </label>
-                </div>
-                <DataTable columns={inviteColumns} rows={invites} rowKey={(invite) => invite.id} empty="暂无有效邀请" />
-              </>
-            )}
-          </section>
         </>
       ) : null}
 
@@ -765,13 +623,13 @@ export function UsersPage() {
 
       <ConfirmDialog
         open={batchConfirm !== null}
-        title={batchConfirm?.target === 'invites' ? '撤销邀请' : '停用用户'}
-        description={batchConfirm?.target === 'invites' ? `将撤销选中的 ${selectedInvites.size} 个邀请` : `将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销`}
-        confirmLabel={batchConfirm?.target === 'invites' ? '确认撤销' : '确认停用'}
+        title="停用用户"
+        description={`将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销`}
+        confirmLabel="确认停用"
         danger
         busy={mutating}
         onClose={() => setBatchConfirm(null)}
-        onConfirm={() => executeBatch(batchConfirm?.target ?? 'invites', batchConfirm?.action ?? 'revoke')}
+        onConfirm={() => executeBatch(batchConfirm ?? 'disable')}
       />
     </div>
   )

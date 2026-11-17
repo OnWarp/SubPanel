@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { apiError, ApiError } from '../platform/api-error.js'
-import { getOrCreateCryptoMaterial, hashToken, readCryptoMaterial } from '../platform/crypto.js'
+import { getOrCreateCryptoMaterial, readCryptoMaterial } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
 import { resolveSessionUser } from './auth.js'
 import { findUserByEmailNormalized } from './d1-repository.js'
@@ -19,7 +19,6 @@ import {
 import { accountsUseD1, findAccountUserForLogin, readAccounts, writeAccounts } from './repository.js'
 import {
   emailInputSchema,
-  inviteRecordSchema,
   passwordInputSchema,
   toPublicUser,
   usernameInputSchema,
@@ -42,9 +41,6 @@ const loginInputSchema = z
   .refine(({ identifier, username }) => identifier !== undefined || username !== undefined, {
     message: 'identifier is required',
   })
-
-const inviteTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
-const redeemInviteSchema = z.object({ password: passwordInputSchema })
 
 export const publicAccountRoutes = new Hono<AppEnv>()
 
@@ -202,55 +198,8 @@ publicAccountRoutes.post('/password/reset', async (c) => {
   return c.json({ ok: true })
 })
 
-publicAccountRoutes.get('/invites/:token', async (c) => {
-  const token = inviteTokenSchema.safeParse(c.req.param('token'))
-  if (!token.success) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
-  const key = `invite:${await hashToken(token.data)}`
-  const raw = await c.env.DATA.get(key)
-  if (raw === null) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
-  const invite = inviteRecordSchema.parse(JSON.parse(raw))
-  if (Date.parse(invite.expiresAt) <= Date.now()) {
-    await c.env.DATA.delete(key)
-    throw apiError(410, 'INVITE_EXPIRED', '邀请已过期')
-  }
-  return c.json({ invite: { username: invite.username, expiresAt: invite.expiresAt } })
-})
-
-publicAccountRoutes.post('/invites/:token', async (c) => {
-  const token = inviteTokenSchema.safeParse(c.req.param('token'))
-  if (!token.success) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
-  const input = await readJson(c, redeemInviteSchema)
-  const key = `invite:${await hashToken(token.data)}`
-  const raw = await c.env.DATA.get(key)
-  if (raw === null) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
-  const invite = inviteRecordSchema.parse(JSON.parse(raw))
-  if (Date.parse(invite.expiresAt) <= Date.now()) {
-    await c.env.DATA.delete(key)
-    throw apiError(410, 'INVITE_EXPIRED', '邀请已过期')
-  }
-
-  const accounts = await readAccounts(c.env)
-  if (accounts.users.some(({ username }) => username === invite.username)) {
-    await c.env.DATA.delete(key)
-    throw apiError(409, 'USERNAME_TAKEN', '用户名已存在')
-  }
-  const now = new Date().toISOString()
-  const user = {
-    id: invite.userId,
-    username: invite.username,
-    role: 'user' as const,
-    enabled: true,
-    password: await hashPassword(input.password),
-    sessionVersion: 0,
-    deletedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  }
-  // ponytail: KV cannot atomically consume an invite and write Accounts; fixed identity makes repeats converge, but strict global single use requires a Durable Object or D1.
-  await writeAccounts(c.env, {
-    ...accounts,
-    users: [...accounts.users, user],
-  }, now)
-  await c.env.DATA.delete(key)
-  return c.json({ user: toPublicUser(user) }, 201)
+// Legacy redemption no longer creates accounts. All links use /api/register.
+publicAccountRoutes.get('/invites/:token', (c) => c.redirect(`/register?inviteCode=${encodeURIComponent(c.req.param('token'))}`, 302))
+publicAccountRoutes.post('/invites/:token', () => {
+  throw apiError(410, 'USE_REGISTRATION', '请通过邀请链接进入注册页面，填写用户名、密码与邮箱')
 })

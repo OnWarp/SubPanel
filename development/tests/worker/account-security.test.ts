@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
@@ -59,16 +60,7 @@ describe('account security', () => {
     )
     expect(deniedSelfReset.status).toBe(409)
 
-    const inviteResponse = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/invites`,
-      jsonRequest({ username: 'alice' }, withCookie(adminCookie)),
-    )
-    const inviteLink = (await inviteResponse.json() as { invite: { link: string } }).invite.link
-    const token = new URL(inviteLink).pathname.split('/').at(-1)!
-    await exports.default.fetch(
-      `${TEST_ORIGIN}/api/invites/${token}`,
-      jsonRequest({ password: 'alice correct password' }),
-    )
+    await createFixtureAccount('alice', 'alice correct password')
     const oldCookie = await login('alice', 'alice correct password')
     const usersResponse = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(adminCookie))
     const alice = (await usersResponse.json() as { users: Array<{ id: string; username: string }> }).users

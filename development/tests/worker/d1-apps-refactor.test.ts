@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { applyD1Migrations } from 'cloudflare:test'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -14,10 +15,7 @@ let adminCookie: string
 let userCookie: string
 
 async function createUser(): Promise<string> {
-  const invite = await fetchApi('/api/admin/invites', jsonRequest({ username: 'member' }, withCookie(adminCookie)))
-  const link = ((await invite.json()) as { invite: { link: string } }).invite.link
-  const token = new URL(link).pathname.split('/').at(-1) ?? ''
-  await fetchApi(`/api/invites/${token}`, jsonRequest({ password: 'member-password' }))
+  await createFixtureAccount('member', 'member-password')
   return login('member', 'member-password')
 }
 

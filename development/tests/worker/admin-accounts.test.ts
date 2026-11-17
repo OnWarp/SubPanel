@@ -1,3 +1,6 @@
+import { applyMigrations, emptyDatabase } from './d1'
+import { ACCOUNTS_D1_READY_KEY, markModuleReady } from '../../../worker/db/module-switch'
+import { putRegistrationMode } from '../../../worker/db/settings-repository'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
@@ -12,7 +15,11 @@ import {
 
 beforeEach(async () => {
   await resetData()
+  await emptyDatabase()
+  await applyMigrations()
+  await markModuleReady(env.DB, ACCOUNTS_D1_READY_KEY)
   await setupAdmin()
+  await putRegistrationMode(env.DB, 'invite')
 })
 
 describe('administrator account controls', () => {
@@ -20,28 +27,26 @@ describe('administrator account controls', () => {
     const adminCookie = await login()
     const inviteResponse = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/invites`,
-      jsonRequest({ username: 'alice' }, withCookie(adminCookie)),
+      jsonRequest({}, withCookie(adminCookie)),
     )
     expect(inviteResponse.status).toBe(201)
     const invite = (await inviteResponse.json() as { invite: { link: string } }).invite
     const token = new URL(invite.link).pathname.split('/').at(-1)!
-    expect(JSON.parse((await env.DATA.get(`invite:${await hashToken(token)}`))!)).toMatchObject({ userId: 'usr_2' })
-
-    const status = await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`)
-    expect(await status.json()).toMatchObject({ invite: { username: 'alice' } })
+    const row = await env.DB.prepare('SELECT used_count FROM invite_codes WHERE token_hash = ?').bind(await hashToken(token)).first()
+    expect(row).toMatchObject({ used_count: 0 })
 
     const redeemed = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/invites/${token}`,
-      jsonRequest({ password: 'alice correct password' }),
+      `${TEST_ORIGIN}/api/register`,
+      jsonRequest({ username: 'alice', email: 'alice@example.com', inviteCode: token, password: 'alice correct password' }),
     )
     expect(redeemed.status).toBe(201)
     expect((await redeemed.json() as { user: { role: string } }).user.role).toBe('user')
 
     const reused = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/invites/${token}`,
-      jsonRequest({ password: 'alice other password' }),
+      `${TEST_ORIGIN}/api/register`,
+      jsonRequest({ username: 'alice', email: 'alice@example.com', inviteCode: token, password: 'alice other password' }),
     )
-    expect(reused.status).toBe(404)
+    expect(reused.status).toBe(409)
 
     const userCookie = await login('alice', 'alice correct password')
     const forbidden = await exports.default.fetch(
@@ -73,7 +78,7 @@ describe('administrator account controls', () => {
       expiresAt: '2026-07-22T00:00:00.000Z',
     }))
 
-    const response = await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`)
+    const response = await exports.default.fetch(`${TEST_ORIGIN}/api/register`, jsonRequest({ username: 'fresh', email: 'fresh@example.com', password: 'fresh password 123', inviteCode: token }))
     expect(response.status).toBe(410)
   })
 })

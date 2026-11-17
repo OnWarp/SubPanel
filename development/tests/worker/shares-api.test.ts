@@ -1,3 +1,4 @@
+import { createFixtureAccount } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
@@ -54,14 +55,7 @@ function cookiePair(response: Response, name: string): string {
 }
 
 async function provisionUser(adminCookie: string, username: string, password: string): Promise<{ id: string, cookie: string }> {
-  const invite = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/admin/invites`,
-    jsonRequest({ username }, withCookie(adminCookie)),
-  )
-  expect(invite.status).toBe(201)
-  const link = (await invite.json() as { invite: { link: string } }).invite.link
-  const token = new URL(link).pathname.split('/').at(-1) ?? ''
-  const redeemed = await exports.default.fetch(`${TEST_ORIGIN}/api/invites/${token}`, jsonRequest({ password }))
+  const redeemed = await createFixtureAccount(username, password)
   expect(redeemed.status).toBe(201)
   const users = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(adminCookie))).json() as {
     users: Array<{ id: string, username: string }>

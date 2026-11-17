@@ -10,12 +10,12 @@ type ErrorBody = { error: { code: string; message: string } }
 
 describe('SPA fallback', () => {
   it('serves the app shell for a browser navigation to a deep link', async () => {
-    const response = await exports.default.fetch(`${ORIGIN}/login`, {
-      headers: browserHeaders,
-    })
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-type')).toContain('text/html')
-    expect(await response.text()).toContain('spa-shell-test-fixture')
+    for (const path of ['/login', '/users', '/invites', '/invite/' + 'A'.repeat(43), '/register?inviteCode=' + 'A'.repeat(43)]) {
+      const response = await exports.default.fetch(`${ORIGIN}${path}`, { headers: browserHeaders })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
+      expect(await response.text()).toContain('spa-shell-test-fixture')
+    }
   })
 
   it('serves the app shell for a HEAD request to a deep link', async () => {

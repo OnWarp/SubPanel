@@ -1,7 +1,7 @@
 import { PasswordInput } from '../../ui/PasswordInput'
 import { UserPlus } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { useSession } from '../../app/session'
 import { FormField } from '../../ui/FormField'
@@ -11,8 +11,11 @@ type RegistrationMode = 'closed' | 'invite' | 'open'
 
 export function RegisterPage() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const [inviteCode, setInviteCode] = useState(params.get('inviteCode') ?? '')
   const { refresh } = useSession()
   const [mode, setMode] = useState<RegistrationMode | null>(null)
+  const invited = mode === 'invite' || inviteCode.trim() !== ''
   const [configError, setConfigError] = useState('')
   const [email, setEmail] = useState('')
   const [countdown, setCountdown] = useState(0)
@@ -70,8 +73,8 @@ export function RegisterPage() {
           username: String(form.get('username')),
           password,
           email,
-          code: String(form.get('code')),
-          inviteCode: mode === 'invite' ? String(form.get('inviteCode')) : undefined,
+          code: invited ? undefined : String(form.get('code')),
+          inviteCode: invited ? inviteCode.trim() : undefined,
         }),
       })
       await refresh()
@@ -119,15 +122,17 @@ export function RegisterPage() {
         <FormField label="邮箱" htmlFor="register-email" error={errorField === 'email' ? error : undefined}>
           <input id="register-email" name="email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} />
         </FormField>
+        {!invited ? <>
         <FormField label="验证码" htmlFor="register-code" error={errorField === 'code' ? error : undefined}>
           <input id="register-code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
         </FormField>
         <button className="button" type="button" disabled={sending || countdown > 0 || email === ''} onClick={sendCode}>
           {countdown > 0 ? `${countdown} 秒后可重新发送` : sending ? '正在发送' : '发送验证码'}
         </button>
-        {mode === 'invite' ? (
+        </> : null}
+        {invited ? (
           <FormField label="邀请码" htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
-            <input id="register-invite-code" name="inviteCode" autoComplete="off" required />
+            <input id="register-invite-code" name="inviteCode" autoComplete="off" required value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
           </FormField>
         ) : null}
         <FormField label="密码" htmlFor="register-password">

@@ -250,19 +250,16 @@ describe('invitation codes', () => {
     const adminCookie = await login()
     await putRegistrationMode(env.DB, 'invite')
 
-    await sendCode('one@example.com')
     const missing = await register({
       username: 'one',
       password: PASSWORD,
       email: 'one@example.com',
-      code: codeFor('one@example.com'),
     })
     expect(missing.status).toBe(400)
     const garbage = await register({
       username: 'one',
       password: PASSWORD,
       email: 'one@example.com',
-      code: codeFor('one@example.com'),
       inviteCode: 'not-a-real-code',
     })
     expect(garbage.status).toBe(400)
@@ -281,23 +278,19 @@ describe('invitation codes', () => {
     expect(JSON.stringify(listed)).not.toContain(code)
 
     for (const [username, email] of [['one', 'one@example.com'], ['two', 'two@example.com']] as const) {
-      if (email !== 'one@example.com') await sendCode(email)
       const response = await register({
         username,
         password: PASSWORD,
         email,
-        code: codeFor(email),
         inviteCode: code,
       })
       expect(response.status).toBe(201)
     }
 
-    await sendCode('three@example.com')
     const exhausted = await register({
       username: 'three',
       password: PASSWORD,
       email: 'three@example.com',
-      code: codeFor('three@example.com'),
       inviteCode: code,
     })
     expect(exhausted.status).toBe(409)
@@ -322,22 +315,18 @@ describe('invitation codes', () => {
     expect(created.invitations.every((entry) => entry.type === 'single')).toBe(true)
 
     const code = created.invitations[0].code
-    await sendCode('batch1@example.com')
     const first = await register({
       username: 'batch1',
       password: PASSWORD,
       email: 'batch1@example.com',
-      code: codeFor('batch1@example.com'),
       inviteCode: code,
     })
     expect(first.status).toBe(201)
 
-    await sendCode('batch2@example.com')
     const reuse = await register({
       username: 'batch2',
       password: PASSWORD,
       email: 'batch2@example.com',
-      code: codeFor('batch2@example.com'),
       inviteCode: code,
     })
     expect(reuse.status).toBe(409)
@@ -357,12 +346,10 @@ describe('invitation codes', () => {
     )
     expect(disabled.status).toBe(204)
 
-    await sendCode('late@example.com')
     const blocked = await register({
       username: 'late',
       password: PASSWORD,
       email: 'late@example.com',
-      code: codeFor('late@example.com'),
       inviteCode: created.invitations[0].code,
     })
     expect(blocked.status).toBe(409)
@@ -373,12 +360,10 @@ describe('invitation codes', () => {
       expiresAt: '2000-01-01T00:00:00.000Z',
     })
     const expired = await expiredResponse.json() as { invitations: Array<{ code: string }> }
-    await sendCode('gone@example.com')
     const expiredAttempt = await register({
       username: 'gone',
       password: PASSWORD,
       email: 'gone@example.com',
-      code: codeFor('gone@example.com'),
       inviteCode: expired.invitations[0].code,
     })
     expect(expiredAttempt.status).toBe(410)
@@ -393,13 +378,10 @@ describe('invitation codes', () => {
     const created = await createdResponse.json() as { invitations: Array<{ code: string }> }
     const code = created.invitations[0].code
 
-    await sendCode('racer1@example.com')
-    await sendCode('racer2@example.com')
     const attempt = (username: string, email: string) => register({
       username,
       password: PASSWORD,
       email,
-      code: codeFor(email),
       inviteCode: code,
     })
     const [first, second] = await Promise.all([
@@ -422,12 +404,10 @@ describe('invitation codes', () => {
     const createdResponse = await adminInvitations(adminCookie, { type: 'multi', maxUses: 5 })
     const created = await createdResponse.json() as { invitations: Array<{ code: string }> }
 
-    await sendCode('dupe@example.com')
     const payload = {
       username: 'dupe',
       password: PASSWORD,
       email: 'dupe@example.com',
-      code: codeFor('dupe@example.com'),
       inviteCode: created.invitations[0].code,
     }
     const [first, second] = await Promise.all([register(payload), register(payload)])
@@ -438,5 +418,75 @@ describe('invitation codes', () => {
       .prepare("SELECT COUNT(*) AS count FROM users WHERE username = 'dupe'")
       .first<{ count: number }>()
     expect(userCount?.count).toBe(1)
+  })
+})
+
+describe('qualification registration guarantees', () => {
+  it('accepts a code without email verification and marks the chosen email verified', async () => {
+    await setupAdmin()
+    await putRegistrationMode(env.DB, 'invite')
+    const cookie = await login()
+    const response = await adminInvitations(cookie, { type: 'multi', maxUses: 2 })
+    expect(response.status).toBe(201)
+    const { invitations } = await response.json() as { invitations: Array<{ code: string }> }
+    const created = await register({ username: 'chosen', password: PASSWORD, email: 'chosen@example.com', inviteCode: invitations[0].code })
+    expect(created.status).toBe(201)
+    const row = await env.DB.prepare("SELECT email_verified_at FROM users WHERE username = 'chosen'").first<{ email_verified_at: string }>()
+    expect(row?.email_verified_at).toBeTruthy()
+    expect(sentCodes).toHaveLength(0)
+    expect(await countRows('email_verifications')).toBe(0)
+    expect((await fetchApi('/api/login', jsonRequest({ identifier: 'chosen@example.com', password: PASSWORD }))).status).toBe(200)
+  })
+
+  it('rolls back invite consumption and redemption if the account insert fails', async () => {
+    await setupAdmin()
+    await putRegistrationMode(env.DB, 'invite')
+    const response = await adminInvitations(await login(), { type: 'batch', count: 1 })
+    const { invitations } = await response.json() as { invitations: Array<{ code: string; id: string }> }
+    await env.DB.prepare("CREATE TRIGGER fail_registration BEFORE INSERT ON users WHEN NEW.username = 'failuser' BEGIN SELECT RAISE(ABORT, 'injected insert failure'); END").run()
+    try {
+      const failed = await register({ username: 'failuser', password: PASSWORD, email: 'failed@example.com', inviteCode: invitations[0].code })
+      expect(failed.status).toBe(500)
+      const row = await env.DB.prepare('SELECT used_count FROM invite_codes WHERE id = ?').bind(invitations[0].id).first<{ used_count: number }>()
+      expect(row?.used_count).toBe(0)
+      expect(await countRows('invite_code_redemptions')).toBe(0)
+    } finally {
+      await env.DB.prepare('DROP TRIGGER fail_registration').run()
+    }
+    expect((await register({ username: 'recovered', password: PASSWORD, email: 'recovered@example.com', inviteCode: invitations[0].code })).status).toBe(201)
+  })
+
+  it('keeps the whitelist for invited registrations and requires verification without a code in open mode', async () => {
+    await setupAdmin()
+    const cookie = await login()
+    await putRegistrationMode(env.DB, 'open')
+    const response = await adminInvitations(cookie, { type: 'multi' })
+    const { invitations } = await response.json() as { invitations: Array<{ code: string }> }
+    const payload = { username: 'allowed', password: PASSWORD, email: 'allowed@example.com' }
+    expect((await register(payload)).status).toBe(400)
+    await env.DB.prepare("INSERT INTO allowed_email_domains (domain, created_at) VALUES ('example.com', ?)").bind(new Date().toISOString()).run()
+    expect((await register({ ...payload, email: 'blocked@outside.example', inviteCode: invitations[0].code })).status).toBe(403)
+    expect((await register({ ...payload, inviteCode: invitations[0].code })).status).toBe(201)
+    await putRegistrationMode(env.DB, 'closed')
+    expect((await register({ ...payload, username: 'closed', email: 'closed@example.com', inviteCode: invitations[0].code })).status).toBe(403)
+  })
+})
+
+describe('legacy invitation compatibility', () => {
+  it('ignores the old reserved username and uses the shared one-use registration transaction', async () => {
+    await setupAdmin()
+    await putRegistrationMode(env.DB, 'invite')
+    const { hashToken } = await import('../../../worker/platform/crypto')
+    const token = 'L'.repeat(43)
+    const hash = await hashToken(token)
+    await env.DATA.put(`invite:${hash}`, JSON.stringify({ schemaVersion: 1, userId: 'usr_999', username: 'reserved', createdAt: new Date().toISOString(), expiresAt: '2099-01-01T00:00:00.000Z' }))
+    const response = await register({ username: 'selfchosen', password: PASSWORD, email: 'selfchosen@example.com', inviteCode: token })
+    expect(response.status).toBe(201)
+    expect(sentCodes).toHaveLength(0)
+    expect(await env.DATA.get(`invite:${hash}`)).toBeNull()
+    const row = await env.DB.prepare('SELECT used_count FROM invite_codes WHERE id = ?').bind(hash).first<{ used_count: number }>()
+    expect(row?.used_count).toBe(1)
+    expect((await register({ username: 'another', password: PASSWORD, email: 'another@example.com', inviteCode: token })).status).toBe(409)
+    expect((await fetchApi(`/api/invites/${token}`, jsonRequest({ password: PASSWORD }))).status).toBe(410)
   })
 })

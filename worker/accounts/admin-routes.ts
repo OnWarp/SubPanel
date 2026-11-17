@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
-import { hashToken, randomToken } from '../platform/crypto.js'
+import { createInviteCodes, disableInviteCode, importLegacyInvites, listInviteCodes } from './invite-codes.js'
 import { readJson } from '../platform/http.js'
 import { primaryDomainOriginSafe } from '../domains/service.js'
 import { sendTestEmail } from './email.js'
@@ -20,13 +20,10 @@ import {
 } from './d1-repository.js'
 import {
   emailInputSchema,
-  inviteRecordSchema,
   passwordInputSchema,
   roleSchema,
   toPublicAccountUser,
   toPublicUser,
-  usernameInputSchema,
-  type InviteRecord,
 } from './schema.js'
 import { deleteCompiledArtifacts, readDelivery, readDeliveryKv, writeDeliveryKv } from '../delivery/repository.js'
 import {
@@ -38,9 +35,6 @@ import {
   userIndexKey,
 } from '../shares/repository.js'
 
-const INVITE_PREFIX = 'invite:'
-const INVITE_TTL_SECONDS = 24 * 60 * 60
-const createInviteSchema = z.object({ username: usernameInputSchema })
 const updateUserSchema = z.object({
   email: emailInputSchema.optional(),
   enabled: z.boolean().optional(),
@@ -121,23 +115,6 @@ async function scrubKvShares(
     }
   }
 }
-const inviteIdSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/)
-
-async function listInvites(kv: KVNamespace): Promise<Array<InviteRecord & { id: string }>> {
-  const listed = await kv.list({ prefix: INVITE_PREFIX })
-  const records = await Promise.all(listed.keys.map(async ({ name }) => {
-    const raw = await kv.get(name)
-    if (raw === null) return null
-    const record = inviteRecordSchema.safeParse(JSON.parse(raw))
-    if (!record.success) throw new Error('Invitation record is corrupt')
-    return { id: name.slice(INVITE_PREFIX.length), ...record.data }
-  }))
-  const now = Date.now()
-  return records.filter((record): record is InviteRecord & { id: string } =>
-    record !== null && Date.parse(record.expiresAt) > now,
-  )
-}
-
 export const adminAccountRoutes = new Hono<AppEnv>()
 
 adminAccountRoutes.get('/users', async (c) => {
@@ -404,50 +381,19 @@ adminAccountRoutes.post('/users/:id/purge', async (c) => {
   return c.json({ purged: true, userId })
 })
 
+// Compatibility aliases use the same qualification codes as /invitations.
 adminAccountRoutes.get('/invites', async (c) => {
-  return c.json({ invites: await listInvites(c.env.DATA) })
+  await importLegacyInvites(c.env)
+  return c.json({ invites: await listInviteCodes(c.env.DB) })
 })
-
 adminAccountRoutes.post('/invites', async (c) => {
-  const input = await readJson(c, createInviteSchema)
-  const accounts = await readAccounts(c.env)
-  if (accounts.users.some(({ username }) => username === input.username)) {
-    throw apiError(409, 'USERNAME_TAKEN', '用户名已存在')
-  }
-  if ((await listInvites(c.env.DATA)).some(({ username }) => username === input.username)) {
-    throw apiError(409, 'INVITE_EXISTS', '该用户名已有有效邀请')
-  }
-
-  const token = randomToken()
-  const id = await hashToken(token)
-  const createdAt = new Date()
-  const record: InviteRecord = {
-    schemaVersion: 1,
-    userId: `usr_${accounts.nextUserId}`,
-    username: input.username,
-    createdAt: createdAt.toISOString(),
-    expiresAt: new Date(createdAt.getTime() + INVITE_TTL_SECONDS * 1_000).toISOString(),
-  }
-  await writeAccounts(c.env, { ...accounts, nextUserId: accounts.nextUserId + 1 }, createdAt.toISOString())
-  await c.env.DATA.put(`${INVITE_PREFIX}${id}`, JSON.stringify(record), {
-    expirationTtl: INVITE_TTL_SECONDS,
-  })
-  // Panel absolute links use the primary panel domain when configured;
-  // the request origin is the only permitted fallback here.
+  const [invite] = await createInviteCodes(c.env.DB, c.get('principal').id, { type: 'batch', count: 1, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() })
   const panelOrigin = await primaryDomainOriginSafe(c.env.DB, 'panel')
-  return c.json({
-    invite: {
-      id,
-      ...record,
-      link: new URL(`/invite/${token}`, panelOrigin ?? c.req.url).toString(),
-    },
-  }, 201)
+  return c.json({ invite: { ...invite, link: new URL(`/invite/${invite.code}`, panelOrigin ?? c.req.url).toString() } }, 201)
 })
-
 adminAccountRoutes.delete('/invites/:id', async (c) => {
-  const id = inviteIdSchema.safeParse(c.req.param('id'))
-  if (!id.success) throw apiError(404, 'INVITE_NOT_FOUND', '邀请不存在')
-  await c.env.DATA.delete(`${INVITE_PREFIX}${id.data}`)
+  await importLegacyInvites(c.env)
+  await disableInviteCode(c.env.DB, c.req.param('id'))
   return c.body(null, 204)
 })
 
