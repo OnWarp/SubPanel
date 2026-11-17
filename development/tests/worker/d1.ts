@@ -1,3 +1,4 @@
+import entitlementsSql from '../../../migrations/0008_entitlements.sql?raw'
 import { applyD1Migrations } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import initSql from '../../../migrations/0001_init.sql?raw'
@@ -31,6 +32,8 @@ export const D1_TABLES = [
   'node_raw_variants',
   'nodes',
   'panel_domains',
+  'plan_groups',
+  'plans',
   'rate_limits',
   'shares',
   'sources',
@@ -39,6 +42,7 @@ export const D1_TABLES = [
   'subscription_platform_settings',
   'subscriptions',
   'system_settings',
+  'user_entitlements',
   'users',
 ] as const
 
@@ -164,6 +168,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     registrationMigration,
     appRefactorMigration,
     domainsMigration,
+    { name: '0008_entitlements.sql', queries: splitSqlStatements(entitlementsSql) },
   ])
 }
 

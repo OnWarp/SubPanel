@@ -1,3 +1,4 @@
+import { getUserEntitlement } from '../entitlements/service.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
@@ -187,6 +188,7 @@ adminAccountRoutes.get('/users/:id', async (c) => {
     ])
     return c.json({
       user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
+      entitlement: await getUserEntitlement(c.env.DB, accountUser.id),
       subscriptions,
       invitationRedemptions,
     })
@@ -209,6 +211,7 @@ adminAccountRoutes.get('/users/:id', async (c) => {
     }))
   return c.json({
     user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
+      entitlement: await getUserEntitlement(c.env.DB, accountUser.id),
     subscriptions,
     // KV mode never recorded redemptions once an invite was consumed.
     invitationRedemptions: [],

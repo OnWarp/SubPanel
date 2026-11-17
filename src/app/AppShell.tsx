@@ -19,6 +19,7 @@ const adminSections: NavSection[] = [
   { label: '交付与权限', items: [
     { to: '/delivery/subscriptions', label: '订阅', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
+    { to: '/plans', label: '权益计划', icon: ShieldCheck },
     { to: '/users', label: '用户与邀请', icon: Users },
     { to: '/catalog/apps', label: 'APP 管理', icon: Download },
   ] },

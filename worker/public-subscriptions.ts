@@ -1,3 +1,5 @@
+import { getUserEntitlement } from './entitlements/service.js'
+import type { RenderClient } from './renderers/index.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { AppEnv } from './app-env.js'
@@ -7,7 +9,7 @@ import { apiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
 import { assertSubscriptionAvailable } from './delivery/expiry.js'
 import { compiledArtifactSchema } from './delivery/schema.js'
-import { compileSubscription } from './delivery/compiler.js'
+import { compileSubscription, renderEntitledSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
@@ -66,6 +68,14 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     ownerDeleted = true
   }
   if (ownerDeleted) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  const rights = await getUserEntitlement(c.env.DB, subscription.userId)
+  if (!rights.current) {
+    const empty = await renderEntitledSubscription(c.env, subscription, client as RenderClient)
+    c.header('Content-Type', empty.contentType)
+    c.header('Cache-Control', 'no-store')
+    c.header('profile-title', encodeURIComponent(subscription.name))
+    return c.body(empty.body)
+  }
   assertSubscriptionAvailable(subscription)
   let raw: string | null
   try {
@@ -94,7 +104,8 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   if (artifact.subscriptionRevision !== subscription.revision || artifact.catalogRevision !== catalog.revision) {
     throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   }
-  if (!artifact.available) throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
+  artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient)
+  if (!artifact.available && artifact.inputNodes > 0) throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
   c.header('Cache-Control', 'no-store')
   c.header('ETag', artifact.etag)
   c.header('Last-Modified', new Date(artifact.lastModified).toUTCString())

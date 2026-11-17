@@ -1,3 +1,4 @@
+import { getUserEntitlement } from '../entitlements/service.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
@@ -79,9 +80,8 @@ export async function compileSubscription(
 ): Promise<CompiledArtifact[]> {
   const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
-  const catalog = await readCatalog(env)
-  const nodes = selectedNodes(catalog, subscription)
-  const artifacts = await Promise.all(CLIENT_IDS.map((client) => artifactFor(subscription, client, nodes, catalog.revision, now)))
+  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
+  const artifacts = await Promise.all(CLIENT_IDS.map((client) => artifactFor(subscription, client, speedLimitedNodes(nodes, client, speed), catalog.revision, now)))
   await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
   const keep = new Set(artifacts.map((artifact) => compiledKey(subscription.tokenHash, artifact.client)))
   const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
@@ -111,3 +111,27 @@ export async function compileSubscriptionById(env: DataEnv, id: string, options:
 }
 
 export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOptions = {}) => compileAllSubscriptions(env, options)
+
+// Public requests repeat the live decision even when a cached artifact exists:
+// entitlement expiry and plan edits do not change subscription/catalog revisions.
+async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
+  const rights = await getUserEntitlement(env.DB, subscription.userId, now)
+  const catalog = await readCatalog(env)
+  const nodes = rights.current
+    ? selectedNodes(catalog, { ...subscription, groupIds: subscription.groupIds.filter((id) => rights.current!.plan.groupIds.includes(id)) })
+    : []
+  return { catalog, nodes, speed: rights.current?.plan.speedLimitMbps ?? 0 }
+}
+
+function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {
+  return nodes.map((node) => {
+    if (speed === 0 || !['hysteria','hysteria2'].includes(node.protocol) || !['mihomo','singbox','surge'].includes(client)) return node
+    const cap = (value: unknown) => typeof value === 'number' && value > 0 ? Math.min(speed,value) : speed
+    return { ...node, transport: { ...node.transport, upMbps: cap(node.transport?.upMbps ?? node.transport?.up), downMbps: cap(node.transport?.downMbps ?? node.transport?.down) } }
+  })
+}
+
+export async function renderEntitledSubscription(env: DataEnv, subscription: Subscription, client: RenderClient, now = new Date().toISOString()): Promise<CompiledArtifact> {
+  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
+  return artifactFor(subscription,client,speedLimitedNodes(nodes,client,speed),catalog.revision,now)
+}

@@ -1,3 +1,4 @@
+import { getUserEntitlement } from '../entitlements/service.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
@@ -134,6 +135,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     }
   }
   return {
+    entitlement: await getUserEntitlement(c.env.DB, subscription.userId),
     id: subscription.id,
     userId: subscription.userId,
     name: subscription.name,

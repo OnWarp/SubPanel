@@ -1,3 +1,4 @@
+import { EntitlementInfo } from '../entitlements/EntitlementInfo'
 import { ChevronRight, Download, LogOut, Network, Share2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -47,6 +48,7 @@ export function MinePage() {
   return (
     <div className="page-stack nav-mine">
       <PageHeader title="我的" />
+      <EntitlementInfo />
       {profile ? (
         <ProfileCard profile={profile} />
       ) : (

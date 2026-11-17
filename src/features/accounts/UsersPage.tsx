@@ -1,3 +1,4 @@
+import { UserEntitlement } from '../entitlements/UserEntitlement'
 import { CheckCircle2, Copy, Crown, KeyRound, Mail, Plus, RotateCcw, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type AdminUsersResponse, type UserSummary } from '../../app/api'
@@ -425,6 +426,7 @@ export function UsersPage() {
     },
     { key: 'id', header: '用户 ID', render: (user) => <span>{user.id}</span> },
     { key: 'username', header: '用户名', render: (user) => <strong>{user.username}</strong> },
+    { key: 'entitlement', header: '权益', render: (user) => <UserEntitlement userId={user.id} username={user.username} /> },
     { key: 'email', header: '邮箱', render: (user) => <span>{user.email ?? '—'}</span> },
     { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
     {
