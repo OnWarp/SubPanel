@@ -66,6 +66,7 @@ Verification results:
 - `WRANGLER_LOG_PATH=/tmp/entitlements-wrangler.log npm run check`: PASS, zero warnings.
 - `WRANGLER_LOG_PATH=/tmp/entitlements-wrangler.log npm run build`: PASS, Worker and client builds.
 - `node development/test-entitlements-offline.mjs`: PASS, 10/10 checks.
+- Browser end-to-end tests were not run; their local Vite server has the same blocked localhost requirement.
 - New Worker suite bundles successfully with esbuild; `git diff --check`: PASS.
 - `npm test`: BLOCKED before any tests execute: the managed shell denies localhost socket creation (`listen EPERM ... 127.0.0.1`). The requested full-suite/smoke regression guarantee therefore cannot be claimed in this environment. The existing tests have been retained.
 
@@ -75,4 +76,4 @@ The checkout's `.git` is read-only (`git add` cannot create `.git/index.lock`). 
 
 The final bundle is `/tmp/entitlements.bundle`, created with `git bundle create /tmp/entitlements.bundle task/entitlements-codex ^0c96862` from that clone and checked with `git bundle verify`.
 
-Bundle hand-back status: pending the SCP attempt; no successful delivery has been claimed.
+Bundle hand-back status: **not delivered**. The exact SCP command requested in the brief was attempted and failed because `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` has an owner/permissions problem. A second attempt using `-F /dev/null -o BatchMode=yes -o ConnectTimeout=10` bypassed that configuration problem but was denied by the managed sandbox: `socket: Operation not permitted`, connecting to `124.243.179.34:22`. No remote push or successful file transfer occurred. The verified bundle remains available locally at `/tmp/entitlements.bundle`; completion of hand-back requires an environment permitting SSH connections. A successful hand-back is deliberately not claimed.
