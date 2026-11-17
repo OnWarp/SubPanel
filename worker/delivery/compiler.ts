@@ -1,3 +1,5 @@
+import { resolvedTemplate } from '../templates/repository.js'
+import type { Template } from '../templates/validation.js'
 import { getUserEntitlement } from '../entitlements/service.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
@@ -52,8 +54,9 @@ async function artifactFor(
   nodes: ReturnType<typeof selectedNodes>,
   catalogRevision: number,
   now: string,
+  template?: Template,
 ): Promise<CompiledArtifact> {
-  const rendered = renderClient(client, await nodesForClient(client, nodes))
+  const rendered = renderClient(client, await nodesForClient(client, nodes), template)
   const digest = await hashToken(rendered.body)
   return compiledArtifactSchema.parse({
     schemaVersion: 2,
@@ -131,7 +134,7 @@ function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: Rend
   })
 }
 
-export async function renderEntitledSubscription(env: DataEnv, subscription: Subscription, client: RenderClient, now = new Date().toISOString()): Promise<CompiledArtifact> {
+export async function renderEntitledSubscription(env: DataEnv, subscription: Subscription, client: RenderClient, now = new Date().toISOString(), previewTemplate?: Template): Promise<CompiledArtifact> {
   const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
-  return artifactFor(subscription,client,speedLimitedNodes(nodes,client,speed),catalog.revision,now)
+  return artifactFor(subscription,client,speedLimitedNodes(nodes,client,speed),catalog.revision,now, client === 'mihomo' && nodes.some(n => n.enabled) ? previewTemplate ?? await resolvedTemplate(env.DB, subscription.id) : undefined)
 }

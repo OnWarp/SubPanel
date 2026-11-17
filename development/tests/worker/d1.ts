@@ -1,3 +1,4 @@
+import templatesSql from '../../../migrations/0015_subscription_templates.sql?raw'
 import inviteRegistrationSql from '../../../migrations/0012_invite_registration.sql?raw'
 import subscriptionPoolSql from '../../../migrations/0014_subscription_pool.sql?raw'
 import stage3Sql from '../../../migrations/0010_stage3_admin.sql?raw'
@@ -50,6 +51,10 @@ export const D1_TABLES = [
   'subscription_domains',
   'subscription_groups',
   'subscription_platform_settings',
+  'subscription_template_bindings',
+  'subscription_template_default',
+  'subscription_template_versions',
+  'subscription_templates',
   'subscriptions',
   'system_settings',
   'ticket_replies',
@@ -200,6 +205,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     knowledgeBaseMigration,
     { name: '0012_invite_registration.sql', queries: splitSqlStatements(inviteRegistrationSql) },
     { name: '0014_subscription_pool.sql', queries: splitSqlStatements(subscriptionPoolSql) },
+    { name: '0015_subscription_templates.sql', queries: splitSqlStatements(templatesSql) },
   ])
 }
 

@@ -1,4 +1,5 @@
 import { stringify as stringifyYaml } from 'yaml'
+import { expandTemplate, RESERVED, type Template } from '../templates/validation.js'
 import type { JsonValue, Protocol } from '../catalog/schema.js'
 import type { RenderClient, RenderDiagnostic, RenderNode, RenderResult } from './model.js'
 import { CLIENT_IDS } from './model.js'
@@ -527,10 +528,20 @@ function loonLine(node: RenderNode): string | null {
   return `${name} = ${fields.join(',')}`
 }
 
-function renderStructured(client: RenderClient, nodes: RenderNode[]): string {
+function renderStructured(client: RenderClient, nodes: RenderNode[], template?: Template): string {
   if (client === 'mihomo') {
+    if (template && nodes.length) {
+      const used = new Set([...RESERVED, ...template['proxy-groups'].map(g => g.name)])
+      nodes = nodes.map(node => {
+        let name = node.displayName, suffix = 2
+        while (used.has(name)) name = `${node.displayName} (${suffix++})`
+        used.add(name)
+        return { ...node, displayName: name }
+      })
+    }
     const proxies = nodes.map(mihomoProxy)
     const names = proxies.map((node) => node.name as string)
+    if (template && nodes.length) return stringifyYaml({ proxies, ...expandTemplate(template, names) })
     return stringifyYaml({ proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
   }
   if (client === 'singbox') {
@@ -708,7 +719,7 @@ function unsupportedNodeFields(client: RenderClient, node: RenderNode): string[]
   return [...new Set(fields)]
 }
 
-export function renderClient(client: RenderClient, input: RenderNode[]): RenderResult {
+export function renderClient(client: RenderClient, input: RenderNode[], template?: Template): RenderResult {
   const diagnostics: RenderDiagnostic[] = []
   const candidates: RenderNode[] = []
   const enabledNodes = namedNodes(input.filter((item) => item.enabled).map(normalizeTlsAliases))
@@ -761,7 +772,7 @@ export function renderClient(client: RenderClient, input: RenderNode[]): RenderR
     for (const byte of new TextEncoder().encode(uris.join('\n'))) binary += String.fromCharCode(byte)
     body = btoa(binary)
   } else {
-    body = renderStructured(client, candidates)
+    body = renderStructured(client, candidates, template)
   }
   const metadata = contentMetadata(client)
   return {

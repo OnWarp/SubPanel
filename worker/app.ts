@@ -1,3 +1,4 @@
+import { templateRoutes } from './templates/routes.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
 import { adminEntitlementRoutes, userEntitlementRoutes } from './entitlements/routes.js'
@@ -76,6 +77,7 @@ app.route('/api/account', userEntitlementRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin', adminSystemRoutes)
+app.route('/api/admin/system/subscription-templates', templateRoutes)
 app.route('/api/admin', adminDomainRoutes)
 app.route('/api/admin', adminTicketRoutes)
 app.route('/api/admin', adminNoticeRoutes)

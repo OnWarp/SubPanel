@@ -1,4 +1,5 @@
 import { Input, FormSelect } from '../../ui/Controls'
+import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Info, Mail, Settings, User, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -477,6 +478,7 @@ export function SystemPage() {
     query.delete('section'); query.delete('tab')
     const search = query.size ? `?${query}` : ''
     return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.some(item => item.key === active) ? active : 'registration'}`) + search} />
+
   }
   return <div className="page-stack sys-page">
     <PageHeader title="系统设置" />
@@ -487,7 +489,7 @@ export function SystemPage() {
       <div className="sys-content">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /></> : null}
+        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><TemplatesSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
       </div>
     </div>
