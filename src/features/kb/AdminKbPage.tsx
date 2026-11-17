@@ -1,3 +1,4 @@
+import { Input, Textarea } from '../../ui/Controls'
 import { BookOpen, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -363,7 +364,7 @@ export function AdminKbPage() {
               <h3 className="kb-subtitle">{categoryForm.id === null ? '新建分类' : '编辑分类'}</h3>
               <div className="kb-form-grid">
                 <FormField label="分类名称" htmlFor="kb-category-name">
-                  <input
+                  <Input
                     id="kb-category-name"
                     type="text"
                     maxLength={60}
@@ -374,7 +375,7 @@ export function AdminKbPage() {
                   />
                 </FormField>
                 <FormField label="排序（越小越靠前）" htmlFor="kb-category-sort">
-                  <input
+                  <Input
                     id="kb-category-sort"
                     type="number"
                     min={0}
@@ -465,7 +466,7 @@ export function AdminKbPage() {
             />
           </FormField>
           <FormField label="标题" htmlFor="kb-article-title-input">
-            <input
+            <Input
               id="kb-article-title-input"
               type="text"
               maxLength={160}
@@ -476,7 +477,7 @@ export function AdminKbPage() {
             />
           </FormField>
           <FormField label="正文（Markdown）" htmlFor="kb-article-content">
-            <textarea
+            <Textarea
               id="kb-article-content"
               rows={14}
               maxLength={100_000}
@@ -488,7 +489,7 @@ export function AdminKbPage() {
           </FormField>
           <div className="kb-form-grid">
             <FormField label="排序（越小越靠前）" htmlFor="kb-article-sort">
-              <input
+              <Input
                 id="kb-article-sort"
                 type="number"
                 min={0}

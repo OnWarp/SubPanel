@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ApiClientError } from '../../app/api'
@@ -234,7 +235,7 @@ export function SharePage() {
         {phase.kind === 'password' ? (
           <form className="form-stack" onSubmit={(event) => { submitPassword(event).catch(() => undefined) }}>
             <FormField label="访问密码" htmlFor="share-access-password">
-              <input id="share-access-password" name="password" type="password" autoComplete="off" maxLength={128} required />
+              <Input id="share-access-password" name="password" type="password" autoComplete="off" maxLength={128} required />
             </FormField>
             {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
             <button className="button primary" type="submit" disabled={submitting}>{submitting ? '正在验证' : '验证'}</button>
@@ -296,7 +297,7 @@ function ReadyShare({ meta, feedback, originalBlocked, manualOriginal, pendingAc
       )}
       {manualOriginal ? (
         <div className="sh-manual">
-          <input aria-label="订阅链接" value={manualOriginal} readOnly />
+          <Input aria-label="订阅链接" value={manualOriginal} readOnly />
         </div>
       ) : null}
       {feedback ? <StatusMessage tone={feedback.tone}>{feedback.text}</StatusMessage> : null}

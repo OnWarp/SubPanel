@@ -1,3 +1,4 @@
+import { Textarea } from '../../ui/Controls'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -105,7 +106,7 @@ export function TicketDetailPage() {
             ) : (
               <form className="tk-form" onSubmit={submitReply}>
                 <FormField label="追加回复" htmlFor="tk-reply-body">
-                  <textarea
+                  <Textarea
                     id="tk-reply-body"
                     rows={4}
                     maxLength={5_000}

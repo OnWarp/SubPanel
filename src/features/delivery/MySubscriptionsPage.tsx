@@ -1,3 +1,4 @@
+import { Input } from '../../ui/Controls'
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -183,7 +184,7 @@ export function MySubscriptionsPage() {
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
 
       <div className="del-user-column">
-        {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton iconOnly value={tokenNotice.token} label="复制令牌" /></section> : null}
+        {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton iconOnly value={tokenNotice.token} label="复制令牌" /></section> : null}
 
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
         {!loading && loadError && subscriptions.length === 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}

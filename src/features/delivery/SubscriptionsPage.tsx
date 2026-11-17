@@ -1,4 +1,5 @@
 import { CreateShareForm } from '../shares/ShareDrawer'
+import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
 import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -391,7 +392,7 @@ export function SubscriptionsPage() {
       header: '选择',
       width: 64,
       render: (subscription) => (
-        <input
+        <Checkbox
           type="checkbox"
           aria-label={`选择订阅 ${subscription.name}`}
           checked={selected.has(subscription.id)}
@@ -490,7 +491,7 @@ export function SubscriptionsPage() {
     <div className="page-stack del-admin-page">
       <PageHeader title="订阅" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
 
-      {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
+      {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       <FilterBar className="del-filters">
@@ -519,20 +520,20 @@ export function SubscriptionsPage() {
 
       <EditDrawer open={drawer === 'create' || (drawer !== null && drawer.kind === 'edit')} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>
         <form className="form-stack" onSubmit={saveSubscription}>
-          <label className="field"><span>订阅名称</span><input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
-          <label className="field"><span>所属用户</span><select aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</select></label>
-          <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><input type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
-          <label className="field"><span>默认客户端</span><select aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</select></label>
+          <label className="field"><span>订阅名称</span><Input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
+          <label className="field"><span>所属用户</span><FormSelect aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
+          <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
+          <label className="field"><span>默认客户端</span><FormSelect aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect></label>
           <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
           <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
-            <input id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
+            <DateTimeInput id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
               const startsAt = event.currentTarget.value
               setForm((current) => ({ ...current, startsAt }))
               setFieldErrors(validateWindow(startsAt, form.expiresAt))
             }} />
           </FormField>
           <FormField label="到期时间" htmlFor="exp-expires-at" error={fieldErrors.expiresAt}>
-            <input id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
+            <DateTimeInput id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
               const expiresAt = event.currentTarget.value
               setForm((current) => ({ ...current, expiresAt }))
               setFieldErrors(validateWindow(form.startsAt, expiresAt))
@@ -555,7 +556,7 @@ export function SubscriptionsPage() {
       <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer}>
         {details ? <div className="subscription-details">
           <section><div className="detail-heading"><div><h3>{details.name}</h3><p>{details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'} · {details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</p></div><button className="button secondary" type="button" onClick={() => resetToken(details)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置令牌</button></div></section>
-          <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><input aria-label={`${CLIENT_LABELS[client] ?? client} 链接`} value={link} readOnly /><span className="row-actions"><CopyButton value={link} iconOnly label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
+          <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><Input aria-label={`${CLIENT_LABELS[client] ?? client} 链接`} value={link} readOnly /><span className="row-actions"><CopyButton value={link} iconOnly label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
           <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </div> : null}
@@ -573,7 +574,7 @@ export function SubscriptionsPage() {
             await load()
           } catch (cause) { setDrawerError(errorMessage(cause, '转移失败')) } finally { setBusy(false) }
         }}>
-          <label className="field"><span>目标用户</span><select aria-label="目标用户" value={targetUser} onChange={event => setTargetUser(event.currentTarget.value)}><option value="">未分配（回收进池）</option>{users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}</select></label>
+          <label className="field"><span>目标用户</span><FormSelect aria-label="目标用户" value={targetUser} onChange={event => setTargetUser(event.currentTarget.value)}><option value="">未分配（回收进池）</option>{users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
           <p>转移将轮换令牌，旧链接立即失效</p>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <button className="button primary" type="submit" disabled={busy}>确认转移</button>
@@ -581,7 +582,7 @@ export function SubscriptionsPage() {
       </EditDrawer>
       <EditDrawer open={sharing !== null} title="临时分享" busy={busy} onClose={() => setSharing(null)}>
         {sharing ? <CreateShareForm key={sharing.id} admin subscriptionId={sharing.id} onCancel={() => setSharing(null)} onPending={setBusy} onCreated={(_share, url) => setShareUrl(url)} /> : null}
-        {shareUrl ? <label className="field"><span>分享链接</span><input aria-label="分享链接" readOnly value={shareUrl} /><CopyButton value={shareUrl} label="复制分享链接" /></label> : null}
+        {shareUrl ? <label className="field"><span>分享链接</span><Input aria-label="分享链接" readOnly value={shareUrl} /><CopyButton value={shareUrl} label="复制分享链接" /></label> : null}
       </EditDrawer>
 
       <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={details?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { const link = qr.link; setQr(null); void copyToClipboard(link).then(() => setMessage('链接已复制')).catch(() => setError('浏览器未允许复制，请手动选择内容')) } }}>

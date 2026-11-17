@@ -1,3 +1,4 @@
+import { Input, Textarea } from '../../ui/Controls'
 import { Plus, Ticket as TicketIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -114,7 +115,7 @@ export function TicketsPage() {
         <form id="tk-create-form" className="tk-form" onSubmit={create} noValidate>
           {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
           <FormField label="标题" htmlFor="tk-create-title">
-            <input
+            <Input
               id="tk-create-title"
               type="text"
               maxLength={120}
@@ -133,7 +134,7 @@ export function TicketsPage() {
             />
           </FormField>
           <FormField label="正文" htmlFor="tk-create-body">
-            <textarea
+            <Textarea
               id="tk-create-body"
               rows={7}
               maxLength={5_000}

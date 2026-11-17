@@ -1,3 +1,4 @@
+import { Input } from './Controls'
 import { Search } from 'lucide-react'
 
 type SearchInputProps = {
@@ -13,7 +14,7 @@ export function SearchInput({ value, onChange, placeholder, label, disabled = fa
   return (
     <div className={`sp-search${className ? ` ${className}` : ''}`}>
       <Search aria-hidden="true" size={16} />
-      <input
+      <Input
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}

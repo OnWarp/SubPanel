@@ -1,3 +1,4 @@
+import { Input, Textarea, FormSelect } from '../../ui/Controls'
 import { useCallback, useEffect, useState } from 'react'
 import { api,jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
@@ -17,14 +18,14 @@ export function AdminMailSection() {
  {result?<p role="status">{result}</p>:null}
  <p className="sys-hint">文本变量：验证码 verification：{'{{username}}, {{code}}, {{purpose}}'}；到期 expiry_reminder：{'{{username}}, {{plan}}, {{expires_at}}'}；群发 broadcast：{'{{username}}, {{subject}}, {{body}}'}。恢复默认会删除自定义模板。</p>
  {templates.map((t,i)=><form className="sys-form" key={t.key} onSubmit={e=>{e.preventDefault();void run(()=>api(`/api/admin/mail-templates/${t.key}`,{method:'PUT',body:jsonBody({subject:t.subject,body:t.body})}))}}>
- <h3>{t.key}</h3><FormField label="标题"><input required maxLength={500} value={t.subject} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,subject:e.target.value}:v))}/></FormField>
- <FormField label="正文"><textarea required value={t.body} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,body:e.target.value}:v))}/></FormField>
+ <h3>{t.key}</h3><FormField label="标题"><Input required maxLength={500} value={t.subject} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,subject:e.target.value}:v))}/></FormField>
+ <FormField label="正文"><Textarea required value={t.body} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,body:e.target.value}:v))}/></FormField>
  <div className="sys-actions"><button className="button" disabled={busy}>保存模板</button><button type="button" className="button ghost" disabled={busy} onClick={()=>void run(()=>api(`/api/admin/mail-templates/${t.key}`,{method:'DELETE'}))}>恢复默认</button></div></form>)}
  <form className="sys-form" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/mail-broadcasts',{method:'POST',body:jsonBody({subject,body,target})}))}}>
  <h3>群发邮件</h3><p className="sys-hint">逐个发送并记录结果；无邮箱或邮件服务未配置会计为失败。</p>
- <FormField label="目标"><select value={target} onChange={e=>setTarget(e.target.value)}><option value="all">全部用户</option><option value="active">有效权益用户</option><option value="expiring">7 日内到期用户</option></select></FormField>
- <FormField label="标题"><input required maxLength={500} value={subject} onChange={e=>setSubject(e.target.value)}/></FormField><FormField label="正文"><textarea required maxLength={50000} value={body} onChange={e=>setBody(e.target.value)}/></FormField><button className="button primary" disabled={busy}>发送群发邮件</button></form>
+ <FormField label="目标"><FormSelect aria-label="目标" value={target} onChange={e=>setTarget(e.target.value)}><option value="all">全部用户</option><option value="active">有效权益用户</option><option value="expiring">7 日内到期用户</option></FormSelect></FormField>
+ <FormField label="标题"><Input required maxLength={500} value={subject} onChange={e=>setSubject(e.target.value)}/></FormField><FormField label="正文"><Textarea required maxLength={50000} value={body} onChange={e=>setBody(e.target.value)}/></FormField><button className="button primary" disabled={busy}>发送群发邮件</button></form>
  <h3>发送历史（最近 100 条）</h3><ul>{history.map(h=><li key={h.id}>{h.created_at} · {h.subject} · {h.status} · 总数 {h.total} / 成功 {h.sent} / 失败 {h.failed}</li>)}</ul>
- <form className="sys-form" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/system/reminders',{method:'PUT',body:jsonBody({reminder_days:days})}))}}><h3>到期提醒</h3><FormField label="提前天数"><input type="number" min={1} max={365} required value={days} onChange={e=>setDays(Number(e.target.value))}/></FormField><div className="sys-actions"><button className="button" disabled={busy}>保存天数</button><button className="button" type="button" disabled={busy} onClick={()=>void run(()=>api('/api/admin/jobs/expiry-reminders',{method:'POST'}))}>手动发送到期提醒</button></div><p className="sys-hint">同一到期日只提醒一次；失败可重试。自动定时触发待 cron 修复。</p></form>
+ <form className="sys-form" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/system/reminders',{method:'PUT',body:jsonBody({reminder_days:days})}))}}><h3>到期提醒</h3><FormField label="提前天数"><Input type="number" min={1} max={365} required value={days} onChange={e=>setDays(Number(e.target.value))}/></FormField><div className="sys-actions"><button className="button" disabled={busy}>保存天数</button><button className="button" type="button" disabled={busy} onClick={()=>void run(()=>api('/api/admin/jobs/expiry-reminders',{method:'POST'}))}>手动发送到期提醒</button></div><p className="sys-hint">同一到期日只提醒一次；失败可重试。自动定时触发待 cron 修复。</p></form>
  </section>
 }

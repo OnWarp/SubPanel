@@ -1,3 +1,4 @@
+import { Checkbox, Input, FormSelect, Textarea, FileInput } from '../../ui/Controls'
 import { CheckCircle2, FileUp, Pencil, Plus, RefreshCw, Rss, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
@@ -329,7 +330,7 @@ export function SourcesPage() {
       key: 'select',
       header: '选择',
       width: 40,
-      render: (source) => <input type="checkbox" aria-label={`选择来源 ${source.name}`} checked={selected.has(source.id)} disabled={busy} onChange={() => toggleSelected(source.id)} />,
+      render: (source) => <Checkbox type="checkbox" aria-label={`选择来源 ${source.name}`} checked={selected.has(source.id)} disabled={busy} onChange={() => toggleSelected(source.id)} />,
     },
     {
       key: 'name',
@@ -385,7 +386,7 @@ export function SourcesPage() {
           <>
             <div className="cat-table-tools">
               <label className="cat-select-all">
-                <input type="checkbox" aria-label="选择全部来源" checked={filteredSources.length > 0 && selected.size === filteredSources.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} />
+                <Checkbox type="checkbox" aria-label="选择全部来源" checked={filteredSources.length > 0 && selected.size === filteredSources.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} />
                 <span>全选</span>
               </label>
             </div>
@@ -396,15 +397,15 @@ export function SourcesPage() {
 
       <EditDrawer open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={createButton}>
         <form className="form-stack" onSubmit={saveSource}>
-          <label className="field"><span>来源名称</span><input aria-label="来源名称" value={form.name} maxLength={128} onChange={(event) => updateForm('name', event.currentTarget.value)} required /></label>
-          {drawer === 'create' ? <label className="field"><span>来源类型</span><select aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手工</option><option value="file">文件</option><option value="remote">远程</option></select></label> : <p className="drawer-note">类型：{sourceTypeLabel(form.type)} · 编辑时只更新可安全修改的字段</p>}
+          <label className="field"><span>来源名称</span><Input aria-label="来源名称" value={form.name} maxLength={128} onChange={(event) => updateForm('name', event.currentTarget.value)} required /></label>
+          {drawer === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手工</option><option value="file">文件</option><option value="remote">远程</option></FormSelect></label> : <p className="drawer-note">类型：{sourceTypeLabel(form.type)} · 编辑时只更新可安全修改的字段</p>}
           {form.type === 'remote' ? <>
-            <label className="field"><span>远程 URL</span><input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={drawer === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={drawer === 'create'} /></label>
-            <label className="field"><span>请求 Headers（JSON）</span><textarea aria-label="请求 Headers" value={form.headers} onChange={(event) => updateForm('headers', event.currentTarget.value)} placeholder={drawer === 'create' ? '{"User-Agent":"SubPanel"}' : '留空保持当前 Headers；填写 {} 可清空'} rows={3} /></label>
-            <label className="field"><span>刷新周期（分钟）</span><input aria-label="刷新周期" type="number" min={15} step={15} value={form.refreshIntervalMinutes} onChange={(event) => updateForm('refreshIntervalMinutes', event.currentTarget.value)} required /></label>
+            <label className="field"><span>远程 URL</span><Input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={drawer === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={drawer === 'create'} /></label>
+            <label className="field"><span>请求 Headers（JSON）</span><Textarea aria-label="请求 Headers" value={form.headers} onChange={(event) => updateForm('headers', event.currentTarget.value)} placeholder={drawer === 'create' ? '{"User-Agent":"SubPanel"}' : '留空保持当前 Headers；填写 {} 可清空'} rows={3} /></label>
+            <label className="field"><span>刷新周期（分钟）</span><Input aria-label="刷新周期" type="number" min={15} step={15} value={form.refreshIntervalMinutes} onChange={(event) => updateForm('refreshIntervalMinutes', event.currentTarget.value)} required /></label>
           </> : <>
-            {form.type === 'file' ? <label className="field"><span>来源文件</span><input aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setDrawerError('读取文件失败')) }} /></label> : null}
-            <label className="field"><span>来源内容</span><textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
+            {form.type === 'file' ? <label className="field"><span>来源文件</span><FileInput aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setDrawerError('读取文件失败')) }} /></label> : null}
+            <label className="field"><span>来源内容</span><Textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
             <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button><span className="drawer-note">保存前会先验证可解析节点</span></div>
           </>}
           <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />

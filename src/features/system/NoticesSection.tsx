@@ -1,3 +1,4 @@
+import { Input, Textarea, DateTimeInput } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -186,7 +187,7 @@ export function NoticesSection() {
           <form className="ntc-admin-form" onSubmit={save} noValidate>
             <h3 className="sys-subtitle">{editingId === null ? '新建公告' : '编辑公告'}</h3>
             <FormField label="标题" htmlFor="ntc-title">
-              <input
+              <Input
                 id="ntc-title"
                 type="text"
                 maxLength={120}
@@ -197,7 +198,7 @@ export function NoticesSection() {
               />
             </FormField>
             <FormField label="正文" htmlFor="ntc-body">
-              <textarea
+              <Textarea
                 id="ntc-body"
                 rows={5}
                 maxLength={20_000}
@@ -209,7 +210,7 @@ export function NoticesSection() {
             </FormField>
             <div className="sys-grid">
               <FormField label="排序（越小越靠前）" htmlFor="ntc-sort">
-                <input
+                <Input
                   id="ntc-sort"
                   type="number"
                   min={0}
@@ -222,7 +223,7 @@ export function NoticesSection() {
                 />
               </FormField>
               <FormField label="发布时间（留空为现在）" htmlFor="ntc-published">
-                <input
+                <DateTimeInput
                   id="ntc-published"
                   type="datetime-local"
                   value={form.publishedAt}

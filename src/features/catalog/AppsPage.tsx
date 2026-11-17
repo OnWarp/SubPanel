@@ -1,3 +1,4 @@
+import { Input, Textarea, FormSelect } from '../../ui/Controls'
 import { Pencil, Plus, Power, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
@@ -368,13 +369,13 @@ export function AppsPage() {
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <div className="app-form-grid">
             <FormField label="名称" htmlFor="app-name">
-              <input id="app-name" value={form.name} maxLength={128} disabled={busy} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />
+              <Input id="app-name" value={form.name} maxLength={128} disabled={busy} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />
             </FormField>
             <FormField label="排序" htmlFor="app-sort">
-              <input id="app-sort" inputMode="numeric" value={form.sortOrder} disabled={busy} onChange={(event) => setForm({ ...form, sortOrder: event.currentTarget.value })} />
+              <Input id="app-sort" inputMode="numeric" value={form.sortOrder} disabled={busy} onChange={(event) => setForm({ ...form, sortOrder: event.currentTarget.value })} />
             </FormField>
             <FormField label="简介" htmlFor="app-description">
-              <textarea id="app-description" className="app-span-2" rows={3} maxLength={8000} value={form.description} disabled={busy} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} />
+              <Textarea id="app-description" className="app-span-2" rows={3} maxLength={8000} value={form.description} disabled={busy} onChange={(event) => setForm({ ...form, description: event.currentTarget.value })} />
             </FormField>
             <Switch label="启用" checked={form.enabled} disabled={busy} onChange={(checked) => setForm({ ...form, enabled: checked })} />
           </div>
@@ -389,18 +390,18 @@ export function AppsPage() {
               {form.platforms.map((row, index) => (
                 <div className="app-platform-card" key={index}>
                   <FormField label="平台" htmlFor={`app-platform-${index}`}>
-                    <select id={`app-platform-${index}`} value={row.platform} disabled={busy} onChange={(event) => updateRow(index, { platform: event.currentTarget.value as PlatformName })}>
+                    <FormSelect id={`app-platform-${index}`} value={row.platform} disabled={busy} onChange={(event) => updateRow(index, { platform: event.currentTarget.value as PlatformName })}>
                       {PLATFORM_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                    </select>
+                    </FormSelect>
                   </FormField>
                   <FormField label="下载链接" htmlFor={`app-download-${index}`}>
-                    <input id={`app-download-${index}`} value={row.downloadUrl} placeholder="https://…" disabled={busy} onChange={(event) => updateRow(index, { downloadUrl: event.currentTarget.value })} />
+                    <Input id={`app-download-${index}`} value={row.downloadUrl} placeholder="https://…" disabled={busy} onChange={(event) => updateRow(index, { downloadUrl: event.currentTarget.value })} />
                   </FormField>
                   <FormField label="文档链接（可选）" htmlFor={`app-doc-${index}`}>
-                    <input id={`app-doc-${index}`} value={row.documentationUrl} placeholder="https://…" disabled={busy} onChange={(event) => updateRow(index, { documentationUrl: event.currentTarget.value })} />
+                    <Input id={`app-doc-${index}`} value={row.documentationUrl} placeholder="https://…" disabled={busy} onChange={(event) => updateRow(index, { documentationUrl: event.currentTarget.value })} />
                   </FormField>
                   <FormField label="排序" htmlFor={`app-platform-sort-${index}`}>
-                    <input id={`app-platform-sort-${index}`} inputMode="numeric" value={row.sortOrder} disabled={busy} onChange={(event) => updateRow(index, { sortOrder: event.currentTarget.value })} />
+                    <Input id={`app-platform-sort-${index}`} inputMode="numeric" value={row.sortOrder} disabled={busy} onChange={(event) => updateRow(index, { sortOrder: event.currentTarget.value })} />
                   </FormField>
                   <button className="icon-button danger" type="button" aria-label="移除平台配置" title="移除" disabled={busy} onClick={() => removeRow(index)}><Trash2 aria-hidden="true" size={16} /></button>
                 </div>

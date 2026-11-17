@@ -1,3 +1,4 @@
+import { FormSelect } from '../../ui/Controls'
 import { Ban, Share2, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -265,17 +266,17 @@ export function AdminSharesPage() {
         </div>
         <label>
           <span>用户</span>
-          <select aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
+          <FormSelect aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
             <option value="">全部</option>
             {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-          </select>
+          </FormSelect>
         </label>
         <label>
           <span>订阅</span>
-          <select aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
+          <FormSelect aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
             <option value="">全部</option>
             {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-          </select>
+          </FormSelect>
         </label>
       </FilterBar>
 

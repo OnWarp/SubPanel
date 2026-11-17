@@ -1,3 +1,4 @@
+import { Input, FormSelect } from '../../ui/Controls'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Download, Info, Mail, Megaphone, Settings, Share2, User, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent, type ReactElement } from 'react'
@@ -190,7 +191,7 @@ function EmailDomains() {
           )}
           <form className="sys-domain-form" onSubmit={add}>
             <FormField label="添加域名" htmlFor="sys-domain-input">
-              <input
+              <Input
                 id="sys-domain-input"
                 type="text"
                 inputMode="url"
@@ -296,25 +297,25 @@ function MailSection() {
         <form className="sys-form" onSubmit={save} noValidate>
           <div className="sys-grid">
             <FormField label="邮件服务商" htmlFor="sys-mail-provider">
-              <select id="sys-mail-provider" value={form.provider} disabled={saving} onChange={(event) => setForm({ ...form, provider: event.currentTarget.value === 'resend' ? 'resend' : 'smtp' })}>
+              <FormSelect id="sys-mail-provider" value={form.provider} disabled={saving} onChange={(event) => setForm({ ...form, provider: event.currentTarget.value === 'resend' ? 'resend' : 'smtp' })}>
                 <option value="smtp">SMTP</option>
                 <option value="resend">Resend</option>
-              </select>
+              </FormSelect>
             </FormField>
             <FormField label="发件人" htmlFor="sys-mail-from">
-              <input id="sys-mail-from" type="text" placeholder="SubPanel <no-reply@example.com>" value={form.from} disabled={saving} onChange={(event) => setForm({ ...form, from: event.currentTarget.value })} />
+              <Input id="sys-mail-from" type="text" placeholder="SubPanel <no-reply@example.com>" value={form.from} disabled={saving} onChange={(event) => setForm({ ...form, from: event.currentTarget.value })} />
             </FormField>
             <FormField label="SMTP 主机" htmlFor="sys-mail-host">
-              <input id="sys-mail-host" type="text" placeholder="smtp.example.com" value={form.smtpHost} disabled={saving} onChange={(event) => setForm({ ...form, smtpHost: event.currentTarget.value })} />
+              <Input id="sys-mail-host" type="text" placeholder="smtp.example.com" value={form.smtpHost} disabled={saving} onChange={(event) => setForm({ ...form, smtpHost: event.currentTarget.value })} />
             </FormField>
             <FormField label="SMTP 端口" htmlFor="sys-mail-port" error={portError}>
-              <input id="sys-mail-port" type="number" inputMode="numeric" min={1} max={65535} step={1} placeholder="465" value={form.smtpPort} disabled={saving} onChange={(event) => setForm({ ...form, smtpPort: event.currentTarget.value })} />
+              <Input id="sys-mail-port" type="number" inputMode="numeric" min={1} max={65535} step={1} placeholder="465" value={form.smtpPort} disabled={saving} onChange={(event) => setForm({ ...form, smtpPort: event.currentTarget.value })} />
             </FormField>
             <FormField label="SMTP 用户名" htmlFor="sys-mail-user">
-              <input id="sys-mail-user" type="text" autoComplete="off" value={form.smtpUser} disabled={saving} onChange={(event) => setForm({ ...form, smtpUser: event.currentTarget.value })} />
+              <Input id="sys-mail-user" type="text" autoComplete="off" value={form.smtpUser} disabled={saving} onChange={(event) => setForm({ ...form, smtpUser: event.currentTarget.value })} />
             </FormField>
             <FormField label="SMTP 密码" htmlFor="sys-mail-pass">
-              <input
+              <Input
                 id="sys-mail-pass"
                 type="password"
                 autoComplete="new-password"
@@ -326,7 +327,7 @@ function MailSection() {
             </FormField>
             <div className="sys-field-wide">
               <FormField label="Resend API Key" htmlFor="sys-mail-resend-key">
-                <input
+                <Input
                   id="sys-mail-resend-key"
                   type="password"
                   autoComplete="new-password"
@@ -351,7 +352,7 @@ function MailSection() {
             <h3 className="sys-subtitle">测试邮件</h3>
             <div className="sys-test-row">
               <FormField label="收件邮箱" htmlFor="sys-mail-test-to">
-                <input id="sys-mail-test-to" type="email" placeholder="you@example.com" value={testTo} disabled={testSending} onChange={(event) => setTestTo(event.currentTarget.value)} />
+                <Input id="sys-mail-test-to" type="email" placeholder="you@example.com" value={testTo} disabled={testSending} onChange={(event) => setTestTo(event.currentTarget.value)} />
               </FormField>
               <button className="button" type="button" disabled={testSending || testTo.trim() === ''} onClick={() => { sendTest().catch(() => undefined) }}>
                 {testSending ? '发送中' : '发送测试邮件'}

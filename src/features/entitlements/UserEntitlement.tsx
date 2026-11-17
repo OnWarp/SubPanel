@@ -1,3 +1,4 @@
+import { FormSelect, Textarea } from '../../ui/Controls'
 import { useCallback, useEffect, useState } from 'react'
 import { api, jsonBody } from '../../app/api'
 import { EditDrawer } from '../../ui/EditDrawer'
@@ -37,9 +38,9 @@ export function UserEntitlement({ userId, username }: { userId: string; username
       <form className="form-stack" onSubmit={(e) => { e.preventDefault(); void save() }}>
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
         {rights?.latest ? <p>{rights.latest.plan.name} · {new Date(rights.latest.expiresAt).toLocaleString()} · {entitlementLabels[rights.state]}</p> : null}
-        <FormField label="操作" htmlFor={`action-${userId}`}><select id={`action-${userId}`} value={action} onChange={(e) => setAction(e.target.value)}>{rights?.latest?.status === 'active' ? <><option value="renew">续期</option><option value="switch">换计划</option><option value="revoke">收回</option></> : <option value="grant">开通</option>}</select></FormField>
-        {action === 'grant' || action === 'switch' ? <FormField label="计划" htmlFor={`plan-${userId}`}><select required id={`plan-${userId}`} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">选择计划</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.durationDays} 天</option>)}</select></FormField> : null}
-        <FormField label="备注" htmlFor={`note-${userId}`}><textarea id={`note-${userId}`} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} /></FormField>
+        <FormField label="操作" htmlFor={`action-${userId}`}><FormSelect id={`action-${userId}`} value={action} onChange={(e) => setAction(e.target.value)}>{rights?.latest?.status === 'active' ? <><option value="renew">续期</option><option value="switch">换计划</option><option value="revoke">收回</option></> : <option value="grant">开通</option>}</FormSelect></FormField>
+        {action === 'grant' || action === 'switch' ? <FormField label="计划" htmlFor={`plan-${userId}`}><FormSelect required id={`plan-${userId}`} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">选择计划</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.durationDays} 天</option>)}</FormSelect></FormField> : null}
+        <FormField label="备注" htmlFor={`note-${userId}`}><Textarea id={`note-${userId}`} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} /></FormField>
         <p>{action === 'renew' ? '从当前到期日与现在的较晚时间起叠加计划天数。' : action === 'switch' ? '原权益将收回，新计划立即生效。' : action === 'revoke' ? '收回后订阅将返回空内容。' : '计划立即生效。'}</p>
         <button className={`button ${action === 'revoke' ? 'danger-fill' : 'primary'}`} disabled={busy}>确认{action === 'renew' ? '续期' : action === 'switch' ? '换计划' : action === 'revoke' ? '收回' : '开通'}</button>
       </form>
