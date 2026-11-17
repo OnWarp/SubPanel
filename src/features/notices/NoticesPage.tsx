@@ -4,7 +4,7 @@ import { api, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { formatNoticeTime, type Notice } from './types'
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -34,7 +34,7 @@ export function NoticesPage() {
 
   return (
     <div className="page-stack ntc-page">
-      <PageHeader title="公告" />
+      <PageHero subtitle="查看最新服务公告" title="公告" />
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && notices.length === 0 ? (

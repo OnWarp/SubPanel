@@ -8,7 +8,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -109,7 +109,7 @@ export function TicketsPage() {
 
   return (
     <div className="page-stack tk-page">
-      <PageHeader
+      <PageHero subtitle="查看工单与支持回复"
         title="工单"
         actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />新建工单</button>}
       />

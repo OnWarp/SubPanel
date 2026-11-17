@@ -1,3 +1,4 @@
+import { MyEntitlementPage } from '../features/entitlements/MyEntitlementPage'
 import { PlansPage } from '../features/entitlements/PlansPage'
 import type { ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -81,6 +82,7 @@ export function AppRouter() {
       <Route path="/users" element={user?.role === 'admin' ? shell(<UsersPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/apps" element={user ? shell(<UserAppsPage />) : <Navigate to={signedOut} replace />} />
       <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/entitlement" element={user?.role === 'user' ? shell(<MyEntitlementPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/nodes" element={user?.role === 'user' ? shell(<MyNodesPage />) : <Navigate to={user ? home : signedOut} replace />} />
@@ -88,7 +90,7 @@ export function AppRouter() {
       <Route path="/tickets" element={user?.role === 'user' ? shell(<TicketsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/tickets/:id" element={user?.role === 'user' ? shell(<TicketDetailPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/system" element={user?.role === 'admin' ? shell(<SystemPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/account" element={shell(<AccountPage />)} />
+      <Route path="/account" element={shell(user?.role === 'user' ? <MinePage /> : <AccountPage />)} />
       <Route path="*" element={<Navigate to={user ? home : signedOut} replace />} />
     </Routes>
   )

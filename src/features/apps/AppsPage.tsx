@@ -4,7 +4,7 @@ import { api, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 
 type PlatformName = 'windows' | 'macos' | 'android' | 'ios' | 'linux'
@@ -75,7 +75,7 @@ export function AppsPage() {
 
   return (
     <div className="page-stack appu-page">
-      <PageHeader title="APP 下载" />
+      <PageHero subtitle="选择适合设备的客户端" title="APP 下载" />
       {loading ? <LoadingState label="正在加载 APP" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && response && !response.downloadsEnabled ? (

@@ -9,7 +9,7 @@ import { CopyButton } from '../../ui/CopyButton'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { Select } from '../../ui/Select'
 import { InlineMessage } from '../../ui/InlineMessage'
@@ -165,7 +165,7 @@ export function MySubscriptionsPage() {
 
   return (
     <div className="page-stack del-user-page">
-      <PageHeader title="我的订阅" actions={<Select
+      <PageHero subtitle="管理订阅链接与客户端" title="我的订阅" actions={<Select
           label="选择订阅"
           value={selectedId}
           options={subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))}

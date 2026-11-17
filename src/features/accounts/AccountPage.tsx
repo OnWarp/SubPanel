@@ -14,7 +14,7 @@ import { EmailBindChangeForm } from './EmailBindChangeForm'
 import { ProfileCard } from './ProfileCard'
 import { formatProfileDate, useAccountProfile } from './profile'
 
-export function AccountPage() {
+export function AccountPage({ embedded = false }: { embedded?: boolean }) {
   const { refresh } = useSession()
   const { profile, error: profileError, reload } = useAccountProfile()
   const [message, setMessage] = useState('')
@@ -61,15 +61,15 @@ export function AccountPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title="个人中心" />
-      {profile ? (
+      {!embedded ? <PageHeader title="个人中心" /> : null}
+      {!embedded && profile ? (
         <ProfileCard profile={profile} />
       ) : profileError ? (
         <ErrorState message={profileError} onRetry={() => { reload().catch(() => undefined) }} />
-      ) : (
+      ) : !embedded ? (
         <LoadingState label="正在加载账户资料" />
-      )}
-      <section className="data-section security-section">
+      ) : null}
+      <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
         <DataHeader title="修改密码" />
         <form className="security-form adm-account-form" onSubmit={changePassword}>
           <FormField label="当前密码" htmlFor="account-current-password">
@@ -87,7 +87,7 @@ export function AccountPage() {
         </form>
       </section>
       {profile ? (
-        <section className="data-section security-section">
+        <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
           <DataHeader title={profile.emailBound ? '更换邮箱' : '绑定邮箱'} />
           <EmailBindChangeForm
             profile={profile}
@@ -98,7 +98,7 @@ export function AccountPage() {
           />
         </section>
       ) : null}
-      <section className="data-section security-section">
+      <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
         <DataHeader title="会话与安全" />
         <div className="security-form">
           {profile?.session ? (

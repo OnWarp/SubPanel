@@ -6,7 +6,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { TicketThread } from './TicketThread'
 import type { Ticket, TicketReply, TicketThreadData } from './types'
@@ -80,7 +80,7 @@ export function TicketDetailPage() {
 
   return (
     <div className="page-stack tk-page tk-detail">
-      <PageHeader
+      <PageHero subtitle="查看工单处理进度"
         title={ticket?.title ?? '工单详情'}
         actions={(
           <span className="tk-head-actions">

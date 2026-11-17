@@ -9,7 +9,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { Pagination } from '../../ui/Pagination'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { SearchInput } from '../../ui/SearchInput'
@@ -125,7 +125,7 @@ export function MyNodesPage() {
 
   return (
     <div className="page-stack node-page">
-      <PageHeader title="我的节点" />
+      <PageHero subtitle="查看当前可用节点" title="我的节点" />
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && total === 0 && !filtersActive ? (
