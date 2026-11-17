@@ -43,7 +43,8 @@ describe('Delivery APIs and public subscriptions', () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
     await createUserCookie(admin)
-    const target = await env.DB.prepare("SELECT id FROM users WHERE username = 'delivery-user'").first<{ id: string }>()
+    const listedUsers = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(admin))).json() as { users: Array<{ id: string; username: string }> }
+    const target = listedUsers.users.find((user) => user.username === 'delivery-user')
     await grantDeliveryFixture(target!.id, [groupId])
     const expiresAt = Date.now() + 86400000
     const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ name: 'Pool', groupIds: [groupId], expiresAt }, withCookie(admin)))
@@ -480,7 +481,10 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(expiredShare.status).toBe(409)
     expect((await shareExport(forever.subscription.id)).status).toBe(200)
 
-    await env.DB.prepare('UPDATE subscriptions SET starts_at = NULL, expires_at = NULL, enabled = 1').run()
+    for (const item of [pending, expired, forever]) {
+      const cleared = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${item.subscription.id}`, jsonRequest({ startsAt: null, expiresAt: null, enabled: true }, withCookie(admin, { method: 'PATCH' })))
+      expect(cleared.status).toBe(200)
+    }
     const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ startsAt: number | null; expiresAt: number | null }> }
     expect(listed.subscriptions.every((subscription) => subscription.startsAt === null && subscription.expiresAt === null)).toBe(true)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${expired.token}/mihomo`)).status).toBe(200)
