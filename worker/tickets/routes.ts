@@ -23,6 +23,8 @@ import {
   updateNotice,
 } from './service.js'
 
+import { searchVisibleNotices } from './repository.js'
+
 const emptySchema = z.object({}).default({})
 const recordIdPattern = /^[1-9]\d*$/u
 
@@ -145,6 +147,11 @@ adminTicketRoutes.post('/tickets/:id/reopen', async (c) => {
 export const noticeRoutes = new Hono<AppEnv>()
 
 noticeRoutes.get('/', async (c) => {
+  const query = c.req.query()
+  if (['q', 'page', 'pageSize'].some((key) => query[key] !== undefined)) {
+    const { page, pageSize } = parsePagination(query)
+    return c.json(await searchVisibleNotices(c.env.DB, (query.q ?? '').trim(), page, pageSize))
+  }
   const notices = await run(() => listVisibleNotices(c.env))
   return c.json({ notices })
 })

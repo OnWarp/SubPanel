@@ -213,3 +213,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const jsonBody = (value: unknown): string => JSON.stringify(value)
+
+// Metadata selectors need every user, not the default first page of twenty.
+export async function loadAdminUserOptions(): Promise<{ users: UserSummary[] }> {
+  const users: UserSummary[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await api<{ users: UserSummary[]; total: number }>(`/api/admin/users?pageSize=100&page=${page}`)
+    users.push(...result.users)
+    if (users.length >= result.total) return { users }
+    if (!result.users.length) throw new Error('用户列表不完整，请重试')
+  }
+}

@@ -145,6 +145,21 @@ describe('live subscription gating', () => {
 })
 
 describe('admin routes and registration trials', () => {
+  it('exposes only enabled public plan fields in management order and requires authentication', async () => {
+    expect((await fetchApi('/api/account/plans')).status).toBe(401)
+    const later = await savePlan(env.DB,{ name: 'Later', groupIds: [], durationDays: 30, sortOrder: 20 })
+    const first = await savePlan(env.DB,{ name: 'First', description: 'Public description', groupIds: [], durationDays: 7, sortOrder: -1 })
+    await savePlan(env.DB,{ name: 'Hidden', groupIds: [], durationDays: 1, enabled: false })
+    const result = await fetchApi('/api/account/plans',withCookie(cookie))
+    expect(result.status).toBe(200)
+    const body = await result.json() as { plans: Array<Record<string, unknown>> }
+    expect(body.plans.map((plan) => plan.id)).toEqual([first.id,later.id])
+    expect(Object.keys(body.plans[0]).sort()).toEqual(['id','name','description','durationDays','trafficGb','speedLimitMbps','deviceLimit'].sort())
+    expect(body.plans[0]).toMatchObject({ description: 'Public description', durationDays: 7 })
+    expect((await fetchApi('/api/account/plans',withCookie(cookie,jsonRequest({}, { method: 'POST' })))).status).toBe(404)
+    await savePlan(env.DB,{ ...first, enabled: false },first.id)
+    expect(await (await fetchApi('/api/account/plans',withCookie(cookie))).json()).toMatchObject({ plans: [{ id: later.id }] })
+  })
   it('protects plan management and supports CRUD and entitlement actions', async () => {
     expect((await fetchApi('/api/admin/plans')).status).toBe(401)
     const created = await admin('/api/admin/plans',{ name: 'Plan',durationDays: 30,groupIds: [] })

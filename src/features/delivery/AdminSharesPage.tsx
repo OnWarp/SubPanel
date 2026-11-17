@@ -1,7 +1,7 @@
 import { Ban, Share2, Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
+import { loadAdminUserOptions, api, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -107,7 +107,7 @@ export function AdminSharesPage() {
   useEffect(() => {
     let active = true
     Promise.all([
-      api<{ users: UserSummary[] }>('/api/admin/users'),
+      loadAdminUserOptions(),
       api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
     ]).then(([userResult, subscriptionResult]) => {
       if (!active) return

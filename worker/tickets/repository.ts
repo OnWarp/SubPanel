@@ -236,6 +236,17 @@ export async function listNotices(db: AppDatabase, options: { visibleOnly: boole
   return listed.results.map(toNotice)
 }
 
+export async function searchVisibleNotices(db: AppDatabase, q: string, page: number, pageSize: number) {
+  // instr treats %, _ and SQL punctuation literally; bind all user input.
+  const where = 'visible=1 AND (instr(lower(title),lower(?))>0 OR instr(lower(body),lower(?))>0)'
+  const [count, listed] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) total FROM notices WHERE ${where}`).bind(q,q).first<{ total: number }>(),
+    db.prepare(`SELECT * FROM notices WHERE ${where} ORDER BY sort_order ASC,published_at DESC,id DESC LIMIT ? OFFSET ?`)
+      .bind(q,q,pageSize,(page-1)*pageSize).all<NoticeRow>(),
+  ])
+  return { notices: listed.results.map(toNotice), total: count?.total ?? 0, page, pageSize }
+}
+
 export async function getNoticeById(db: AppDatabase, id: number): Promise<Notice | null> {
   const row = await queryFirst<NoticeRow>(
     db.prepare(
