@@ -31,6 +31,7 @@ import {
   emptyDatabase,
   INIT_MIGRATION_NAME,
   initMigration,
+  KNOWLEDGE_BASE_MIGRATION_NAME,
   SOFT_DELETE_MIGRATION_NAME,
   listTables,
   REGISTRATION_MIGRATION_NAME,
@@ -62,11 +63,12 @@ describe('D1 migrations', () => {
       DOMAINS_MIGRATION_NAME,
       '0008_entitlements.sql',
       TICKETS_NOTICES_MIGRATION_NAME,
+      KNOWLEDGE_BASE_MIGRATION_NAME,
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(9)
+    expect(replayed?.count).toBe(10)
 
     await env.DB.prepare(
       `INSERT INTO users (

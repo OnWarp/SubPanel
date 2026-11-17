@@ -1,0 +1,323 @@
+/*
+ * Knowledge base pages. kb- prefixes both the user tutorial surface and the
+ * admin editor; shared primitives and shell rules stay in their own files.
+ */
+
+.kb-page {
+  min-width: 0;
+}
+
+.kb-page > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.kb-search {
+  max-width: 560px;
+}
+
+.kb-section-title {
+  margin: 0 0 var(--space-3);
+  overflow-wrap: anywhere;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: .02em;
+  color: var(--color-text-muted);
+}
+
+.kb-category-stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.kb-category {
+  padding: var(--space-4) var(--space-5);
+}
+
+.kb-article-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-article-list > li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.kb-article-link {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.kb-article-link:hover .kb-article-link-title {
+  color: var(--color-primary);
+}
+
+.kb-article-link-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.kb-article-link-title {
+  overflow-wrap: anywhere;
+  font-weight: var(--weight-semibold);
+  transition: color var(--duration-ui) ease;
+}
+
+.kb-article-link-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.kb-search-results {
+  padding: var(--space-4) var(--space-5);
+}
+
+/* Article reading surface ------------------------------------------------- */
+.kb-article {
+  padding: var(--space-5);
+}
+
+.kb-article-head {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.kb-article-head h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-title);
+  font-weight: var(--weight-strong);
+  line-height: 1.2;
+}
+
+.kb-article-meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  gap: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.kb-markdown {
+  max-width: 760px;
+  overflow-wrap: anywhere;
+  line-height: var(--leading-body);
+  color: var(--color-text);
+}
+
+.kb-markdown > :first-child { margin-top: var(--space-4); }
+.kb-markdown h1,
+.kb-markdown h2,
+.kb-markdown h3,
+.kb-markdown h4,
+.kb-markdown h5,
+.kb-markdown h6 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-weight: var(--weight-strong);
+  line-height: 1.25;
+}
+.kb-markdown h1 { font-size: var(--font-title); }
+.kb-markdown h2 { font-size: var(--font-lg); }
+.kb-markdown h3 { font-size: var(--font-md); }
+.kb-markdown p { margin: var(--space-3) 0; }
+.kb-markdown ul,
+.kb-markdown ol {
+  display: grid;
+  margin: var(--space-3) 0;
+  padding-left: 1.4em;
+  gap: 4px;
+}
+.kb-markdown a { color: var(--color-primary); }
+.kb-markdown a:hover { text-decoration: underline; }
+.kb-markdown strong { font-weight: var(--weight-strong); }
+.kb-markdown code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--color-surface-subtle);
+  font-size: .92em;
+}
+.kb-markdown pre {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-subtle);
+}
+.kb-markdown pre code {
+  padding: 0;
+  background: none;
+  font-size: var(--font-sm);
+}
+
+/* Admin editor ------------------------------------------------------------ */
+.kb-admin-section {
+  padding: 0;
+}
+
+.kb-admin-section > .data-header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.kb-admin-body {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+}
+
+.kb-category-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-category-item {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.kb-category-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.kb-category-name {
+  overflow-wrap: anywhere;
+  font-weight: var(--weight-semibold);
+}
+
+.kb-category-meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.kb-row-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.kb-title-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.kb-title-button:hover {
+  color: var(--color-primary);
+}
+
+.kb-category-form,
+.kb-form {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.kb-category-form {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.kb-subtitle {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+}
+
+.kb-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.kb-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.kb-filters {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.kb-category-form input,
+.kb-form input:not([type='checkbox']),
+.kb-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.kb-form textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: var(--leading-body);
+}
+
+.kb-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+@media (max-width: 760px) {
+  .kb-category {
+    padding: var(--space-4);
+  }
+
+  .kb-article {
+    padding: var(--space-4);
+  }
+
+  .kb-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .kb-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
