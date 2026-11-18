@@ -1,12 +1,11 @@
-import { ChevronDown, ChevronsLeft, ChevronsRight, Ellipsis, LogOut, UserRound } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
+import { ChevronDown, ChevronsLeft, ChevronsRight, UserRound } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountProfile } from '../features/accounts/profile'
 import { SectionTabs } from '../ui/SectionTabs'
 import { ThemeMenu } from '../theme/ThemeMenu'
-import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
-import { adminDomainForPath, adminDomains, adminSections, userSidebar, navigationActive, type NavItem } from './navigation'
+import { adminDomainForPath, adminDomains, userSidebar, navigationActive } from './navigation'
 
 const userDock = userSidebar
 
@@ -53,9 +52,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const [sheetOpen, setSheetOpen] = useState(false)
   const [signOutError, setSignOutError] = useState('')
-  const [mobile, setMobile] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('subpanel:sidebar-collapsed') === '1' } catch { return false }
   })
@@ -66,66 +63,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       return next
     })
   }
-  const moreButton = useRef<HTMLButtonElement>(null)
-  const sheet = useRef<HTMLElement>(null)
-  const touchStart = useRef(0)
   const isAdmin = user?.role === 'admin'
   const adminDomain = isAdmin ? adminDomainForPath(location.pathname) : undefined
   const visibleUserSidebar = userSidebar
-  const adminItems = adminSections.flatMap((section) => section.items)
-  const dockPaths = ['/dashboard', '/catalog/groups', '/users']
-  const dockItems = dockPaths
-    .map((path) => adminItems.find((item) => item.to === path))
-    .filter((item): item is NavItem => Boolean(item))
-    .map((item) => item)
-  const sheetItems = adminItems
-
-  useEffect(() => setSheetOpen(false), [location.pathname])
-
-  useEffect(() => {
-    const media = window.matchMedia(MOBILE_MEDIA_QUERY)
-    const sync = () => setMobile(media.matches)
-    sync()
-    media.addEventListener('change', sync)
-    return () => media.removeEventListener('change', sync)
-  }, [])
-
-  useEffect(() => {
-    if (!mobile) setSheetOpen(false)
-  }, [mobile])
-
-  useEffect(() => {
-    if (!sheetOpen) return
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = previous }
-  }, [sheetOpen])
-
-  useEffect(() => {
-    if (!sheetOpen) return
-    sheet.current?.focus()
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setSheetOpen(false)
-        moreButton.current?.focus()
-      }
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [sheetOpen])
 
   const signOut = async () => {
     await logout()
     navigate('/login', { replace: true })
-  }
-
-  const startSwipe = (event: TouchEvent<HTMLElement>) => {
-    touchStart.current = event.touches[0]?.clientY ?? 0
-  }
-
-  const finishSwipe = (event: TouchEvent<HTMLElement>) => {
-    const end = event.changedTouches[0]?.clientY ?? touchStart.current
-    if (end - touchStart.current > 56 && (sheet.current?.scrollTop ?? 0) <= 0) setSheetOpen(false)
   }
 
   return (
@@ -172,15 +116,23 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       {isAdmin ? (
-        <nav className="dock" aria-label="快捷导航">
-          {dockItems.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className={`dock-item ${navigationActive(location.pathname, to) ? 'active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
-              <Icon aria-hidden="true" size={18} /><span>{label}</span>
-            </Link>
-          ))}
-          <button ref={moreButton} className="dock-item" type="button" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} aria-haspopup="dialog">
-            <Ellipsis aria-hidden="true" size={18} /><span>更多</span>
-          </button>
+        <nav className="admin-mobile-dock" aria-label="主导航">
+          {adminDomains.map((domain) => {
+            const { to, label, icon: Icon } = domain
+            const active = domain === adminDomain
+            return (
+              <Link
+                key={to}
+                to={to}
+                className={active ? 'admin-mobile-dock-item active' : 'admin-mobile-dock-item'}
+                aria-current={active ? 'page' : undefined}
+                aria-label={label}
+              >
+                <Icon aria-hidden="true" size={18} />
+                <span>{label}</span>
+              </Link>
+            )
+          })}
         </nav>
       ) : (
         <nav className="dock nav-dock" aria-label="快捷导航">
@@ -191,30 +143,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
       )}
-      {sheetOpen ? <>
-        <button className="dock-backdrop" type="button" aria-label="关闭更多导航" onClick={() => setSheetOpen(false)} />
-        <section
-          ref={sheet}
-          className="dock-sheet"
-          role="dialog"
-          aria-modal="true"
-          aria-label="更多导航"
-          tabIndex={-1}
-          onTouchStart={startSwipe}
-          onTouchEnd={finishSwipe}
-        >
-          <span className="dock-sheet-handle" aria-hidden="true" />
-          {sheetItems.length ? <nav className="dock-sheet-nav" aria-label="主导航">
-            {adminSections.map(section => <section className="nav-section" key={section.label}>{section.label ? <p className="nav-label">{section.label}</p> : null}{section.items.map(({ to, label, icon: Icon }) => <Link key={to} to={to} className={navigationActive(location.pathname, to) ? 'active' : undefined}><Icon size={19} aria-hidden="true" /><span>{label}</span></Link>)}</section>)}
-            <Link to="/account">账户安全</Link><ThemeMenu id="mobile-theme-menu" label="外观" />
-          </nav> : null}
-          <div className="dock-sheet-account">
-            <UserRound aria-hidden="true" size={18} />
-            <div><strong>{user?.username}</strong><span>{user?.role === 'admin' ? '管理员' : '用户'}</span></div>
-            <button className="icon-button" type="button" aria-label="退出登录" title="退出登录" onClick={() => { signOut().catch(() => setSignOutError('退出登录失败，请重试')) }}><LogOut aria-hidden="true" size={17} /></button>
-          </div>
-        </section>
-      </> : null}
     </div>
   )
 }

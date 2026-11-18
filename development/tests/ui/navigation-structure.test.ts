@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
@@ -29,19 +30,31 @@ function nav(html: string, label: string) {
   return html.match(new RegExp(`<nav[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</nav>`))?.[1] ?? ''
 }
 function links(html: string) { return [...html.matchAll(/href="([^"]*)"/g)].map(match => match[1]) }
+function mobileDock(html: string) {
+  return html.match(/<nav[^>]*class="admin-mobile-dock"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? ''
+}
+const dockLabels = ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置']
 
 describe('navigation ownership and route compatibility', () => {
   const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users', '/delivery/tickets', '/system/registration']
-  it('renders six ungrouped desktop destinations and preserves the mobile dock', () => {
+  it('renders six ungrouped desktop destinations and a single-row mobile dock', () => {
     const html = render('/invites')
     const sidebar = nav(html, '主导航')
     expect(links(sidebar)).toEqual(desktopDomains)
     expect(sidebar).not.toContain('nav-label')
-    expect(sidebar.match(/aria-label="([^"]+)"/g)).toEqual(
-      ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'].map(label => `aria-label="${label}"`),
-    )
-    expect(links(nav(html, '快捷导航'))).toEqual(['/dashboard', '/catalog/groups', '/users'])
-    expect(nav(html, '快捷导航')).toContain('更多')
+    expect(sidebar.match(/aria-label="([^"]+)"/g)).toEqual(dockLabels.map(label => `aria-label="${label}"`))
+    const dock = mobileDock(html)
+    expect(links(dock)).toEqual(desktopDomains)
+    expect([...dock.matchAll(/<span>([^<]*)<\/span>/g)].map(match => match[1])).toEqual(dockLabels)
+    expect(dock).not.toContain('更多')
+    expect(dock).not.toContain('<button')
+    expect(dock).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="page")(?=[^>]*class="admin-mobile-dock-item active")/)
+    expect(html).not.toContain('更多导航')
+    const css = readFileSync(new URL('../../../src/styles/app.css', import.meta.url), 'utf8')
+    expect(css).toContain('.dock, .dock-sheet, .dock-backdrop, .admin-mobile-dock { display: none; }')
+    expect(css).toMatch(/\.admin-mobile-dock \{[^}]*display:\s*flex[^}]*flex-wrap:\s*nowrap/)
+    expect(css).not.toMatch(/\.admin-mobile-dock \{[^}]*grid-template-columns:\s*repeat\(3/)
+    expect(css).not.toMatch(/\.admin-mobile-dock-item span \{[^}]*text-overflow:\s*ellipsis/)
     expect(nav(render('/dashboard'), '节点管理导航')).toBe('')
   })
 
@@ -61,6 +74,9 @@ describe('navigation ownership and route compatibility', () => {
       expect(tabs.match(/aria-current="page"/g)).toHaveLength(1)
       expect(sidebar).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
       expect(tabs).toMatch(new RegExp(`<a(?=[^>]*href="${path}")(?=[^>]*aria-current="page")`))
+      const dock = mobileDock(html)
+      expect(dock.match(/aria-current="page"/g)).toHaveLength(1)
+      expect(dock).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
     }
   })
 
@@ -69,6 +85,7 @@ describe('navigation ownership and route compatibility', () => {
     for (const label of ['主导航', '运营管理导航']) {
       expect(nav(html, label)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
     }
+    expect(mobileDock(html)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
   })
   it('keeps user and settings tab queries on navigation', () => {
     expect(links(nav(render('/invites/?keep=1'), '用户管理子页'))).toEqual(
