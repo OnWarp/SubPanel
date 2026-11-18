@@ -4,25 +4,21 @@ import { Network } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError } from '../../app/api'
+import { FormSelect } from '../../ui/Controls'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
-import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHero } from '../../ui/PageHero'
-import { Pagination } from '../../ui/Pagination'
-import { SegmentedControl } from '../../ui/SegmentedControl'
 import { SearchInput } from '../../ui/SearchInput'
-import { StatusBadge } from '../../ui/StatusBadge'
 
 type NodeRef = {
   id: string
   name: string
 }
 
-type UserNode = {
+export type UserNode = {
   id: string
   name: string
   protocol: string | null
@@ -48,6 +44,77 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 function joinedNames(items: NodeRef[]): string {
   return items.map((item) => item.name).join('、') || '—'
+}
+
+export function UserNodesFilters({ query, subscriptionId, groupId, subscriptionOptions, groupOptions, onQuery, onSubscription, onGroup }: {
+  query: string
+  subscriptionId: string
+  groupId: string
+  subscriptionOptions: NodeRef[]
+  groupOptions: NodeRef[]
+  onQuery: (value: string) => void
+  onSubscription: (value: string) => void
+  onGroup: (value: string) => void
+}) {
+  return (
+    <div className="node-toolbar upd-filters">
+      <SearchInput className="node-search" label="搜索节点名称" placeholder="搜索节点名称" value={query} onChange={onQuery} />
+      <FormSelect aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => onSubscription(event.target.value)}>
+        <option value="all">全部</option>
+        {subscriptionOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </FormSelect>
+      <FormSelect aria-label="按分组筛选" value={groupId} onChange={(event) => onGroup(event.target.value)}>
+        <option value="all">全部</option>
+        {groupOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </FormSelect>
+    </div>
+  )
+}
+
+const columns: Array<DataTableColumn<UserNode>> = [
+  {
+    key: 'name',
+    header: '节点',
+    width: '28%',
+    render: (node) => <div className="upd-twoline"><strong>{node.name}</strong><span>{node.id}</span></div>,
+  },
+  {
+    key: 'protocol',
+    header: '协议',
+    width: '14%',
+    render: (node) => node.protocol ? node.protocol : <span className="node-missing">—</span>,
+  },
+  {
+    key: 'status',
+    header: '状态',
+    width: '14%',
+    render: () => <span className="upd-status upd-status-ok"><i aria-hidden="true" />可用</span>,
+  },
+  { key: 'groups', header: '所属分组', width: '22%', render: (node) => joinedNames(node.groups) },
+  { key: 'subscriptions', header: '所属订阅', width: '22%', render: (node) => joinedNames(node.subscriptions) },
+]
+
+export function UserNodesTable({ nodes }: { nodes: UserNode[] }) {
+  return <DataTable className="node-table" columns={columns} rows={nodes} rowKey={(node) => node.id} empty="没有匹配的节点" />
+}
+
+export function UserNodesFooter({ total, page, pageCount, onPage }: {
+  total: number
+  page: number
+  pageCount: number
+  onPage: (page: number) => void
+}) {
+  const current = Math.min(Math.max(page, 1), Math.max(pageCount, 1))
+  return (
+    <footer className="upd-foot">
+      <span>共 {total} 个节点</span>
+      <div className="upd-pager">
+        <span>{current} / {Math.max(pageCount, 1)} 页</span>
+        <button type="button" aria-label="上一页" disabled={current <= 1} onClick={() => onPage(current - 1)}>上一页</button>
+        <button type="button" aria-label="下一页" disabled={current >= pageCount} onClick={() => onPage(current + 1)}>下一页</button>
+      </div>
+    </footer>
+  )
 }
 
 export function MyNodesPage() {
@@ -118,24 +185,10 @@ export function MyNodesPage() {
     setPage(1)
   }
 
-  const columns: Array<DataTableColumn<UserNode>> = [
-    { key: 'name', header: '节点名', width: '28%', render: (node) => <strong className="node-name">{node.name}</strong> },
-    {
-      key: 'protocol',
-      header: '协议',
-      width: '18%',
-      render: (node) => node.protocol
-        ? <StatusBadge tone="info" size="sm">{node.protocol}</StatusBadge>
-        : <span className="node-missing">—</span>,
-    },
-    { key: 'groups', header: '所属分组', width: '27%', render: (node) => joinedNames(node.groups) },
-    { key: 'subscriptions', header: '所属订阅', width: '27%', render: (node) => joinedNames(node.subscriptions) },
-  ]
-
   if (!loading && !error && rights && (rights.state !== 'active' || !rights.current)) return <GateEmptyState icon={<Network size={48} />} message="需要有效权益才能查看节点" />
 
   return (
-    <div className="page-stack node-page">
+    <div className="page-stack node-page upd-page upd-nodes">
       <PageHero subtitle="查看当前可用节点" title="我的节点" />
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
@@ -145,36 +198,21 @@ export function MyNodesPage() {
         </EmptyState>
       ) : null}
       {!loading && !error && (total > 0 || filtersActive) ? (
-        <>
-          <section className="data-section node-list" aria-labelledby="node-list-title">
-            <DataHeader id="node-list-title" title="节点列表" />
-            <div className="node-toolbar">
-              <SearchInput className="node-search" label="搜索节点名称" placeholder="搜索节点名称" value={query} onChange={changeQuery} />
-              <FilterBar className="node-filters">
-                <div className="node-filter-row" role="group" aria-label="按订阅筛选">
-                  <span className="node-filter-label">订阅</span>
-                  <FilterChip active={activeSubscription === 'all'} onClick={() => changeSubscription('all')}>全部</FilterChip>
-                  {subscriptionOptions.map((item) => (
-                    <FilterChip key={item.id} active={activeSubscription === item.id} onClick={() => changeSubscription(item.id)}>{item.name}</FilterChip>
-                  ))}
-                </div>
-                <div className="node-filter-row">
-                  <span className="node-filter-label">分组</span>
-                  <div className="node-seg-scroll">
-                    <SegmentedControl
-                      label="按分组筛选"
-                      value={activeGroup}
-                      options={[{ value: 'all', label: '全部' }, ...groupOptions.map((item) => ({ value: item.id, label: item.name }))]}
-                      onChange={changeGroup}
-                    />
-                  </div>
-                </div>
-              </FilterBar>
-            </div>
-            <DataTable className="node-table" columns={columns} rows={nodes} rowKey={(node) => node.id} empty="没有匹配的节点" />
-            {pageCount > 1 ? <Pagination page={page} pageCount={pageCount} onPageChange={setPage} /> : null}
-          </section>
-        </>
+        <section className="data-section node-list upd-card" aria-labelledby="node-list-title">
+          <DataHeader id="node-list-title" title="节点列表" />
+          <UserNodesFilters
+            query={query}
+            subscriptionId={activeSubscription}
+            groupId={activeGroup}
+            subscriptionOptions={subscriptionOptions}
+            groupOptions={groupOptions}
+            onQuery={changeQuery}
+            onSubscription={changeSubscription}
+            onGroup={changeGroup}
+          />
+          <UserNodesTable nodes={nodes} />
+          <UserNodesFooter total={total} page={page} pageCount={pageCount} onPage={setPage} />
+        </section>
       ) : null}
     </div>
   )

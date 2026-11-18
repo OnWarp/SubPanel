@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react'
 import { ThemeMenu } from '../../theme/ThemeMenu'
 
-export function AuthLayout({ title, children }: {
+export function AuthLayout({ title, children, className = '' }: {
   title: string
   children: ReactNode
+  className?: string
 }) {
   return (
-    <main className="auth-page">
+    <main className={className ? `auth-page ${className}` : 'auth-page'}>
       <header className="auth-topbar">
         <a className="brand" href="/" aria-label="SubPanel 首页">
           <img className="brand-mark" src="/logo.png" alt="" />

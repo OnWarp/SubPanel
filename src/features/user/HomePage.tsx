@@ -15,6 +15,31 @@ import type { Notice } from '../notices/types'
 import { entitlementLabels, type EntitlementState } from '../entitlements/types'
 import { reminderEnabled } from './reminder'
 
+type HomeDashboardProps = {
+  reminder: string | null
+  entitlementName: string
+  entitlementSub: string
+  entitlementPercent: number
+  entitlementTone: 'normal' | 'danger'
+  subscriptionLabel: string
+  subscriptionTone: 'success' | 'danger' | 'neutral'
+  subscriptionSub: string
+  groupValue: string
+  groupSub: string
+  onOpenNodes: () => void
+}
+
+export function HomeDashboard({ reminder, entitlementName, entitlementSub, entitlementPercent, entitlementTone, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, onOpenNodes }: HomeDashboardProps) {
+  return <>
+    {reminder ? <p role="status">{reminder}</p> : null}
+    <div className="user-stat-grid upd-stat-grid">
+      <StatCard label="权益" value={entitlementName} sub={entitlementSub} variant="bar" percent={entitlementPercent} tone={entitlementTone} />
+      <StatCard label="订阅" value={<StatusPill tone={subscriptionTone}>{subscriptionLabel}</StatusPill>} sub={subscriptionSub} footer={<Link to="/subscriptions">打开订阅</Link>} />
+      <StatCard label="分组 / 节点" value={groupValue} sub={groupSub} onClick={onOpenNodes} />
+    </div>
+  </>
+}
+
 export function HomePage() {
   const navigate = useNavigate()
   const { user } = useSession()
@@ -45,17 +70,23 @@ export function HomePage() {
   const valid = !!rights?.current
   const expiry = current ? getExpiryState(current) : null
   const subscriptionValid = valid && current?.enabled && expiry?.kind !== 'expired' && expiry?.kind !== 'pending'
-  return <div className="page-stack nav-home">
+  const subscriptionLabel = subscriptionValid ? '有效' : expiry?.kind === 'expired' || rights?.state === 'expired' ? '已过期' : current && !current.enabled ? '已停用' : expiry?.kind === 'pending' ? '待生效' : '未开通'
+  return <div className="page-stack nav-home upd-page upd-home">
     <PageHero title="首页" subtitle={rights ? entitlementLabels[rights.state] : '正在读取账户状态'} actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
     <NoticeCarousel items={notices.map(notice => ({ id: String(notice.id), title: notice.title }))} onSelect={id => navigate(`/notices?notice=${encodeURIComponent(id)}`)} labels={{ previous: '上一条公告', next: '下一条公告', close: '关闭公告' }} />
-    {loading ? <LoadingState label="正在加载首页" /> : error ? <ErrorState message={error} onRetry={() => { void load() }} /> : <>
-      {valid && remaining <= 7 && reminderEnabled(user?.id) ? <p role="status">权益将在 {remaining} 天内到期，请联系管理员续期</p> : null}
-      <div className="user-stat-grid">
-        <StatCard label="权益" value={entitlement?.plan.name ?? '未开通'} sub={entitlement ? `${new Date(entitlement.expiresAt).toLocaleDateString('zh-CN')} 到期 · 剩余 ${remaining} 天` : '未开通'} variant="bar" percent={valid && duration > 0 ? remaining / duration * 100 : 0} tone={rights?.state === 'expired' ? 'danger' : 'normal'} />
-        <StatCard label="订阅" value={<StatusPill tone={subscriptionValid ? 'success' : rights?.state === 'expired' || expiry?.kind === 'expired' ? 'danger' : 'neutral'}>{subscriptionValid ? '有效' : expiry?.kind === 'expired' || rights?.state === 'expired' ? '已过期' : current && !current.enabled ? '已停用' : expiry?.kind === 'pending' ? '待生效' : '未开通'}</StatusPill>} sub={`${valid ? counts.groupOptions.length : 0} 个分组 · ${valid ? counts.total : 0} 个节点`} footer={<Link to="/subscriptions">打开订阅</Link>} />
-        <StatCard label="分组 / 节点" value={`${valid ? counts.groupOptions.length : 0} / ${valid ? counts.total : 0}`} sub={valid ? '可用分组 / 节点总数' : '需要有效权益才能查看节点'} onClick={() => navigate('/nodes')} />
-      </div>
-    </>}
+    {loading ? <LoadingState label="正在加载首页" /> : error ? <ErrorState message={error} onRetry={() => { void load() }} /> : <HomeDashboard
+      reminder={valid && remaining <= 7 && reminderEnabled(user?.id) ? `权益将在 ${remaining} 天内到期，请联系管理员续期` : null}
+      entitlementName={entitlement?.plan.name ?? '未开通'}
+      entitlementSub={entitlement ? `${new Date(entitlement.expiresAt).toLocaleDateString('zh-CN')} 到期 · 剩余 ${remaining} 天` : '未开通'}
+      entitlementPercent={valid && duration > 0 ? remaining / duration * 100 : 0}
+      entitlementTone={rights?.state === 'expired' ? 'danger' : 'normal'}
+      subscriptionLabel={subscriptionLabel}
+      subscriptionTone={subscriptionValid ? 'success' : rights?.state === 'expired' || expiry?.kind === 'expired' ? 'danger' : 'neutral'}
+      subscriptionSub={`${valid ? counts.groupOptions.length : 0} 个分组 · ${valid ? counts.total : 0} 个节点`}
+      groupValue={`${valid ? counts.groupOptions.length : 0} / ${valid ? counts.total : 0}`}
+      groupSub={valid ? '可用分组 / 节点总数' : '需要有效权益才能查看节点'}
+      onOpenNodes={() => navigate('/nodes')}
+    />}
     <nav className="user-quick-grid" aria-label="快捷入口">
       <QuickEntryCard icon={<Network />} title="节点" desc="查看当前可用节点" href="/nodes" />
     </nav>
