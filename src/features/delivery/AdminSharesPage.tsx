@@ -1,5 +1,6 @@
+import { ResourceFooter, ResourceHeading, ResourceRowActions } from '../admin-resources/ResourceCard'
 import { FormSelect } from '../../ui/Controls'
-import { Ban, Share2, Trash2 } from 'lucide-react'
+import { Share2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAdminUserOptions, api, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
@@ -9,9 +10,7 @@ import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
@@ -101,9 +100,7 @@ export function AdminSharesPage() {
     }
   }, [statusFilter, subscriptionId, userId])
 
-
   useEffect(() => { loadShares().catch(() => undefined) }, [loadShares])
-
 
   useEffect(() => {
     let active = true
@@ -164,7 +161,7 @@ export function AdminSharesPage() {
       render: (share) => {
         const username = userNames.get(share.ownerUserId)
         return (
-          <span>
+          <span className="resource-card-name">
             <strong>{username ?? share.ownerUserId}</strong>
             {username ? <span className="cell-note">{share.ownerUserId}</span> : null}
           </span>
@@ -177,7 +174,7 @@ export function AdminSharesPage() {
       render: (share) => {
         const name = subscriptionNames.get(share.subscriptionId)
         return (
-          <span>
+          <span className="resource-card-name">
             <strong>{name ?? share.subscriptionId}</strong>
             {name ? <span className="cell-note">{share.subscriptionId}</span> : null}
           </span>
@@ -188,7 +185,7 @@ export function AdminSharesPage() {
       key: 'remark',
       header: '备注',
       render: (share) => (
-        <span>
+        <span className="resource-card-name">
           <strong>{share.remark.trim() || '未填写'}</strong>
           <span className="cell-note">{share.id} · {share.tokenPrefix}…</span>
         </span>
@@ -221,71 +218,43 @@ export function AdminSharesPage() {
       header: '操作',
       align: 'right',
       width: 104,
-      render: (share) => (
-        <span className="row-actions">
-          {share.status === 'active' ? (
-            <button
-              className="icon-button"
-              type="button"
-              aria-label={`禁用分享 ${share.remark || share.id}`}
-              title="禁用"
-              disabled={busy}
-              onClick={() => setPending({ share, action: 'disable' })}
-            >
-              <Ban aria-hidden="true" size={16} />
-            </button>
-          ) : null}
-          {share.status !== 'revoked' ? (
-            <button
-              className="icon-button danger"
-              type="button"
-              aria-label={`撤销分享 ${share.remark || share.id}`}
-              title="撤销"
-              disabled={busy}
-              onClick={() => setPending({ share, action: 'revoke' })}
-            >
-              <Trash2 aria-hidden="true" size={16} />
-            </button>
-          ) : null}
-          {share.status === 'revoked' ? <span className="cell-note">—</span> : null}
-        </span>
+      render: (share) => share.status === 'revoked' ? <span className="cell-note">—</span> : (
+        <ResourceRowActions actions={[
+          ...(share.status === 'active' ? [{
+            label: '禁用', accessibleLabel: `禁用分享 ${share.remark || share.id}`, disabled: busy,
+            onClick: () => setPending({ share, action: 'disable' }),
+          }] : []),
+          {
+            label: '撤销', accessibleLabel: `撤销分享 ${share.remark || share.id}`, danger: true, disabled: busy,
+            onClick: () => setPending({ share, action: 'revoke' }),
+          },
+        ]} />
       ),
     },
   ], [busy, subscriptionNames, userNames])
 
   return (
-    <div className="page-stack">
-      <PageHeader title="分享管理" />
-
-      <FilterBar className="ashr-filters">
-        <SearchInput label="搜索分享" placeholder="搜索备注、前缀或用户" value={query} onChange={setQuery} />
-        <div className="ashr-chips" role="group" aria-label="分享状态">
-          {STATUS_FILTERS.map((filter) => (
-            <FilterChip key={filter.value} active={statusFilter === filter.value} onClick={() => setStatusFilter(filter.value)}>{filter.label}</FilterChip>
-          ))}
-        </div>
-        <label>
-          <span>用户</span>
-          <FormSelect aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
-            <option value="">全部</option>
-            {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
-          </FormSelect>
-        </label>
-        <label>
-          <span>订阅</span>
-          <FormSelect aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
-            <option value="">全部</option>
-            {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
-          </FormSelect>
-        </label>
-      </FilterBar>
-
-      <section className="data-section" aria-labelledby="ashr-shares-title">
-        <DataHeader
-          id="ashr-shares-title"
-          title="全站分享"
-          actions={<span>{filtered.length} 个分享符合当前筛选 · 第 {currentPage} / {pageCount} 页</span>}
-        />
+    <div className="page-stack resource-pages">
+      <section className="data-section resource-card" aria-labelledby="ashr-shares-title">
+        <ResourceHeading id="ashr-shares-title" title="分享管理" />
+        <FilterBar className="resource-card-filters">
+          <SearchInput label="搜索分享" placeholder="搜索备注、前缀或用户" value={query} onChange={setQuery} />
+          <label className="filter-field"><span>状态</span><FormSelect aria-label="分享状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as StatusFilter)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</FormSelect></label>
+          <label className="filter-field">
+            <span>用户</span>
+            <FormSelect aria-label="按用户筛选" value={userId} onChange={(event) => setUserId(event.currentTarget.value)}>
+              <option value="">全部</option>
+              {users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}
+            </FormSelect>
+          </label>
+          <label className="filter-field">
+            <span>订阅</span>
+            <FormSelect aria-label="按订阅筛选" value={subscriptionId} onChange={(event) => setSubscriptionId(event.currentTarget.value)}>
+              <option value="">全部</option>
+              {subscriptions.map((subscription) => <option key={subscription.id} value={subscription.id}>{subscription.name}</option>)}
+            </FormSelect>
+          </label>
+        </FilterBar>
         {loadError ? <div><ErrorState message={loadError} onRetry={() => { loadShares().catch(() => undefined) }} /></div> : null}
         {sharesLoading && shares.length === 0 ? <LoadingState label="正在加载分享" /> : null}
         {!sharesLoading && !loadError && shares.length === 0 ? (
@@ -296,17 +265,17 @@ export function AdminSharesPage() {
         ) : null}
         {filtered.length > 0 ? (
           <DataTable
-            className="ashr-table"
+            className="resource-card-table"
             columns={columns}
             rows={visibleRows}
             rowKey={(share) => share.id}
             empty="暂无匹配分享"
-            pagination={{ page: currentPage, pageCount, onPageChange: setPage }}
           />
         ) : null}
+        <ResourceFooter count={filtered.length} unit="个分享" pagination={{ page: currentPage, pageCount, onPageChange: setPage }} />
       </section>
 
-      <section className="data-section" aria-labelledby="ashr-settings-title">
+      <section className="data-section resource-card" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
         <div className="ashr-settings-form">
           <p className="ashr-settings-hint">分享策略在系统设置的订阅分发中维护</p>

@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export type PaginationProps = {
+  compact?: boolean
   page: number
   pageCount: number
   onPageChange: (page: number) => void
@@ -21,7 +22,7 @@ function pageItems(page: number, pageCount: number): PageItem[] {
   return items
 }
 
-export function Pagination({ page, pageCount, onPageChange }: PaginationProps) {
+export function Pagination({ page, pageCount, onPageChange, compact = false }: PaginationProps) {
   const current = Math.min(Math.max(page, 1), Math.max(pageCount, 1))
   const previous = Math.max(current - 1, 1)
   const next = Math.min(current + 1, Math.max(pageCount, 1))
@@ -31,7 +32,7 @@ export function Pagination({ page, pageCount, onPageChange }: PaginationProps) {
       <button type="button" className="sp-pagination-step" aria-label="上一页" onClick={() => onPageChange(previous)} disabled={current <= 1}>
         <ChevronLeft aria-hidden="true" size={16} />
       </button>
-      {pageItems(current, pageCount).map((item) => typeof item === 'number'
+      {compact ? <span aria-current="page">{current} / {Math.max(pageCount, 1)} 页</span> : pageItems(current, pageCount).map((item) => typeof item === 'number'
         ? <button key={item} type="button" className="sp-pagination-page" aria-current={item === current ? 'page' : undefined} onClick={() => onPageChange(item)}>{item}</button>
         : <span key={item} className="sp-pagination-gap" aria-hidden="true">…</span>)}
       <button type="button" className="sp-pagination-step" aria-label="下一页" onClick={() => onPageChange(next)} disabled={current >= pageCount}>

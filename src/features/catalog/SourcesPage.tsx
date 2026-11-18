@@ -1,17 +1,15 @@
+import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, Input, FormSelect, Textarea, FileInput } from '../../ui/Controls'
-import { CheckCircle2, FileUp, Pencil, Plus, RefreshCw, Rss, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, FileUp, Plus, RefreshCw, Rss, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -329,13 +327,14 @@ export function SourcesPage() {
     {
       key: 'select',
       header: '选择',
+      headerContent: <ResourceSelectAll label="选择全部来源" ids={filteredSources.map((row) => row.id)} selected={selected} disabled={busy} onChange={(checked) => setSelected(checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} />,
       width: 40,
       render: (source) => <Checkbox type="checkbox" aria-label={`选择来源 ${source.name}`} checked={selected.has(source.id)} disabled={busy} onChange={() => toggleSelected(source.id)} />,
     },
     {
       key: 'name',
       header: '名称',
-      render: (source) => <><strong>{source.name}</strong>{source.remoteHost ? <span className="cell-note">{source.remoteHost}</span> : null}</>,
+      render: (source) => <span className="resource-card-name"><strong>{source.name}</strong><span className="cell-note">{source.remoteHost || source.id}</span></span>,
     },
     { key: 'type', header: '类型', render: (source) => sourceTypeLabel(source.type) },
     { key: 'format', header: '格式', render: (source) => formatLabel(source.detectedFormat) },
@@ -347,52 +346,37 @@ export function SourcesPage() {
       header: '操作',
       align: 'right',
       render: (source) => (
-        <span className="row-actions">
-          <button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(source)}><Pencil aria-hidden="true" size={16} /></button>
-          {source.type === 'remote' ? <button className="icon-button" type="button" aria-label="刷新" title="刷新" disabled={busy} onClick={() => executeSingleRefresh(source.id)}><RefreshCw aria-hidden="true" size={16} /></button> : null}
-          <button className="icon-button danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => { setSelected(new Set([source.id])); askBatch('delete') }}><Trash2 aria-hidden="true" size={16} /></button>
-        </span>
+        <ResourceRowActions actions={[
+          { label: '编辑', disabled: busy, onClick: () => openEdit(source) },
+          ...(source.type === 'remote' ? [{ label: '刷新', disabled: busy, onClick: () => executeSingleRefresh(source.id) }] : []),
+          { label: '删除', danger: true, disabled: busy, onClick: () => { setSelected(new Set([source.id])); askBatch('delete') } },
+        ]} />
       ),
     },
   ]
 
   return (
-    <div className="page-stack">
-      <PageHeader title="来源" description={`${sources.length} 个来源`} actions={<button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>} />
+    <div className="page-stack resource-pages">
 
       {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
       {warning ? <StatusMessage tone="warning">{warning}</StatusMessage> : null}
-      <section className="data-section cat-data-section" aria-labelledby="sources-title">
-        <DataHeader
-          id="sources-title"
-          title="来源列表"
-          filters={(
-            <FilterBar className="data-header-filters cat-filter-bar">
-              <SearchInput className="cat-filter-search" label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
-              <div className="cat-chip-group" role="group" aria-label="来源状态">
-                {STATUS_FILTERS.map((item) => (
-                  <FilterChip key={item.value} active={statusFilter === item.value} onClick={() => setStatusFilter(item.value)}>{item.label}</FilterChip>
-                ))}
-              </div>
-            </FilterBar>
-          )}
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => setSelected(new Set())} actions={batchActions} busy={busy} progress={batchProgress} />}
-        />
+      <section className="data-section resource-card" aria-labelledby="sources-title">
+        <ResourceHeading id="sources-title" title="来源" action={<button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>} />
+        <FilterBar className="resource-card-filters">
+          <SearchInput className="cat-filter-search" label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
+          <label className="filter-field"><span>状态</span><FormSelect aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as SourceStatusFilter)}>{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
+        </FilterBar>
+        <BatchToolbar selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => setSelected(new Set())} actions={batchActions} busy={busy} progress={batchProgress} />
         {loading && !catalog ? (
           <div className="cat-empty-wrap"><LoadingState label="正在加载来源" /></div>
         ) : sources.length === 0 ? (
           <div className="cat-empty-wrap"><EmptyState icon={Rss} title="暂无来源" description="添加来源后即可在这里查看节点来源状态" /></div>
         ) : (
-          <>
-            <div className="cat-table-tools">
-              <label className="cat-select-all">
-                <Checkbox type="checkbox" aria-label="选择全部来源" checked={filteredSources.length > 0 && selected.size === filteredSources.length} disabled={busy} onChange={(event) => setSelected(event.currentTarget.checked ? new Set(filteredSources.map((source) => source.id)) : new Set())} />
-                <span>全选</span>
-              </label>
-            </div>
-            <DataTable columns={columns} rows={filteredSources} rowKey={(source) => source.id} empty="暂无匹配来源" />
-          </>
+          <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={filteredSources} rowKey={(source) => source.id} empty="暂无匹配来源" />
         )}
+        <ResourceFooter count={filteredSources.length} unit="个来源">
+          {filteredSources.length !== sources.length ? <span>全部 {sources.length} 个来源</span> : null}
+        </ResourceFooter>
       </section>
 
       <EditDrawer open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={createButton}>
