@@ -1,41 +1,30 @@
-import { Checkbox, Input } from '../../ui/Controls'
+import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { UserEntitlement } from '../entitlements/UserEntitlement'
-import { CheckCircle2, Copy, Crown, KeyRound, Mail, RotateCcw, Trash2, Users, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type AdminSubscription, type AdminUsersResponse, type UserSummary } from '../../app/api'
+import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { api, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
-import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
-import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
-import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
-import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
-import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from '../delivery/expiry'
 
-type BatchActionKind = 'disable'
+type BatchKind = 'enable' | 'disable' | 'delete'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 type UsersView = 'active' | 'trash'
 type ConfirmKind = 'promote' | 'soft-delete' | 'purge'
+type DirectoryPhase = 'loading' | 'error' | 'ready'
+type RowAction = 'edit-email' | 'reset-password' | 'promote' | 'enable' | 'disable' | 'entitlement' | 'soft-delete' | 'restore' | 'purge'
+type MenuItem = { key: RowAction; label: string; danger?: boolean; disabled?: boolean; title?: string }
 
 const PAGE_SIZE = 20
-
-const STATUS_FILTERS: Array<{ value: StatusFilter; label: string }> = [
-  { value: 'all', label: '全部' },
-  { value: 'enabled', label: '正常' },
-  { value: 'disabled', label: '已停用' },
-]
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof ApiClientError ? cause.message : fallback
@@ -46,27 +35,9 @@ function formatDate(value?: string) {
   return new Date(value).toLocaleString('zh-CN')
 }
 
-function UserSubscriptionList({ items }: { items: AdminSubscription[] }) {
-  return (
-    <details className="exp-user-subs">
-      <summary>{items.length} 个订阅</summary>
-      <ul>
-        {items.map((subscription) => {
-          const state = getExpiryState(subscription)
-          const badge = EXPIRY_BADGE[state.kind]
-          return (
-            <li className="exp-user-sub" key={subscription.id}>
-              <strong>{subscription.name}</strong>
-              <StatusBadge tone={badge.tone} size="sm">{badge.label}</StatusBadge>
-              <span>{state.expiresAt === null ? '永久有效' : `到期 ${formatExpiryTime(state.expiresAt)}`}</span>
-              {state.kind === 'pending' ? <span>{`将于 ${formatExpiryTime(state.startsAt)} 生效`}</span> : null}
-              {state.expiresAt !== null ? <span>{`剩余 ${formatRemaining(state.remainingDays ?? 0)}`}</span> : null}
-            </li>
-          )
-        })}
-      </ul>
-    </details>
-  )
+function userSecondary(user: UserSummary) {
+  const email = user.email?.trim()
+  return email ? email : user.id
 }
 
 function toggleId(current: Set<string>, id: string) {
@@ -74,6 +45,233 @@ function toggleId(current: Set<string>, id: string) {
   if (next.has(id)) next.delete(id)
   else next.add(id)
   return next
+}
+
+function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
+  if (view === 'trash') {
+    return [
+      { key: 'restore', label: '恢复' },
+      { key: 'purge', label: '永久删除', danger: true },
+    ]
+  }
+  const items: MenuItem[] = [{ key: 'edit-email', label: '改邮箱' }]
+  if (user.role === 'user') {
+    items.push(
+      { key: 'reset-password', label: '重置密码' },
+      { key: 'promote', label: '设为管理员' },
+    )
+  }
+  items.push(user.enabled
+    ? { key: 'disable', label: '停用', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
+    : { key: 'enable', label: '启用', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
+  items.push(
+    { key: 'entitlement', label: '管理权益' },
+    { key: 'soft-delete', label: '移入回收站', danger: true },
+  )
+  return items
+}
+
+function RowMenu({ label, disabled, items, onSelect }: { label: string; disabled?: boolean; items: MenuItem[]; onSelect: (key: RowAction) => void }) {
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDetailsElement>) => {
+    if (event.key !== 'Escape') return
+    event.currentTarget.open = false
+    event.currentTarget.querySelector('summary')?.focus()
+  }
+  const choose = (event: ReactMouseEvent<HTMLButtonElement>, key: RowAction) => {
+    const menu = event.currentTarget.closest('details')
+    if (menu) menu.open = false
+    onSelect(key)
+  }
+  return (
+    <details className="usr-menu" onKeyDown={onKeyDown} onToggle={(event) => { if (disabled) event.currentTarget.open = false }}>
+      <summary className="icon-button" aria-label={label} aria-haspopup="menu" aria-disabled={disabled || undefined} title="操作" onClick={(event) => { if (disabled) event.preventDefault() }}>
+        <Ellipsis aria-hidden="true" size={16} />
+      </summary>
+      <div className="usr-menu-panel" role="menu">
+        {items.map((item) => (
+          <button key={item.key} type="button" role="menuitem" className={item.danger ? 'danger' : undefined} disabled={disabled || item.disabled} title={item.title} onClick={(event) => choose(event, item.key)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+export function UsersDirectory({
+  phase,
+  loadError,
+  onRetry,
+  view,
+  users,
+  total,
+  page,
+  pageCount,
+  statusFilter,
+  query,
+  selectedIds,
+  mutating,
+  onStatusFilter,
+  onQuery,
+  onPage,
+  onToggle,
+  onToggleAll,
+  onRowAction,
+  onBatch,
+  batchProgress,
+}: {
+  phase: DirectoryPhase
+  loadError: string
+  onRetry: () => void
+  view: UsersView
+  users: UserSummary[]
+  total: number
+  page: number
+  pageCount: number
+  statusFilter: StatusFilter
+  query: string
+  selectedIds: ReadonlySet<string>
+  mutating: boolean
+  onStatusFilter: (value: string) => void
+  onQuery: (value: string) => void
+  onPage: (page: number) => void
+  onToggle: (id: string) => void
+  onToggleAll: (checked: boolean) => void
+  onRowAction: (action: RowAction, user: UserSummary) => void
+  onBatch: (action: BatchKind) => void
+  batchProgress?: string
+}) {
+  const allSelected = users.length > 0 && users.every((user) => selectedIds.has(user.id))
+  const batchActions: BatchAction[] = [
+    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => onBatch('disable') },
+    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => onBatch('enable') },
+    { key: 'delete', label: '移入回收站', icon: Trash2, tone: 'danger', onClick: () => onBatch('delete') },
+  ]
+  const columns: Array<DataTableColumn<UserSummary>> = [
+    ...(view === 'active' ? [{
+      key: 'select',
+      header: (
+        <Checkbox
+          type="checkbox"
+          aria-label="选择全部用户"
+          checked={allSelected}
+          disabled={mutating || users.length === 0}
+          onChange={(event) => onToggleAll(event.currentTarget.checked)}
+        />
+      ),
+      label: '选择',
+      width: 52,
+      render: (user: UserSummary) => (
+        <Checkbox
+          type="checkbox"
+          aria-label={`选择用户 ${user.username}`}
+          checked={selectedIds.has(user.id)}
+          disabled={mutating}
+          onChange={() => onToggle(user.id)}
+        />
+      ),
+    } satisfies DataTableColumn<UserSummary>] : []),
+    {
+      key: 'user',
+      header: '用户',
+      render: (user) => (
+        <div className="usr-person">
+          <strong className="usr-name">{user.username}</strong>
+          <span className="usr-meta">{userSecondary(user)}</span>
+        </div>
+      ),
+    },
+    { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
+    {
+      key: 'status',
+      header: '状态',
+      render: (user) => {
+        const tone = view === 'trash' ? 'danger' : user.enabled ? 'success' : 'muted'
+        const label = view === 'trash' ? '已删除' : user.enabled ? '正常' : '已停用'
+        return <span className={`usr-status usr-status-${tone}`}><i aria-hidden="true" />{label}</span>
+      },
+    },
+    { key: 'subscriptions', header: '订阅', render: (user) => <span>{user.subscriptionCount ?? 0} 个</span> },
+    ...(view === 'trash' ? [{
+      key: 'deletedAt',
+      header: '删除时间',
+      render: (user: UserSummary) => <span>{formatDate(user.deletedAt ?? undefined)}</span>,
+    } satisfies DataTableColumn<UserSummary>] : []),
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      render: (user) => (
+        <RowMenu
+          label={`${user.username} 的操作`}
+          disabled={mutating}
+          items={menuItems(user, view)}
+          onSelect={(action) => onRowAction(action, user)}
+        />
+      ),
+    },
+  ]
+
+  return (
+    <div className="usr-directory">
+      <div className="usr-filter">
+        <FormSelect aria-label="用户状态" value={statusFilter} onChange={(event) => onStatusFilter(event.target.value)}>
+          <option value="all">全部状态</option>
+          <option value="enabled">正常</option>
+          <option value="disabled">已停用</option>
+        </FormSelect>
+        <SearchInput label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={onQuery} />
+      </div>
+      {phase === 'loading' ? <LoadingState label="正在加载用户" /> : null}
+      {phase === 'error' ? <ErrorState message={loadError} onRetry={onRetry} /> : null}
+      {phase === 'ready' ? (
+        <>
+          {view === 'active' && selectedIds.size > 0 ? (
+            <div className="usr-batch">
+              <BatchToolbar
+                selectedCount={selectedIds.size}
+                totalCount={users.length}
+                onSelectAll={() => onToggleAll(true)}
+                onClear={() => onToggleAll(false)}
+                actions={batchActions}
+                busy={mutating}
+                progress={batchProgress}
+              />
+            </div>
+          ) : null}
+          {view === 'active' && users.length > 0 ? (
+            <div className="usr-select-all-narrow">
+              <Checkbox
+                type="checkbox"
+                aria-label="选择全部用户"
+                checked={allSelected}
+                disabled={mutating}
+                onChange={(event) => onToggleAll(event.currentTarget.checked)}
+              />
+              <span>全选</span>
+            </div>
+          ) : null}
+          {total === 0 ? (
+            <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户'} description={view === 'trash' ? '移入回收站的用户会显示在这里' : '创建邀请并完成注册后，用户会显示在这里'} />
+          ) : (
+            <DataTable className="usr-table" columns={columns} rows={users} rowKey={(user) => user.id} empty="暂无匹配用户" />
+          )}
+          <footer className="usr-card-foot">
+            <span>共 {total} 位用户</span>
+            <div className="usr-pager">
+              <button type="button" className="icon-button" aria-label="上一页" disabled={page <= 1 || mutating} onClick={() => onPage(page - 1)}>
+                <ChevronLeft aria-hidden="true" size={16} />
+              </button>
+              <span>{page} / {pageCount} 页</span>
+              <button type="button" className="icon-button" aria-label="下一页" disabled={page >= pageCount || mutating} onClick={() => onPage(page + 1)}>
+                <ChevronRight aria-hidden="true" size={16} />
+              </button>
+            </div>
+          </footer>
+        </>
+      ) : null}
+    </div>
+  )
 }
 
 export function UsersPage({ view = 'active' }: { view?: UsersView }) {
@@ -89,15 +287,13 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [tempPassword, setTempPassword] = useState('')
   const [mutating, setMutating] = useState(false)
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
-  const [batchConfirm, setBatchConfirm] = useState<BatchActionKind | null>(null)
+  const [batchConfirm, setBatchConfirm] = useState<Exclude<BatchKind, 'enable'> | null>(null)
   const [batchProgress, setBatchProgress] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(1)
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
-  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
-  const [subscriptionsReady, setSubscriptionsReady] = useState(false)
-  const [subscriptionNote, setSubscriptionNote] = useState('')
+  const [entitlementUser, setEntitlementUser] = useState<UserSummary | null>(null)
   const toast = useToast()
   const usersRequestSeq = useRef(0)
 
@@ -115,20 +311,13 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     if (seq !== usersRequestSeq.current) return
     setUsers(result.users)
     setTotal(result.total)
-    setSelectedUsers((current) => new Set([...current].filter((id) => result.users.some((user) => user.id === id && user.role === 'user'))))
+    setLoadError('')
+    setSelectedUsers((current) => new Set([...current].filter((id) => result.users.some((user) => user.id === id))))
   }, [page, query, statusFilter, view])
 
   const load = useCallback(async () => {
     await loadUsers()
     setLoadError('')
-    try {
-      const subscriptionResult = await api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions')
-      setSubscriptions(subscriptionResult.subscriptions)
-      setSubscriptionsReady(true)
-      setSubscriptionNote('')
-    } catch (cause) {
-      setSubscriptionNote(errorMessage(cause, '订阅时效加载失败'))
-    }
   }, [loadUsers])
 
   useEffect(() => {
@@ -149,28 +338,18 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     loadUsers().catch((cause) => toast.notifyError(errorMessage(cause, '刷新用户列表失败')))
   }, [loadUsers, toast])
 
-  const selectableUsers = useMemo(
-    () => users.filter((user) => user.role === 'user'),
-    [users],
-  )
-  const subscriptionsByUser = useMemo(() => {
-    const grouped = new Map<string, AdminSubscription[]>()
-    for (const subscription of subscriptions) {
-      if (!subscription.userId) continue
-      const owned = grouped.get(subscription.userId) ?? []
-      owned.push(subscription)
-      grouped.set(subscription.userId, owned)
-    }
-    return grouped
-  }, [subscriptions])
-
   useEffect(() => {
-    const visible = new Set(selectableUsers.map((user) => user.id))
+    const visible = new Set(users.map((user) => user.id))
     setSelectedUsers((current) => {
       const next = [...current].filter((id) => visible.has(id))
       return next.length === current.size ? current : new Set(next)
     })
-  }, [selectableUsers])
+  }, [users])
+
+  useEffect(() => {
+    const nextCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+    if (page > nextCount) setPage(nextCount)
+  }, [page, total])
 
   const retry = () => {
     setLoading(true)
@@ -193,7 +372,8 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     setPage(1)
   }
 
-  const changeStatusFilter = (value: StatusFilter) => {
+  const changeStatusFilter = (value: string) => {
+    if (value !== 'all' && value !== 'enabled' && value !== 'disabled') return
     setStatusFilter(value)
     setPage(1)
   }
@@ -227,7 +407,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   }
 
   const setEnabled = async (user: UserSummary, enabled: boolean) => {
-    if (mutating) return
+    if (mutating || user.role === 'admin') return
     setMutating(true)
     setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, enabled } : candidate))
     try {
@@ -235,7 +415,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         method: 'PATCH',
         body: jsonBody({ enabled }),
       })
-      setUsers((current) => current.map((candidate) => candidate.id === user.id ? result.user : candidate))
+      setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, ...result.user, subscriptionCount: candidate.subscriptionCount } : candidate))
     } catch (cause) {
       setUsers((current) => current.map((candidate) => candidate.id === user.id ? { ...candidate, enabled: user.enabled } : candidate))
       toast.notifyError(errorMessage(cause, '更新用户失败'))
@@ -273,7 +453,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         method: 'POST',
         body: jsonBody({ newPassword }),
       })
-      setUsers((current) => current.map((candidate) => candidate.id === resetUser.id ? result.user : candidate))
+      setUsers((current) => current.map((candidate) => candidate.id === resetUser.id ? { ...candidate, ...result.user, subscriptionCount: candidate.subscriptionCount } : candidate))
       setTempPassword(result.temporaryPassword)
       setResetError('')
       form.reset()
@@ -322,26 +502,37 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     }
   }
 
-  const executeBatch = async (action: BatchActionKind | 'enable') => {
-    const ids = [...selectedUsers]
-    if (!ids.length || mutating) return
+  const executeBatch = async (action: BatchKind) => {
+    if (mutating) return
+    const selectedRecords = users.filter((user) => selectedUsers.has(user.id))
+    const targets = action === 'delete' ? selectedRecords : selectedRecords.filter((user) => user.role === 'user')
+    if (!targets.length) {
+      setBatchConfirm(null)
+      toast.notifyError(action === 'delete' ? '请先选择用户' : '所选用户里没有可以启用或停用的普通用户')
+      return
+    }
     setBatchConfirm(null)
     setMutating(true)
     let firstFailure = ''
-    const failed = new Set<string>()
+    const skipped = selectedRecords.filter((user) => !targets.some((target) => target.id === user.id)).map((user) => user.id)
+    const failed = new Set<string>(skipped)
     try {
-      for (const [index, id] of ids.entries()) {
-        setBatchProgress(`正在处理 ${index + 1}/${ids.length}`)
+      for (const [index, user] of targets.entries()) {
+        setBatchProgress(`正在处理 ${index + 1}/${targets.length}`)
         try {
-          await api(`/api/admin/users/${id}`, { method: 'PATCH', body: jsonBody({ enabled: action === 'enable' }) })
+          if (action === 'delete') await api(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+          else await api(`/api/admin/users/${user.id}`, { method: 'PATCH', body: jsonBody({ enabled: action === 'enable' }) })
         } catch (cause) {
-          failed.add(id)
+          failed.add(user.id)
           if (!firstFailure) firstFailure = errorMessage(cause, '请求失败')
         }
       }
       await load()
       setSelectedUsers(failed)
-      if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
+      const requestFailures = failed.size - skipped.length
+      if (firstFailure) toast.notifyError(`${requestFailures} 项未完成：${firstFailure}`)
+      else if (action === 'delete') toast.notify('已移入回收站')
+      else if (skipped.length) toast.notify('普通用户状态已更新，管理员状态未改')
       else toast.notify('用户状态已更新')
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '批量操作失败'))
@@ -351,115 +542,29 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     }
   }
 
-  const userActions: BatchAction[] = [
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
-    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setBatchConfirm('disable') },
-  ]
-  const userColumns: Array<DataTableColumn<UserSummary>> = [
-    {
-      key: 'select',
-      header: '选择',
-      width: 52,
-      render: (user) => (
-        <Checkbox
-          type="checkbox"
-          aria-label={`选择用户 ${user.username}`}
-          checked={user.role === 'user' && selectedUsers.has(user.id)}
-          disabled={user.role === 'admin' || mutating}
-          onChange={() => setSelectedUsers((current) => toggleId(current, user.id))}
-        />
-      ),
-    },
-    { key: 'id', header: '用户 ID', render: (user) => <span>{user.id}</span> },
-    { key: 'username', header: '用户名', render: (user) => <strong>{user.username}</strong> },
-    { key: 'entitlement', header: '权益', render: (user) => <UserEntitlement userId={user.id} username={user.username} /> },
-    { key: 'email', header: '邮箱', render: (user) => <span>{user.email ?? '—'}</span> },
-    { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
-    {
-      key: 'status',
-      header: '状态',
-      render: (user) => <StatusBadge tone={user.enabled ? 'success' : 'muted'} size="sm">{user.enabled ? '正常' : '已停用'}</StatusBadge>,
-    },
-    { key: 'createdAt', header: '创建时间', render: (user) => <span>{formatDate(user.createdAt)}</span> },
-    {
-      key: 'subscriptions',
-      header: '订阅',
-      render: (user) => {
-        if (!subscriptionsReady) return <span>—</span>
-        const owned = subscriptionsByUser.get(user.id) ?? []
-        if (owned.length === 0) return <span>—</span>
-        return <UserSubscriptionList items={owned} />
-      },
-    },
-    {
-      key: 'actions',
-      header: '管理',
-      align: 'right',
-      render: (user) => (
-        <span className="row-actions">
-          <button className="icon-button" type="button" disabled={mutating} aria-label={`编辑 ${user.username}`} title="编辑用户" onClick={() => { setEditUser(user); setEditEmail(user.email ?? ''); setEditError('') }}>
-            <Mail aria-hidden="true" size={16} />
-          </button>
-          {user.role === 'user' ? (
-            <>
-              <button className="icon-button" type="button" disabled={mutating} aria-label={`重置 ${user.username} 的密码`} title="重置密码" onClick={() => openPasswordReset(user)}>
-                <KeyRound aria-hidden="true" size={16} />
-              </button>
-              <button className="icon-button" type="button" disabled={mutating} aria-label={`将 ${user.username} 设为管理员`} title="设为管理员" onClick={() => setConfirmAction({ kind: 'promote', user })}>
-                <Crown aria-hidden="true" size={16} />
-              </button>
-            </>
-          ) : null}
-          <Switch
-            checked={user.enabled}
-            onChange={(checked) => setEnabled(user, checked)}
-            disabled={user.role === 'admin' || mutating}
-            ariaLabel={`启用 ${user.username}`}
-          />
-          <button className="icon-button danger" type="button" disabled={mutating} aria-label={`将 ${user.username} 移入回收站`} title="移入回收站" onClick={() => setConfirmAction({ kind: 'soft-delete', user })}>
-            <Trash2 aria-hidden="true" size={16} />
-          </button>
-        </span>
-      ),
-    },
-  ]
+  const onRowAction = (action: RowAction, user: UserSummary) => {
+    if (mutating) return
+    if (action === 'edit-email') {
+      setEditUser(user)
+      setEditEmail(user.email ?? '')
+      setEditError('')
+    } else if (action === 'reset-password') openPasswordReset(user)
+    else if (action === 'promote') setConfirmAction({ kind: 'promote', user })
+    else if (action === 'enable') void setEnabled(user, true)
+    else if (action === 'disable') void setEnabled(user, false)
+    else if (action === 'entitlement') setEntitlementUser(user)
+    else if (action === 'soft-delete') setConfirmAction({ kind: 'soft-delete', user })
+    else if (action === 'restore') void restoreUser(user)
+    else setConfirmAction({ kind: 'purge', user })
+  }
 
-  const trashColumns: Array<DataTableColumn<UserSummary>> = [
-    { key: 'id', header: '用户 ID', render: (user) => <span>{user.id}</span> },
-    { key: 'username', header: '用户名', render: (user) => <strong>{user.username}</strong> },
-    { key: 'email', header: '邮箱', render: (user) => <span>{user.email ?? '—'}</span> },
-    { key: 'role', header: '角色', render: (user) => user.role === 'admin' ? '管理员' : '用户' },
-    {
-      key: 'status',
-      header: '状态',
-      render: () => <StatusBadge tone="danger" size="sm">已删除</StatusBadge>,
-    },
-    { key: 'deletedAt', header: '删除时间', render: (user) => <span>{formatDate(user.deletedAt ?? undefined)}</span> },
-    {
-      key: 'subscriptions',
-      header: '订阅',
-      render: (user) => <span>{user.subscriptionCount ?? 0} 个</span>,
-    },
-    {
-      key: 'actions',
-      header: '管理',
-      align: 'right',
-      render: (user) => (
-        <span className="row-actions">
-          <button className="icon-button" type="button" disabled={mutating} aria-label={`恢复 ${user.username}`} title="恢复" onClick={() => restoreUser(user)}>
-            <RotateCcw aria-hidden="true" size={16} />
-          </button>
-          <button className="icon-button danger" type="button" disabled={mutating} aria-label={`永久删除 ${user.username}`} title="永久删除" onClick={() => setConfirmAction({ kind: 'purge', user })}>
-            <Trash2 aria-hidden="true" size={16} />
-          </button>
-        </span>
-      ),
-    },
-  ]
+  const requestBatch = (action: BatchKind) => {
+    if (mutating || selectedUsers.size === 0) return
+    if (action === 'enable') void executeBatch('enable')
+    else setBatchConfirm(action)
+  }
 
-  const usersAllSelected = selectableUsers.length > 0 && selectableUsers.every((user) => selectedUsers.has(user.id))
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
-
   const confirmCopy = confirmAction
     ? {
         promote: {
@@ -479,64 +584,51 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         },
       }[confirmAction.kind]
     : null
+  const batchCopy = batchConfirm === 'delete'
+    ? {
+        title: '移入回收站',
+        description: `将把选中的 ${selectedUsers.size} 个用户移入回收站，他们将无法登录，订阅也会停止下发`,
+        confirmLabel: '移入回收站',
+      }
+    : {
+        title: '停用用户',
+        description: `将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销`,
+        confirmLabel: '确认停用',
+      }
 
   return (
-    <div className="page-stack">
-      <PageHeader title="用户管理" />
-
-      {loading ? <div><LoadingState label="正在加载用户" /></div> : null}
-      {!loading && loadError ? <ErrorState message={loadError} onRetry={retry} /> : null}
-
-      {!loading && !loadError ? (
-        <>
-          <section className="data-section" aria-labelledby="users-title">
-            <DataHeader
-              id="users-title"
-              title={view === 'trash' ? '回收站' : '用户'}
-              actions={view === 'active'
-                ? <BatchToolbar selectedCount={selectedUsers.size} totalCount={selectableUsers.length} onSelectAll={() => setSelectedUsers(new Set(selectableUsers.map((user) => user.id)))} onClear={() => setSelectedUsers(new Set())} actions={userActions} busy={mutating} progress={batchProgress} />
-                : undefined}
-            />
-            {subscriptionNote ? <StatusMessage tone="warning">{subscriptionNote}</StatusMessage> : null}
-            <FilterBar>
-              <SearchInput label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={changeQuery} />
-              <div role="group" aria-label="用户状态">
-                {STATUS_FILTERS.map((item) => (
-                  <FilterChip key={item.value} active={statusFilter === item.value} onClick={() => changeStatusFilter(item.value)}>{item.label}</FilterChip>
-                ))}
-              </div>
-            </FilterBar>
-            {total === 0 ? (
-              <div><EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户'} description={view === 'trash' ? '移入回收站的用户会显示在这里' : '创建邀请并完成注册后，用户会显示在这里'} /></div>
-            ) : (
-              <>
-                {view === 'active' ? (
-                  <div className="usr-tools">
-                    <label>
-                      <Checkbox
-                        type="checkbox"
-                        aria-label="选择全部用户"
-                        checked={usersAllSelected}
-                        disabled={mutating}
-                        onChange={(event) => setSelectedUsers(event.currentTarget.checked ? new Set(selectableUsers.map((user) => user.id)) : new Set())}
-                      />
-                      <span>全选</span>
-                    </label>
-                  </div>
-                ) : null}
-                <DataTable
-                  className="usr-table"
-                  columns={view === 'trash' ? trashColumns : userColumns}
-                  rows={users}
-                  rowKey={(user) => user.id}
-                  empty="暂无匹配用户"
-                />
-                {pageCount > 1 ? <Pagination page={page} pageCount={pageCount} onPageChange={setPage} /> : null}
-              </>
-            )}
-          </section>
-
-        </>
+    <>
+      <UsersDirectory
+        phase={loading ? 'loading' : loadError ? 'error' : 'ready'}
+        loadError={loadError}
+        onRetry={retry}
+        view={view}
+        users={users}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        statusFilter={statusFilter}
+        query={query}
+        selectedIds={selectedUsers}
+        mutating={mutating}
+        onStatusFilter={changeStatusFilter}
+        onQuery={changeQuery}
+        onPage={setPage}
+        onToggle={(id) => setSelectedUsers((current) => toggleId(current, id))}
+        onToggleAll={(checked) => setSelectedUsers(checked ? new Set(users.map((user) => user.id)) : new Set())}
+        onRowAction={onRowAction}
+        onBatch={requestBatch}
+        batchProgress={batchProgress}
+      />
+      {entitlementUser ? (
+        <UserEntitlement
+          key={entitlementUser.id}
+          userId={entitlementUser.id}
+          username={entitlementUser.username}
+          showSummary={false}
+          active
+          onActiveChange={(next) => { if (!next) setEntitlementUser(null) }}
+        />
       ) : null}
 
       <Dialog
@@ -611,14 +703,14 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
 
       <ConfirmDialog
         open={batchConfirm !== null}
-        title="停用用户"
-        description={`将停用选中的 ${selectedUsers.size} 个用户，现有会话会被撤销`}
-        confirmLabel="确认停用"
+        title={batchCopy.title}
+        description={batchCopy.description}
+        confirmLabel={batchCopy.confirmLabel}
         danger
         busy={mutating}
         onClose={() => setBatchConfirm(null)}
-        onConfirm={() => executeBatch(batchConfirm ?? 'disable')}
+        onConfirm={() => { if (batchConfirm) void executeBatch(batchConfirm) }}
       />
-    </div>
+    </>
   )
 }
