@@ -41,7 +41,7 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 /* Menus */
 .theme-control { position: relative; }
 .menu { width: 180px; margin: 7px 0 0; padding: 5px; border: 1px solid var(--color-border); border-radius: var(--radius-panel); background: var(--color-surface-raised); box-shadow: var(--shadow-float); color: var(--color-text); }
-.menu:popover-open { inset: var(--size-topbar) 16px auto auto; }
+.menu:popover-open { inset: calc(var(--space-shell) + var(--size-topbar)) 16px auto auto; }
 .menu button { display: grid; grid-template-columns: 20px 1fr 18px; width: 100%; min-height: 36px; padding: 7px 9px; align-items: center; gap: 8px; border: 0; border-radius: var(--radius-control); background: transparent; text-align: left; cursor: pointer; }
 .menu button:hover { background: var(--color-surface-subtle); }
 .menu-check { width: 16px; }
@@ -64,14 +64,18 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .phase-header { display: flex; align-items: center; gap: 14px; }
 .phase-header h1 { margin: 0; font-size: var(--font-title); }
 
-/* Application shell */
-.app-layout { display: grid; min-height: 100svh; grid-template-columns: var(--size-sidebar) minmax(0,1fr); }
-.sidebar { display: grid; grid-template-rows: auto minmax(0,1fr) auto; position: sticky; top: 0; height: 100svh; padding: 10px 14px; z-index: var(--z-sidebar); border-right: 1px solid var(--color-border); background: var(--color-canvas); color: var(--color-text); }
+/* Application shell.
+   Sidebar sits frameless on the canvas (browser-tab style). The workspace is an
+   inset panel: gaps on every side, radius, hairline border, light shadow.
+   Scrolling stays inside the panel; the sidebar nav scrolls on its own. */
+body:has(.app-layout) { height: 100svh; overflow: hidden; }
+.app-layout { display: grid; height: 100svh; min-height: 100svh; overflow: hidden; grid-template-columns: var(--size-sidebar) minmax(0,1fr); column-gap: var(--space-shell); background: var(--color-canvas); }
+.sidebar { display: grid; grid-template-rows: auto minmax(0,1fr) auto; position: sticky; top: 0; height: 100svh; min-height: 0; padding: 10px 14px; z-index: var(--z-sidebar); border: 0; box-shadow: none; background: var(--color-canvas); color: var(--color-text); }
 .sidebar-brand { display: flex; padding: 4px 0 12px; align-items: center; gap: 10px; }
 .sidebar-brand > div { display: grid; min-width: 0; line-height: 1.25; }
 .sidebar-brand > div strong { font-size: 20px; font-weight: var(--weight-strong); letter-spacing: -.01em; }
 .sidebar-brand .brand-mark { flex: 0 0 auto; }
-.sidebar-nav { min-height: 0; padding: 4px 0 16px; overflow-y: auto; }
+.sidebar-nav { min-height: 0; padding: 4px 0 16px; overflow-y: auto; overscroll-behavior: contain; }
 .nav-section + .nav-section { margin-top: 16px; }
 .nav-label { margin: 0 10px 6px; color: var(--color-text-faint); font-size: var(--font-xs); font-weight: var(--weight-semibold); letter-spacing: .08em; text-transform: uppercase; }
 .sidebar-nav a { display: flex; height: 32px; padding: 0 10px; align-items: center; gap: 10px; border-radius: var(--radius-ctl); color: var(--color-text-muted); font-size: var(--font-body); font-weight: var(--weight-medium); }
@@ -83,8 +87,8 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .sidebar-account span { color: var(--color-text-muted); font-size: var(--font-xs); }
 .sidebar-signout { display: grid; width: 32px; height: 32px; margin-left: auto; flex: 0 0 auto; place-items: center; border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--color-text-muted); cursor: pointer; }
 .sidebar-signout:hover { background: var(--color-surface-subtle); color: var(--color-text); }
-.workspace { display: grid; min-width: 0; min-height: 100svh; grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); }
-.workspace-topbar { display: flex; height: var(--size-topbar); padding: 0 clamp(24px,4vw,64px); position: sticky; top: 0; z-index: var(--z-topbar); align-items: center; gap: 8px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-canvas) 72%, transparent); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
+.workspace { display: grid; min-width: 0; min-height: 0; height: calc(100svh - 2 * var(--space-shell)); margin: var(--space-shell) var(--space-shell) var(--space-shell) 0; align-self: start; grid-template-columns: minmax(0,1fr); grid-template-rows: auto minmax(0,1fr); overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-shell); background: var(--color-surface); box-shadow: var(--shadow-shell); }
+.workspace-topbar { display: flex; height: var(--size-topbar); padding: 0 clamp(24px,4vw,64px); position: relative; z-index: var(--z-topbar); align-items: center; gap: 8px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
 .topbar-context { min-width: 0; margin-right: auto; }
 .topbar-page-title { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
 .topbar-page-title h1 { min-width: 0; margin: 0; overflow: hidden; font-size: var(--font-lg); font-weight: var(--weight-strong); letter-spacing: -.01em; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
@@ -93,7 +97,7 @@ html[data-theme-ready='true'] *, html[data-theme-ready='true'] *::before, html[d
 .topbar-page-actions .compact-field { min-width: 0; }
 .topbar-page-actions .compact-field select { width: min(200px,34vw); }
 .topbar-page-actions:empty { display: none; }
-.workspace-content { width: 100%; max-width: var(--size-content-max); margin: 0 auto; padding: 24px clamp(24px,4vw,64px) 48px; }
+.workspace-content { width: 100%; max-width: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 24px max(clamp(24px,4vw,64px), calc((100% - var(--size-content-max)) / 2)) 48px; }
 
 /* Sidebar collapsed (icon-only) */
 .sidebar-toggle { flex: 0 0 auto; }
@@ -277,6 +281,8 @@ tbody tr:hover td { background: var(--color-surface-subtle); }
 @media (max-width: 760px) {
   .app-layout { display: block; }
   .sidebar { display: none; }
+  .workspace { height: calc(100svh - 2 * var(--space-2)); margin: var(--space-2); border-radius: var(--radius-sheet); }
+  .menu:popover-open { inset: calc(var(--space-2) + var(--size-topbar)) 16px auto auto; }
   .workspace-topbar { padding: 0 12px; }
   .sidebar-toggle { display: none; }
   .topbar-page-title { gap: 6px; }
