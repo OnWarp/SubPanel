@@ -25,6 +25,13 @@ await page.route('http://nav.test/**', async route => {
   else if (url.pathname === '/api/account/logout') { signedOut = true; body = { ok: true } }
   else if (url.pathname === '/api/admin/users') body = { users: [], total: 0, page: 1, pageSize: 20 }
   else if (url.pathname === '/api/admin/invitations') body = { invitations: [], total: 0 }
+  else if (url.pathname === '/api/admin/catalog') body = { sources: [], nodes: [], groups: [] }
+  else if (url.pathname === '/api/admin/shares') body = { shares: [] }
+  else if (url.pathname === '/api/admin/plans') body = { plans: [] }
+  else if (url.pathname === '/api/admin/tickets') body = { tickets: [], total: 0 }
+  else if (url.pathname === '/api/admin/kb/categories') body = { categories: [] }
+  else if (url.pathname === '/api/admin/kb/articles') body = { articles: [], total: 0 }
+  else if (url.pathname === '/api/admin/audit-logs') body = { logs: [], pagination: { pageCount: 1 } }
   else if (url.pathname.endsWith('/subscriptions')) body = { subscriptions: [] }
   else if (url.pathname === '/api/admin/system/registration') body = { mode: 'open' }
   else if (url.pathname === '/api/admin/email-domains') body = { domains: [] }
@@ -51,6 +58,38 @@ await page.route('http://nav.test/**', async route => {
 const main = () => page.locator('main.workspace-content')
 const go = path => page.goto('http://nav.test' + path)
 try {
+  await go('/dashboard')
+  const sidebar = page.getByRole('navigation', { name: '主导航' })
+  await sidebar.waitFor()
+  assert.deepEqual(await sidebar.getByRole('link').allTextContents(), ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+  assert.equal(await page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().width), 224)
+  assert.equal(await sidebar.evaluate(element => element.scrollHeight <= element.clientHeight), true)
+  await page.getByRole('button', { name: '收起侧栏' }).click()
+  await page.reload()
+  await page.getByRole('button', { name: '展开侧栏' }).waitFor()
+  assert.equal(await page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().width), 64)
+  const nodeLink = sidebar.getByRole('link', { name: '节点管理' })
+  assert.equal(await nodeLink.getAttribute('title'), '节点管理')
+  await nodeLink.focus()
+  await page.keyboard.press('Enter')
+  await page.waitForURL('**/catalog/nodes')
+  await page.getByRole('button', { name: '展开侧栏' }).click()
+  for (const [domain, name, destinations] of [
+    ['节点管理', '节点管理导航', [['来源', '/catalog/sources'], ['分组', '/catalog/groups']]],
+    ['订阅管理', '订阅管理导航', [['分享', '/delivery/shares'], ['权益计划', '/plans']]],
+    ['运营管理', '运营管理导航', [['公告', '/operations/notices'], ['知识库', '/kb/manage'], ['客户端下载', '/catalog/apps']]],
+  ]) {
+    await sidebar.getByRole('link', { name: domain, exact: true }).click()
+    const tabs = page.getByRole('navigation', { name })
+    for (const [label, path] of destinations) {
+      const tab = tabs.getByRole('link', { name: label, exact: true })
+      await tab.click()
+      await page.waitForURL('**' + path)
+      assert.equal(await tab.getAttribute('aria-current'), 'page')
+      assert.equal(await sidebar.getByRole('link', { name: domain, exact: true }).getAttribute('aria-current'), 'page')
+    }
+  }
+
   await go('/users?keep=1')
   const tabs = () => page.getByRole('navigation', { name: '用户管理子页' })
   await tabs().getByRole('link', { name: '邀请', exact: true }).click()
@@ -71,12 +110,16 @@ try {
   await main().getByRole('heading', { name: '面板域名', exact: true }).waitFor()
   await main().getByRole('heading', { name: '订阅域名', exact: true }).waitFor()
   const settings = () => page.getByRole('navigation', { name: '系统设置导航' })
-  for (const [label, key] of [['注册', 'registration'], ['邮件', 'mail'], ['运行状态', 'status'], ['订阅分发', 'distribution']]) {
+  for (const [label, key] of [['注册设置', 'registration'], ['邮件设置', 'mail'], ['运行状态', 'status'], ['订阅分发', 'distribution']]) {
     await settings().getByRole('link', { name: label, exact: true }).click()
     await page.waitForURL(`**/system/${key}?subscription=sub_1`)
     await page.reload()
     assert.equal(await settings().getByRole('link', { name: label, exact: true }).getAttribute('aria-current'), 'page')
   }
+  await settings().getByRole('link', { name: '审计日志', exact: true }).click()
+  await page.waitForURL('**/audit-logs?subscription=sub_1')
+  assert.equal(await settings().getByRole('link', { name: '审计日志', exact: true }).getAttribute('aria-current'), 'page')
+
   await go('/system?tab=app-downloads&keep=1')
   await page.waitForURL('**/catalog/apps?keep=1')
   await main().getByRole('switch', { name: '显示客户端下载板块' }).waitFor()

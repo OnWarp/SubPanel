@@ -1,4 +1,5 @@
-import { BookOpen, Download, FolderKanban, Gauge, Home, type LucideIcon, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { BookOpen, Download, LayoutDashboard, FolderKanban, Gauge, Home, type LucideIcon, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, SlidersHorizontal, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { matchPath } from 'react-router-dom'
 
 export type NavItem = { to: string; label: string; icon: LucideIcon }
 type NavSection = { label: string; items: NavItem[] }
@@ -27,6 +28,62 @@ export const adminSections: NavSection[] = [
     { to: '/audit-logs', label: '审计日志', icon: ShieldCheck },
   ] },
 ]
+
+type SectionTab = { to: string; label: string; includeChildren?: boolean }
+type AdminDomain = NavItem & { section?: { label: string; tabs: SectionTab[]; preserveSearch?: boolean } }
+
+export const adminDomains: AdminDomain[] = [
+  { to: '/dashboard', label: '概览', icon: LayoutDashboard },
+  {
+    to: '/catalog/nodes', label: '节点管理', icon: Network,
+    section: { label: '节点管理导航', tabs: [
+      { to: '/catalog/nodes', label: '节点' },
+      { to: '/catalog/sources', label: '来源' },
+      { to: '/catalog/groups', label: '分组' },
+    ] },
+  },
+  {
+    to: '/delivery/subscriptions', label: '订阅管理', icon: Send,
+    section: { label: '订阅管理导航', tabs: [
+      { to: '/delivery/subscriptions', label: '订阅' },
+      { to: '/delivery/shares', label: '分享' },
+      { to: '/plans', label: '权益计划' },
+    ] },
+  },
+  {
+    to: '/users', label: '用户管理', icon: Users,
+    section: { label: '用户管理子页', preserveSearch: true, tabs: [
+      { to: '/users', label: '用户' },
+      { to: '/invites', label: '邀请' },
+      { to: '/users/recycle-bin', label: '回收站' },
+    ] },
+  },
+  {
+    to: '/delivery/tickets', label: '运营管理', icon: Megaphone,
+    section: { label: '运营管理导航', tabs: [
+      { to: '/delivery/tickets', label: '工单', includeChildren: true },
+      { to: '/operations/notices', label: '公告' },
+      { to: '/kb/manage', label: '知识库' },
+      { to: '/catalog/apps', label: '客户端下载' },
+    ] },
+  },
+  {
+    to: '/system/registration', label: '系统设置', icon: SlidersHorizontal,
+    section: { label: '系统设置导航', preserveSearch: true, tabs: [
+      { to: '/system/registration', label: '注册设置' },
+      { to: '/system/mail', label: '邮件设置' },
+      { to: '/system/distribution', label: '订阅分发' },
+      { to: '/system/status', label: '运行状态' },
+      { to: '/audit-logs', label: '审计日志' },
+    ] },
+  },
+]
+
+export function adminDomainForPath(path: string) {
+  return adminDomains.find(({ to, section }) => section
+    ? section.tabs.some(tab => matchPath({ path: tab.to, end: !tab.includeChildren }, path))
+    : matchPath(to, path))
+}
 
 export const userSidebar: NavItem[] = [
   { to: '/home', label: '首页', icon: Home },

@@ -8,6 +8,12 @@ test.describe.serial('Administrator frontend', () => {
     await page.getByRole('button', { name: '登录' }).click()
   }
 
+  const sidebar = (page: Page) => page.getByRole('navigation', { name: '主导航' })
+  async function openNodeSection(page: Page, label: string) {
+    await sidebar(page).getByRole('link', { name: '节点管理', exact: true }).click()
+    await page.getByRole('navigation', { name: '节点管理导航' }).getByRole('link', { name: label, exact: true }).click()
+  }
+
   test('opens the administrator dashboard and exposes the core navigation', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '初始化管理员' })).toBeVisible()
@@ -21,25 +27,26 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
     await expect(page.locator('.workspace-topbar').getByRole('heading', { name: '概览' })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '来源', exact: true })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '节点', exact: true })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '分组', exact: true })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅', exact: true })).toBeVisible()
-    // GitHub 仓库宣传入口已在 AppShell 中注释掉，以下两条断言随之注释
-    // await expect(page.locator('.workspace-topbar').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
-    // await expect(page.getByRole('contentinfo').getByRole('link', { name: 'GitHub 仓库' })).toHaveAttribute('href', 'https://github.com/kadidalax/SubPanel')
+    await expect(sidebar(page).getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+    await sidebar(page).getByRole('link', { name: '节点管理', exact: true }).click()
+    await expect(page).toHaveURL(/\/catalog\/nodes$/)
+    await expect(page.getByRole('navigation', { name: '节点管理导航' }).getByRole('link')).toHaveText(['节点', '来源', '分组'])
   })
 
   test('previews and saves a source, then keeps the edit drawer open on backdrop clicks', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '来源', exact: true }).click()
+    await openNodeSection(page, '来源')
     await expect(page).toHaveURL(/\/catalog\/sources$/)
     await expect(page.getByRole('heading', { name: '来源', exact: true })).toBeVisible()
     const card = page.getByRole('region', { name: '来源', exact: true })
     await expect(card.locator('header').getByRole('button', { name: '添加来源' })).toBeVisible()
     await expect(card.locator('footer')).toContainText(/共 \d+ 个来源/)
     await expect(page.locator('.workspace-topbar').getByRole('button', { name: '退出登录' })).toHaveCount(0)
-    await expect(page.locator('.sidebar-account').getByRole('button', { name: '退出登录' })).toBeVisible()
+    await page.locator('.sidebar .admin-account summary').click()
+    const accountMenu = page.getByRole('navigation', { name: '管理员账号菜单' })
+    await expect(accountMenu.getByRole('button', { name: '退出登录' })).toBeVisible()
+    await expect(accountMenu.getByRole('button', { name: '外观' })).toBeVisible()
+    await page.keyboard.press('Escape')
 
     await page.getByRole('button', { name: '添加来源' }).click()
     const drawer = page.getByRole('dialog', { name: '添加来源' })
@@ -62,7 +69,7 @@ test.describe.serial('Administrator frontend', () => {
 
   test('keeps an edit drawer open when Escape is pressed during save', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '来源', exact: true }).click()
+    await openNodeSection(page, '来源')
     let finishSave!: () => void
     const saveGate = new Promise<void>((resolve) => { finishSave = resolve })
     await page.route('**/api/admin/catalog/sources', async (route) => {
@@ -87,7 +94,7 @@ test.describe.serial('Administrator frontend', () => {
 
   test('loads a real local file when the source type is file', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '来源', exact: true }).click()
+    await openNodeSection(page, '来源')
     await page.getByRole('button', { name: '添加来源' }).click()
     const drawer = page.getByRole('dialog', { name: '添加来源' })
     await drawer.getByLabel('来源名称').fill('File source')
@@ -104,7 +111,7 @@ test.describe.serial('Administrator frontend', () => {
   test('keeps source filters and batch actions in the list card', async ({ page }) => {
     await loginAdmin(page)
     await page.setViewportSize({ width: 800, height: 800 })
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '来源', exact: true }).click()
+    await openNodeSection(page, '来源')
     await expect(page).toHaveURL(/\/catalog\/sources$/)
     const section = page.locator('section[aria-labelledby="sources-title"]')
     await expect(section.locator('.resource-card-filters').getByLabel('搜索来源')).toBeVisible()
@@ -246,7 +253,7 @@ test.describe.serial('Administrator frontend', () => {
 
   test('filters nodes and batch disables a selected node', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '节点', exact: true }).click()
+    await sidebar(page).getByRole('link', { name: '节点管理', exact: true }).click()
     await expect(page).toHaveURL(/\/catalog\/nodes$/)
     await expect(page.getByRole('heading', { name: '节点', exact: true })).toBeVisible()
     const nodeSection = page.locator('section[aria-labelledby="nodes-title"]')
@@ -314,7 +321,7 @@ test.describe.serial('Administrator frontend', () => {
 
   test('creates a group and keeps edit and batch confirmation surfaces open on backdrop clicks', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '分组', exact: true }).click()
+    await openNodeSection(page, '分组')
     await expect(page).toHaveURL(/\/catalog\/groups$/)
     await expect(page.getByRole('heading', { name: '分组', exact: true })).toBeVisible()
 
@@ -359,7 +366,7 @@ test.describe.serial('Administrator frontend', () => {
 
   test('creates a subscription, shows links and diagnostics, and exposes batch controls', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '订阅', exact: true }).click()
+    await sidebar(page).getByRole('link', { name: '订阅管理', exact: true }).click()
     await expect(page).toHaveURL(/\/delivery\/subscriptions$/)
     await expect(page.getByRole('heading', { name: '订阅', exact: true })).toBeVisible()
 
@@ -437,14 +444,13 @@ test.describe.serial('Administrator frontend', () => {
 
   test('adds invite batch controls while keeping the administrator unselectable', async ({ page }) => {
     await loginAdmin(page)
-    await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '用户与邀请', exact: true }).click()
+    await sidebar(page).getByRole('link', { name: '用户管理', exact: true }).click()
     await expect(page).toHaveURL(/\/users$/)
     const topbar = page.locator('.workspace-topbar')
     await expect(topbar.getByRole('button', { name: '创建邀请' })).toBeVisible()
     await expect(topbar.getByLabel('邀请用户名')).toHaveCount(0)
     await expect(page.locator('section[aria-labelledby="users-title"] .section-heading').getByLabel('邀请用户名')).toBeVisible()
     await expect(page.locator('section[aria-labelledby="invites-title"] .section-heading').getByLabel('邀请用户名')).toHaveCount(0)
-    await expect(page.locator('.nav-section').filter({ has: page.getByText('监控', { exact: true }) }).getByRole('link', { name: '节点', exact: true })).toBeVisible()
     expect(await topbar.evaluate((element) => getComputedStyle(element).height)).toBe('56px')
     expect(await topbar.getByRole('heading', { name: '用户与邀请' }).evaluate((element) => getComputedStyle(element).fontSize)).toBe('15px')
 

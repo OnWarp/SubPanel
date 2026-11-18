@@ -136,7 +136,7 @@ describe('users directory', () => {
 })
 
 describe('user management shell', () => {
-  it('puts the title, invite action and text tabs around the users list', () => {
+  it('puts the title and invite action around the users list in one card', () => {
     const html = shell('/users')
     expect(html).toContain('usr-card')
     expect(html).toContain('用户管理')
@@ -146,15 +146,9 @@ describe('user management shell', () => {
     expect(html).toContain('编辑用户')
     expect(html).toContain('edit-user-email')
     expect(html).not.toContain('注册邀请码')
-    const tabs = html.match(/<nav[^>]*aria-label="用户管理子页"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? ''
-    expect(tabs).toContain('href="/users"')
-    expect(tabs).toContain('href="/invites"')
-    expect(tabs).toContain('href="/users/recycle-bin"')
-    expect(tabs).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="page")/)
-    expect(tabs).toContain('usr-tab active')
   })
 
-  it('keeps invite management on its own tab inside the same card', () => {
+  it('keeps invite management inside the same card', () => {
     const html = shell('/invites')
     expect(html).toContain('usr-card')
     expect(html).toContain('邀请用户')
@@ -162,6 +156,5 @@ describe('user management shell', () => {
     expect(html).toContain('无需邮箱验证码')
     expect(html).toContain('正在加载邀请码')
     expect(html).not.toContain('edit-user-form')
-    expect(html).toMatch(/<a(?=[^>]*href="\/invites")(?=[^>]*aria-current="page")/)
   })
 })

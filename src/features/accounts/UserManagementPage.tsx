@@ -1,14 +1,8 @@
 import { UserPlus } from 'lucide-react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../../ui/PageHeader'
 import { InvitesPage } from './InvitesPage'
 import { UsersPage } from './UsersPage'
-
-const TABS = [
-  ['/users', '用户'],
-  ['/invites', '邀请'],
-  ['/users/recycle-bin', '回收站'],
-] as const
 
 export function UserManagementPage() {
   const { pathname, search } = useLocation()
@@ -26,11 +20,6 @@ export function UserManagementPage() {
             邀请用户
           </button>
         </header>
-        <nav className="usr-tabs" aria-label="用户管理子页">
-          {TABS.map(([to, label]) => (
-            <NavLink key={to} to={`${to}${search}`} end className={({ isActive }) => `usr-tab${isActive ? ' active' : ''}`}>{label}</NavLink>
-          ))}
-        </nav>
         {invite ? <InvitesPage /> : <UsersPage key={pathname} view={trash ? 'trash' : 'active'} />}
       </section>
     </div>

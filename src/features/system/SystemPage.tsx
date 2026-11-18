@@ -4,7 +4,7 @@ import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Info } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -457,12 +457,7 @@ function StatusSection() {
   )
 }
 
-const SECTIONS: Array<{ key: string; label: string }> = [
-  { key: 'registration', label: '注册' },
-  { key: 'mail', label: '邮件' },
-  { key: 'distribution', label: '订阅分发' },
-  { key: 'status', label: '运行状态' },
-]
+const SECTIONS = ['registration', 'mail', 'distribution', 'status']
 
 export function SystemPage() {
   const { section } = useParams()
@@ -472,19 +467,15 @@ export function SystemPage() {
   const aliases: Record<string, string> = { 'admin-mail': 'mail', share: 'distribution', domain: 'distribution', 'app-downloads': '/catalog/apps', notices: '/operations/notices' }
   const requested = section ?? legacy ?? 'registration'
   const active = aliases[requested] ?? requested
-  if (!section || active !== requested || !SECTIONS.some(item => item.key === active)) {
+  if (!section || active !== requested || !SECTIONS.includes(active)) {
     query.delete('section'); query.delete('tab')
     const search = query.size ? `?${query}` : ''
-    return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.some(item => item.key === active) ? active : 'registration'}`) + search} />
-
+    return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.includes(active) ? active : 'registration'}`) + search} />
   }
   return <div className="page-stack sys-page ops-page">
     <PageHeader title="系统设置" />
     <div className="ops-card ops-system">
       <OperationsHeading title="系统设置" />
-      <nav className="sys-sidebar" aria-label="系统设置导航"><ul role="list">
-        {SECTIONS.map(({ key, label }) => <li key={key}><Link className={`sys-nav-item${active === key ? ' active' : ''}`} aria-current={active === key ? 'page' : undefined} to={`/system/${key}${location.search}`}><span>{label}</span></Link></li>)}
-      </ul></nav>
       <div className="sys-content">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
