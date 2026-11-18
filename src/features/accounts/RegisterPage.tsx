@@ -10,12 +10,12 @@ import { AuthLayout } from './AuthLayout'
 
 type RegistrationMode = 'closed' | 'invite' | 'open'
 
-export function RegisterPage() {
+export function RegisterPage({ initialMode = null }: { initialMode?: RegistrationMode | null } = {}) {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [inviteCode, setInviteCode] = useState(params.get('inviteCode') ?? '')
   const { refresh } = useSession()
-  const [mode, setMode] = useState<RegistrationMode | null>(null)
+  const [mode, setMode] = useState<RegistrationMode | null>(initialMode)
   const invited = mode === 'invite' || inviteCode.trim() !== ''
   const [configError, setConfigError] = useState('')
   const [email, setEmail] = useState('')
@@ -92,7 +92,7 @@ export function RegisterPage() {
 
   if (configError) {
     return (
-      <AuthLayout title="注册">
+      <AuthLayout className="upd-auth" title="注册">
         <p className="form-message error" role="alert">{configError}</p>
         <p className="form-message"><Link to="/login">返回登录</Link></p>
       </AuthLayout>
@@ -100,14 +100,14 @@ export function RegisterPage() {
   }
   if (mode === null) {
     return (
-      <AuthLayout title="注册">
+      <AuthLayout className="upd-auth" title="注册">
         <p className="form-message" role="status">正在加载</p>
       </AuthLayout>
     )
   }
   if (mode === 'closed') {
     return (
-      <AuthLayout title="注册">
+      <AuthLayout className="upd-auth" title="注册">
         <p className="form-message">当前未开放注册，请联系管理员</p>
         <p className="form-message"><Link to="/login">返回登录</Link></p>
       </AuthLayout>
@@ -115,7 +115,7 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthLayout title="注册">
+    <AuthLayout className="upd-auth" title="注册">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="用户名" htmlFor="register-username" error={errorField === 'username' ? error : undefined}>
           <Input id="register-username" name="username" autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoFocus required />

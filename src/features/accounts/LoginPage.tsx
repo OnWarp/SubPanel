@@ -38,7 +38,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="登录">
+    <AuthLayout className="upd-auth" title="登录">
       <form className="form-stack" onSubmit={submit}>
         <FormField label="用户名" htmlFor="login-username">
           <Input id="login-username" name="username" autoComplete="username" autoFocus required />

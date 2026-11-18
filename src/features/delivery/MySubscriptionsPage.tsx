@@ -167,7 +167,7 @@ export function MySubscriptionsPage() {
   }
 
   return (
-    <div className="page-stack del-user-page">
+    <div className="page-stack del-user-page upd-page upd-subs">
       <PageHero subtitle="订阅详情" title="我的订阅" actions={<Select
           label="选择订阅"
           value={selectedId}
@@ -181,8 +181,10 @@ export function MySubscriptionsPage() {
           }}
         />} />
 
-      {downloadsEnabled ? <Link className="button secondary" to="/apps">下载客户端</Link> : null}
-      <Link className="button secondary" to="/entitlements">查看我的权益</Link>
+      <div className="upd-secondary-actions">
+        {downloadsEnabled ? <Link className="button secondary" to="/apps">下载客户端</Link> : null}
+        <Link className="button secondary" to="/entitlements">查看我的权益</Link>
+      </div>
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
 
@@ -204,7 +206,7 @@ export function MySubscriptionsPage() {
                 <StatusBadge tone={selected.enabled ? 'success' : 'muted'}>{selected.enabled ? '正常' : '已停用'}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
-              <button ref={shareButtonRef} className="button secondary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button>
+              <button ref={shareButtonRef} className="button primary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button>
             </div>
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">
@@ -245,7 +247,10 @@ export function MySubscriptionsPage() {
 
           <section className="data-section ui3-platform-list" aria-label="各平台订阅链接">
             <h2>各平台链接</h2>
-            {linkEntries.map(([platform, link]) => <article key={platform} className="ui3-platform-row"><h3>{platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform}</h3><code>{link}</code><CopyButton value={link} variant="full-width" label={`复制 ${platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform} 链接`} /></article>)}
+            {linkEntries.map(([platform, link]) => {
+              const name = platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform
+              return <article key={platform} className="ui3-platform-row"><div className="upd-twoline"><h3>{name}</h3><code>{link}</code></div><CopyButton value={link} variant="full-width" label={`复制 ${name} 链接`} /></article>
+            })}
           </section>
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">

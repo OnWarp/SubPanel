@@ -1,0 +1,361 @@
+/*
+ * User pages (line D). Every new class is upd- prefixed.
+ * Shared stylesheets stay untouched; these rules only restyle the user pages.
+ */
+
+.upd-page .sp-page-hero {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card-lg);
+  background: var(--color-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+.upd-page .sp-page-hero h1 {
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+}
+
+.upd-page .sp-page-hero p {
+  font-size: var(--font-sm);
+}
+
+.upd-card,
+.upd-home .sp-stat-card,
+.upd-home .sp-notice-carousel,
+.upd-home .sp-quick-entry,
+.upd-subs .data-section,
+.upd-mine .user-account-card,
+.upd-auth .auth-panel {
+  border-radius: var(--radius-card-lg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+:root[data-theme='dark'] .upd-page .sp-page-hero,
+:root[data-theme='dark'] .upd-card,
+:root[data-theme='dark'] .upd-home .sp-stat-card,
+:root[data-theme='dark'] .upd-home .sp-notice-carousel,
+:root[data-theme='dark'] .upd-home .sp-quick-entry,
+:root[data-theme='dark'] .upd-subs .data-section,
+:root[data-theme='dark'] .upd-mine .user-account-card,
+:root[data-theme='dark'] .upd-auth .auth-panel {
+  box-shadow: none;
+}
+
+/* Home: same three cards, quieter labels, roomier figures. */
+.upd-home .user-stat-grid { gap: var(--space-4); }
+
+.upd-home .sp-stat-body {
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+}
+
+.upd-home .sp-stat-label {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.upd-home .sp-stat-sub { font-size: var(--font-sm); }
+
+.upd-home .sp-notice-carousel,
+.upd-home .sp-quick-entry { border-radius: var(--radius-card-lg); }
+
+/* Mine: card shell and grouped whitespace. */
+.upd-mine .user-account-grid { gap: var(--space-5); }
+
+.upd-mine .page-stack { gap: var(--space-4); }
+
+.upd-mine .user-account-card {
+  padding: var(--space-6);
+}
+
+.upd-mine .user-account-card > h2,
+.upd-mine > .user-account-grid > section > h2 {
+  margin: 0 0 var(--space-4);
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-mine .section-heading {
+  min-height: 0;
+  padding: 0 0 var(--space-3);
+  border-bottom: 0;
+}
+
+.upd-mine .section-heading h2 {
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+  white-space: normal;
+}
+
+.upd-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Subscription detail cards lean on the same shell. Copy stays visible. */
+.upd-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.upd-subs .user-subscription-overview,
+.upd-subs .del-link-card,
+.upd-subs .del-reset,
+.upd-subs .ui3-platform-list {
+  padding: var(--space-6);
+}
+
+.upd-subs .del-status-card h2,
+.upd-subs .del-link-card h2,
+.upd-subs .del-reset h2,
+.upd-subs .ui3-platform-list h2 {
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-subs .sp-badge {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+/* Platform switch reads as text tabs, not a pill segment. */
+.upd-subs .sp-segmented {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.upd-subs .sp-segmented button {
+  height: auto;
+  padding: 0 0 var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.upd-subs .sp-segmented button[aria-pressed='true'] {
+  background: transparent;
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  border-bottom-color: var(--color-text);
+}
+
+.upd-subs .ui3-platform-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+}
+
+.upd-subs .ui3-platform-row h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-subs .ui3-platform-row code {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.upd-subs .del-diagnostics > summary {
+  padding: var(--space-5) var(--space-6);
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-subs .del-diagnostics .diagnostic-list,
+.upd-subs .del-diagnostics > .section-empty {
+  padding: 0 var(--space-6) var(--space-6);
+}
+
+/* Nodes: one filter row, two-line rows, dot status, count footer. */
+.upd-nodes .node-list { overflow: visible; }
+
+.upd-nodes .upd-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.upd-nodes .upd-filters .sp-search {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 360px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.upd-nodes .upd-filters .sp-form-select {
+  flex: 1 1 180px;
+  min-width: 160px;
+  max-width: 240px;
+}
+
+.upd-nodes .upd-filters .sp-select,
+.upd-nodes .upd-filters .sp-select-trigger {
+  width: 100%;
+}
+
+.upd-nodes .upd-filters .sp-select-trigger {
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.upd-nodes .sp-table th {
+  height: 40px;
+  background: transparent;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+}
+
+.upd-nodes .sp-table td {
+  height: auto;
+  padding: var(--space-4);
+  vertical-align: middle;
+}
+
+.upd-twoline {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.upd-twoline strong,
+.upd-twoline h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.upd-twoline span,
+.upd-twoline code {
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}
+
+.upd-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.upd-status i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.upd-status-ok { color: var(--color-success); }
+
+.upd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-xs);
+}
+
+.upd-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.upd-pager button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.upd-pager button:disabled { cursor: default; opacity: 0.4; }
+
+/* Login / register only. Other auth screens do not get this class. */
+.upd-auth .auth-panel {
+  width: min(420px, calc(100% - 32px));
+  padding: 32px 28px 28px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  align-content: start;
+}
+
+.upd-auth .auth-heading { margin-bottom: var(--space-6); }
+
+.upd-auth .auth-heading h1 {
+  font-size: var(--font-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 767px) {
+  .upd-home .sp-stat-body { padding: var(--space-5) var(--space-4); }
+  .upd-mine .user-account-card { padding: var(--space-5); }
+  .upd-subs .user-subscription-overview,
+  .upd-subs .del-link-card,
+  .upd-subs .del-reset,
+  .upd-subs .ui3-platform-list { padding: var(--space-5); }
+  .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr); }
+  .upd-subs .ui3-platform-row .button { width: 100%; }
+  .upd-auth .auth-panel { padding: 28px 20px 24px; }
+}
+
+@media (max-width: 760px) {
+  .upd-nodes .node-list {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .upd-nodes .upd-filters {
+    display: grid;
+    padding: 0 0 var(--space-3);
+    border-bottom: 0;
+  }
+
+  .upd-nodes .upd-filters .sp-search,
+  .upd-nodes .upd-filters .sp-form-select { max-width: none; }
+
+  .upd-nodes .sp-table td { padding: var(--space-2) 0; }
+
+  .upd-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .upd-pager { flex-wrap: wrap; }
+}
