@@ -1,5 +1,5 @@
 import { Input } from '../../ui/Controls'
-import { ArrowDown, ArrowUp, Plus, ShieldCheck, Star, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -9,7 +9,7 @@ import { FormField } from '../../ui/FormField'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
 import { Switch } from '../../ui/Switch'
-import { StatusBadge } from '../../ui/StatusBadge'
+import { OperationsActions, OperationsFooter } from '../admin/OperationsCard'
 
 type DomainKind = 'panel' | 'subscription'
 type VerificationStatus = 'pending' | 'verified' | 'failed'
@@ -54,10 +54,61 @@ function formatTime(value: string | null): string {
 }
 
 
-const VERIFICATION_BADGE: Record<VerificationStatus, { tone: 'success' | 'warning' | 'danger'; text: string }> = {
-  verified: { tone: 'success', text: '已验证' },
-  pending: { tone: 'warning', text: '待验证' },
-  failed: { tone: 'danger', text: '验证失败' },
+const VERIFICATION_LABEL: Record<VerificationStatus, string> = {
+  verified: '已验证',
+  pending: '待验证',
+  failed: '验证失败',
+}
+
+function DomainNote({ item, busy, onSave }: {
+  item: DomainItem
+  busy: boolean
+  onSave: (note: string) => Promise<boolean>
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (busy || saving || draft === null) return
+    if (draft === item.note) {
+      setDraft(null)
+      return
+    }
+    setSaving(true)
+    try {
+      if (await onSave(draft)) setDraft(null)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return draft === null ? (
+    <button className="sys-domain-note" type="button" disabled={busy} aria-label={`编辑 ${item.hostname} 备注`} onClick={() => setDraft(item.note)}>
+      {item.note || '添加备注'}
+    </button>
+  ) : (
+    <form className="sys-domain-note-edit" onSubmit={submit}>
+      <Input
+        autoFocus
+        aria-label={`${item.hostname} 备注`}
+        aria-description="回车保存，Esc 取消"
+        value={draft}
+        maxLength={200}
+        placeholder="回车保存，Esc 取消"
+        title="回车保存，Esc 取消"
+        enterKeyHint="done"
+        readOnly={busy || saving}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && !event.nativeEvent.isComposing && !saving) {
+            event.preventDefault()
+            setDraft(null)
+          }
+        }}
+      />
+    </form>
+  )
 }
 
 function DomainCard({ kind, title, description, items, primaryId, busyId, onVerify, onSetPrimary, onToggleEnabled, onSaveNote, onDelete, onAdd }: {
@@ -70,15 +121,15 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   onVerify: (kind: DomainKind, item: DomainItem) => void
   onSetPrimary: (kind: DomainKind, item: DomainItem) => void
   onToggleEnabled: (kind: DomainKind, item: DomainItem, enabled: boolean) => void
-  onSaveNote: (kind: DomainKind, item: DomainItem, note: string) => void
+  onSaveNote: (kind: DomainKind, item: DomainItem, note: string) => Promise<boolean>
   onDelete: (kind: DomainKind, item: DomainItem) => void
   onAdd: (kind: DomainKind, hostname: string, note: string) => Promise<boolean>
 }) {
   const [hostname, setHostname] = useState('')
   const [note, setNote] = useState('')
   const [adding, setAdding] = useState(false)
-  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
-  const idPrefix = `dom-${kind}`
+  const [expanded, setExpanded] = useState(false)
+  const idPrefix = `sys-domain-${kind}`
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -87,6 +138,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
       if (await onAdd(kind, hostname, note)) {
         setHostname('')
         setNote('')
+        setExpanded(false)
       }
     } finally {
       setAdding(false)
@@ -94,59 +146,58 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   }
 
   return (
-    <div className="dom-card">
-      <h3 className="dom-card-title">{title}</h3>
+    <section className="ops-card sys-domain-card" aria-labelledby={`${idPrefix}-title`}>
+      <header className="ops-heading">
+        <h3 id={`${idPrefix}-title`} className="sys-domain-card-title">{title}</h3>
+        <button className="button primary" type="button" aria-expanded={expanded} aria-controls={`${idPrefix}-add`} disabled={adding} onClick={() => setExpanded(!expanded)}>
+          <Plus aria-hidden="true" size={16} />添加域名
+        </button>
+      </header>
       <p className="sys-hint">{description}</p>
-      {items.length === 0 ? <p className="section-empty">暂无域名</p> : null}
-      <ul className="dom-list">
-        {items.map((item) => {
-          const isPrimary = item.id === primaryId
-          const badge = VERIFICATION_BADGE[item.verificationStatus]
-          const draft = noteDrafts[item.id] ?? item.note
-          const busy = busyId === item.id || busyId === 'all'
-          return (
-            <li className="dom-item" key={item.id}>
-              <div className="dom-item-main">
-                <strong className="dom-host">{item.hostname}</strong>
-                {isPrimary ? <StatusBadge tone="success" size="sm">主域名</StatusBadge> : null}
-                <StatusBadge tone={badge.tone} size="sm">{badge.text}</StatusBadge>
-                <StatusBadge tone={item.enabled ? 'success' : 'warning'} size="sm">{item.enabled ? '已启用' : '已停用'}</StatusBadge>
-              </div>
-              <p className="dom-meta">
-                最近验证 {formatTime(item.lastCheckAt)}
-                {item.lastCheckError ? <span className="dom-error"> · {item.lastCheckError}</span> : null}
-              </p>
-              <div className="dom-note-row">
-                <Input
-                  aria-label={`${item.hostname} 备注`}
-                  value={draft}
-                  maxLength={200}
-                  placeholder="备注"
-                  disabled={busy}
-                  onChange={(event) => setNoteDrafts((current) => ({ ...current, [item.id]: event.currentTarget.value }))}
-                />
-                <button className="button secondary" type="button" disabled={busy || draft === item.note} onClick={() => onSaveNote(kind, item, draft)}>保存备注</button>
-              </div>
-              <div className="dom-actions">
-                <button className="button secondary" type="button" disabled={busy} onClick={() => onVerify(kind, item)}><ShieldCheck aria-hidden="true" size={16} />验证</button>
-                <button className="button secondary" type="button" disabled={busy || isPrimary || !item.enabled || item.verificationStatus !== 'verified'} onClick={() => onSetPrimary(kind, item)}><Star aria-hidden="true" size={16} />设为主域名</button>
-                <Switch checked={item.enabled} disabled={busy} ariaLabel={`${item.hostname} 启用状态`} onChange={(enabled) => onToggleEnabled(kind, item, enabled)} />
-                <button className="button danger" type="button" disabled={busy || isPrimary} title={isPrimary ? '主域名不能删除' : '删除域名'} onClick={() => onDelete(kind, item)}><Trash2 aria-hidden="true" size={16} />删除</button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-      <form className="dom-add-form" onSubmit={submit}>
+      <form id={`${idPrefix}-add`} className="sys-domain-add" hidden={!expanded} onSubmit={submit}>
         <FormField label="域名" htmlFor={`${idPrefix}-hostname`}>
           <Input id={`${idPrefix}-hostname`} value={hostname} placeholder="例如 panel.example.com" autoComplete="off" disabled={adding} onChange={(event) => setHostname(event.currentTarget.value)} />
         </FormField>
         <FormField label="备注" htmlFor={`${idPrefix}-note`}>
           <Input id={`${idPrefix}-note`} value={note} maxLength={200} autoComplete="off" disabled={adding} onChange={(event) => setNote(event.currentTarget.value)} />
         </FormField>
-        <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}><Plus aria-hidden="true" size={16} />添加</button>
+        <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}>添加</button>
       </form>
-    </div>
+      {items.length === 0 ? <p className="section-empty">暂无域名</p> : (
+        <ul className="sys-domain-rows">
+          {items.map((item) => {
+            const isPrimary = item.id === primaryId
+            const verificationLabel = VERIFICATION_LABEL[item.verificationStatus]
+            const busy = busyId === item.id || busyId === 'all'
+            return (
+              <li className="sys-domain-row" key={item.id}>
+                <div className="sys-domain-info">
+                  <div className="sys-domain-identity">
+                    <strong className="sys-domain-host">{item.hostname}</strong>
+                    <span className={`sys-domain-dot sys-domain-dot-${item.verificationStatus}`} role="img" aria-label={verificationLabel} title={verificationLabel} />
+                    {isPrimary ? <span className="sys-domain-primary">主域名</span> : null}
+                  </div>
+                  <div className="sys-domain-meta">
+                    <DomainNote item={item} busy={busy} onSave={(next) => onSaveNote(kind, item, next)} />
+                    <span>{item.lastCheckAt ? `最近验证 ${formatTime(item.lastCheckAt)}` : formatTime(null)}</span>
+                    {item.lastCheckError ? <span className="sys-domain-error">{item.lastCheckError}</span> : null}
+                  </div>
+                </div>
+                <div className="sys-domain-actions">
+                  <Switch checked={item.enabled} disabled={busy} ariaLabel={`${item.hostname} 启用状态`} onChange={(enabled) => onToggleEnabled(kind, item, enabled)} />
+                  <OperationsActions label={`${item.hostname} 更多操作`}>
+                    <button className="button ghost" type="button" disabled={busy} onClick={() => onVerify(kind, item)}>验证</button>
+                    {!isPrimary ? <button className="button ghost" type="button" disabled={busy || !item.enabled || item.verificationStatus !== 'verified'} onClick={() => onSetPrimary(kind, item)}>设为主域名</button> : null}
+                    <button className="button danger" type="button" disabled={busy || isPrimary} title={isPrimary ? '主域名不能删除' : '删除域名'} onClick={() => onDelete(kind, item)}>删除</button>
+                  </OperationsActions>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <OperationsFooter total={items.length} unit="个域名" />
+    </section>
   )
 }
 
@@ -191,8 +242,10 @@ export function DomainSettingsSection() {
       await action()
       await reloadDomains()
       setFeedback({ tone: 'success', text: successText })
+      return true
     } catch (cause) {
       setFeedback({ tone: 'error', text: errorMessage(cause, '操作失败') })
+      return false
     } finally {
       setBusyId('')
     }
@@ -299,7 +352,7 @@ export function DomainSettingsSection() {
             onVerify={(kind, item) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}/verify`, { method: 'POST', body: jsonBody({}) }), '验证已完成').catch(() => undefined) }}
             onSetPrimary={(kind, item) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}/primary`, { method: 'POST', body: jsonBody({}) }), '主域名已更新').catch(() => undefined) }}
             onToggleEnabled={(kind, item, enabled) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ enabled }) }), enabled ? '域名已启用' : '域名已停用').catch(() => undefined) }}
-            onSaveNote={(kind, item, note) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存').catch(() => undefined) }}
+            onSaveNote={(kind, item, note) => actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存')}
             onDelete={(kind, item) => setPendingDelete({ kind, item })}
             onAdd={addDomain}
           />
@@ -313,7 +366,7 @@ export function DomainSettingsSection() {
             onVerify={(kind, item) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}/verify`, { method: 'POST', body: jsonBody({}) }), '验证已完成').catch(() => undefined) }}
             onSetPrimary={(kind, item) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}/primary`, { method: 'POST', body: jsonBody({}) }), '主域名已更新').catch(() => undefined) }}
             onToggleEnabled={(kind, item, enabled) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ enabled }) }), enabled ? '域名已启用' : '域名已停用').catch(() => undefined) }}
-            onSaveNote={(kind, item, note) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存').catch(() => undefined) }}
+            onSaveNote={(kind, item, note) => actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存')}
             onDelete={(kind, item) => setPendingDelete({ kind, item })}
             onAdd={addDomain}
           />
