@@ -1,15 +1,14 @@
+import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, Input } from '../../ui/Controls'
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -200,10 +199,11 @@ export function GroupsPage() {
     {
       key: 'select',
       header: '选择',
+      headerContent: <ResourceSelectAll label="选择全部分组" ids={filteredGroups.map((row) => row.id)} selected={selected} disabled={busy} onChange={(checked) => setSelected(checked ? new Set(filteredGroups.map((group) => group.id)) : new Set())} />,
       width: 40,
       render: (group) => <Checkbox type="checkbox" aria-label={`选择分组 ${group.name}`} checked={selected.has(group.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next })} />,
     },
-    { key: 'name', header: '名称', render: (group) => <strong>{group.name}</strong> },
+    { key: 'name', header: '名称', render: (group) => <span className="resource-card-name"><strong>{group.name}</strong><span className="cell-note">{group.id}</span></span> },
     { key: 'sources', header: '来源数', render: (group) => group.sourceIds.length },
     { key: 'nodes', header: '节点数', render: (group) => groupNodeCounts.get(group.id) ?? 0 },
     { key: 'included', header: '单独包含', render: (group) => group.includedNodeIds.length },
@@ -213,37 +213,30 @@ export function GroupsPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      render: (group) => (
-        <span className="row-actions">
-          <button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(group)}><Pencil aria-hidden="true" size={16} /></button>
-        </span>
-      ),
+      render: (group) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: () => openEdit(group) }]} />,
     },
   ]
 
   return (
-    <div className="page-stack">
-      <PageHeader title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+    <div className="page-stack resource-pages">
 
       {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
 
-      <FilterBar className="groups-filter-bar">
-        <SearchInput label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
-      </FilterBar>
 
-      <section className="data-section" aria-labelledby="groups-title">
-        <DataHeader
-          id="groups-title"
-          title="分组列表"
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
-        />
+      <section className="data-section resource-card" aria-labelledby="groups-title">
+        <ResourceHeading id="groups-title" title="分组" action={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+        <FilterBar className="resource-card-filters">
+          <SearchInput label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
+        </FilterBar>
+        <BatchToolbar selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && !catalog ? (
           <div className="cat-empty-wrap"><LoadingState label="正在加载分组" /></div>
         ) : filteredGroups.length === 0 ? (
           <div className="cat-empty-wrap"><EmptyState title="暂无分组" description={query ? '换个关键词试试' : '创建分组后即可组合来源与节点'} /></div>
         ) : (
-          <DataTable columns={columns} rows={filteredGroups} rowKey={(group) => group.id} empty="暂无匹配分组" />
+          <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={filteredGroups} rowKey={(group) => group.id} empty="暂无匹配分组" />
         )}
+        <ResourceFooter count={filteredGroups.length} unit="个分组" />
       </section>
 
       <EditDrawer open={editing !== null} title={editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} size="wide" onClose={closeEdit}>

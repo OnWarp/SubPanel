@@ -1,23 +1,20 @@
+import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { CreateShareForm } from '../shares/ShareDrawer'
 import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
 import { TemplateBinding } from '../system/TemplateBinding'
-import { CheckCircle2, Eye, KeyRound, Pencil, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, KeyRound, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { loadAdminUserOptions, api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { CopyButton } from '../../ui/CopyButton'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { PageHeader } from '../../ui/PageHeader'
-import { Pagination } from '../../ui/Pagination'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
@@ -391,6 +388,7 @@ export function SubscriptionsPage() {
     {
       key: 'select',
       header: '选择',
+      headerContent: <ResourceSelectAll label="选择当前页订阅" ids={subscriptions.map((row) => row.id)} selected={selected} disabled={busy} onChange={(checked) => setSelected(checked ? new Set(subscriptions.map((subscription) => subscription.id)) : new Set())} />,
       width: 64,
       render: (subscription) => (
         <Checkbox
@@ -411,7 +409,7 @@ export function SubscriptionsPage() {
       key: 'name',
       header: '名称',
       render: (subscription) => (
-        <span className="del-name">
+        <span className="resource-card-name">
           <strong>{subscription.name}</strong>
           <span className="cell-note">{subscription.tokenPrefix}…</span>
         </span>
@@ -474,49 +472,44 @@ export function SubscriptionsPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      width: 150,
       render: (subscription) => (
-        <span className="row-actions">
-          <button className="button secondary" type="button" onClick={() => { setTargetUser(subscription.userId ?? ''); setTransfer(subscription); setDrawerError('') }}>转移</button>
-          <button className="button secondary" type="button" disabled={!subscription.userId || !subscription.enabled} onClick={() => { setSharing(subscription); setShareUrl('') }}>临时分享</button>
-          <button className="icon-button" type="button" aria-label="查看详情" title="查看详情" onClick={() => { setDrawerError(''); setDrawer({ kind: 'details', subscription }) }}><Eye aria-hidden="true" size={16} /></button>
-          <button className="icon-button" type="button" aria-label="编辑" title="编辑" onClick={() => openEdit(subscription)}><Pencil aria-hidden="true" size={16} /></button>
-        </span>
+        <ResourceRowActions actions={[
+          { label: '查看详情', onClick: () => { setDrawerError(''); setDrawer({ kind: 'details', subscription }) } },
+          { label: '编辑', onClick: () => openEdit(subscription) },
+          { label: '转移', onClick: () => { setTargetUser(subscription.userId ?? ''); setTransfer(subscription); setDrawerError('') } },
+          { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: () => { setSharing(subscription); setShareUrl('') } },
+        ]} />
       ),
     },
-  ], [busy, groupNames, selected, userNames])
+  ], [busy, groupNames, selected, subscriptions, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
 
   return (
-    <div className="page-stack del-admin-page">
-      <PageHeader title="订阅" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
+    <div className="page-stack resource-pages del-admin-page">
 
       {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-      <FilterBar className="del-filters">
-        <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
-        <div className="del-status-filters" role="group" aria-label="订阅状态">
-          {UNIFIED_FILTERS.map((filter) => (
-            <FilterChip key={filter.key} active={activeUnified === filter.key} onClick={() => selectUnified(filter.key)}>{filter.label}</FilterChip>
-          ))}
-        </div>
-        {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
-      </FilterBar>
-      <section className="data-section del-admin" aria-labelledby="subscriptions-title">
-        <DataHeader
-          id="subscriptions-title"
-          title="订阅列表"
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={total} onSelectAll={() => setSelected(new Set(subscriptions.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
-        />
+
+      <section className="data-section resource-card" aria-labelledby="subscriptions-title">
+        <ResourceHeading id="subscriptions-title" title="订阅" action={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
+        <FilterBar className="resource-card-filters">
+          <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
+          <label className="filter-field"><span>状态</span><FormSelect aria-label="订阅状态" value={activeUnified} onChange={(event) => {
+            const filter = UNIFIED_FILTERS.find((item) => item.key === event.currentTarget.value)
+            if (filter) selectUnified(filter.key)
+          }}>{UNIFIED_FILTERS.map((filter) => <option key={filter.key} value={filter.key}>{filter.label}</option>)}</FormSelect></label>
+          {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
+        </FilterBar>
+        <BatchToolbar selectedCount={selected.size} totalCount={total} onSelectAll={() => setSelected(new Set(subscriptions.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
         {!loading && loadError && subscriptions.length === 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !loadError && total === 0 && !filtersActive ? <EmptyState title="暂无订阅" /> : null}
         {loadError && subscriptions.length > 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {total === 0 && filtersActive ? <EmptyState title="没有符合条件的订阅" /> : null}
-        {subscriptions.length > 0 ? <DataTable className="del-table" columns={columns} rows={subscriptions} rowKey={(subscription) => subscription.id} /> : null}
-        {pageCount > 1 ? <Pagination page={page} pageCount={pageCount} onPageChange={setPage} /> : null}
+        {subscriptions.length > 0 ? <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={subscriptions} rowKey={(subscription) => subscription.id} /> : null}
+        <ResourceFooter count={total} unit="个订阅" pagination={{ page, pageCount, onPageChange: setPage }} />
       </section>
 
       <EditDrawer open={drawer === 'create' || (drawer !== null && drawer.kind === 'edit')} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>

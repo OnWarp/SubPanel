@@ -1,17 +1,15 @@
+import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { CheckCircle2, Pencil, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { CheckCircle2, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -191,14 +189,13 @@ export function NodesPage() {
     {
       key: 'select',
       header: '选择',
+      headerContent: <ResourceSelectAll label="选择当前页节点" ids={visibleNodes.map((row) => row.id)} selected={selected} disabled={busy} onChange={(checked) => selectCurrentPage(checked)} />,
       width: 40,
       render: (node) => <Checkbox type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} />,
     },
     { key: 'sequence', header: '序号', width: 60, render: (node) => node.sequence },
-    { key: 'name', header: '名称', render: (node) => <strong>{node.displayName}</strong> },
+    { key: 'name', header: '名称', render: (node) => <span className="resource-card-name"><strong>{node.displayName}</strong><span className="cell-note">{node.server} · {node.port}</span></span> },
     { key: 'protocol', header: '协议', render: (node) => <StatusBadge tone="info" size="xs">{node.protocol}</StatusBadge> },
-    { key: 'server', header: '服务器', render: (node) => node.server },
-    { key: 'port', header: '端口', render: (node) => node.port },
     { key: 'sources', header: '来源', render: (node) => node.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
     { key: 'status', header: '状态', render: (node) => <StatusBadge tone={node.enabled ? 'success' : 'muted'} size="sm">{nodeStatus(node)}</StatusBadge> },
     { key: 'retained', header: '保留', render: (node) => node.retained ? '是' : '否' },
@@ -207,7 +204,7 @@ export function NodesPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      render: (node) => <button className="icon-button" type="button" aria-label="编辑" title="编辑" disabled={busy} onClick={() => openEdit(node)}><Pencil aria-hidden="true" size={16} /></button>,
+      render: (node) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: () => openEdit(node) }]} />,
     },
   ]
 
@@ -223,47 +220,29 @@ export function NodesPage() {
   }
 
   return (
-    <div className="page-stack">
-      <PageHeader title="节点" description={`${nodes.length} 个节点 · ${nodes.filter((node) => node.enabled).length} 个启用`} />
+    <div className="page-stack resource-pages">
 
       {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
-      <section className="data-section cat-data-section" aria-labelledby="nodes-title">
-        <DataHeader
-          id="nodes-title"
-          title="节点列表"
-          filters={(
-            <FilterBar className="data-header-filters cat-filter-bar">
-              <SearchInput className="cat-filter-search" label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
-              <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
-              <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
-              <div className="cat-chip-group" role="group" aria-label="节点状态">
-                {NODE_STATUS_FILTERS.map((item) => (
-                  <FilterChip key={item.value} active={status === item.value} onClick={() => setStatus(item.value)}>{item.label}</FilterChip>
-                ))}
-              </div>
-            </FilterBar>
-          )}
-          actions={<BatchToolbar selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />}
-        />
+      <section className="data-section resource-card" aria-labelledby="nodes-title">
+        <ResourceHeading id="nodes-title" title="节点" />
+        <FilterBar className="resource-card-filters">
+          <SearchInput className="cat-filter-search" label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
+          <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
+          <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
+          <label className="filter-field"><span>状态</span><FormSelect aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as NodeStatusFilter)}>{NODE_STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
+        </FilterBar>
+        <BatchToolbar selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && !catalog ? (
           <div className="cat-empty-wrap"><LoadingState label="正在加载节点" /></div>
         ) : nodes.length === 0 ? (
           <div className="cat-empty-wrap"><EmptyState title="暂无节点" description="来源导入节点后会在这里显示" /></div>
         ) : (
-          <>
-            <div className="cat-table-tools">
-              <label className="cat-select-all">
-                <Checkbox type="checkbox" aria-label="选择当前页节点" checked={visibleNodes.length > 0 && visibleNodes.every((node) => selected.has(node.id))} disabled={busy} onChange={(event) => selectCurrentPage(event.currentTarget.checked)} />
-                <span>全选当前页</span>
-              </label>
-              <div className="cat-page-meta">
-                <label><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</FormSelect></label>
-                <span>第 {page} / {pageCount} 页 · 共 {filteredNodes.length} 项</span>
-              </div>
-            </div>
-            <DataTable columns={columns} rows={visibleRows} rowKey={(node) => node.id} empty="暂无匹配节点" pagination={{ page, pageCount, onPageChange: setPage }} />
-          </>
+          <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={visibleRows} rowKey={(node) => node.id} empty="暂无匹配节点" />
         )}
+        <ResourceFooter count={filteredNodes.length} unit="个节点" pagination={{ page, pageCount, onPageChange: setPage }}>
+          <span>{nodes.length} 个节点 · {nodes.filter((node) => node.enabled).length} 个启用</span>
+          <label className="resource-card-page-size"><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</FormSelect></label>
+        </ResourceFooter>
       </section>
 
       <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit}>

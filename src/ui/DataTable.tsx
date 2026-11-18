@@ -6,6 +6,7 @@ export type DataTableAlign = 'left' | 'right' | 'center'
 export type DataTableColumn<T> = {
   key: string
   header: string
+  headerContent?: ReactNode
   width?: number | string
   align?: DataTableAlign
   render?: (row: T) => ReactNode
@@ -39,7 +40,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty, pagination, classNa
           <tr>
             {columns.map((column) => (
               <th key={column.key} scope="col" style={widthStyle(column.width)} className={alignClass(column.align).trim() || undefined}>
-                {column.header}
+                {column.headerContent ?? column.header}
               </th>
             ))}
           </tr>

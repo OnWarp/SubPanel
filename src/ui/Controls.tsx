@@ -1,7 +1,7 @@
-import { Children, Fragment, isValidElement, useId, useRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from 'react'
+import { Children, Fragment, isValidElement, useId, useRef, useState, type ComponentPropsWithRef, type TextareaHTMLAttributes, type ReactNode } from 'react'
 import { Select, type SelectOption } from './Select'
 
-type InputProps = InputHTMLAttributes<HTMLInputElement>
+type InputProps = ComponentPropsWithRef<'input'>
 
 /** Native editing semantics with project styling and inline constraint errors */
 export function Input({ className = '', onInvalid, onChange, ...props }: InputProps) {
