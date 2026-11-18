@@ -1,9 +1,9 @@
 import { Input, FormSelect } from '../../ui/Controls'
 import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
-import { Database, Info, Mail, Settings, User, type LucideIcon } from 'lucide-react'
+import { Database, Info } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -459,12 +459,7 @@ function StatusSection() {
   )
 }
 
-const SECTIONS: Array<{ key: string; label: string; icon: LucideIcon }> = [
-  { key: 'registration', label: '注册', icon: User },
-  { key: 'mail', label: '邮件', icon: Mail },
-  { key: 'distribution', label: '订阅分发', icon: Settings },
-  { key: 'status', label: '运行状态', icon: Info },
-]
+const SECTIONS = ['registration', 'mail', 'distribution', 'status']
 
 export function SystemPage() {
   const { section } = useParams()
@@ -474,24 +469,16 @@ export function SystemPage() {
   const aliases: Record<string, string> = { 'admin-mail': 'mail', share: 'distribution', domain: 'distribution', 'app-downloads': '/catalog/apps', notices: '/operations/notices' }
   const requested = section ?? legacy ?? 'registration'
   const active = aliases[requested] ?? requested
-  if (!section || active !== requested || !SECTIONS.some(item => item.key === active)) {
+  if (!section || active !== requested || !SECTIONS.includes(active)) {
     query.delete('section'); query.delete('tab')
     const search = query.size ? `?${query}` : ''
-    return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.some(item => item.key === active) ? active : 'registration'}`) + search} />
-
+    return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.includes(active) ? active : 'registration'}`) + search} />
   }
   return <div className="page-stack sys-page">
     <PageHeader title="系统设置" />
-    <div className="sys-layout">
-      <nav className="sys-sidebar" aria-label="系统设置导航"><ul role="list">
-        {SECTIONS.map(({ key, label, icon: Icon }) => <li key={key}><Link className={`sys-nav-item${active === key ? ' active' : ''}`} aria-current={active === key ? 'page' : undefined} to={`/system/${key}${location.search}`}><Icon aria-hidden="true" size={18} /><span>{label}</span></Link></li>)}
-      </ul></nav>
-      <div className="sys-content">
-        {active === 'registration' ? <RegistrationSection /> : null}
-        {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><TemplatesSection /></> : null}
-        {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
-      </div>
-    </div>
+    {active === 'registration' ? <RegistrationSection /> : null}
+    {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
+    {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><TemplatesSection /></> : null}
+    {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
   </div>
 }

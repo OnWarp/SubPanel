@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { AppRouter } from '../../../src/app/router'
-import { adminSections, navigationActive, userSidebar } from '../../../src/app/navigation'
+import { navigationActive, userSidebar } from '../../../src/app/navigation'
 import { ToastProvider } from '../../../src/ui/Toast'
 
 const session = vi.hoisted(() => ({ role: 'admin' }))
@@ -30,19 +30,50 @@ function nav(html: string, label: string) {
 function links(html: string) { return [...html.matchAll(/href="([^"]*)"/g)].map(match => match[1]) }
 
 describe('navigation ownership and route compatibility', () => {
-  it('has the agreed administrator groups with a single user-management entry', () => {
-    expect(adminSections.map(group => group.label)).toEqual(['', '资源', '订阅', '用户', '运营', '系统'])
-    const sidebar = nav(render('/invites'), '主导航')
-    expect(links(sidebar)).toEqual(adminSections.flatMap(group => group.items.map(item => item.to)))
-    expect(sidebar).not.toContain('href="/invites"')
-    expect(sidebar).not.toContain('href="/account"')
-    expect(sidebar).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="page")/)
+  const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users', '/delivery/tickets', '/system/registration']
+  it('renders six ungrouped desktop destinations and preserves the mobile dock', () => {
+    const html = render('/invites')
+    const sidebar = nav(html, '主导航')
+    expect(links(sidebar)).toEqual(desktopDomains)
+    expect(sidebar).not.toContain('nav-label')
+    expect(sidebar.match(/aria-label="([^"]+)"/g)).toEqual(
+      ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'].map(label => `aria-label="${label}"`),
+    )
+    expect(links(nav(html, '快捷导航'))).toEqual(['/dashboard', '/catalog/groups', '/users'])
+    expect(nav(html, '快捷导航')).toContain('更多')
+    expect(nav(render('/dashboard'), '节点管理导航')).toBe('')
   })
-  it.each(['/users', '/invites', '/users/recycle-bin'])('exposes all three user subpages on %s', path => {
-    const html = render(path)
-    expect(links(nav(html, '用户管理子页'))).toEqual(['/users', '/invites', '/users/recycle-bin'])
-    expect(nav(html, '用户管理子页')).toMatch(new RegExp(`<a(?=[^>]*href="${path}")(?=[^>]*aria-current="page")`))
-    expect(html).toContain('用户管理')
+
+  it.each([
+    ['节点管理导航', '/catalog/nodes', ['/catalog/nodes', '/catalog/sources', '/catalog/groups']],
+    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/shares', '/plans']],
+    ['用户管理子页', '/users', ['/users', '/invites', '/users/recycle-bin']],
+    ['运营管理导航', '/delivery/tickets', ['/delivery/tickets', '/operations/notices', '/kb/manage', '/catalog/apps']],
+    ['系统设置导航', '/system/registration', ['/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs']],
+  ] as const)('keeps %s visible across its routes and highlights the current page and domain', (label, owner, routes) => {
+    for (const path of routes) {
+      const html = render(path)
+      const sidebar = nav(html, '主导航')
+      const tabs = nav(html, label)
+      expect(links(tabs)).toEqual(routes)
+      expect(sidebar.match(/aria-current="page"/g)).toHaveLength(1)
+      expect(tabs.match(/aria-current="page"/g)).toHaveLength(1)
+      expect(sidebar).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
+      expect(tabs).toMatch(new RegExp(`<a(?=[^>]*href="${path}")(?=[^>]*aria-current="page")`))
+    }
+  })
+
+  it('highlights the ticket tab on a ticket detail page', () => {
+    const html = render('/delivery/tickets/tkt_1')
+    for (const label of ['主导航', '运营管理导航']) {
+      expect(nav(html, label)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
+    }
+  })
+  it('keeps user and settings tab queries on navigation', () => {
+    expect(links(nav(render('/invites/?keep=1'), '用户管理子页'))).toEqual(
+      ['/users?keep=1', '/invites?keep=1', '/users/recycle-bin?keep=1'],
+    )
+    expect(links(nav(render('/system/mail?keep=1'), '系统设置导航'))).toContain('/system/status?keep=1')
   })
   it.each([
     ['/dashboard', '概览'], ['/catalog/nodes', '节点'], ['/catalog/sources', '来源'], ['/catalog/groups', '分组'],
@@ -60,7 +91,6 @@ describe('navigation ownership and route compatibility', () => {
   ])('renders only the %s settings subpage on direct entry', (section, marker) => {
     const html = render(`/system/${section}`)
     expect(html).toContain(marker)
-    expect(links(nav(html, '系统设置导航'))).toEqual(['/system/registration', '/system/mail', '/system/distribution', '/system/status'])
     expect(html).not.toContain('sys-app-downloads-title')
   })
   it.each([

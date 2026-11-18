@@ -2,10 +2,11 @@ import { ChevronDown, ChevronsLeft, ChevronsRight, Ellipsis, LogOut, UserRound }
 import { useEffect, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountProfile } from '../features/accounts/profile'
+import { SectionTabs } from '../ui/SectionTabs'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { MOBILE_MEDIA_QUERY } from './layout'
 import { useSession } from './session'
-import { adminSections, userSidebar, navigationActive, type NavItem } from './navigation'
+import { adminDomainForPath, adminDomains, adminSections, userSidebar, navigationActive, type NavItem } from './navigation'
 
 const userDock = userSidebar
 
@@ -18,6 +19,34 @@ function UserCenter({ signOut }: { signOut: () => Promise<void> }) {
     <span>{profile?.user.email ?? user?.email ?? user?.username}</span><ChevronDown size={16} aria-hidden="true" />
     </summary><nav aria-label="账号菜单"><Link to="/me">个人中心</Link><Link to="/entitlement">我的权益</Link><Link to="/account">安全与通知设置</Link><button type="button" onClick={() => { signOut().catch(() => setError('退出登录失败，请重试')) }}>退出登录</button></nav>
     </details>{error ? <p role="alert">{error}</p> : null}</div>
+}
+
+function AdminAccount({ signOut, onError }: { signOut: () => Promise<void>; onError: (message: string) => void }) {
+  const { user } = useSession()
+  const { profile } = useAccountProfile()
+  const { pathname } = useLocation()
+  const avatar = profile?.avatar.url
+  return (
+    <div className="user-center admin-account">
+      <details key={pathname} onKeyDown={event => {
+        if (event.key === 'Escape') {
+          event.currentTarget.open = false
+          event.currentTarget.querySelector('summary')?.focus()
+        }
+      }}>
+        <summary title="管理员账号菜单" aria-label={`${user?.username ?? ''}，管理员账号菜单`}>
+          {avatar ? <img src={avatar} alt="" width={32} height={32} /> : <UserRound className="admin-avatar" size={32} aria-hidden="true" />}
+          <span className="admin-account-info"><strong>{user?.username}</strong><small>管理员</small></span>
+          <ChevronDown size={16} aria-hidden="true" />
+        </summary>
+        <nav aria-label="管理员账号菜单">
+          <Link to="/account">账户安全</Link>
+          <ThemeMenu id="admin-theme-menu" label="外观" />
+          <button type="button" onClick={() => { signOut().catch(() => onError('退出登录失败，请重试')) }}>退出登录</button>
+        </nav>
+      </details>
+    </div>
+  )
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -41,6 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const sheet = useRef<HTMLElement>(null)
   const touchStart = useRef(0)
   const isAdmin = user?.role === 'admin'
+  const adminDomain = isAdmin ? adminDomainForPath(location.pathname) : undefined
   const visibleUserSidebar = userSidebar
   const adminItems = adminSections.flatMap((section) => section.items)
   const dockPaths = ['/dashboard', '/catalog/groups', '/users']
@@ -99,22 +129,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className={`app-layout${isAdmin ? ' admin-layout' : ''}${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="sidebar-brand">
           <img className="brand-mark" src="/logo.png" alt="" />
           <div><strong>SubPanel</strong></div>
         </div>
         {isAdmin ? (
-          <nav className="sidebar-nav" aria-label="主导航">
-            {adminSections.map((section) => <section className="nav-section" key={section.label}>
-              {section.label ? <p className="nav-label">{section.label}</p> : null}
-              {section.items.map(({ to, label, icon: Icon }) => (
-                <Link key={to} to={to} title={label} className={navigationActive(location.pathname, to) ? 'active' : undefined} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
-                  <Icon aria-hidden="true" size={17} /><span>{label}</span>
+          <nav className="sidebar-nav admin-sidebar-nav" aria-label="主导航">
+            {adminDomains.map(domain => {
+              const { to, label, icon: Icon } = domain
+              const active = domain === adminDomain
+              return (
+                <Link key={to} to={to} title={sidebarCollapsed ? label : undefined} aria-label={label} className={active ? 'active' : undefined} aria-current={active ? 'page' : undefined}>
+                  <Icon aria-hidden="true" size={18} /><span>{label}</span>
                 </Link>
-              ))}
-            </section>)}
+              )
+            })}
           </nav>
         ) : (
           <nav className="sidebar-nav nav-sidebar" aria-label="主导航">
@@ -125,7 +156,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
         )}
-        {isAdmin ? <div className="user-center" key={location.pathname}><details onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary title="管理员账号菜单"><UserRound size={24} aria-hidden="true" /><span>{user?.username}</span><ChevronDown size={16} /></summary><nav aria-label="管理员账号菜单"><Link to="/account">账户安全</Link><ThemeMenu id="admin-theme-menu" label="外观" /><button type="button" onClick={() => { signOut().catch(() => setSignOutError('退出登录失败，请重试')) }}>退出登录</button></nav></details></div> : <UserCenter key={location.pathname} signOut={signOut} />}
+        {isAdmin ? <AdminAccount signOut={signOut} onError={setSignOutError} /> : <UserCenter key={location.pathname} signOut={signOut} />}
       </aside>
       <div className="workspace">
         <header className="workspace-topbar">
@@ -134,7 +165,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           {!isAdmin ? <ThemeMenu /> : null}
           <div id="page-actions-slot" className="topbar-page-actions" />
         </header>
-        <main key={location.pathname} className="workspace-content">{signOutError ? <p role="alert">{signOutError}</p> : null}{children}</main>
+        <main key={location.pathname} className="workspace-content">
+          {signOutError ? <p role="alert">{signOutError}</p> : null}
+          {adminDomain?.section && <SectionTabs {...adminDomain.section} />}
+          {children}
+        </main>
       </div>
       {isAdmin ? (
         <nav className="dock" aria-label="快捷导航">

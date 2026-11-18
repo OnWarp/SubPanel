@@ -18,6 +18,21 @@ describe('SPA fallback', () => {
     }
   })
 
+  it.each([
+    '/dashboard',
+    '/catalog/nodes', '/catalog/sources', '/catalog/groups',
+    '/delivery/subscriptions', '/delivery/shares', '/plans',
+    '/users', '/invites', '/users/recycle-bin',
+    '/delivery/tickets', '/delivery/tickets/tkt_1', '/operations/notices', '/kb/manage', '/catalog/apps',
+    '/system', '/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs',
+    '/system/notices', '/system/app-downloads', '/system/share', '/account',
+  ])('serves HTTP 200 for a browser document request to %s', async (path) => {
+    const response = await exports.default.fetch(`${ORIGIN}${path}`, { headers: browserHeaders })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/html')
+    expect(await response.text()).toContain('spa-shell-test-fixture')
+  })
+
   it('serves the app shell for a HEAD request to a deep link', async () => {
     const response = await exports.default.fetch(`${ORIGIN}/kb`, {
       method: 'HEAD',
