@@ -89,6 +89,10 @@
 
   --shadow-float: 3px 5px 30px 0 rgb(0 0 0 / 0.22);
   --shadow-panel: none;
+  /* Inset content panel: 14px sits inside the 12–16px shell spec. */
+  --space-shell: 14px;
+  --radius-shell: 14px;
+  --shadow-shell: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 10px rgb(0 0 0 / 0.04);
 
   --duration-ui: 160ms;
   --ease-out: cubic-bezier(.2, .7, .3, 1);
@@ -136,7 +140,9 @@
   --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
   --color-overlay: rgb(0 0 0 / 68%);
 
-  /* Dark surfaces separate by luminance, not shadow (Linear route). */
+  /* Dark surfaces separate by luminance, not shadow (Linear route).
+     The shell keeps a hairline shadow; the border and lighter surface do the separation. */
   --shadow-float: none;
   --shadow-panel: none;
+  --shadow-shell: 0 1px 2px rgb(0 0 0 / 0.45);
 }
