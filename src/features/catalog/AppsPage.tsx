@@ -1,6 +1,7 @@
+import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
 import { AppDownloadsSection } from './AppDownloadsSection'
-import { Pencil, Plus, Power, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -8,13 +9,10 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { ErrorState } from '../../ui/ErrorState'
-import { FilterBar } from '../../ui/FilterBar'
-import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { Switch } from '../../ui/Switch'
-import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
@@ -294,7 +292,7 @@ export function AppsPage() {
       render: (app) => (
         <span className="app-identity">
           <strong>{app.name}</strong>
-          {app.description ? <span className="app-desc" title={app.description}>{app.description}</span> : null}
+          <span className="app-desc" title={app.description}>{app.description || app.id}</span>
         </span>
       ),
     },
@@ -322,11 +320,11 @@ export function AppsPage() {
       header: '操作',
       align: 'right',
       render: (app) => (
-        <span className="row-actions">
-          <button className="icon-button" type="button" aria-label={`${app.enabled ? '停用' : '启用'} ${app.name}`} title={app.enabled ? '停用' : '启用'} disabled={busy} onClick={() => { toggleEnabled(app).catch(() => undefined) }}><Power aria-hidden="true" size={16} /></button>
-          <button className="icon-button" type="button" aria-label={`编辑 ${app.name}`} title="编辑" disabled={busy} onClick={() => openEdit(app)}><Pencil aria-hidden="true" size={16} /></button>
-          <button className="icon-button danger" type="button" aria-label={`删除 ${app.name}`} title="删除" disabled={busy} onClick={() => setPendingDelete(app)}><Trash2 aria-hidden="true" size={16} /></button>
-        </span>
+        <OperationsActions label={`管理 APP ${app.name}`}>
+          <button className="button ghost" type="button" aria-label={`${app.enabled ? '停用' : '启用'} ${app.name}`} disabled={busy} onClick={() => { void toggleEnabled(app) }}>{app.enabled ? '停用' : '启用'}</button>
+          <button className="button ghost" type="button" aria-label={`编辑 ${app.name}`} disabled={busy} onClick={() => openEdit(app)}>编辑</button>
+          <button className="button ghost" type="button" aria-label={`删除 ${app.name}`} disabled={busy} onClick={() => setPendingDelete(app)}>删除</button>
+        </OperationsActions>
       ),
     },
   ]
@@ -334,37 +332,37 @@ export function AppsPage() {
   const description = catalog ? `${apps.length} 个 APP · 维护名称、简介与各平台下载配置` : '维护名称、简介与各平台下载配置'
 
   return (
-    <div className="page-stack app-page">
-      <PageHeader
-        title="客户端下载"
-        description={description}
-        actions={<><Link className="button secondary" to="/apps">查看用户端</Link><button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加 APP</button></>}
-      />
-      <AppDownloadsSection />
-      <section className="data-section app-data" aria-label="APP 列表">
+    <div className="page-stack app-page ops-page">
+      <PageHeader title="客户端下载" description={description} />
+      <section className="ops-card ops-table app-data" aria-label="APP 列表">
+        <OperationsHeading title="客户端下载" action={
+          <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>
+        } />
+        <div><Link className="button secondary" to="/apps">查看用户端</Link></div>
         {loading ? <LoadingState label="正在加载 APP" /> : null}
         {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !error ? (
           <>
-            <FilterBar>
-              <SearchInput className="app-search" label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={setQuery} />
-              <div className="app-chip-group" role="group" aria-label="按启用筛选">
-                <span className="app-chip-label">启用</span>
-                <FilterChip active={enabledFilter === 'all'} onClick={() => setEnabledFilter('all')}>全部</FilterChip>
-                <FilterChip active={enabledFilter === 'yes'} onClick={() => setEnabledFilter('yes')}>启用</FilterChip>
-                <FilterChip active={enabledFilter === 'no'} onClick={() => setEnabledFilter('no')}>停用</FilterChip>
-              </div>
-            </FilterBar>
+            <div className="ops-filters">
+              <Input type="search" aria-label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+              <FormSelect aria-label="按启用筛选" value={enabledFilter} onChange={(event) => setEnabledFilter(event.currentTarget.value as EnabledFilter)}>
+                <option value="all">全部状态</option>
+                <option value="yes">启用</option>
+                <option value="no">停用</option>
+              </FormSelect>
+            </div>
             <DataTable
               columns={columns}
               rows={visible}
               rowKey={(app) => app.id}
               empty="没有符合筛选条件的 APP"
-              pagination={filtered.length > 0 ? { page, pageCount, onPageChange: setPage } : undefined}
             />
+            <OperationsFooter total={filtered.length} unit="个" pagination={{ page, pageCount, onPageChange: setPage }} />
           </>
         ) : null}
       </section>
+
+      <AppDownloadsSection />
 
       <EditDrawer open={drawer !== null} title={drawer?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="large" onClose={closeDrawer} returnFocusRef={createButton}>
         <form className="app-form" autoComplete="off" onSubmit={saveApp}>

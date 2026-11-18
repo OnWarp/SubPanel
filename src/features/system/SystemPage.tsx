@@ -1,13 +1,13 @@
+import { OperationsHeading } from '../admin/OperationsCard'
 import { Input, FormSelect } from '../../ui/Controls'
 import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
-import { Database, Info, Mail, Settings, User, type LucideIcon } from 'lucide-react'
+import { Database, Info } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
-import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
@@ -80,18 +80,17 @@ function RegistrationSection() {
 
   return (
     <section className="data-section sys-section" aria-labelledby="sys-registration-title">
-      <DataHeader id="sys-registration-title" title="账户与注册" />
+      <DataHeader id="sys-registration-title" title="账户与注册" actions={
+        !loading && !loadError && mode ? (
+          <FormSelect aria-label="注册模式" value={mode} disabled={saving} onChange={(event) => { void changeMode(event.currentTarget.value as RegistrationMode) }}>
+            {REGISTRATION_MODES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </FormSelect>
+        ) : undefined
+      } />
       {loading ? <LoadingState label="正在加载注册设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && mode ? (
         <div className="sys-body">
-          <div role="group" aria-label="注册模式">
-            {REGISTRATION_MODES.map((option) => (
-              <FilterChip key={option.value} active={mode === option.value} onClick={() => { changeMode(option.value).catch(() => undefined) }}>
-                {option.label}
-              </FilterChip>
-            ))}
-          </div>
           <p className="sys-hint">{REGISTRATION_MODES.find((option) => option.value === mode)?.hint}，切换后立即生效</p>
           <EmailDomains />
         </div>
@@ -287,11 +286,13 @@ function MailSection() {
 
   return (
     <section className="data-section sys-section" aria-labelledby="sys-mail-title">
-      <DataHeader id="sys-mail-title" title="邮件" />
+      <DataHeader id="sys-mail-title" title="邮件" actions={
+        !loading && !loadError && form && settings ? <button className="button primary ops-primary" type="submit" form="ops-mail-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+      } />
       {loading ? <LoadingState label="正在加载邮件设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && form && settings ? (
-        <form className="sys-form" onSubmit={save} noValidate>
+        <form id="ops-mail-settings" className="sys-form" onSubmit={save} noValidate>
           <div className="sys-grid">
             <FormField label="邮件服务商" htmlFor="sys-mail-provider">
               <FormSelect id="sys-mail-provider" value={form.provider} disabled={saving} onChange={(event) => setForm({ ...form, provider: event.currentTarget.value === 'resend' ? 'resend' : 'smtp' })}>
@@ -342,9 +343,6 @@ function MailSection() {
             {settings.resendApiKeySet ? '，Resend API Key 已设置' : ''}
             ，留空表示不修改
           </p>
-          <div className="sys-actions">
-            <button className="button primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button>
-          </div>
           <div className="sys-subsection">
             <h3 className="sys-subtitle">测试邮件</h3>
             <div className="sys-test-row">
@@ -379,7 +377,7 @@ function HealthSection() {
     catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
   useEffect(() => { void load() }, [load])
-  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button ghost" onClick={() => { void load() }}>刷新</button>} />
+  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary ops-primary" onClick={() => { void load() }}>刷新</button>} />
     <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
       <p>服务健康：{health.ok ? '正常' : '异常'} · 版本 {health.version}</p>
       <h3 className="sys-subtitle">来源刷新定时任务</h3>
@@ -459,11 +457,11 @@ function StatusSection() {
   )
 }
 
-const SECTIONS: Array<{ key: string; label: string; icon: LucideIcon }> = [
-  { key: 'registration', label: '注册', icon: User },
-  { key: 'mail', label: '邮件', icon: Mail },
-  { key: 'distribution', label: '订阅分发', icon: Settings },
-  { key: 'status', label: '运行状态', icon: Info },
+const SECTIONS: Array<{ key: string; label: string }> = [
+  { key: 'registration', label: '注册' },
+  { key: 'mail', label: '邮件' },
+  { key: 'distribution', label: '订阅分发' },
+  { key: 'status', label: '运行状态' },
 ]
 
 export function SystemPage() {
@@ -480,11 +478,12 @@ export function SystemPage() {
     return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.some(item => item.key === active) ? active : 'registration'}`) + search} />
 
   }
-  return <div className="page-stack sys-page">
+  return <div className="page-stack sys-page ops-page">
     <PageHeader title="系统设置" />
-    <div className="sys-layout">
+    <div className="ops-card ops-system">
+      <OperationsHeading title="系统设置" />
       <nav className="sys-sidebar" aria-label="系统设置导航"><ul role="list">
-        {SECTIONS.map(({ key, label, icon: Icon }) => <li key={key}><Link className={`sys-nav-item${active === key ? ' active' : ''}`} aria-current={active === key ? 'page' : undefined} to={`/system/${key}${location.search}`}><Icon aria-hidden="true" size={18} /><span>{label}</span></Link></li>)}
+        {SECTIONS.map(({ key, label }) => <li key={key}><Link className={`sys-nav-item${active === key ? ' active' : ''}`} aria-current={active === key ? 'page' : undefined} to={`/system/${key}${location.search}`}><span>{label}</span></Link></li>)}
       </ul></nav>
       <div className="sys-content">
         {active === 'registration' ? <RegistrationSection /> : null}
