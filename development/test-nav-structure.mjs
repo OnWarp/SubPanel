@@ -141,10 +141,17 @@ try {
   signedOut = false
   await page.setViewportSize({ width: 390, height: 844 })
   await go('/users')
-  await page.getByRole('button', { name: '更多', exact: true }).click()
-  for (const group of ['资源', '订阅', '用户', '运营', '系统']) await page.getByRole('dialog', { name: '更多导航' }).getByText(group, { exact: true }).waitFor()
-  await page.getByRole('dialog', { name: '更多导航' }).getByRole('link', { name: '客户端下载', exact: true }).click()
+  const dock = page.locator('.admin-mobile-dock')
+  await dock.waitFor()
+  assert.deepEqual(await dock.getByRole('link').allTextContents(), ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+  assert.equal(await dock.getByRole('link', { name: '用户管理', exact: true }).getAttribute('aria-current'), 'page')
+  assert.equal(await page.getByRole('button', { name: '更多', exact: true }).count(), 0)
+  await dock.getByRole('link', { name: '运营管理', exact: true }).click()
+  await page.waitForURL('**/delivery/tickets')
+  await page.getByRole('navigation', { name: '运营管理导航' }).getByRole('link', { name: '客户端下载', exact: true }).click()
   await page.waitForURL('**/catalog/apps')
+  assert.equal(await dock.getByRole('link', { name: '运营管理', exact: true }).getAttribute('aria-current'), 'page')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
 
   role = 'user'
   for (const width of [1440, 390]) {
@@ -170,5 +177,5 @@ try {
   await page.getByRole('navigation', { name: '帮助与支持' }).waitFor()
   await page.waitForFunction(() => !document.querySelector('[aria-label="帮助与支持"] a[href="/apps"]'))
   assert.deepEqual(errors, [])
-  console.log('PASS: user-management/history/refresh, settings/legacy query mapping, operations ownership, avatar/security/theme/logout, mobile admin groups, four user entries, support ownership and role guards')
+  console.log('PASS: user-management/history/refresh, settings/legacy query mapping, operations ownership, avatar/security/theme/logout, mobile admin six-entry dock, four user entries, support ownership and role guards')
 } finally { await browser.close() }
