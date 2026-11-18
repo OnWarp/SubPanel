@@ -7,6 +7,7 @@ export default defineConfig({
     environment: 'node',
     include: [
       'development/tests/controls/**/*.test.tsx',
+      'development/tests/ui/users-page.test.tsx',
       'development/tests/worker/catalog-counts.test.ts',
       'development/tests/worker/kb-markdown.test.ts',
       'development/tests/worker/frontend-api.test.ts',

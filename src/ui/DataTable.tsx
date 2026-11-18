@@ -5,7 +5,9 @@ export type DataTableAlign = 'left' | 'right' | 'center'
 
 export type DataTableColumn<T> = {
   key: string
-  header: string
+  header: ReactNode
+  /** Narrow-screen row label. Falls back to a string header. */
+  label?: string
   width?: number | string
   align?: DataTableAlign
   render?: (row: T) => ReactNode
@@ -29,6 +31,11 @@ function alignClass(align?: DataTableAlign) {
 function widthStyle(width?: number | string) {
   if (width === undefined) return undefined
   return { width: typeof width === 'number' ? `${width}px` : width }
+}
+
+function columnLabel(column: { header: ReactNode; label?: string }) {
+  if (column.label) return column.label
+  return typeof column.header === 'string' ? column.header : ''
 }
 
 export function DataTable<T>({ columns, rows, rowKey, empty, pagination, className }: DataTableProps<T>) {
@@ -56,7 +63,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty, pagination, classNa
                   ? column.render(row)
                   : (row as Record<string, unknown>)[column.key] as ReactNode
                 return (
-                  <td key={column.key} data-label={column.header} className={alignClass(column.align).trim() || undefined}>
+                  <td key={column.key} data-label={columnLabel(column)} className={alignClass(column.align).trim() || undefined}>
                     {content}
                   </td>
                 )

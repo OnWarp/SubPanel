@@ -1,11 +1,11 @@
 import { FormSelect, Textarea } from '../../ui/Controls'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, jsonBody } from '../../app/api'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { entitlementLabels, type EntitlementState, type Plan } from './types'
-export function UserEntitlement({ userId, username }: { userId: string; username: string }) {
+export function UserEntitlement({ userId, username, showSummary = true, active = false, onActiveChange }: { userId: string; username: string; showSummary?: boolean; active?: boolean; onActiveChange?: (active: boolean) => void }) {
   const [rights, setRights] = useState<EntitlementState | null>(null)
   const [plans, setPlans] = useState<Plan[]>([])
   const [open, setOpen] = useState(false)
@@ -18,23 +18,38 @@ export function UserEntitlement({ userId, username }: { userId: string; username
     try { setRights(await api<EntitlementState>(`/api/admin/users/${userId}/entitlement`)); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : '加载权益失败') }
   }, [userId])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { if (showSummary) void load() }, [load, showSummary])
   const edit = async () => {
-    setOpen(true); setAction(rights?.latest?.status === 'active' ? 'renew' : 'grant'); setNote(''); setError('')
-    try { const result = await api<{ plans: Plan[] }>('/api/admin/plans'); setPlans(result.plans); setPlanId(result.plans.find((p) => p.enabled)?.id ?? '') }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '加载计划失败') }
+    setOpen(true); setNote(''); setError('')
+    try {
+      const current = rights ?? await api<EntitlementState>(`/api/admin/users/${userId}/entitlement`)
+      if (!rights) setRights(current)
+      setAction(current.latest?.status === 'active' ? 'renew' : 'grant')
+      const result = await api<{ plans: Plan[] }>('/api/admin/plans')
+      setPlans(result.plans)
+      setPlanId(result.plans.find((p) => p.enabled)?.id ?? '')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : '加载计划失败') }
   }
+  const editRef = useRef(edit)
+  editRef.current = edit
+  useEffect(() => {
+    if (!active) return
+    void editRef.current()
+  }, [active, userId])
+  const dismiss = () => { setOpen(false); onActiveChange?.(false) }
   const save = async () => {
     if (busy) return
     setBusy(true)
-    try { setRights(await api<EntitlementState>(`/api/admin/users/${userId}/entitlement`,{ method: 'POST',body: jsonBody({ action,planId: planId || undefined,note }) })); setOpen(false); setError('') }
+    try { setRights(await api<EntitlementState>(`/api/admin/users/${userId}/entitlement`,{ method: 'POST',body: jsonBody({ action,planId: planId || undefined,note }) })); setError(''); dismiss() }
     catch (cause) { setError(cause instanceof Error ? cause.message : '操作失败') }
     finally { setBusy(false) }
   }
   return <div>
-    {rights ? <><strong>{rights.latest?.plan.name ?? '—'}</strong><div>{entitlementLabels[rights.state]}</div>{rights.latest ? <small>{new Date(rights.latest.expiresAt).toLocaleString()}</small> : null}</> : error ? <span role="alert">{error}</span> : <span>加载中</span>}
-    <button className="button ghost" onClick={() => { void edit() }}>管理权益</button>
-    <EditDrawer open={open} title={`${username} · 权益`} onClose={() => setOpen(false)} busy={busy}>
+    {showSummary ? <>
+      {rights ? <><strong>{rights.latest?.plan.name ?? '—'}</strong><div>{entitlementLabels[rights.state]}</div>{rights.latest ? <small>{new Date(rights.latest.expiresAt).toLocaleString()}</small> : null}</> : error ? <span role="alert">{error}</span> : <span>加载中</span>}
+      <button className="button ghost" type="button" onClick={() => { void edit() }}>管理权益</button>
+    </> : null}
+    <EditDrawer open={open} title={`${username} · 权益`} onClose={dismiss} busy={busy}>
       <form className="form-stack" onSubmit={(e) => { e.preventDefault(); void save() }}>
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
         {rights?.latest ? <p>{rights.latest.plan.name} · {new Date(rights.latest.expiresAt).toLocaleString()} · {entitlementLabels[rights.state]}</p> : null}
