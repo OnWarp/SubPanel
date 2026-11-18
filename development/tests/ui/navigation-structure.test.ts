@@ -2,6 +2,7 @@ import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { OperationsActions, OperationsFooter } from '../../../src/features/admin/OperationsCard'
 import { AppRouter } from '../../../src/app/router'
 import { adminSections, navigationActive, userSidebar } from '../../../src/app/navigation'
 import { ToastProvider } from '../../../src/ui/Toast'
@@ -61,6 +62,7 @@ describe('navigation ownership and route compatibility', () => {
     const html = render(`/system/${section}`)
     expect(html).toContain(marker)
     expect(links(nav(html, '系统设置导航'))).toEqual(['/system/registration', '/system/mail', '/system/distribution', '/system/status'])
+    expect(nav(html, '系统设置导航')).toMatch(new RegExp(`<a(?=[^>]*href="/system/${section}")(?=[^>]*aria-current="page")`))
     expect(html).not.toContain('sys-app-downloads-title')
   })
   it.each([
@@ -75,6 +77,46 @@ describe('navigation ownership and route compatibility', () => {
     ['/system/share?keep=1', '/system/distribution?keep=1'],
   ])('maps legacy location %s to %s and preserves other query parameters', (path, target) => {
     expect(render(path)).toContain(`data-redirect="${target}"`)
+  })
+  it.each([
+    ['/dashboard', '概览'],
+    ['/plans', '权益计划'],
+    ['/delivery/tickets', '工单'],
+    ['/operations/notices', '公告'],
+    ['/kb/manage', '知识库管理'],
+    ['/catalog/apps', '客户端下载'],
+    ['/audit-logs', '审计日志'],
+  ])('renders the operations card heading on %s', (path, title) => {
+    expect(render(path)).toContain(`<header class="ops-heading"><h2>${title}</h2>`)
+  })
+  it('keeps the filter controls and total in the audit card', () => {
+    const html = render('/audit-logs')
+    for (const field of ['操作', '管理员 ID', '开始时间', '结束时间']) {
+      expect(html).toContain(`<label>${field}<input`)
+    }
+    expect(html).toContain('共 0 条')
+    expect(html).toContain('1 / 1 页')
+  })
+  it('renders the count and bounded previous and next controls', () => {
+    const html = renderToStaticMarkup(createElement(OperationsFooter, {
+      total: 41,
+      pagination: { page: 3, pageCount: 3, onPageChange: vi.fn() },
+    }))
+    expect(html).toContain('共 41 条')
+    expect(html).toContain('3 / 3 页')
+    expect(html).toMatch(/aria-label="上一页"(?! disabled)/)
+    expect(html).toContain('aria-label="下一页" disabled=""')
+  })
+  it('gives each row action popover its own labelled trigger', () => {
+    const html = renderToStaticMarkup(createElement('div', null,
+      createElement(OperationsActions, { label: '管理甲' }, createElement('button', null, '编辑')),
+      createElement(OperationsActions, { label: '管理乙' }, createElement('button', null, '删除')),
+    ))
+    const targets = [...html.matchAll(/popovertarget="([^"]+)"/gi)].map((match) => match[1])
+    expect(new Set(targets).size).toBe(2)
+    expect(html).toContain('aria-label="管理甲">•••')
+    expect(html).toContain('aria-label="管理乙">•••')
+    for (const target of targets) expect(html).toContain(`id="${target}" popover="auto"`)
   })
   it('places the download switch and item editor together', () => {
     const html = render('/catalog/apps')

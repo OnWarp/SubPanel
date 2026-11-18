@@ -143,11 +143,13 @@ export function ShareSettingsSection() {
 
   return (
     <section className="data-section sys-section" aria-labelledby="sys-share-title">
-      <DataHeader id="sys-share-title" title="分享设置" />
+      <DataHeader id="sys-share-title" title="分享设置" actions={
+        !loading && !loadError && form ? <button className="button primary ops-primary" type="submit" form="ops-share-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+      } />
       {loading ? <LoadingState label="正在加载分享设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && form ? (
-        <form className="sys-form" onSubmit={save} noValidate>
+        <form id="ops-share-settings" className="sys-form" onSubmit={save} noValidate>
           <p className="sys-hint">关闭分享功能后，所有分享链接会立即失效</p>
           <div className="sys-toggles">
             <FormField label="分享功能">
@@ -186,9 +188,6 @@ export function ShareSettingsSection() {
             </div>
           </div>
           <p className="sys-hint">公网基址留空时使用当前访问地址</p>
-          <div className="sys-actions">
-            <button className="button primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button>
-          </div>
         </form>
       ) : null}
     </section>

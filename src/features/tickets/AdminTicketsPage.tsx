@@ -1,15 +1,14 @@
+import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
+import { FormSelect } from '../../ui/Controls'
 import { MessageSquare } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiClientError } from '../../app/api'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
-import { Pagination } from '../../ui/Pagination'
-import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { formatTicketTime, levelLabel, ticketState, ticketTime, type Ticket } from './types'
 
@@ -57,9 +56,8 @@ export function AdminTicketsPage() {
     {
       key: 'title',
       header: '标题',
-      render: (ticket) => <Link className="tk-title-link" to={`/delivery/tickets/${ticket.id}`}>{ticket.title}</Link>,
+      render: (ticket) => <div><Link className="tk-title-link ops-main" to={`/delivery/tickets/${ticket.id}`}>{ticket.title}</Link><span className="ops-meta">{ticket.username}</span></div>,
     },
-    { key: 'username', header: '用户' },
     {
       key: 'level',
       header: '等级',
@@ -86,43 +84,43 @@ export function AdminTicketsPage() {
       header: '时间',
       render: (ticket) => <span className="tk-cell-time">{formatTicketTime(ticketTime(ticket))}</span>,
     },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      render: (ticket) => (
+        <OperationsActions label={`工单操作 ${ticket.title}`}>
+          <Link className="button ghost" to={`/delivery/tickets/${ticket.id}`}>查看工单</Link>
+        </OperationsActions>
+      ),
+    },
   ]
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="page-stack tk-page">
+    <div className="page-stack tk-page ops-page">
       <PageHeader title="工单" />
-      {loading && tickets.length === 0 ? <LoadingState label="正在加载工单队列" /> : null}
-      {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-      {!loading && !loadError ? (
-        <section className="data-section" aria-labelledby="admin-tickets-title">
-          <DataHeader
-            id="admin-tickets-title"
-            title="处理队列"
-            filters={(
-              <SegmentedControl
-                label="工单状态"
-                value={statusFilter}
-                options={[
-                  { value: 'all', label: '全部' },
-                  { value: 'open', label: '处理中' },
-                  { value: 'closed', label: '已关闭' },
-                ]}
-                onChange={changeStatus}
-              />
-            )}
-          />
-          {total === 0 ? (
-            <div><EmptyState icon={MessageSquare} title="暂无工单" description={statusFilter === 'all' ? '用户提交的工单会显示在这里' : '当前筛选下没有工单'} /></div>
-          ) : (
-            <>
-              <DataTable columns={columns} rows={tickets} rowKey={(ticket) => ticket.id} empty="暂无匹配工单" />
-              {pageCount > 1 ? <div className="tk-pagination"><Pagination page={page} pageCount={pageCount} onPageChange={setPage} /></div> : null}
-            </>
-          )}
-        </section>
-      ) : null}
+      <section className="ops-card ops-table" aria-label="工单">
+        <OperationsHeading title="工单" />
+        <div className="ops-filters">
+          <FormSelect aria-label="工单状态" value={statusFilter} onChange={(event) => changeStatus(event.currentTarget.value as StatusFilter)}>
+            <option value="all">全部状态</option>
+            <option value="open">处理中</option>
+            <option value="closed">已关闭</option>
+          </FormSelect>
+        </div>
+        {loading && tickets.length === 0 ? <LoadingState label="正在加载工单队列" /> : null}
+        {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
+        {!loading && !loadError ? (
+          <>
+            {total === 0
+              ? <EmptyState icon={MessageSquare} title="暂无工单" description={statusFilter === 'all' ? '用户提交的工单会显示在这里' : '当前筛选下没有工单'} />
+              : <DataTable columns={columns} rows={tickets} rowKey={(ticket) => ticket.id} empty="暂无匹配工单" />}
+            <OperationsFooter total={total} pagination={{ page, pageCount, onPageChange: setPage }} />
+          </>
+        ) : null}
+      </section>
     </div>
   )
 }

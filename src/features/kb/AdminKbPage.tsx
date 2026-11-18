@@ -1,5 +1,6 @@
-import { Input, Textarea } from '../../ui/Controls'
-import { BookOpen, Plus } from 'lucide-react'
+import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
+import { FormSelect, Input, Textarea } from '../../ui/Controls'
+import { BookOpen } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -11,8 +12,6 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
-import { SegmentedControl } from '../../ui/SegmentedControl'
-import { Select } from '../../ui/Select'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
@@ -268,9 +267,9 @@ export function AdminKbPage() {
       key: 'title',
       header: '标题',
       render: (article) => (
-        <button className="kb-title-button" type="button" onClick={() => { openEdit(article).catch(() => undefined) }}>
+        <div><button className="kb-title-button ops-main" type="button" onClick={() => { openEdit(article).catch(() => undefined) }}>
           {article.title}
-        </button>
+        </button><span className="ops-meta">{formatKbTime(article.updatedAt)}</span></div>
       ),
     },
     { key: 'categoryName', header: '分类' },
@@ -283,16 +282,11 @@ export function AdminKbPage() {
     },
     { key: 'sort', header: '排序' },
     {
-      key: 'updatedAt',
-      header: '更新时间',
-      render: (article) => formatKbTime(article.updatedAt),
-    },
-    {
       key: 'actions',
       header: '操作',
       align: 'right',
       render: (article) => (
-        <div className="kb-row-actions">
+        <OperationsActions label={`管理文章 ${article.title}`}>
           <button className="button ghost" type="button" disabled={formBusy} onClick={() => { openEdit(article).catch(() => undefined) }}>编辑</button>
           <button
             className="button ghost"
@@ -301,7 +295,7 @@ export function AdminKbPage() {
           >
             删除
           </button>
-        </div>
+        </OperationsActions>
       ),
     },
   ]
@@ -319,10 +313,44 @@ export function AdminKbPage() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return (
-    <div className="page-stack kb-page kb-admin">
+    <div className="page-stack kb-page kb-admin ops-page">
       <PageHeader title="知识库管理" description="维护教程分类与文章" />
 
-      <section className="data-section kb-admin-section" aria-labelledby="kb-admin-categories-title">
+      <section className="ops-card ops-table" aria-label="知识库管理">
+        <OperationsHeading title="知识库管理" action={
+          <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>新建文章</button>
+        } />
+        <div className="ops-filters">
+          <FormSelect aria-label="按分类筛选" value={categoryFilter} onChange={(event) => changeCategoryFilter(event.currentTarget.value)}>
+            {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </FormSelect>
+          <FormSelect aria-label="发布状态" value={publishedFilter} onChange={(event) => changePublishedFilter(event.currentTarget.value as PublishedFilter)}>
+            <option value="all">全部状态</option>
+            <option value="true">已发布</option>
+            <option value="false">草稿</option>
+          </FormSelect>
+        </div>
+        {articlesLoading && articles.length === 0 ? <LoadingState label="正在加载文章" /> : null}
+        {!articlesLoading && articlesError ? <ErrorState message={articlesError} onRetry={() => { loadArticles().catch(() => undefined) }} /> : null}
+        {!articlesLoading && !articlesError && total === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title="暂无文章"
+            description={categories.length === 0 ? '先创建分类，再写第一篇文章' : '当前筛选下没有文章'}
+          />
+        ) : null}
+        {!articlesLoading && !articlesError && total > 0 ? (
+          <DataTable
+            columns={columns}
+            rows={articles}
+            rowKey={(article) => article.id}
+            empty="暂无匹配文章"
+          />
+        ) : null}
+        {!articlesLoading && !articlesError && <OperationsFooter total={total} pagination={{ page, pageCount, onPageChange: setPage }} />}
+      </section>
+
+      <section className="ops-card ops-table" aria-labelledby="kb-admin-categories-title">
         <DataHeader
           id="kb-admin-categories-title"
           title="分类"
@@ -336,29 +364,17 @@ export function AdminKbPage() {
         {!categoriesLoading && categoriesError ? <ErrorState message={categoriesError} onRetry={() => { loadCategories().catch(() => undefined) }} /> : null}
         {!categoriesLoading && !categoriesError ? (
           <div className="kb-admin-body">
-            {categories.length === 0 ? <p className="kb-hint">暂无分类，先在下方创建第一个分类</p> : (
-              <ul className="kb-category-list">
-                {categories.map((category) => (
-                  <li key={category.id} className="kb-category-item">
-                    <div className="kb-category-main">
-                      <span className="kb-category-name">{category.name}</span>
-                      <span className="kb-category-meta">排序 {category.sort}</span>
-                    </div>
-                    <div className="kb-row-actions">
-                      <button className="button ghost" type="button" disabled={categoryBusy} onClick={() => editCategory(category)}>编辑</button>
-                      <button
-                        className="button ghost"
-                        type="button"
-                        disabled={categoryBusy}
-                        onClick={() => setPendingDelete({ kind: 'category', id: category.id, label: category.name })}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <DataTable rows={categories} rowKey={(category) => category.id} empty="暂无分类，先在下方创建第一个分类" columns={[
+              { key: 'name', header: '分类', render: (category) => <strong className="ops-main">{category.name}<span className="ops-meta">ID {category.id}</span></strong> },
+              { key: 'sort', header: '排序' },
+              { key: 'actions', header: '操作', align: 'right', render: (category) => (
+                <OperationsActions label={`管理分类 ${category.name}`}>
+                  <button className="button ghost" type="button" disabled={categoryBusy} onClick={() => editCategory(category)}>编辑</button>
+                  <button className="button ghost" type="button" disabled={categoryBusy} onClick={() => setPendingDelete({ kind: 'category', id: category.id, label: category.name })}>删除</button>
+                </OperationsActions>
+              ) },
+            ]} />
+            <OperationsFooter total={categories.length} unit="个" />
 
             <form className="kb-category-form" onSubmit={saveCategory} noValidate>
               <h3 className="kb-subtitle">{categoryForm.id === null ? '新建分类' : '编辑分类'}</h3>
@@ -403,51 +419,6 @@ export function AdminKbPage() {
         ) : null}
       </section>
 
-      <section className="data-section kb-admin-section" aria-labelledby="kb-admin-articles-title">
-        <DataHeader
-          id="kb-admin-articles-title"
-          title="文章"
-          filters={(
-                <div className="kb-filters">
-                  <Select label="按分类筛选" value={categoryFilter} options={categoryOptions} onChange={changeCategoryFilter} />
-                  <SegmentedControl
-                    label="发布状态"
-                    value={publishedFilter}
-                    options={[
-                      { value: 'all', label: '全部' },
-                      { value: 'true', label: '已发布' },
-                      { value: 'false', label: '草稿' },
-                    ]}
-                    onChange={changePublishedFilter}
-                  />
-                </div>
-              )}
-          actions={(
-            <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>
-              <Plus aria-hidden="true" size={16} />新建文章
-            </button>
-          )}
-        />
-        {articlesLoading && articles.length === 0 ? <LoadingState label="正在加载文章" /> : null}
-        {!articlesLoading && articlesError ? <ErrorState message={articlesError} onRetry={() => { loadArticles().catch(() => undefined) }} /> : null}
-        {!articlesLoading && !articlesError && total === 0 ? (
-          <EmptyState
-            icon={BookOpen}
-            title="暂无文章"
-            description={categories.length === 0 ? '先创建分类，再写第一篇文章' : '当前筛选下没有文章'}
-          />
-        ) : null}
-        {!articlesLoading && !articlesError && total > 0 ? (
-          <DataTable
-            columns={columns}
-            rows={articles}
-            rowKey={(article) => article.id}
-            empty="暂无匹配文章"
-            pagination={pageCount > 1 ? { page, pageCount, onPageChange: setPage } : undefined}
-          />
-        ) : null}
-      </section>
-
       <EditDrawer
         open={drawerOpen}
         title={articleForm.id === null ? '新建文章' : '编辑文章'}
@@ -457,13 +428,10 @@ export function AdminKbPage() {
       >
         <form className="kb-form" onSubmit={saveArticle} noValidate>
           <FormField label="分类">
-            <Select
-              label="文章分类"
-              value={articleForm.categoryId}
-              options={articleCategoryOptions}
-              onChange={(value) => setArticleForm({ ...articleForm, categoryId: value })}
-              disabled={formBusy}
-            />
+            <FormSelect aria-label="文章分类" value={articleForm.categoryId} disabled={formBusy}
+              onChange={(event) => setArticleForm({ ...articleForm, categoryId: event.currentTarget.value })}>
+              {articleCategoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FormSelect>
           </FormField>
           <FormField label="标题" htmlFor="kb-article-title-input">
             <Input
@@ -510,7 +478,7 @@ export function AdminKbPage() {
               />
             </FormField>
           </div>
-          <p className="kb-hint">正文支持 Markdown：标题、列表、链接、代码块与粗体；草稿不会出现在用户端。</p>
+          <p className="kb-hint">正文支持 Markdown：标题、列表、链接、代码块与粗体；草稿不会出现在用户端</p>
           <div className="kb-form-actions">
             <button className="button ghost" type="button" disabled={formBusy} onClick={() => setDrawerOpen(false)}>取消</button>
             <button className="button primary" type="submit" disabled={formBusy}>

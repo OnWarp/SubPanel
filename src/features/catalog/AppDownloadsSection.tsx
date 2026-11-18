@@ -50,8 +50,8 @@ export function AppDownloadsSection() {
   }
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-app-downloads-title">
-      <DataHeader id="sys-app-downloads-title" title="客户端下载" />
+    <section className="ops-card sys-section" aria-labelledby="sys-app-downloads-title">
+      <DataHeader id="sys-app-downloads-title" title="用户端显示" />
       {loading ? <LoadingState label="正在加载客户端下载设置" /> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !loadError && enabled !== null ? (

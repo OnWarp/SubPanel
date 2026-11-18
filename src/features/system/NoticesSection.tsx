@@ -1,8 +1,10 @@
+import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
+import { DataTable } from '../../ui/DataTable'
+import { StatusBadge } from '../../ui/StatusBadge'
 import { Input, Textarea, DateTimeInput } from '../../ui/Controls'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
@@ -38,6 +40,7 @@ function toDateTimeInput(value: string): string {
 }
 
 export function NoticesSection() {
+  const noticeForm = useRef<HTMLFormElement>(null)
   const [items, setItems] = useState<Notice[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -149,42 +152,30 @@ export function NoticesSection() {
   }
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-notices-title">
-      <DataHeader
-        id="sys-notices-title"
-        title="公告"
-        actions={<button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>}
-      />
+    <section className="ops-card ops-table" aria-label="公告">
+      <OperationsHeading title="公告" action={
+        <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); noticeForm.current?.querySelector<HTMLInputElement>('#ntc-title')?.focus() }}>新建公告</button>
+      } />
+      <div><button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button></div>
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError ? (
-        <div className="sys-body">
-          {items.length === 0 ? <p className="sys-hint">暂无公告</p> : (
-            <ul className="sys-domain-list">
-              {items.map((notice) => (
-                <li key={notice.id} className="sys-domain-item ntc-admin-item">
-                  <div className="ntc-admin-main">
-                    <span className="ntc-admin-title">{notice.title}</span>
-                    <span className="sys-invite-meta">
-                      排序 {notice.sortOrder} · {notice.visible ? '显示中' : '已隐藏'} · {formatNoticeTime(notice.publishedAt)}
-                    </span>
-                  </div>
-                  <div className="ntc-admin-actions">
-                    <Switch
-                      checked={notice.visible}
-                      onChange={(checked) => { toggleVisible(notice, checked).catch(() => undefined) }}
-                      disabled={busy}
-                      ariaLabel={`${notice.visible ? '隐藏' : '显示'}公告 ${notice.title}`}
-                    />
-                    <button className="button ghost" type="button" disabled={busy} onClick={() => startEdit(notice)}>编辑</button>
-                    <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(notice)}>删除</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+        <>
+          <DataTable rows={items} rowKey={(notice) => notice.id} empty="暂无公告" columns={[
+            { key: 'title', header: '公告', render: (notice) => <strong className="ops-main">{notice.title}<span className="ops-meta">{formatNoticeTime(notice.publishedAt)}</span></strong> },
+            { key: 'sortOrder', header: '排序' },
+            { key: 'visible', header: '状态', render: (notice) => <StatusBadge tone={notice.visible ? 'success' : 'muted'}>{notice.visible ? '显示中' : '已隐藏'}</StatusBadge> },
+            { key: 'actions', header: '操作', align: 'right', render: (notice) => (
+              <OperationsActions label={`管理公告 ${notice.title}`}>
+                <button className="button ghost" type="button" disabled={busy} onClick={() => { startEdit(notice); noticeForm.current?.querySelector<HTMLInputElement>('#ntc-title')?.focus() }}>编辑</button>
+                <button className="button ghost" type="button" disabled={busy} onClick={() => { void toggleVisible(notice, !notice.visible) }}>{notice.visible ? '隐藏' : '显示'}</button>
+                <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(notice)}>删除</button>
+              </OperationsActions>
+            ) },
+          ]} />
+          <OperationsFooter total={items.length} />
 
-          <form className="ntc-admin-form" onSubmit={save} noValidate>
+          <form ref={noticeForm} className="ntc-admin-form ops-group" onSubmit={save} noValidate>
             <h3 className="sys-subtitle">{editingId === null ? '新建公告' : '编辑公告'}</h3>
             <FormField label="标题" htmlFor="ntc-title">
               <Input
@@ -246,7 +237,7 @@ export function NoticesSection() {
               <button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : editingId === null ? '发布公告' : '保存修改'}</button>
             </div>
           </form>
-        </div>
+        </>
       ) : null}
 
       <ConfirmDialog
