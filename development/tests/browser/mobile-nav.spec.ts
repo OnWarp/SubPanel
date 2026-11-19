@@ -192,20 +192,37 @@ test.describe('Administrator mobile navigation', () => {
 test('ordinary user has four floating links and a solid selected pill', async ({ page, browser, baseURL }) => {
   await loginAdmin(page)
   const headers = { Origin: new URL(baseURL!).origin }
-  const invite = await page.request.post('/api/admin/invites', {
-    headers, data: { username: 'mobile-nav-user' },
+  // Current registration flow: an invite code is only a qualification.
+  // The administrator enables invite registration and issues a code, then
+  // the user registers through /api/register with their own username,
+  // password and email. The legacy redemption endpoint
+  // (POST /api/invites/:token) no longer creates accounts and returns 410.
+  const mode = await page.request.put('/api/admin/system/registration', {
+    headers, data: { mode: 'invite' },
   })
-  expect(invite.ok()).toBe(true)
-  const inviteLink = new URL((await invite.json()).invite.link)
-  const token = inviteLink.pathname.split('/').pop()
-  expect(token).toBeTruthy()
+  expect(mode.ok()).toBe(true)
+  const invitations = await page.request.post('/api/admin/invitations', {
+    headers, data: { type: 'batch', count: 1 },
+  })
+  expect(invitations.ok()).toBe(true)
+  const inviteCode = (await invitations.json()).invitations[0].code as string
+  expect(inviteCode).toBeTruthy()
 
   const userPage = await browser.newPage({ baseURL, viewport: { width: 390, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' })
   try {
-    const redeemed = await userPage.request.post(`/api/invites/${token}`, {
-      headers, data: { password: userPassword },
+    const registered = await userPage.request.post('/api/register', {
+      headers,
+      data: {
+        username: 'mobile-nav-user',
+        password: userPassword,
+        email: 'mobile-nav-user@example.com',
+        inviteCode,
+      },
     })
-    expect(redeemed.status()).toBe(201)
+    expect(registered.status()).toBe(201)
+    // Registration signs the new user in immediately; drop that session so
+    // the explicit UI login below starts signed out, as the old flow did.
+    await userPage.context().clearCookies()
     await login(userPage, 'mobile-nav-user', userPassword)
     await expect(userPage).toHaveURL(/\/home$/)
     const dock = userPage.getByRole('navigation', { name: '快捷导航', exact: true })
