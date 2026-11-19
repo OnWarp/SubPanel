@@ -27,13 +27,23 @@
   min-width: 0;
 }
 
-.sh-reveal,
 .sh-form {
   display: grid;
   gap: var(--space-3);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.sh-reveal {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
   padding: var(--space-4);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-inset);
   background: var(--color-surface-subtle);
 }
 
@@ -135,11 +145,12 @@
 }
 
 .sh-share-table .sp-table tbody tr {
-  margin: 0 0 var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .sh-share-table .sp-table tbody tr:hover td {

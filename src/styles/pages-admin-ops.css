@@ -2,7 +2,7 @@
   display: grid;
   gap: 1.25rem;
   min-width: 0;
-  padding: clamp(1rem, 2.5vw, 1.75rem);
+  padding: 20px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card-lg);
   background: var(--color-surface);
@@ -120,8 +120,41 @@
   display: grid;
 }
 
-.ops-action-popover .button {
-  justify-content: start;
+.ops-action-popover .button,
+.ops-action-popover .button.ghost,
+.ops-action-popover .button.secondary,
+.ops-action-popover .button.danger {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+  text-align: start;
+}
+
+.ops-action-popover .button:hover:not(:disabled),
+.ops-action-popover .button.ghost:hover:not(:disabled),
+.ops-action-popover .button.secondary:hover:not(:disabled),
+.ops-action-popover .button.danger:hover:not(:disabled) {
+  border: 0;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.ops-action-popover .button.danger,
+.ops-action-popover .button.danger:hover:not(:disabled) {
+  border: 0;
+  background: transparent;
+  color: var(--color-danger);
+}
+
+.ops-action-popover .button.danger:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
 }
 
 .ops-page .ops-group {
@@ -137,10 +170,43 @@
   overflow: auto;
 }
 
-.ops-page .ops-system .sys-section {
+.ops-page .ops-system .sys-section,
+.ops-page .ops-system .data-section.sys-section {
   margin: 0;
   min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
+}
+
+.ops-page .ops-system .sys-content {
+  gap: 0;
+}
+
+.ops-page .ops-system .sys-content > .sys-section + .sys-section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.ops-page .ops-system .section-heading {
+  min-height: 0;
+  padding: 0 0 var(--space-3);
+  border-bottom: 0;
+  background: transparent;
+}
+
+.ops-page .ops-system .section-heading h2 {
+  overflow: visible;
+  font-size: var(--font-title);
+  white-space: normal;
+}
+
+.ops-page .ops-system .sys-body,
+.ops-page .ops-system .sys-form {
+  padding: 0;
 }
 
 .ops-page .ops-system .sys-form {
@@ -178,7 +244,7 @@
 
 .ops-page .ops-system .sys-content {
   display: grid;
-  gap: 1.25rem;
+  gap: 0;
 }
 
 .ops-page .ops-filters .sp-select-trigger {
@@ -207,9 +273,32 @@
   overflow-wrap: anywhere;
 }
 
-.ops-page .ops-overview .adm-stat {
-  border-color: var(--color-border);
+.ops-page .ops-overview .sp-stat-card,
+.ops-page .ops-overview .adm-stat,
+.ops-page .ops-overview .adm-alert {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
+}
+
+.ops-page .ops-overview .adm-stat,
+.ops-page .ops-overview .sp-stat-body {
+  padding-inline: 0;
+}
+
+.ops-page .ops-overview .adm-stat:hover {
+  border-color: transparent;
+}
+
+.ops-page .ops-overview .ui3-stat-grid,
+.ops-page .ops-overview .adm-stat-grid {
+  gap: var(--space-5) var(--space-6);
+}
+
+.ops-page .ops-overview .adm-alert {
+  padding-inline: 0;
+  border-top: 1px solid var(--color-border);
 }
 
 .ops-page .ops-overview .adm-stat-value {
@@ -222,7 +311,7 @@
 }
 
 .ops-page .ops-system .ops-template > :not(.data-header) {
-  margin-inline: var(--space-5);
+  margin-inline: 0;
 }
 
 .ops-page .ops-system .ops-template > .ops-group {
@@ -230,6 +319,17 @@
 }
 
 @media (max-width: 760px) {
+  .ops-page .ops-card {
+    padding: var(--space-4);
+  }
+
+  .ops-action-popover .button,
+  .ops-action-popover .button.ghost,
+  .ops-action-popover .button.secondary,
+  .ops-action-popover .button.danger {
+    min-height: 44px;
+  }
+
   .ops-page .ops-table .sp-table td {
     padding-block: .5rem;
   }

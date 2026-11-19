@@ -146,7 +146,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   }
 
   return (
-    <section className="ops-card sys-domain-card" aria-labelledby={`${idPrefix}-title`}>
+    <section className="sys-domain-block" aria-labelledby={`${idPrefix}-title`}>
       <header className="ops-heading">
         <h3 id={`${idPrefix}-title`} className="sys-domain-card-title">{title}</h3>
         <button className="button primary" type="button" aria-expanded={expanded} aria-controls={`${idPrefix}-add`} disabled={adding} onClick={() => setExpanded(!expanded)}>
