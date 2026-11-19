@@ -32,6 +32,7 @@ export interface SourceRow {
   name: string
   type: 'manual' | 'file' | 'remote'
   enabled: 0 | 1
+  keep_on_failure: 0 | 1
   encrypted_content: string | null
   encrypted_url: string | null
   encrypted_headers: string | null
@@ -116,6 +117,7 @@ export function convertCatalog(kvValue: unknown): CatalogConversionResult {
     name: source.name,
     type: source.type,
     enabled: source.enabled ? 1 : 0,
+    keep_on_failure: source.keepOnFailure ? 1 : 0,
     encrypted_content: source.encryptedContent ? JSON.stringify(source.encryptedContent) : null,
     encrypted_url: source.encryptedUrl ? JSON.stringify(source.encryptedUrl) : null,
     encrypted_headers: source.encryptedHeaders ? JSON.stringify(source.encryptedHeaders) : null,

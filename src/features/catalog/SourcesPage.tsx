@@ -32,6 +32,7 @@ type SourceForm = {
   headers: string
   refreshIntervalMinutes: string
   enabled: boolean
+  keepOnFailure: boolean
 }
 
 type PendingBatch = 'disable' | 'delete'
@@ -53,6 +54,7 @@ const emptyForm = (): SourceForm => ({
   headers: '',
   refreshIntervalMinutes: '60',
   enabled: true,
+  keepOnFailure: true,
 })
 
 const sourceForm = (source: CatalogSource): SourceForm => ({
@@ -63,10 +65,12 @@ const sourceForm = (source: CatalogSource): SourceForm => ({
   headers: '',
   refreshIntervalMinutes: String(source.refreshIntervalMinutes ?? 60),
   enabled: source.enabled,
+  keepOnFailure: source.keepOnFailure ?? true,
 })
 
 const EMPTY_SOURCES: CatalogSource[] = []
 const EMPTY_NODES: CatalogNode[] = []
+const KEEP_ON_FAILURE_LABEL = '拉取失败时保留节点'
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -254,6 +258,7 @@ export function SourcesPage() {
             throw new Error('刷新周期必须是 15 分钟的正整数倍')
           }
           payload.refreshIntervalMinutes = refreshIntervalMinutes
+          payload.keepOnFailure = form.keepOnFailure
         } else if (form.content.trim()) payload.content = form.content
         await api(`/api/admin/catalog/sources/${sourceId}`, { method: 'PUT', body: jsonBody(payload) })
         setDrawer(null)
@@ -295,7 +300,7 @@ export function SourcesPage() {
             const result = await api<{ success?: boolean }>(`/api/admin/catalog/sources/${id}/refresh`, { method: 'POST' })
             if (result.success !== true) {
               failed.add(id)
-              failures.push('刷新失败，已保留上次成功版本')
+              failures.push('刷新来源失败')
             }
           } else await api(`/api/admin/catalog/sources/${id}`, { method: 'PUT', body: jsonBody({ enabled: action === 'enable' }) })
         } catch (cause) {
@@ -348,7 +353,10 @@ export function SourcesPage() {
       render: (source) => (
         <ResourceRowActions actions={[
           { label: '编辑', disabled: busy, onClick: () => openEdit(source) },
-          ...(source.type === 'remote' ? [{ label: '刷新', disabled: busy, onClick: () => executeSingleRefresh(source.id) }] : []),
+          ...(source.type === 'remote' ? [
+            { label: '刷新', disabled: busy, onClick: () => executeSingleRefresh(source.id) },
+            { label: KEEP_ON_FAILURE_LABEL, checked: source.keepOnFailure ?? true, disabled: busy, onClick: () => toggleKeepOnFailure(source) },
+          ] : []),
           { label: '删除', danger: true, disabled: busy, onClick: () => { setSelected(new Set([source.id])); askBatch('delete') } },
         ]} />
       ),
@@ -392,6 +400,9 @@ export function SourcesPage() {
             <label className="field"><span>来源内容</span><Textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
             <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button><span className="drawer-note">保存前会先验证可解析节点</span></div>
           </>}
+          {drawer && drawer !== 'create' && form.type === 'remote' ? (
+            <Switch label={KEEP_ON_FAILURE_LABEL} checked={form.keepOnFailure} onChange={(checked) => updateForm('keepOnFailure', checked)} disabled={busy} />
+          ) : null}
           <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />
           {preview ? <section className="source-preview" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
@@ -403,6 +414,24 @@ export function SourcesPage() {
     </div>
   )
 
+  async function toggleKeepOnFailure(source: CatalogSource) {
+    if (busy) return
+    setBusy(true)
+    setWarning('')
+    try {
+      await api(`/api/admin/catalog/sources/${source.id}`, {
+        method: 'PUT',
+        body: jsonBody({ keepOnFailure: !(source.keepOnFailure ?? true) }),
+      })
+      await load()
+      toast.notify('来源已更新')
+    } catch (cause) {
+      toast.notifyError(errorMessage(cause, '保存来源失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function executeSingleRefresh(id: string) {
     if (busy) return
     setBusy(true)
@@ -411,7 +440,7 @@ export function SourcesPage() {
       const result = await api<{ success: boolean }>('/api/admin/catalog/sources/' + id + '/refresh', { method: 'POST' })
       await load()
       if (result.success) toast.notify('来源已刷新')
-      else setWarning('刷新失败，已保留上次成功版本')
+      else setWarning('刷新来源失败')
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '刷新来源失败'))
     } finally {

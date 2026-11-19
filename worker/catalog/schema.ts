@@ -79,6 +79,7 @@ const sourceBaseSchema = z.object({
   encryptedContent: encryptedValueSchema.optional(),
   encryptedUrl: encryptedValueSchema.optional(),
   encryptedHeaders: encryptedValueSchema.optional(),
+  keepOnFailure: z.boolean().default(true),
   refreshIntervalMinutes: z.number().int().positive().optional(),
   detectedFormat: importFormatSchema.optional(),
   warnings: z.array(sourceWarningSchema),

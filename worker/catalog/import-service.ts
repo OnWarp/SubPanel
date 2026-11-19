@@ -20,7 +20,7 @@ import type { ImportResult, ParsedNode } from '../import/model.js'
 import { recompileAfterCatalogChange } from '../delivery/compiler.js'
 
 export type CreateSourceInput =
-  | { type: 'manual' | 'file'; name: string; content: string; enabled?: boolean }
+  | { type: 'manual' | 'file'; name: string; content: string; enabled?: boolean; keepOnFailure?: boolean }
   | {
     type: 'remote'
     name: string
@@ -28,6 +28,7 @@ export type CreateSourceInput =
     headers?: Record<string, string>
     refreshIntervalMinutes: number
     enabled?: boolean
+    keepOnFailure?: boolean
   }
 
 export type ImportServiceOptions = {
@@ -40,6 +41,7 @@ export type SourceSummary = {
   name: string
   type: Source['type']
   enabled: boolean
+  keepOnFailure: boolean
   refreshIntervalMinutes?: number
   detectedFormat?: ImportFormat
   warnings: SourceWarning[]
@@ -60,6 +62,7 @@ export type SourceOperationResult = {
 export type UpdateSourceInput = {
   name?: string
   enabled?: boolean
+  keepOnFailure?: boolean
   content?: string
   url?: string
   headers?: Record<string, string>
@@ -144,6 +147,7 @@ export function summarizeSource(source: Source, remoteUrl?: string): SourceSumma
     name: source.name,
     type: source.type,
     enabled: source.enabled,
+    keepOnFailure: source.keepOnFailure,
     refreshIntervalMinutes: source.refreshIntervalMinutes,
     detectedFormat: source.detectedFormat,
     warnings: source.warnings,
@@ -179,11 +183,11 @@ export async function summarizeSources(env: DataEnv, sources: Source[]): Promise
 async function applyImport(
   snapshot: CatalogSnapshot,
   sourceId: SourceId,
-  result: ImportResult,
+  nodes: ParsedNode[],
   now: string,
 ): Promise<CatalogSnapshot> {
   const next = structuredClone(snapshot)
-  const fingerprinted = await Promise.all(result.nodes.map(async (node) => ({ node, fingerprint: await fingerprintNode(node) })))
+  const fingerprinted = await Promise.all(nodes.map(async (node) => ({ node, fingerprint: await fingerprintNode(node) })))
   const variantsByFingerprint = new Map<string, ParsedNode[]>()
   for (const item of fingerprinted) {
     const variants = variantsByFingerprint.get(item.fingerprint) ?? []
@@ -296,6 +300,7 @@ export async function createSource(
       name,
       type: input.type,
       enabled: input.enabled ?? true,
+      keepOnFailure: input.keepOnFailure ?? true,
       encryptedContent: await encryptText(input.content, material.encryptionKey),
       detectedFormat: parsed.format,
       warnings: parsed.warnings,
@@ -305,7 +310,7 @@ export async function createSource(
       updatedAt: now,
     }
     const withSource = { ...snapshot, nextSourceId: snapshot.nextSourceId + 1, sources: [...snapshot.sources, source] }
-    const saved = await writeCatalog(env, await applyImport(withSource, id, parsed, now), now)
+    const saved = await writeCatalog(env, await applyImport(withSource, id, parsed.nodes, now), now)
     const warning = await recompileDelivery(env)
     return { success: true, source: summarizeSource(sourceById(saved, id)), ...(warning ? { warning } : {}) }
   }
@@ -321,6 +326,7 @@ export async function createSource(
     name,
     type: 'remote',
     enabled: input.enabled ?? true,
+    keepOnFailure: input.keepOnFailure ?? true,
     encryptedUrl: await encryptText(safeUrl, material.encryptionKey),
     encryptedHeaders: await encryptText(JSON.stringify(safeHeaders), material.encryptionKey),
     refreshIntervalMinutes: input.refreshIntervalMinutes,
@@ -342,7 +348,7 @@ export async function createSource(
       lastSuccessAt: now,
       lastErrorCode: undefined,
     }
-    next = await applyImport(replaceSource(next, source), id, parsed, now)
+    next = await applyImport(replaceSource(next, source), id, parsed.nodes, now)
     success = true
   } catch (error) {
     source = { ...source, lastErrorCode: safeErrorCode(error) }
@@ -375,7 +381,7 @@ export async function replaceSourceContent(
     lastErrorCode: undefined,
     updatedAt: now,
   }
-  const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
+  const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now), now)
   const warning = await recompileDelivery(env)
   return { success: true, source: summarizeSource(sourceById(saved, current.id)), ...(warning ? { warning } : {}) }
 }
@@ -390,7 +396,13 @@ export async function updateSource(
   const snapshot = await readCatalog(env)
   const current = sourceById(snapshot, sourceId)
   const name = input.name === undefined ? current.name : normalizedName(input.name)
-  let source: Source = { ...current, name, enabled: input.enabled ?? current.enabled, updatedAt: now }
+  let source: Source = {
+    ...current,
+    name,
+    enabled: input.enabled ?? current.enabled,
+    keepOnFailure: input.keepOnFailure ?? current.keepOnFailure,
+    updatedAt: now,
+  }
   let next = replaceSource(snapshot, source)
 
   if (current.type === 'remote') {
@@ -438,7 +450,7 @@ export async function updateSource(
       lastSuccessAt: now,
       lastErrorCode: undefined,
     }
-    next = await applyImport(replaceSource(snapshot, source), current.id, parsed, now)
+    next = await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now)
   }
   const saved = await writeCatalog(env, next, now)
   const warning = await recompileDelivery(env)
@@ -488,7 +500,7 @@ export async function refreshSource(
       lastErrorCode: undefined,
       updatedAt: now,
     }
-    const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed, now), now)
+    const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now), now)
     const warning = await recompileDelivery(env)
     return { success: true, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
   } catch (error) {
@@ -498,7 +510,10 @@ export async function refreshSource(
       lastErrorCode: safeErrorCode(error),
       updatedAt: now,
     }
-    const saved = await writeCatalog(env, replaceSource(snapshot, source), now)
+    const failed = replaceSource(snapshot, source)
+    // Reconcile the failed source without treating an empty import as a success.
+    const next = current.keepOnFailure ? failed : await applyImport(failed, current.id, [], now)
+    const saved = await writeCatalog(env, next, now)
     const warning = await recompileDelivery(env)
     return { success: false, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
   }

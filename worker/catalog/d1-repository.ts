@@ -49,6 +49,7 @@ type SourceSql = {
   name: string
   type: 'manual' | 'file' | 'remote'
   enabled: number
+  keep_on_failure?: number
   encrypted_content: string | null
   encrypted_url: string | null
   encrypted_headers: string | null
@@ -253,6 +254,7 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
           name: row.name,
           type: row.type,
           enabled: row.enabled === 1,
+          keepOnFailure: row.keep_on_failure !== 0,
           warnings: parseJson(row.warnings),
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -316,16 +318,17 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
 function sourceInsert(db: AppDatabase, row: SourceRow): D1PreparedStatement {
   return db.prepare(
     `INSERT INTO sources (
-      id, name, type, enabled,
+      id, name, type, enabled, keep_on_failure,
       encrypted_content, encrypted_url, encrypted_headers,
       refresh_interval_minutes, detected_format, warnings,
       last_attempt_at, last_success_at, last_error_code,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       type = excluded.type,
       enabled = excluded.enabled,
+      keep_on_failure = excluded.keep_on_failure,
       encrypted_content = excluded.encrypted_content,
       encrypted_url = excluded.encrypted_url,
       encrypted_headers = excluded.encrypted_headers,
@@ -342,6 +345,7 @@ function sourceInsert(db: AppDatabase, row: SourceRow): D1PreparedStatement {
     row.name,
     row.type,
     row.enabled,
+    row.keep_on_failure,
     row.encrypted_content,
     row.encrypted_url,
     row.encrypted_headers,

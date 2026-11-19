@@ -69,6 +69,7 @@ export type CatalogSource = {
   name: string
   type: 'manual' | 'file' | 'remote'
   enabled: boolean
+  keepOnFailure: boolean
   refreshIntervalMinutes?: number
   detectedFormat?: string
   warnings: Array<{ code: string; message: string; line?: number }>

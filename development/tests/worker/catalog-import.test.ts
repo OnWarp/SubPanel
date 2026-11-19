@@ -12,6 +12,7 @@ import { decryptText, readCryptoMaterial } from '../../../worker/platform/crypto
 import { enableD1Modules, resetData } from './helpers'
 
 const NOW = '2026-07-23T00:00:00.000Z'
+const REFRESH_AT = '2026-07-23T01:00:00.000Z'
 
 const ssLine = (name: string, password = 'password', host = 'ss.example.com') =>
   `ss://${btoa(`aes-128-gcm:${password}`)}@${host}:8388#${encodeURIComponent(name)}`
@@ -164,6 +165,7 @@ describe('catalog import service', () => {
     }, { now: NOW, fetcher: initial })
     const before = await readCatalog(env)
     const sourceBefore = before.sources[0]
+    expect(sourceBefore.keepOnFailure).toBe(true)
     const nodeIds = before.nodes.map(({ id }) => id)
 
     const failures: Array<typeof fetch> = [
@@ -182,6 +184,83 @@ describe('catalog import service', () => {
       expect(after.sources[0].lastSuccessAt).toBe(sourceBefore.lastSuccessAt)
       expect(after.nodes.map(({ id }) => id)).toEqual(nodeIds)
     }
+  })
+
+  function createRemoteSource(keepOnFailure: boolean, content = ssLine('Remote node')) {
+    return createSource(env, {
+      type: 'remote',
+      name: 'Remote source',
+      url: 'https://feed.example.com/source',
+      refreshIntervalMinutes: 15,
+      keepOnFailure,
+    }, { now: NOW, fetcher: async () => new Response(content) })
+  }
+
+  function failRemoteRefresh(sourceId: string) {
+    return refreshSource(env, sourceId, {
+      now: REFRESH_AT,
+      fetcher: async () => new Response(null, { status: 503 }),
+    })
+  }
+
+  it('keeps nodes when a remote refresh fails with keepOnFailure enabled', async () => {
+    const { source } = await createRemoteSource(true)
+    const before = await readCatalog(env)
+    await expect(failRemoteRefresh(source.id)).resolves.toMatchObject({
+      success: false,
+      source: { keepOnFailure: true, lastErrorCode: 'REMOTE_HTTP_ERROR', lastSuccessAt: NOW },
+    })
+    expect((await readCatalog(env)).nodes).toEqual(before.nodes)
+  })
+
+  it('clears source nodes when a remote refresh fails with keepOnFailure disabled', async () => {
+    const { source } = await createRemoteSource(true)
+    await updateSource(env, source.id, { keepOnFailure: false })
+    await updateSource(env, source.id, { name: 'Renamed source' })
+    expect((await readCatalog(env)).nodes).toHaveLength(1)
+    await expect(refreshSource(env, source.id, {
+      now: REFRESH_AT,
+      fetcher: async () => new Response(JSON.stringify([{ type: 'direct' }])),
+    })).resolves.toMatchObject({
+      success: false,
+      source: { keepOnFailure: false, lastErrorCode: 'IMPORT_ZERO_NODES', lastSuccessAt: NOW, lastAttemptAt: REFRESH_AT },
+    })
+    const after = await readCatalog(env)
+    expect(after.sources[0].lastErrorCode).toBe('IMPORT_ZERO_NODES')
+    expect(after.nodes).toEqual([])
+  })
+
+  it('keeps retained nodes after a failed refresh with keepOnFailure disabled', async () => {
+    const { source } = await createRemoteSource(false)
+    const before = await readCatalog(env)
+    const [node] = before.nodes
+    node.retained = true
+    await writeCatalog(env, before, NOW)
+
+    expect((await failRemoteRefresh(source.id)).success).toBe(false)
+    expect((await readCatalog(env)).nodes).toEqual([
+      { ...node, sourceIds: [], rawVariants: [], updatedAt: REFRESH_AT },
+    ])
+  })
+
+  it('preserves other sources when a failed refresh clears the remote source', async () => {
+    const shared = ssLine('Shared node')
+    const { source } = await createRemoteSource(false, shared)
+    const other = await createSource(env, {
+      type: 'manual',
+      name: 'Other source',
+      content: `${shared}\n${ssLine('Other node', 'other', 'other.example.com')}`,
+    }, { now: NOW })
+    const before = await readCatalog(env)
+    const [sharedNode, otherNode] = before.nodes
+
+    expect((await failRemoteRefresh(source.id)).success).toBe(false)
+    expect((await readCatalog(env)).nodes).toEqual([{
+      ...sharedNode,
+      sourceIds: [other.source.id],
+      rawVariants: sharedNode.rawVariants.filter(({ sourceId }) => sourceId === other.source.id),
+      updatedAt: REFRESH_AT,
+    }, otherNode])
   })
 
   it('rejects an import that would exceed 100 nodes', async () => {

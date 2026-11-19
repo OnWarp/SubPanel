@@ -4,8 +4,8 @@ import { groupNodeIds, subscriptionCounts } from '../../../src/features/catalog/
 
 const now = '2026-07-27T00:00:00.000Z'
 const sources: CatalogSource[] = [
-  { id: 'source-a', name: 'A', type: 'manual', enabled: true, warnings: [], createdAt: now, updatedAt: now },
-  { id: 'source-b', name: 'B', type: 'manual', enabled: false, warnings: [], createdAt: now, updatedAt: now },
+  { id: 'source-a', name: 'A', type: 'manual', enabled: true, keepOnFailure: true, warnings: [], createdAt: now, updatedAt: now },
+  { id: 'source-b', name: 'B', type: 'manual', enabled: false, keepOnFailure: true, warnings: [], createdAt: now, updatedAt: now },
 ]
 const nodes: CatalogNode[] = [
   { id: 'node-a', protocol: 'ss', displayName: 'A', server: 'a.test', port: 1, sourceIds: ['source-a'], enabled: true, retained: false, order: 1, createdAt: now, updatedAt: now },

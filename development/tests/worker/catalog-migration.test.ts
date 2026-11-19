@@ -16,6 +16,7 @@ describe('catalog snapshot migration', () => {
       name: 'source',
       type: 'manual',
       enabled: true,
+      keepOnFailure: true,
       warnings: [],
       createdAt: NOW,
       updatedAt: NOW,
@@ -71,6 +72,7 @@ describe('catalog snapshot migration', () => {
 
     expect(snapshot.schemaVersion).toBe(2)
     expect(snapshot.revision).toBe(4)
+    expect(snapshot.sources[0].keepOnFailure).toBe(true)
     expect(snapshot.nodes[0]).toMatchObject({
       protocol: 'vless',
       credentials: { uuid: '11111111-1111-4111-8111-111111111111' },

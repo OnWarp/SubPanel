@@ -187,7 +187,7 @@ test.describe.serial('Administrator frontend', () => {
   test('allows safe edits to remote source settings without exposing stored secrets', async ({ page }) => {
     await loginAdmin(page)
     const now = new Date().toISOString()
-    const source = { id: 'src_42', name: 'Remote source', type: 'remote', enabled: true, refreshIntervalMinutes: 60, remoteHost: 'remote.example.com', warnings: [], updatedAt: now, createdAt: now }
+    const source = { id: 'src_42', name: 'Remote source', type: 'remote', enabled: true, keepOnFailure: true, refreshIntervalMinutes: 60, remoteHost: 'remote.example.com', warnings: [], updatedAt: now, createdAt: now }
     let updateBody: Record<string, unknown> | null = null
     await page.route('**/api/admin/catalog', (route) => route.fulfill({
       status: 200,
@@ -197,13 +197,26 @@ test.describe.serial('Administrator frontend', () => {
     await page.route('**/api/admin/catalog/sources/src_42', async (route) => {
       if (route.request().method() === 'PUT') {
         updateBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+        if (typeof updateBody.keepOnFailure === 'boolean') source.keepOnFailure = updateBody.keepOnFailure
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, source }) })
       } else await route.continue()
     })
     await page.goto('/catalog/sources')
     const drawer = page.getByRole('dialog', { name: '编辑来源' })
-    await page.getByRole('row', { name: /Remote source/ }).getByRole('button', { name: '更多操作' }).click()
-    await page.getByRole('row', { name: /Remote source/ }).getByRole('button', { name: '编辑' }).click()
+    const row = page.getByRole('row', { name: /Remote source/ })
+    const more = row.getByRole('button', { name: '更多操作' })
+    await more.click()
+    const toggle = row.getByRole('button', { name: '拉取失败时保留节点' })
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await toggle.click()
+    await expect.poll(() => updateBody).toEqual({ keepOnFailure: false })
+    await more.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await row.getByRole('button', { name: '编辑' }).click()
+    const keepOnFailure = drawer.getByRole('switch', { name: '拉取失败时保留节点' })
+    await expect(keepOnFailure).not.toBeChecked()
+    await drawer.getByText('拉取失败时保留节点', { exact: true }).click()
+    await expect(keepOnFailure).toBeChecked()
     await expect(drawer.getByLabel('远程 URL')).toBeEnabled()
     await expect(drawer.getByLabel('请求 Headers')).toBeEnabled()
     await drawer.getByLabel('远程 URL').fill('https://new.example.com/source')
@@ -213,6 +226,7 @@ test.describe.serial('Administrator frontend', () => {
     await expect.poll(() => updateBody).toEqual({
       name: 'Remote source',
       enabled: true,
+      keepOnFailure: true,
       url: 'https://new.example.com/source',
       headers: {},
       refreshIntervalMinutes: 120,
