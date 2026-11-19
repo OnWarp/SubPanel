@@ -22,12 +22,13 @@ import { removeGroupReference } from '../delivery/service.js'
 const sourceName = z.string().trim().min(1).max(128)
 const headers = z.record(z.string(), z.string()).default({})
 const createSourceSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.enum(['manual', 'file']), name: sourceName, content: z.string().min(1), enabled: z.boolean().optional() }),
-  z.object({ type: z.literal('remote'), name: sourceName, url: z.string().min(1), headers, refreshIntervalMinutes: z.number().int().positive(), enabled: z.boolean().optional() }),
+  z.object({ type: z.enum(['manual', 'file']), name: sourceName, content: z.string().min(1), enabled: z.boolean().optional(), keepOnFailure: z.boolean().optional() }),
+  z.object({ type: z.literal('remote'), name: sourceName, url: z.string().min(1), headers, refreshIntervalMinutes: z.number().int().positive(), enabled: z.boolean().optional(), keepOnFailure: z.boolean().optional() }),
 ])
 const updateSourceSchema = z.object({
   name: sourceName.optional(),
   enabled: z.boolean().optional(),
+  keepOnFailure: z.boolean().optional(),
   content: z.string().min(1).optional(),
   url: z.string().min(1).optional(),
   headers: z.record(z.string(), z.string()).optional(),

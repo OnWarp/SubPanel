@@ -60,6 +60,7 @@ type RowAction = {
   accessibleLabel?: string
   danger?: boolean
   disabled?: boolean
+  checked?: boolean
   onClick: () => void
 }
 
@@ -73,18 +74,19 @@ export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
         <Ellipsis aria-hidden="true" size={18} />
       </button>
       <div className="resource-card-actions" id={id} ref={popup} popover="auto" role="group" aria-label="行操作">
-        {actions.map(({ label, accessibleLabel, danger, disabled, onClick }) => (
+        {actions.map(({ label, accessibleLabel, danger, disabled, checked, onClick }) => (
           <button
             className={danger ? 'resource-card-action-danger' : undefined}
             key={label}
             type="button"
             aria-label={accessibleLabel}
+            aria-pressed={checked}
             disabled={disabled}
             onClick={() => {
               popup.current?.hidePopover()
               onClick()
             }}
-          >{label}</button>
+          >{label}{checked !== undefined && <span aria-hidden="true">{checked ? ' ✓' : ''}</span>}</button>
         ))}
       </div>
     </>
