@@ -1,6 +1,6 @@
 // Built-client navigation acceptance checks; APIs are intercepted without a server.
 // Run after npm run build in a sandbox that permits Chromium sockets.
-import { chromium } from '@playwright/test'
+import { chromium, expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -42,6 +42,7 @@ await page.route('http://nav.test/**', async route => {
   else if (url.pathname === '/api/admin/system/domains') body = { panel: [], subscription: [], primaryPanelDomainId: null, primarySubscriptionDomainId: null, restrictionEnabled: false }
   else if (url.pathname.endsWith('/subscription-platforms')) body = { platforms: [] }
   else if (url.pathname === '/api/admin/share-settings') body = { settings: { enabled: true, createAllowed: true, maxSharesPerSubscription: 10, maxActiveSharesPerUser: 10, maxValidityDays: 30, defaultAllowOriginalLink: false, defaultAccessControl: 'none', requireLoginDefault: false, publicBaseUrl: '' } }
+  else if (url.pathname === '/api/admin/system/subscription-templates') body = { templates: [], defaultId: null }
   else if (url.pathname === '/api/health') body = { ok: true, version: '0.1.0', cron: null }
   else if (url.pathname === '/api/admin/system/status') body = { status: { databaseName: 'test', modules: [], migrations: [] } }
   else if (url.pathname === '/api/admin/system/app-downloads') body = { enabled: true }
@@ -85,8 +86,8 @@ try {
       const tab = tabs.getByRole('link', { name: label, exact: true })
       await tab.click()
       await page.waitForURL('**' + path)
-      assert.equal(await tab.getAttribute('aria-current'), 'page')
-      assert.equal(await sidebar.getByRole('link', { name: domain, exact: true }).getAttribute('aria-current'), 'page')
+      await expect(tab).toHaveAttribute('aria-current', 'page')
+      await expect(sidebar.getByRole('link', { name: domain, exact: true })).toHaveAttribute('aria-current', 'page')
     }
   }
 
@@ -96,7 +97,7 @@ try {
   assert.equal(new URL(page.url()).pathname, '/invites')
   assert.equal(new URL(page.url()).search, '?keep=1')
   await page.reload()
-  await tabs().getByRole('link', { name: '邀请', exact: true }).getAttribute('aria-current').then(value => assert.equal(value, 'page'))
+  await expect(tabs().getByRole('link', { name: '邀请', exact: true })).toHaveAttribute('aria-current', 'page')
   await tabs().getByRole('link', { name: '回收站', exact: true }).click()
   await main().getByText('回收站是空的').waitFor()
   assert.ok(calls.some(call => call.includes('/api/admin/users?deleted=only')))
@@ -114,11 +115,11 @@ try {
     await settings().getByRole('link', { name: label, exact: true }).click()
     await page.waitForURL(`**/system/${key}?subscription=sub_1`)
     await page.reload()
-    assert.equal(await settings().getByRole('link', { name: label, exact: true }).getAttribute('aria-current'), 'page')
+    await expect(settings().getByRole('link', { name: label, exact: true })).toHaveAttribute('aria-current', 'page')
   }
   await settings().getByRole('link', { name: '审计日志', exact: true }).click()
   await page.waitForURL('**/audit-logs?subscription=sub_1')
-  assert.equal(await settings().getByRole('link', { name: '审计日志', exact: true }).getAttribute('aria-current'), 'page')
+  await expect(settings().getByRole('link', { name: '审计日志', exact: true })).toHaveAttribute('aria-current', 'page')
 
   await go('/system?tab=app-downloads&keep=1')
   await page.waitForURL('**/catalog/apps?keep=1')
@@ -143,14 +144,21 @@ try {
   await go('/users')
   const dock = page.locator('.admin-mobile-dock')
   await dock.waitFor()
-  assert.deepEqual(await dock.getByRole('link').allTextContents(), ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+  assert.deepEqual(await dock.getByRole('link').allTextContents(), ['概览', '节点管理', '订阅管理', '用户管理'])
   assert.equal(await dock.getByRole('link', { name: '用户管理', exact: true }).getAttribute('aria-current'), 'page')
   assert.equal(await page.getByRole('button', { name: '更多', exact: true }).count(), 0)
-  await dock.getByRole('link', { name: '运营管理', exact: true }).click()
+  await page.locator('.topbar-account summary').click()
+  const accountMenu = page.locator('.topbar-account nav')
+  assert.deepEqual(await accountMenu.getByRole('link').allTextContents(), ['运营管理', '系统设置', '账户安全'])
+  await accountMenu.getByRole('link', { name: '运营管理', exact: true }).click()
   await page.waitForURL('**/delivery/tickets')
   await page.getByRole('navigation', { name: '运营管理导航' }).getByRole('link', { name: '客户端下载', exact: true }).click()
   await page.waitForURL('**/catalog/apps')
-  assert.equal(await dock.getByRole('link', { name: '运营管理', exact: true }).getAttribute('aria-current'), 'page')
+  await expect(dock.locator('[aria-current="page"]')).toHaveCount(0)
+  await page.locator('.topbar-account summary').click()
+  await page.locator('.topbar-account').getByRole('link', { name: '系统设置', exact: true }).click()
+  await page.waitForURL('**/system/registration')
+  await expect(dock.locator('[aria-current="page"]')).toHaveCount(0)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
 
   role = 'user'
@@ -162,7 +170,7 @@ try {
     const help = page.getByRole('navigation', { name: '帮助与支持' })
     assert.deepEqual(await help.getByRole('link').allTextContents(), ['公告', '知识库', '工单', '客户端下载'])
     await help.getByRole('link', { name: '公告', exact: true }).click()
-    assert.equal(await nav.getByRole('link', { name: '我的', exact: true }).getAttribute('aria-current'), 'page')
+    await expect(nav.getByRole('link', { name: '我的', exact: true })).toHaveAttribute('aria-current', 'page')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   }
   await go('/home')
@@ -177,5 +185,5 @@ try {
   await page.getByRole('navigation', { name: '帮助与支持' }).waitFor()
   await page.waitForFunction(() => !document.querySelector('[aria-label="帮助与支持"] a[href="/apps"]'))
   assert.deepEqual(errors, [])
-  console.log('PASS: user-management/history/refresh, settings/legacy query mapping, operations ownership, avatar/security/theme/logout, mobile admin six-entry dock, four user entries, support ownership and role guards')
+  console.log('PASS: user-management/history/refresh, settings/legacy query mapping, operations ownership, avatar/security/theme/logout, mobile admin four-entry dock, narrow account menu, four user entries, support ownership and role guards')
 } finally { await browser.close() }

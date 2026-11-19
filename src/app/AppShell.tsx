@@ -5,7 +5,7 @@ import { useAccountProfile } from '../features/accounts/profile'
 import { SectionTabs } from '../ui/SectionTabs'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { useSession } from './session'
-import { adminDomainForPath, adminDomains, userSidebar, navigationActive } from './navigation'
+import { adminDomainForPath, adminDomains, adminMobileDock, userSidebar, navigationActive } from './navigation'
 
 const userDock = userSidebar
 
@@ -20,7 +20,7 @@ function UserCenter({ signOut }: { signOut: () => Promise<void> }) {
     </details>{error ? <p role="alert">{error}</p> : null}</div>
 }
 
-function AdminAccount({ signOut, onError }: { signOut: () => Promise<void>; onError: (message: string) => void }) {
+function AdminAccount({ signOut, onError, placement }: { signOut: () => Promise<void>; onError: (message: string) => void; placement: 'sidebar' | 'topbar' }) {
   const { user } = useSession()
   const { profile } = useAccountProfile()
   const { pathname } = useLocation()
@@ -39,8 +39,14 @@ function AdminAccount({ signOut, onError }: { signOut: () => Promise<void>; onEr
           <ChevronDown size={16} aria-hidden="true" />
         </summary>
         <nav aria-label="管理员账号菜单">
+          {placement === 'topbar' ? (
+            <>
+              <Link to="/delivery/tickets">运营管理</Link>
+              <Link to="/system/registration">系统设置</Link>
+            </>
+          ) : null}
           <Link to="/account">账户安全</Link>
-          <ThemeMenu id="admin-theme-menu" label="外观" />
+          <ThemeMenu id={placement === 'topbar' ? 'admin-theme-menu-topbar' : 'admin-theme-menu'} label="外观" />
           <button type="button" onClick={() => { signOut().catch(() => onError('退出登录失败，请重试')) }}>退出登录</button>
         </nav>
       </details>
@@ -100,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
         )}
-        {isAdmin ? <AdminAccount signOut={signOut} onError={setSignOutError} /> : <UserCenter key={location.pathname} signOut={signOut} />}
+        {isAdmin ? <AdminAccount placement="sidebar" signOut={signOut} onError={setSignOutError} /> : <UserCenter key={location.pathname} signOut={signOut} />}
       </aside>
       <div className="workspace">
         <header className="workspace-topbar">
@@ -108,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div id="page-title-slot" className="topbar-context" />
           {!isAdmin ? <ThemeMenu /> : null}
           <div id="page-actions-slot" className="topbar-page-actions" />
-          {isAdmin ? <div className="topbar-account"><AdminAccount signOut={signOut} onError={setSignOutError} /></div> : null}
+          {isAdmin ? <div className="topbar-account"><AdminAccount placement="topbar" signOut={signOut} onError={setSignOutError} /></div> : null}
         </header>
         <main key={location.pathname} className="workspace-content">
           {signOutError ? <p role="alert">{signOutError}</p> : null}
@@ -118,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
       {isAdmin ? (
         <nav className="admin-mobile-dock" aria-label="主导航">
-          {adminDomains.map((domain) => {
+          {adminMobileDock.map((domain) => {
             const { to, label, icon: Icon } = domain
             const active = domain === adminDomain
             return (
@@ -129,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 aria-current={active ? 'page' : undefined}
                 aria-label={label}
               >
-                <Icon aria-hidden="true" size={18} />
+                <Icon aria-hidden="true" size={23} />
                 <span>{label}</span>
               </Link>
             )
@@ -139,7 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="dock nav-dock" aria-label="快捷导航">
           {userDock.map(({ to, label, icon: Icon }) => (
             <Link key={to} to={to} className={`dock-item nav-dock-item${navigationActive(location.pathname, to) ? ' active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
-              <Icon aria-hidden="true" size={18} /><span>{label}</span>
+              <Icon aria-hidden="true" size={23} /><span>{label}</span>
             </Link>
           ))}
         </nav>

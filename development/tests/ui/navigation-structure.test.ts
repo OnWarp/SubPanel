@@ -33,7 +33,9 @@ function links(html: string) { return [...html.matchAll(/href="([^"]*)"/g)].map(
 function mobileDock(html: string) {
   return html.match(/<nav[^>]*class="admin-mobile-dock"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? ''
 }
-const dockLabels = ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置']
+const desktopLabels = ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置']
+const mobileDockLabels = ['概览', '节点管理', '订阅管理', '用户管理']
+const mobileDockRoutes = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users']
 
 describe('navigation ownership and route compatibility', () => {
   const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users', '/delivery/tickets', '/system/registration']
@@ -42,10 +44,12 @@ describe('navigation ownership and route compatibility', () => {
     const sidebar = nav(html, '主导航')
     expect(links(sidebar)).toEqual(desktopDomains)
     expect(sidebar).not.toContain('nav-label')
-    expect(sidebar.match(/aria-label="([^"]+)"/g)).toEqual(dockLabels.map(label => `aria-label="${label}"`))
+    expect(sidebar.match(/aria-label="([^"]+)"/g)).toEqual(desktopLabels.map(label => `aria-label="${label}"`))
     const dock = mobileDock(html)
-    expect(links(dock)).toEqual(desktopDomains)
-    expect([...dock.matchAll(/<span>([^<]*)<\/span>/g)].map(match => match[1])).toEqual(dockLabels)
+    expect(links(dock)).toEqual(mobileDockRoutes)
+    expect([...dock.matchAll(/<span>([^<]*)<\/span>/g)].map(match => match[1])).toEqual(mobileDockLabels)
+    expect(dock).not.toContain('运营管理')
+    expect(dock).not.toContain('系统设置')
     expect(dock).not.toContain('更多')
     expect(dock).not.toContain('<button')
     expect(dock).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="page")(?=[^>]*class="admin-mobile-dock-item active")/)
@@ -75,8 +79,12 @@ describe('navigation ownership and route compatibility', () => {
       expect(sidebar).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
       expect(tabs).toMatch(new RegExp(`<a(?=[^>]*href="${path}")(?=[^>]*aria-current="page")`))
       const dock = mobileDock(html)
-      expect(dock.match(/aria-current="page"/g)).toHaveLength(1)
-      expect(dock).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
+      if (mobileDockRoutes.includes(owner)) {
+        expect(dock.match(/aria-current="page"/g)).toHaveLength(1)
+        expect(dock).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
+      } else {
+        expect(dock).not.toContain('aria-current')
+      }
     }
   })
 
@@ -85,7 +93,8 @@ describe('navigation ownership and route compatibility', () => {
     for (const label of ['主导航', '运营管理导航']) {
       expect(nav(html, label)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
     }
-    expect(mobileDock(html)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
+    expect(mobileDock(html)).not.toContain('aria-current')
+    expect(mobileDock(html)).not.toContain('/delivery/tickets')
   })
   it('keeps user and settings tab queries on navigation', () => {
     expect(links(nav(render('/invites/?keep=1'), '用户管理子页'))).toEqual(
@@ -184,6 +193,26 @@ describe('navigation ownership and route compatibility', () => {
     const html = render('/users')
     expect(html).toContain('class="topbar-account"')
     expect(html.match(/aria-label="管理员账号菜单"/g)?.length).toBe(2)
+  })
+  it('puts operations and system settings on the narrow account menu ahead of the existing items', () => {
+    const html = render('/users')
+    const menus = [...html.matchAll(/<nav[^>]*aria-label="管理员账号菜单"[^>]*>([\s\S]*?)<\/nav>/g)].map(match => match[1])
+    expect(menus).toHaveLength(2)
+    expect(menus[0]).not.toContain('运营管理')
+    expect(menus[0]).not.toContain('系统设置')
+    expect(menus[0]).toContain('href="/account"')
+    const topbar = menus[1] ?? ''
+    const labels = ['运营管理', '系统设置', '账户安全', '外观', '退出登录']
+    let cursor = -1
+    for (const label of labels) {
+      const at = topbar.indexOf(label)
+      expect(at).toBeGreaterThan(cursor)
+      cursor = at
+    }
+    expect(topbar).toContain('href="/delivery/tickets"')
+    expect(topbar).toContain('href="/system/registration"')
+    expect(topbar).toContain('href="/account"')
+    expect(topbar).toContain('退出登录')
   })
   it.each(['/home', '/subscriptions', '/nodes', '/me', '/apps', '/notices', '/kb', '/kb/article_1', '/tickets', '/tickets/tkt_1', '/account', '/entitlement', '/entitlements'])('keeps user route %s reachable with identical desktop and mobile navigation', path => {
     const html = render(path, 'user')

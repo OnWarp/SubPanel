@@ -113,14 +113,14 @@ test.describe.serial('SubPanel account shell', () => {
     await expect(page.getByRole('alert')).toContainText('用户名或密码错误')
   })
 
-  test('shows six admin dock entries on a phone without horizontal page overflow', async ({ page }) => {
+  test('shows four admin dock entries on a phone without horizontal page overflow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
     await page.getByLabel('密码').fill('new correct horse password')
     await page.getByRole('button', { name: '登录' }).click()
     const dock = page.locator('.admin-mobile-dock')
-    await expect(dock.getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+    await expect(dock.getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理'])
     await expect(page.getByRole('button', { name: '更多', exact: true })).toHaveCount(0)
     await expect(page.getByRole('dialog', { name: '更多导航' })).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)

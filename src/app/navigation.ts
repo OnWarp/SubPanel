@@ -79,6 +79,10 @@ export const adminDomains: AdminDomain[] = [
   },
 ]
 
+/** Narrow dock only. Operations and system settings stay on the desktop sidebar and the narrow account menu. */
+const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users'])
+export const adminMobileDock = adminDomains.filter((domain) => adminMobileDockTargets.has(domain.to))
+
 export function adminDomainForPath(path: string) {
   return adminDomains.find(({ to, section }) => section
     ? section.tabs.some(tab => matchPath({ path: tab.to, end: !tab.includeChildren }, path))

@@ -294,12 +294,13 @@ tbody tr:hover td { background: var(--color-surface-subtle); }
   .topbar-page-title { gap: 6px; }
   .topbar-page-title p { display: none; }
   .topbar-page-actions { margin-left: 3px; }
-  .workspace-content { padding: 16px 16px 96px; }
-  .admin-layout .workspace-content { padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
-  .dock { display: flex; height: 60px; padding: 4px 6px; position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: var(--z-sidebar); align-items: stretch; justify-content: space-around; gap: 2px; border: 1px solid var(--color-border); border-radius: var(--radius-dock); background: color-mix(in srgb, var(--color-surface) 82%, transparent); box-shadow: var(--shadow-float); backdrop-filter: blur(16px); }
-  .dock-item { display: grid; min-width: 0; flex: 1; padding: 5px 4px; place-items: center; align-content: center; gap: 3px; border: 0; border-radius: var(--radius-ctl); background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: var(--font-xs); font-weight: var(--weight-medium); line-height: 1.1; }
-  .dock-item span { overflow: hidden; max-width: 100%; text-overflow: ellipsis; white-space: nowrap; }
-  .dock-item.active { background: var(--color-surface-subtle); color: var(--color-text); font-weight: var(--weight-semibold); }
+  .workspace-content { padding: 16px 16px calc(9px + 68px + 16px + env(safe-area-inset-bottom, 0px)); }
+  .admin-layout .workspace-content { padding: 16px 16px calc(9px + 68px + 16px + env(safe-area-inset-bottom, 0px)); }
+  .dock { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; height: 68px; padding: 6px 14px; position: fixed; left: calc(19px + env(safe-area-inset-left, 0px)); right: calc(19px + env(safe-area-inset-right, 0px)); bottom: calc(9px + env(safe-area-inset-bottom, 0px)); z-index: var(--z-sidebar); border: 1px solid var(--color-border-strong); border-radius: 34px; background: color-mix(in srgb, var(--color-surface) 92%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.06); backdrop-filter: blur(18px); }
+  .dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border: 0; border-radius: 26px; background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
+  .dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
+  .dock-item span { display: block; overflow: visible; max-width: 100%; font-size: 13px; line-height: 1.15; white-space: nowrap; }
+  .dock-item.active { background: #5e6ad2; color: #fff; font-weight: var(--weight-medium); }
   .dock-backdrop { display: block; position: fixed; inset: 0; z-index: var(--z-overlay); border: 0; background: var(--color-overlay); }
   .dock-sheet { display: grid; padding: 8px 10px 14px; position: fixed; right: 8px; bottom: 0; left: 8px; z-index: var(--z-sidebar); gap: 6px; border: 1px solid var(--color-border); border-bottom: 0; border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; background: var(--color-surface-raised); box-shadow: var(--shadow-float); outline: none; touch-action: pan-y; }
   .dock-sheet-handle { width: 36px; height: 4px; margin: 2px auto 8px; border-radius: var(--radius-pill); background: var(--color-border-strong); }
@@ -311,12 +312,11 @@ tbody tr:hover td { background: var(--color-surface-subtle); }
   .dock-sheet-account strong, .dock-sheet-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dock-sheet-account span { color: var(--color-text-muted); font-size: var(--font-xs); }
   .dock-sheet-account .icon-button { width: 40px; height: 40px; margin-left: auto; }
-  .admin-mobile-dock { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 2px; position: fixed; left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: var(--z-sidebar); padding: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-float); }
-  .admin-mobile-dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 48px; padding: 6px 0; border-radius: var(--radius-ctl); color: var(--color-text-muted); font-size: var(--font-sm); font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
-  .admin-mobile-dock-item:active { background: var(--color-surface-subtle); }
-  .admin-mobile-dock-item.active, .admin-mobile-dock-item.active:active { background: var(--color-primary-soft); color: var(--color-primary); font-weight: var(--weight-semibold); }
-  .admin-mobile-dock-item svg { flex: 0 0 auto; width: 18px; height: 18px; }
-  .admin-mobile-dock-item span { display: block; max-width: 100%; overflow: visible; white-space: nowrap; }
+  .admin-mobile-dock { display: flex; flex-wrap: nowrap; align-items: center; gap: 0; position: fixed; left: calc(19px + env(safe-area-inset-left, 0px)); right: calc(19px + env(safe-area-inset-right, 0px)); bottom: calc(9px + env(safe-area-inset-bottom, 0px)); z-index: var(--z-sidebar); height: 68px; padding: 6px 14px; border: 1px solid var(--color-border-strong); border-radius: 34px; background: color-mix(in srgb, var(--color-surface) 92%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.06); backdrop-filter: blur(18px); }
+  .admin-mobile-dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border-radius: 26px; background: transparent; color: var(--color-text-muted); font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
+  .admin-mobile-dock-item.active { background: #5e6ad2; color: #fff; }
+  .admin-mobile-dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
+  .admin-mobile-dock-item span { display: block; max-width: 100%; overflow: visible; font-size: 13px; line-height: 1.15; white-space: nowrap; }
   .page-stack { gap: 10px; }
   .split-heading { display: grid; min-height: 0; grid-template-columns: minmax(0,1fr); align-items: stretch; gap: 10px; }
   .split-heading > .button, .split-heading > .invite-form, .split-heading > .compact-field { width: 100%; min-width: 0; }
