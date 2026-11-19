@@ -28,9 +28,9 @@
 }
 
 .nav-dock .dock-item.active {
-  background: var(--color-primary);
-  color: var(--color-primary-contrast);
-  font-weight: var(--weight-semibold);
+  background: #5e6ad2;
+  color: #fff;
+  font-weight: var(--weight-medium);
 }
 
 .nav-dock .dock-item span {
@@ -272,22 +272,26 @@
 
 @media (max-width: 760px) {
   .nav-dock {
-    right: max(8px, env(safe-area-inset-right, 0px));
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    left: max(8px, env(safe-area-inset-left, 0px));
-    height: 60px;
-    padding: 4px 2px;
+    right: calc(19px + env(safe-area-inset-right, 0px));
+    bottom: calc(9px + env(safe-area-inset-bottom, 0px));
+    left: calc(19px + env(safe-area-inset-left, 0px));
+    height: 68px;
+    padding: 6px 14px;
     gap: 0;
+    border-radius: 34px;
   }
 
   .nav-dock .dock-item {
     min-width: 0;
-    padding: 4px 1px;
+    height: 54px;
+    padding: 0;
     overflow: visible;
+    gap: 5px;
+    border-radius: 26px;
   }
 
   .app-layout:has(.nav-dock) .workspace-content {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(9px + 68px + 16px + env(safe-area-inset-bottom, 0px));
   }
 }
 
