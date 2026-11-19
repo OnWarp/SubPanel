@@ -148,11 +148,141 @@ export type AdminSubscription = {
   links: Record<string, string>
   linkError?: string | null
   diagnostics: Record<string, SubscriptionDiagnostic>
+  templateBinding?: SubscriptionTemplateBinding
 }
 
 export type BootstrapResponse = {
   initialized: boolean
   user: UserSummary | null
+}
+
+export type TemplateReference = {
+  isDefault: boolean
+  directBindings: number
+  inheritedCount: number
+  summary: string
+}
+
+export type SubscriptionTemplate = {
+  id: string
+  name: string
+  revision: number
+  draftHash: string | null
+  status: 'draft' | 'published' | 'archived'
+  publishedVersionId: string | null
+  sourceUrl: string | null
+  sourceFetchedAt: string | null
+  sourceEtag: string | null
+  sourceLastModified: string | null
+  updatedAt: string
+  createdAt: string
+  references: TemplateReference
+}
+
+export type TemplateVersion = {
+  id: string
+  sequence: number
+  createdAt: string
+  contentHash: string | null
+  validatorVersion: string | null
+  createdBy: string | null
+}
+
+export type TemplateListResponse = {
+  templates: SubscriptionTemplate[]
+  defaultId: string | null
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type TemplateDetailResponse = SubscriptionTemplate
+
+export type TemplateValidateResponse = {
+  normalized: TemplateStructure
+  ignored: string[]
+  diagnostics: Diagnostic[]
+  contentHash: string
+  validatorVersion: string
+}
+
+export type TemplatePreviewResponse = {
+  ignored: string[]
+  diagnostics: Diagnostic[]
+  groups: unknown[]
+  rules: unknown[]
+  ruleProviders: Record<string, unknown>
+  subscriptionName: string | null
+  outputNodes: number | null
+  effectiveVersionId: string | null
+  zeroNodeReason: string | null
+}
+
+export type TemplateStructure = {
+  'proxy-groups': Array<{
+    name: string
+    type: 'select'
+    proxies: string[]
+  }>
+  rules: string[]
+  'rule-providers'?: Record<string, {
+    type: 'http'
+    behavior: 'domain' | 'ipcidr' | 'classical'
+    url: string
+    path?: string
+    interval?: number
+    format?: 'yaml' | 'text' | 'mrs'
+  }>
+}
+
+export type TemplateImportResponse = {
+  candidate: {
+    yaml: string
+    ignored: string[]
+    diagnostics: Diagnostic[]
+    contentHash: string
+  }
+  source: {
+    url: string
+    fetchedAt: string
+  }
+}
+
+export type TemplatePublishResponse = {
+  versionId: string
+  sequence: number
+  contentHash: string
+  references: TemplateReference
+  revision: number
+}
+
+export type TemplateBinding = {
+  subscriptionId: string
+  mode: 'inherit' | 'specific' | 'base'
+  templateId: string | null
+  revision: number
+  updatedAt: string
+  effectiveTemplate?: {
+    templateId: string
+    templateName: string
+    versionId: string
+    sequence: number
+  } | null
+}
+
+export type SubscriptionTemplateBinding = {
+  mode: 'inherit' | 'specific' | 'base'
+  templateId: string | null
+  revision?: number
+}
+
+export type Diagnostic = {
+  code: string
+  severity: 'error' | 'warning' | 'info'
+  path: string
+  line?: number
+  column?: number
+  message: string
 }
 
 export type InviteStatus = {

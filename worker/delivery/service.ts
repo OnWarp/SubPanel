@@ -24,6 +24,7 @@ export type SubscriptionInput = {
   defaultClient?: ClientId
   startsAt?: number | null
   expiresAt?: number | null
+  templateBinding?: SubscriptionTemplateBinding
 }
 
 export type SubscriptionMutationOptions = {
@@ -102,12 +103,22 @@ async function createToken(kv: KVNamespace, token: string): Promise<Pick<Subscri
   }
 }
 
+async function validateTemplateBinding(env: DataEnv, binding: SubscriptionTemplateBinding): Promise<void> {
+  if (binding.mode === 'specific' && binding.templateId) {
+    const row = await env.DB.prepare('SELECT 1 FROM subscription_templates WHERE id=? AND archived=0 AND published_id IS NOT NULL').bind(binding.templateId).first()
+    if (!row) fail('TEMPLATE_UNAVAILABLE')
+  }
+}
+
 export async function createSubscription(
   env: DataEnv,
   input: SubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
   await assertReferences(env, input.userId, input.groupIds)
+  if (input.templateBinding) {
+    await validateTemplateBinding(env, input.templateBinding)
+  }
   const snapshot = await readDelivery(env)
   const now = options.now ?? new Date().toISOString()
   const token = validToken(options.token ?? randomToken())
@@ -130,6 +141,7 @@ export async function createSubscription(
     expiresAt,
     createdAt: now,
     updatedAt: now,
+    templateBinding: input.templateBinding ?? { mode: 'inherit', templateId: null, revision: 1 },
   }
   await writeDelivery(env, {
     ...snapshot,
@@ -154,7 +166,7 @@ export async function getSubscription(env: DataEnv, id: string): Promise<Subscri
   return findSubscription(await readDelivery(env), id)
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding'>>
 
 export async function updateSubscription(
   env: DataEnv,
@@ -168,6 +180,9 @@ export async function updateSubscription(
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
   const nextGroups = input.groupIds === undefined ? current.groupIds : [...input.groupIds]
   await assertReferences(env, current.userId, nextGroups)
+  if (input.templateBinding) {
+    await validateTemplateBinding(env, input.templateBinding)
+  }
   const startsAt = cleanEpoch(input.startsAt === undefined ? current.startsAt : input.startsAt)
   const expiresAt = cleanEpoch(input.expiresAt === undefined ? current.expiresAt : input.expiresAt)
   assertWindow(startsAt, expiresAt)
@@ -182,6 +197,7 @@ export async function updateSubscription(
     expiresAt,
     revision: current.revision + 1,
     updatedAt: now,
+    templateBinding: input.templateBinding ?? current.templateBinding ?? { mode: 'inherit', templateId: null, revision: 1 },
   }
   await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
   return updated
@@ -256,6 +272,30 @@ export async function deleteSubscription(
   await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) })
   await deleteCompiledArtifacts(env.DATA, current.tokenHash)
   await env.DB.prepare('DELETE FROM subscription_template_bindings WHERE subscription_id=?').bind(id).run()
+}
+
+export async function copyTemplateAsDraft(
+  env: DataEnv,
+  templateId: string,
+  name: string,
+): Promise<{ id: string; revision: number }> {
+  const row = await env.DB.prepare('SELECT draft FROM subscription_templates WHERE id=? AND archived=0').bind(templateId).first<{draft: string}>()
+  if (!row) throw new Error('TEMPLATE_NOT_FOUND')
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const draftHash = await computeDraftHashFromDraft(row.draft)
+  await env.DB.prepare(
+    `INSERT INTO subscription_templates (id, name, draft, published_id, archived, source_url, updated_at, revision, draft_hash, created_at)
+     VALUES (?, ?, ?, NULL, 0, NULL, ?, 1, ?, ?)`
+  ).bind(id, name, row.draft, now, draftHash, now).run()
+  return { id, revision: 1 }
+}
+
+async function computeDraftHashFromDraft(draft: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(draft)
+  const hash = Array.from(new Uint8Array(data)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return hash
 }
 
 export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Subscription): Promise<string> {

@@ -22,6 +22,7 @@ import {
   resetSubscriptionToken,
   updateSubscription,
   DeliveryError,
+  type SubscriptionTemplateBinding,
 } from './service.js'
 import { compiledKey } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
@@ -29,6 +30,14 @@ import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
+const bindingSchema = z.object({
+  mode: z.enum(['inherit', 'specific', 'base']),
+  templateId: z.string().nullable().optional(),
+  revision: z.number().int().positive().optional(),
+}).refine((val) => val.mode !== 'specific' || (val.templateId && val.templateId.length > 0), {
+  message: 'specific 模式需要 templateId',
+})
+
 const createSchema = z.object({
   userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
   name: z.string().trim().min(1).max(128),
@@ -37,6 +46,7 @@ const createSchema = z.object({
   defaultClient: client.optional(),
   startsAt: epochField,
   expiresAt: epochField,
+  templateBinding: bindingSchema.optional(),
 })
 const updateSchema = z.object({
   name: z.string().trim().min(1).max(128).optional(),
@@ -45,6 +55,7 @@ const updateSchema = z.object({
   defaultClient: client.optional(),
   startsAt: epochField,
   expiresAt: epochField,
+  templateBinding: bindingSchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 const emptySchema = z.object({}).default({})
 
@@ -134,6 +145,8 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
       skippedNodes: artifact.data.skippedNodes,
       diagnostics: artifact.data.diagnostics,
       available: artifact.data.available,
+      rendererVersion: artifact.data.rendererVersion,
+      templateVersionId: artifact.data.templateVersionId,
     }
   }
   return {
@@ -150,6 +163,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     expiresAt: subscription.expiresAt,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
+    templateBinding: subscription.templateBinding,
     links,
     linkError,
     diagnostics,
