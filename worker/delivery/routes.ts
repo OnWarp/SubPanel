@@ -1,3 +1,4 @@
+import { bindingSchema } from '../templates/repository.js'
 import { getUserEntitlement } from '../entitlements/service.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -22,7 +23,6 @@ import {
   resetSubscriptionToken,
   updateSubscription,
   DeliveryError,
-  type SubscriptionTemplateBinding,
 } from './service.js'
 import { compiledKey } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
@@ -30,14 +30,6 @@ import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
-const bindingSchema = z.object({
-  mode: z.enum(['inherit', 'specific', 'base']),
-  templateId: z.string().nullable().optional(),
-  revision: z.number().int().positive().optional(),
-}).refine((val) => val.mode !== 'specific' || (val.templateId && val.templateId.length > 0), {
-  message: 'specific 模式需要 templateId',
-})
-
 const createSchema = z.object({
   userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
   name: z.string().trim().min(1).max(128),
@@ -163,7 +155,6 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     expiresAt: subscription.expiresAt,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
-    templateBinding: subscription.templateBinding,
     links,
     linkError,
     diagnostics,

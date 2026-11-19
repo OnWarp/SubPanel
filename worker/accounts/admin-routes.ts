@@ -376,6 +376,9 @@ adminAccountRoutes.post('/users/:id/purge', async (c) => {
     ]))
   } else {
     const removed = await scrubKvDelivery(c.env.DATA, userId, now)
+    if (removed.length) await c.env.DB.prepare(`
+      DELETE FROM subscription_template_bindings WHERE subscription_id IN (SELECT value FROM json_each(?))
+    `).bind(JSON.stringify(removed.map(subscription => subscription.id))).run()
     await scrubKvShares(c.env.DATA, userId, new Set(removed.map((subscription) => subscription.id)))
   }
   await writeAccounts(c.env, { ...accounts, users: accounts.users.filter((user) => user.id !== userId) }, now)

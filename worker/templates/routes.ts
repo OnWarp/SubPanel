@@ -1,26 +1,36 @@
-import { fetchRemoteText, RemoteFetchError } from '../catalog/remote.js'
+import { fetchRemoteTextWithMetadata, RemoteFetchError } from '../catalog/remote.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { parse } from 'yaml'
 import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { getSubscription } from '../delivery/service.js'
+import { isModuleReady, DELIVERY_D1_READY_KEY, type DataEnv } from '../db/module-switch.js'
+import { readDelivery } from '../delivery/repository.js'
+import { logAudit } from '../admin/audit.js'
+import { DeliveryError, getSubscription } from '../delivery/service.js'
 import { renderEntitledSubscription } from '../delivery/compiler.js'
-import { getUserEntitlement } from '../entitlements/service.js'
-import { binding, getTemplate, requirePublished, getDefault, getEffectiveTemplate, checkTemplateReferences, computeDraftHash } from './repository.js'
-import { validateTemplate, VALIDATOR_VERSION } from './validation.js'
+import { bindingSchema, bindingWrite, rethrowBindingError, templateConflict, templateReferencesSql, getTemplate, requirePublished, getDefault, getEffectiveTemplate, checkTemplateReferences, countInheritedSubscriptions, computeDraftHash, type TemplateRow, type TemplateVersionRow } from './repository.js'
+import { validateTemplate, computeContentHash, TemplateValidationError, VALIDATOR_VERSION, MAX_TEMPLATE_BYTES, isHttpsTemplateUrl } from './validation.js'
 
 export const templateRoutes = new Hono<AppEnv>()
 
+const sourceSchema = z.object({
+  url: z.string().max(4096).refine(isHttpsTemplateUrl),
+  fetchedAt: z.iso.datetime(),
+  etag: z.string().max(1024).nullable().optional(),
+  lastModified: z.string().max(128).nullable().optional(),
+})
+
 const draftSchema = z.object({
   name: z.string().trim().min(1).max(128),
-  yaml: z.string().max(5 * 1024 * 1024),
+  yaml: z.string().max(MAX_TEMPLATE_BYTES),
+  source: sourceSchema.nullable().optional(),
 })
 
 const publishSchema = z.object({
   expectedRevision: z.number().int().positive(),
-  draftHash: z.string().optional(),
+  draftHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
   ignoredAcknowledged: z.boolean().optional(),
 })
 
@@ -35,7 +45,7 @@ const archiveSchema = z.object({
 
 const importSchema = z.object({
   url: z.string().max(4096),
-  expectedRevision: z.number().int().positive().optional(),
+  expectedRevision: z.number().int().positive(),
   ifNoneMatch: z.string().optional(),
   ifModifiedSince: z.string().optional(),
 })
@@ -45,279 +55,262 @@ const defaultSchema = z.object({
   expectedRevision: z.number().int().positive(),
 })
 
-const bindingSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('specific'), templateId: z.string().min(1), expectedRevision: z.number().int().positive() }),
-  z.object({ mode: z.enum(['inherit', 'base']), templateId: z.null().optional(), expectedRevision: z.number().int().positive() }),
-])
-
 const previewSchema = z.object({
-  yaml: z.string().max(5 * 1024 * 1024),
+  yaml: z.string().max(MAX_TEMPLATE_BYTES).optional(),
   subscriptionId: z.string().optional(),
-})
+}).refine(input => input.yaml !== undefined || input.subscriptionId)
 
 const validateSchema = z.object({
-  yaml: z.string().max(5 * 1024 * 1024),
+  yaml: z.string().max(MAX_TEMPLATE_BYTES),
 })
 
-async function listTemplates(db: D1Database, opts: { q?: string; page: number; pageSize: number; archived?: boolean }) {
-  const { q, page, pageSize, archived } = opts
-  const offset = (page - 1) * pageSize
+function pagination(pageParam?: string, sizeParam?: string) {
+  const page = Math.min(1_000_000, Math.max(1, Number.parseInt(pageParam ?? '', 10) || 1))
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(sizeParam ?? '', 10) || 20))
+  return { page, pageSize, offset: (page - 1) * pageSize }
+}
 
-  let where = archived ? 'WHERE archived=1' : 'WHERE archived=0'
-  const params: (string | number)[] = []
+async function subscriptionIds(env: DataEnv) {
+  return (await readDelivery(env)).subscriptions.map(subscription => subscription.id)
+}
 
-  if (q) {
-    where += ` AND name LIKE ?`
-    params.push(`%${q}%`)
+async function getReferencedSummary(env: DataEnv, templateId: string) {
+  return checkTemplateReferences(env.DB, templateId, await subscriptionIds(env))
+}
+
+function versionSummary(row: TemplateVersionRow) {
+  return {
+    id: row.id,
+    sequence: row.sequence,
+    createdAt: row.created_at,
+    contentHash: row.content_hash,
+    validatorVersion: row.validator_version,
+    createdBy: row.created_by,
   }
-
-  const total = await db.prepare(`SELECT COUNT(*) as count FROM subscription_templates ${where}`).bind(...params).first<{ count: number }>()
-
-  const results = await db.prepare(`
-    SELECT t.*, v.created_at AS published_at
-    FROM subscription_templates t
-    LEFT JOIN subscription_template_versions v ON v.id = t.published_id
-    ${where}
-    ORDER BY t.updated_at DESC
-    LIMIT ? OFFSET ?
-  `).bind(...params, pageSize, offset).all()
-
-  return { results: results.results, total: total?.count ?? 0 }
 }
 
-async function getReferencedSummary(db: D1Database, templateId: string) {
-  const refs = await checkTemplateReferences(db, templateId)
-  const parts: string[] = []
-  if (refs.isDefault) parts.push('全局默认')
-  if (refs.directBindings > 0) parts.push(`直接绑定 ${refs.directBindings} 条`)
-  if (refs.inheritedCount > 0) parts.push(`继承默认影响 ${refs.inheritedCount} 条`)
-  return { ...refs, summary: parts.join('，') }
-}
-
-function templateToDTO(row: Awaited<ReturnType<typeof getTemplate>>, version: Awaited<ReturnType<typeof requirePublished>> | null = null) {
+function templateSummary(row: TemplateRow, changed: boolean) {
   return {
     id: row.id,
     name: row.name,
     revision: row.revision,
-    draftHash: row.draft_hash,
-    status: row.archived ? 'archived' : (row.published_id ? 'published' : 'draft'),
-    publishedVersionId: row.published_id ?? null,
-    sourceUrl: row.source_url,
-    sourceFetchedAt: row.source_fetched_at,
-    sourceEtag: row.source_etag,
-    sourceLastModified: row.source_last_modified,
+    status: row.archived ? 'archived' : !row.published_id ? 'draft' : changed ? 'modified' : 'published',
+    publishedVersionId: row.published_id,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
-    // Legacy field for backward compatibility
-    draft: row.draft,
   }
 }
 
 templateRoutes.get('/', async c => {
-  const q = c.req.query('q')?.trim()
-  const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10))
-  const pageSize = Math.min(100, Math.max(1, parseInt(c.req.query('pageSize') ?? '20', 10)))
-  const archived = c.req.query('archived') === 'true'
+  const { page, pageSize, offset } = pagination(c.req.query('page'), c.req.query('pageSize'))
+  const q = c.req.query('q')?.trim() ?? ''
+  const archived = Number(c.req.query('archived') === 'true')
+  const db = c.env.DB
+  const where = "WHERE t.archived=? AND instr(lower(t.name), lower(?))>0"
+  const [total, { results }, currentDefault, ids] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS count FROM subscription_templates t ${where}`).bind(archived, q).first<{ count: number }>(),
+    db.prepare(`
+      SELECT t.id, t.name, t.revision, t.archived, t.published_id, t.updated_at, t.created_at,
+        t.draft != v.yaml AS changed, v.sequence, v.created_at AS published_at,
+        (SELECT COUNT(*) FROM subscription_template_bindings WHERE mode='specific' AND template_id=t.id) AS direct
+      FROM subscription_templates t
+      LEFT JOIN subscription_template_versions v ON v.id=t.published_id AND v.template_id=t.id
+      ${where}
+      ORDER BY t.updated_at DESC, t.id LIMIT ? OFFSET ?
+    `).bind(archived, q, pageSize, offset).all<TemplateRow & { changed: number; sequence: number | null; published_at: string | null; direct: number }>(),
+    getDefault(db),
+    subscriptionIds(c.env),
+  ])
 
-  const { results, total } = await listTemplates(c.env.DB, { q, page, pageSize, archived })
-
-  const templates = await Promise.all(results.map(async (row: any) => {
-    const refs = await getReferencedSummary(c.env.DB, row.id)
+  const inheritedCount = currentDefault.template_id === null ? 0 : await countInheritedSubscriptions(db, ids)
+  const templates = results.map(row => {
+    const isDefault = currentDefault.template_id === row.id
     return {
-      ...templateToDTO(row),
-      references: refs,
+      ...templateSummary(row, Boolean(row.changed)),
+      publishedAt: row.published_at,
+      publishedSequence: row.sequence,
+      references: { isDefault, directBindings: row.direct, inheritedCount: isDefault ? inheritedCount : 0 },
     }
-  }))
-
-  const currentDefault = await getDefault(c.env.DB)
-  return c.json({ templates, defaultId: currentDefault.template_id, total, page, pageSize })
+  })
+  return c.json({ templates, defaultId: currentDefault.template_id, defaultRevision: currentDefault.revision, total: total?.count ?? 0, page, pageSize })
 })
 
-templateRoutes.post('/', async c => {
-  const input = await readJson(c, draftSchema)
+// D1 allows two million bytes per row, including both copies of a
+// published template and its metadata. Leave space for row overhead.
+function assertTemplateFitsD1(...parts: string[]) {
+  const encoder = new TextEncoder()
+  if (parts.reduce((bytes, part) => bytes + encoder.encode(part).byteLength, 0) > 1_990_000) {
+    throw apiError(413, 'TEMPLATE_INVALID', '配置超过 D1 单行存储上限')
+  }
+}
+
+async function createDraft(db: D1Database, input: z.infer<typeof draftSchema>) {
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  const draftHash = computeDraftHash(input.yaml)
+  assertTemplateFitsD1(input.yaml)
+  const draftHash = await computeDraftHash(input.yaml)
+  const source = input.source
+  await db.prepare(`
+    INSERT INTO subscription_templates (id,name,draft,source_url,updated_at,draft_hash,created_at,source_fetched_at,source_etag,source_last_modified)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).bind(id, input.name, input.yaml, source?.url ?? null, now, draftHash, now,
+    source?.fetchedAt ?? null, source?.etag ?? null, source?.lastModified ?? null).run()
+  return { id, revision: 1, draftHash }
+}
 
-  await c.env.DB.prepare(
-    `INSERT INTO subscription_templates (id, name, draft, published_id, archived, source_url, updated_at, revision, draft_hash, created_at)
-     VALUES (?, ?, ?, NULL, 0, NULL, ?, 1, ?, ?)`
-  ).bind(id, input.name, input.yaml, now, draftHash, now).run()
-
-  return c.json({ id, revision: 1, draftHash }, 201)
-})
+templateRoutes.post('/', async c => c.json(await createDraft(c.env.DB, await readJson(c, draftSchema)), 201))
 
 templateRoutes.get('/:id', async c => {
-  const row = await getTemplate(c.env.DB, c.req.param('id'), true)
-  let version = null
-  if (row.published_id) {
-    version = await c.env.DB.prepare(
-      'SELECT * FROM subscription_template_versions WHERE id=? AND template_id=?'
-    ).bind(row.published_id, row.id).first()
-  }
-  const refs = await getReferencedSummary(c.env.DB, row.id)
-  return c.json({ ...templateToDTO(row, version), references: refs })
-})
-
-templateRoutes.put('/:id', async c => {
-  const input = await readJson(c, draftSchema)
-  const id = c.req.param('id')
-  const expectedRevision = Number(c.req.query('expectedRevision'))
-
-  if (!Number.isInteger(expectedRevision) || expectedRevision <= 0) {
-    throw apiError(400, 'TEMPLATE_INVALID', 'expectedRevision 必须为正整数')
-  }
-
-  const row = await getTemplate(c.env.DB, id, true)
-
-  if (row.revision !== expectedRevision) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '配置已被修改，请刷新后重试')
-  }
-
-  const now = new Date().toISOString()
-  const draftHash = computeDraftHash(input.yaml)
-
-  await c.env.DB.prepare(
-    `UPDATE subscription_templates SET name=?, draft=?, draft_hash=?, updated_at=?, revision=revision+1
-     WHERE id=? AND revision=?`
-  ).bind(input.name, input.yaml, draftHash, now, id, expectedRevision).run()
-
-  return c.json({ ok: true, revision: expectedRevision + 1, draftHash })
-})
-
-templateRoutes.post('/validate', async c => {
-  const input = await readJson(c, validateSchema)
-  try {
-    const result = validateTemplate(input.yaml)
-    return c.json({
-      normalized: result.normalized,
-      ignored: result.ignored,
-      diagnostics: result.diagnostics,
-      contentHash: result.contentHash,
-      validatorVersion: VALIDATOR_VERSION,
-    })
-  } catch (e) {
-    throw apiError(422, 'TEMPLATE_INVALID', e instanceof Error ? e.message : '配置无效')
-  }
-})
-
-templateRoutes.post('/preview', async c => {
-  const input = await readJson(c, previewSchema)
-  const { template, ignored, diagnostics } = validateTemplate(input.yaml)
-
-  if (!input.subscriptionId) {
-    return c.json({
-      ignored,
-      diagnostics,
-      groups: template['proxy-groups'],
-      rules: template.rules,
-      ruleProviders: template['rule-providers'] ?? {},
-      subscriptionName: null,
-      outputNodes: null,
-      effectiveVersionId: null,
-      zeroNodeReason: null,
-    })
-  }
-
-  const subscription = await getSubscription(c.env, input.subscriptionId)
-  const artifact = await renderEntitledSubscription(c.env, subscription, 'mihomo', undefined, template)
-
-  const rights = await getUserEntitlement(c.env.DB, subscription.userId ?? '')
-  const current = rights.current
-  let reason: string | null = null
-
-  if (!current) reason = '无有效权益'
-  else if (!subscription.groupIds.some(id => current.plan.groupIds.includes(id))) reason = '分组无交集'
-  else if (artifact.inputNodes === 0) reason = '组内无启用节点'
-  else if (artifact.outputNodes === 0) reason = '格式不兼容'
-
-  const output = parse(artifact.body) as Record<string, unknown>
-
+  const row = await getTemplate(c.env.DB, c.req.param('id'))
+  const version = row.published_id ? await c.env.DB.prepare(
+    'SELECT * FROM subscription_template_versions WHERE id=? AND template_id=?'
+  ).bind(row.published_id, row.id).first<TemplateVersionRow>() : null
   return c.json({
-    ignored,
-    diagnostics,
-    groups: output['proxy-groups'],
-    rules: output.rules,
-    ruleProviders: template['rule-providers'] ?? {},
-    subscriptionName: subscription.name,
-    outputNodes: artifact.outputNodes,
-    effectiveVersionId: null, // Preview uses draft, not a published version
-    zeroNodeReason: reason,
+    ...templateSummary(row, Boolean(version && version.yaml !== row.draft)),
+    draft: row.draft,
+    draftHash: row.draft_hash ?? await computeDraftHash(row.draft),
+    sourceUrl: row.source_url,
+    sourceFetchedAt: row.source_fetched_at,
+    sourceEtag: row.source_etag,
+    sourceLastModified: row.source_last_modified,
+    publishedVersion: version && versionSummary(version),
+    references: await getReferencedSummary(c.env, row.id),
   })
 })
 
-// Explicit admin action only: no cron integration and no retries.
-templateRoutes.post('/:id/import', async c => {
-  const row = await getTemplate(c.env.DB, c.req.param('id'), true)
-  const input = await readJson(c, importSchema)
+templateRoutes.post('/:id/copy', async c => {
+  const { name } = await readJson(c, draftSchema.pick({ name: true }))
+  const row = await getTemplate(c.env.DB, c.req.param('id'))
+  return c.json(await createDraft(c.env.DB, { name, yaml: row.draft }), 201)
+})
 
-  if (input.expectedRevision !== undefined && row.revision !== input.expectedRevision) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '配置已被修改，请刷新后重试')
-  }
-
-  const headers: Record<string, string> = {}
-  if (input.ifNoneMatch) headers['If-None-Match'] = input.ifNoneMatch
-  if (input.ifModifiedSince) headers['If-Modified-Since'] = input.ifModifiedSince
-
-  let yaml: string
+function validateForAdmin(yaml: string) {
   try {
-    yaml = await fetchRemoteText({ url: input.url, headers })
-  } catch (e) {
-    throw apiError(422, e instanceof RemoteFetchError ? e.code : 'REMOTE_FETCH_FAILED', '导入失败，请手动重试')
+    return validateTemplate(yaml)
+  } catch (error) {
+    if (!(error instanceof TemplateValidationError)) throw error
+    throw apiError(422, 'TEMPLATE_INVALID', '配置校验失败', { diagnostics: error.diagnostics })
+  }
+}
+
+templateRoutes.post('/validate', async c => {
+  const { yaml } = await readJson(c, validateSchema)
+  const { normalized, ignored, diagnostics } = validateForAdmin(yaml)
+  return c.json({ normalized, ignored, diagnostics, contentHash: await computeContentHash(normalized), validatorVersion: VALIDATOR_VERSION })
+})
+
+async function getTemplateSubscription(env: DataEnv, id: string) {
+  try {
+    return await getSubscription(env, id)
+  } catch (error) {
+    if (error instanceof DeliveryError && error.code === 'SUBSCRIPTION_NOT_FOUND') {
+      throw apiError(404, error.code, '订阅不存在')
+    }
+    throw error
+  }
+}
+
+templateRoutes.post('/preview', async c => {
+  const input = await readJson(c, previewSchema)
+  const validation = input.yaml === undefined ? undefined : validateForAdmin(input.yaml)
+  const { template, ignored = [], diagnostics = [] } = validation ?? {}
+  if (!input.subscriptionId) {
+    return c.json({
+      ignored, diagnostics,
+      groups: template?.['proxy-groups'] ?? [],
+      rules: template?.rules ?? [],
+      ruleProviders: template?.['rule-providers'] ?? {},
+      subscriptionName: null, outputNodes: null, effectiveVersionId: null, zeroNodeReason: null,
+    })
   }
 
-  const result = validateTemplate(yaml)
-
-  // Return candidate only, don't save to draft
+  const subscription = await getTemplateSubscription(c.env, input.subscriptionId)
+  const artifact = await renderEntitledSubscription(c.env, subscription, 'mihomo', undefined, template)
+  const output = artifact.available ? parse(artifact.body) as Record<string, unknown> : template
   return c.json({
+    ignored, diagnostics,
+    groups: output?.['proxy-groups'] ?? [],
+    rules: output?.rules ?? [],
+    ruleProviders: output?.['rule-providers'] ?? {},
+    subscriptionName: subscription.name,
+    outputNodes: artifact.outputNodes,
+    rendererVersion: artifact.rendererVersion,
+    effectiveVersionId: artifact.templateVersionId ?? null,
+    zeroNodeReason: artifact.available ? null : 'noNodes',
+  })
+})
+
+// Only this administrator action fetches remote template source content.
+templateRoutes.post('/:id/import', async c => {
+  const input = await readJson(c, importSchema)
+  const row = await getTemplate(c.env.DB, c.req.param('id'))
+  if (row.archived || row.revision !== input.expectedRevision) throw templateConflict()
+
+  const sameSource = row.source_url === input.url
+  const etag = input.ifNoneMatch ?? (sameSource ? row.source_etag : null)
+  const lastModified = input.ifModifiedSince ?? (sameSource ? row.source_last_modified : null)
+  const headers: Record<string, string> = {}
+  if (etag) headers['If-None-Match'] = etag
+  if (lastModified) headers['If-Modified-Since'] = lastModified
+
+  const remote = await fetchRemoteTextWithMetadata({ url: input.url, headers }, fetch, 10_000).catch(error => {
+    throw apiError(422, error instanceof RemoteFetchError ? error.code : 'REMOTE_FETCH_FAILED', '导入失败，请手动重试')
+  })
+  if (remote.notModified) return c.json({ notModified: true, message: '远程来源未更新' })
+
+  const validation = validateForAdmin(remote.text)
+  return c.json({
+    notModified: false,
     candidate: {
-      yaml,
-      ignored: result.ignored,
-      diagnostics: result.diagnostics,
-      contentHash: result.contentHash,
+      yaml: remote.text,
+      normalized: validation.normalized,
+      ignored: validation.ignored,
+      diagnostics: validation.diagnostics,
+      contentHash: await computeContentHash(validation.normalized),
     },
     source: {
-      url: input.url,
-      fetchedAt: new Date().toISOString(),
-      // Note: ETag and Last-Modified would come from the response headers in a real implementation
-      // but fetchRemoteText doesn't return them currently
+      url: input.url, fetchedAt: new Date().toISOString(), etag: remote.etag, lastModified: remote.lastModified,
     },
   })
 })
 
 templateRoutes.post('/:id/publish', async c => {
-  const row = await getTemplate(c.env.DB, c.req.param('id'), true)
+  const row = await getTemplate(c.env.DB, c.req.param('id'))
   const input = await readJson(c, publishSchema)
 
-  if (row.revision !== input.expectedRevision) {
+  if (row.archived || row.revision !== input.expectedRevision) {
     throw apiError(409, 'TEMPLATE_CONFLICT', '配置已被修改，请刷新后重试')
   }
 
-  if (input.draftHash && row.draft_hash !== input.draftHash) {
+  if ((row.draft_hash ?? await computeDraftHash(row.draft)) !== input.draftHash) {
     throw apiError(409, 'TEMPLATE_CONFLICT', '草稿内容已变更，请刷新后重试')
   }
 
   // Re-validate draft before publishing
-  const validation = validateTemplate(row.draft)
+  const validation = validateForAdmin(row.draft)
 
   // Check if there are unacknowledged ignored fields
   if (validation.ignored.length > 0 && !input.ignoredAcknowledged) {
-    throw apiError(422, 'TEMPLATE_INVALID', `存在被忽略的字段: ${validation.ignored.join(', ')}，请确认后重试`)
+    throw apiError(422, 'TEMPLATE_INVALID', '请确认被忽略的字段', { diagnostics: validation.diagnostics })
   }
 
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  const contentHash = validation.contentHash
+  const normalizedJson = JSON.stringify(validation.normalized)
+  assertTemplateFitsD1(row.draft, normalizedJson)
+  const contentHash = await computeContentHash(validation.normalized)
 
   // Atomic batch: create version + update template pointer
   const results = await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO subscription_template_versions (id, template_id, yaml, created_at, sequence, normalized_json, content_hash, validator_version, created_by)
-       VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM subscription_template_versions WHERE template_id = ?), ?, ?, ?, ?)`
-    ).bind(id, row.id, row.draft, now, row.id, JSON.stringify(validation.normalized), contentHash, VALIDATOR_VERSION, 'admin'),
+       SELECT ?, t.id, t.draft, ?, (SELECT COALESCE(MAX(sequence), 0) + 1
+         FROM subscription_template_versions WHERE template_id=t.id), ?, ?, ?, ?
+       FROM subscription_templates t WHERE t.id=? AND t.revision=? AND t.archived=0`
+    ).bind(id, now, normalizedJson, contentHash, VALIDATOR_VERSION, c.get('principal')?.id ?? null, row.id, input.expectedRevision),
     c.env.DB.prepare(
-      `UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?`
-    ).bind(id, now, row.id, input.expectedRevision),
+      `UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=? AND archived=0 AND EXISTS (SELECT 1 FROM subscription_template_versions WHERE id=?)`
+    ).bind(id, now, row.id, input.expectedRevision, id),
   ])
 
   // Check if template update succeeded (condition matched)
@@ -326,7 +319,9 @@ templateRoutes.post('/:id/publish', async c => {
   }
 
   // Get reference summary for response
-  const refs = await getReferencedSummary(c.env.DB, row.id)
+  const refs = await getReferencedSummary(c.env, row.id)
+  const actor = c.get('principal')
+  if (actor) await logAudit(c.env.DB, actor.id, 'template.publish', 'subscription_template', row.id, { versionId: id, references: refs }).catch(() => {})
 
   return c.json({
     versionId: id,
@@ -338,146 +333,126 @@ templateRoutes.post('/:id/publish', async c => {
 })
 
 templateRoutes.get('/:id/versions', async c => {
-  await getTemplate(c.env.DB, c.req.param('id'))
-  const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10))
-  const pageSize = Math.min(100, Math.max(1, parseInt(c.req.query('pageSize') ?? '20', 10)))
-  const offset = (page - 1) * pageSize
+  const id = c.req.param('id')
+  await getTemplate(c.env.DB, id)
+  const { page, pageSize, offset } = pagination(c.req.query('page'), c.req.query('pageSize'))
+  const [total, versions] = await Promise.all([
+    c.env.DB.prepare('SELECT COUNT(*) AS count FROM subscription_template_versions WHERE template_id=?').bind(id).first<{ count: number }>(),
+    c.env.DB.prepare(`
+      SELECT id,sequence,created_at,content_hash,validator_version,created_by
+      FROM subscription_template_versions WHERE template_id=? ORDER BY sequence DESC LIMIT ? OFFSET ?
+    `).bind(id, pageSize, offset).all<TemplateVersionRow>(),
+  ])
+  return c.json({ versions: versions.results.map(versionSummary), total: total?.count ?? 0, page, pageSize })
+})
 
-  const total = await c.env.DB.prepare(
-    'SELECT COUNT(*) as count FROM subscription_template_versions WHERE template_id=?'
-  ).bind(c.req.param('id')).first<{count: number}>()
-
-  const versions = await c.env.DB.prepare(
-    'SELECT id, sequence, created_at, content_hash, validator_version, created_by FROM subscription_template_versions WHERE template_id=? ORDER BY sequence DESC LIMIT ? OFFSET ?'
-  ).bind(c.req.param('id'), pageSize, offset).all()
-
-  return c.json({ versions: versions.results, total: total?.count ?? 0, page, pageSize })
+templateRoutes.get('/:id/versions/:versionId', async c => {
+  const version = await c.env.DB.prepare('SELECT * FROM subscription_template_versions WHERE template_id=? AND id=?')
+    .bind(c.req.param('id'), c.req.param('versionId')).first<TemplateVersionRow>()
+  if (!version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
+  const validation = validateForAdmin(version.yaml)
+  return c.json({
+    ...versionSummary(version), yaml: version.yaml, normalized: validation.normalized,
+    contentHash: version.content_hash ?? await computeContentHash(validation.normalized),
+  })
 })
 
 templateRoutes.post('/:id/rollback', async c => {
-  const input = await readJson(c, rollbackSchema)
+  const { versionId, expectedRevision } = await readJson(c, rollbackSchema)
   const id = c.req.param('id')
-  const row = await getTemplate(c.env.DB, id, true)
-
-  if (row.revision !== input.expectedRevision) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '配置已被修改，请刷新后重试')
-  }
-
+  const row = await getTemplate(c.env.DB, id)
+  if (row.archived || row.revision !== expectedRevision) throw templateConflict()
   const version = await c.env.DB.prepare(
     'SELECT id FROM subscription_template_versions WHERE id=? AND template_id=?'
-  ).bind(input.versionId, id).first()
-
+  ).bind(versionId, id).first()
   if (!version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
-
-  const now = new Date().toISOString()
-  await c.env.DB.prepare(
-    `UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=?`
-  ).bind(input.versionId, now, id, input.expectedRevision).run()
-
-  // Audit log would go here
-
-  return c.json({ ok: true, revision: input.expectedRevision + 1 })
+  const updated = await c.env.DB.prepare(`
+    UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1
+    WHERE id=? AND revision=? AND archived=0
+  `).bind(versionId, new Date().toISOString(), id, expectedRevision).run()
+  if (!updated.meta.changes) throw templateConflict()
+  const references = await getReferencedSummary(c.env, id)
+  const actor = c.get('principal')
+  if (actor) await logAudit(c.env.DB, actor.id, 'template.rollback', 'subscription_template', id, { versionId, references }).catch(() => {})
+  return c.json({ ok: true, revision: expectedRevision + 1, versionId, references })
 })
 
 templateRoutes.post('/:id/archive', async c => {
-  const input = await readJson(c, archiveSchema)
+  const { expectedRevision } = await readJson(c, archiveSchema)
   const id = c.req.param('id')
-  const row = await getTemplate(c.env.DB, id, true)
-
-  if (row.revision !== input.expectedRevision) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '配置已被修改，请刷新后重试')
+  await getTemplate(c.env.DB, id)
+  const updated = await c.env.DB.prepare(`
+    UPDATE subscription_templates SET archived=1, updated_at=?, revision=revision+1
+    WHERE id=? AND revision=? AND archived=0 AND NOT (${templateReferencesSql('subscription_templates')})
+  `).bind(new Date().toISOString(), id, expectedRevision).run()
+  if (!updated.meta.changes) {
+    const row = await getTemplate(c.env.DB, id)
+    if (row.archived || row.revision !== expectedRevision) throw templateConflict()
+    const references = await getReferencedSummary(c.env, id)
+    if (references.isDefault || references.directBindings) {
+      throw apiError(409, 'TEMPLATE_REFERENCED', '配置正在被引用', { references })
+    }
+    throw templateConflict()
   }
-
-  const refs = await checkTemplateReferences(c.env.DB, id)
-  if (refs.isDefault || refs.directBindings > 0 || refs.inheritedCount > 0) {
-    const summary = await getReferencedSummary(c.env.DB, id)
-    throw apiError(409, 'TEMPLATE_REFERENCED', `配置正在被引用：${summary.summary}`)
-  }
-
-  await c.env.DB.prepare(
-    `UPDATE subscription_templates SET archived=1, updated_at=?, revision=revision+1 WHERE id=? AND revision=?`
-  ).bind(new Date().toISOString(), id, input.expectedRevision).run()
-
-  return c.json({ ok: true, revision: input.expectedRevision + 1 })
+  return c.json({ ok: true, revision: expectedRevision + 1 })
 })
 
 templateRoutes.put('/default', async c => {
-  const input = await readJson(c, defaultSchema)
-  const currentDefault = await getDefault(c.env.DB)
-
-  if (currentDefault.revision !== input.expectedRevision) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '默认配置已被修改，请刷新后重试')
-  }
-
-  if (input.templateId) {
-    await requirePublished(c.env.DB, input.templateId)
-  }
-
-  const now = new Date().toISOString()
-  const updated = await c.env.DB.prepare(
-    `UPDATE subscription_template_default SET template_id=?, revision=revision+1, updated_at=? WHERE id=1 AND revision=?`
-  ).bind(input.templateId, now, input.expectedRevision).run()
-
-  if (!updated.meta.changes) {
-    throw apiError(409, 'TEMPLATE_CONFLICT', '并发修改导致默认配置更新失败，请重试')
-  }
-
-  const refs = input.templateId ? await getReferencedSummary(c.env.DB, input.templateId) : { isDefault: false, directBindings: 0, inheritedCount: 0, summary: '' }
-
-  return c.json({ ok: true, revision: input.expectedRevision + 1, references: refs })
+  const { templateId, expectedRevision } = await readJson(c, defaultSchema)
+  if (templateId !== null) await requirePublished(c.env.DB, templateId)
+  const updated = await c.env.DB.prepare(`
+    UPDATE subscription_template_default SET template_id=?, revision=revision+1, updated_at=?
+    WHERE id=1 AND revision=? AND (? IS NULL OR EXISTS (
+      SELECT 1 FROM subscription_templates WHERE id=? AND archived=0 AND published_id IS NOT NULL
+    ))
+  `).bind(templateId, new Date().toISOString(), expectedRevision, templateId, templateId).run()
+  if (!updated.meta.changes) throw templateConflict()
+  const ids = await subscriptionIds(c.env)
+  const references = await checkTemplateReferences(c.env.DB, templateId ?? '', ids)
+  const inheritedCount = templateId === null ? await countInheritedSubscriptions(c.env.DB, ids) : references.inheritedCount
+  return c.json({ ok: true, revision: expectedRevision + 1, references, inheritedCount })
 })
 
 templateRoutes.get('/bindings/:id', async c => {
-  await getSubscription(c.env, c.req.param('id'))
-  const b = await binding(c.env.DB, c.req.param('id'))
-  let effective = null
-  if (b.mode !== 'base' && b.template_id) {
-    const tpl = await getEffectiveTemplate(c.env.DB, c.req.param('id'))
-    if (tpl) {
-      effective = {
-        templateId: tpl.template.id,
-        templateName: tpl.template.name,
-        versionId: tpl.version.id,
-        sequence: tpl.version.sequence,
-      }
-    }
-  }
-  return c.json({ ...b, effectiveTemplate: effective })
+  const id = c.req.param('id')
+  await getTemplateSubscription(c.env, id)
+  const row = await getEffectiveTemplate(c.env.DB, id)
+  return c.json({
+    subscriptionId: id, mode: row.mode, templateId: row.binding_template_id,
+    revision: row.revision, updatedAt: row.updated_at,
+    effectiveTemplate: row.version_id ? {
+      templateId: row.template_id, templateName: row.template_name, versionId: row.version_id, sequence: row.sequence,
+    } : null,
+  })
 })
 
 templateRoutes.put('/bindings/:id', async c => {
-  await getSubscription(c.env, c.req.param('id'))
+  const id = c.req.param('id')
+  await getTemplateSubscription(c.env, id)
   const input = await readJson(c, bindingSchema)
-
-  if (input.mode === 'specific') {
-    await requirePublished(c.env.DB, input.templateId)
-  }
-
-  const templateId = input.templateId ?? null
-  const now = new Date().toISOString()
-
-  // Check template availability if specific
-  let availabilityCheck = '1=1'
-  const checkParams: (string | null)[] = []
-  if (templateId) {
-    availabilityCheck = 'EXISTS(SELECT 1 FROM subscription_templates WHERE id=? AND archived=0 AND published_id IS NOT NULL)'
-    checkParams.push(templateId)
-  }
-
-  const updated = await c.env.DB.prepare(
-    `INSERT INTO subscription_template_bindings (subscription_id, mode, template_id, revision, updated_at)
-     VALUES (?, ?, ?, 1, ?)
-     ON CONFLICT(subscription_id) DO UPDATE SET
-       mode=excluded.mode,
-       template_id=excluded.template_id,
-       revision=subscription_template_bindings.revision+1,
-       updated_at=excluded.updated_at
-     WHERE ${availabilityCheck}`
-  ).bind(c.req.param('id'), input.mode, templateId, now, ...checkParams).run()
-
-  if (!updated.meta.changes) {
-    throw apiError(409, 'TEMPLATE_UNAVAILABLE', '配置不可用，请刷新重试')
-  }
-
+  if (input.mode === 'specific') await requirePublished(c.env.DB, input.templateId)
+  const inD1 = await isModuleReady(c.env.DB, DELIVERY_D1_READY_KEY)
+  await bindingWrite(c.env.DB, id, input, new Date().toISOString(), inD1).run().catch(rethrowBindingError)
   return c.json({ ok: true, revision: input.expectedRevision + 1 })
+})
+
+// Register after the literal /default route.
+templateRoutes.put('/:id', async c => {
+  const input = await readJson(c, draftSchema.extend({ expectedRevision: z.number().int().positive() }))
+  const id = c.req.param('id')
+  const row = await getTemplate(c.env.DB, id)
+  assertTemplateFitsD1(input.yaml)
+  const draftHash = await computeDraftHash(input.yaml)
+  const source = input.source === undefined ? {
+    url: row.source_url, fetchedAt: row.source_fetched_at, etag: row.source_etag, lastModified: row.source_last_modified,
+  } : input.source
+  const updated = await c.env.DB.prepare(`
+    UPDATE subscription_templates SET name=?, draft=?, draft_hash=?, updated_at=?, revision=revision+1,
+      source_url=?, source_fetched_at=?, source_etag=?, source_last_modified=?
+    WHERE id=? AND revision=? AND archived=0
+  `).bind(input.name, input.yaml, draftHash, new Date().toISOString(),
+    source?.url ?? null, source?.fetchedAt ?? null, source?.etag ?? null, source?.lastModified ?? null,
+    id, input.expectedRevision).run()
+  if (!updated.meta.changes) throw templateConflict()
+  return c.json({ ok: true, revision: input.expectedRevision + 1, draftHash })
 })

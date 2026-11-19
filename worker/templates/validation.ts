@@ -1,11 +1,16 @@
-import { parseDocument, stringify } from 'yaml'
+import { LineCounter, isNode, parseDocument } from 'yaml'
+import { sha256Base64Url } from '../platform/hash.js'
 import { z } from 'zod'
 
 export const NODES = '$SUBPANEL_NODES'
 export const RESERVED = ['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE', 'GLOBAL']
 
 /** Current validator version for tracking schema evolution */
-export const VALIDATOR_VERSION = '2026.11.20'
+export const VALIDATOR_VERSION = '2'
+export const MAX_TEMPLATE_BYTES = 5 * 1024 * 1024
+const MAX_GROUPS = 100
+const MAX_PROVIDERS = 100
+const MAX_RULES = 20_000
 
 export interface Diagnostic {
   code: string
@@ -17,27 +22,31 @@ export interface Diagnostic {
 }
 
 const groupSchema = z.object({
-  name: z.string().min(1).refine(v => !v.includes(',') && !RESERVED.includes(v) && !v.includes(NODES)),
+  name: z.string().min(1).refine(v => v.trim() === v && !/[,\p{Cc}]/u.test(v) && !RESERVED.includes(v) && !v.includes(NODES)),
   type: z.literal('select'),
   proxies: z.array(z.string().min(1)).min(1),
 }).strict()
 
+export function isHttpsTemplateUrl(value: string): boolean {
+  if (!URL.canParse(value)) return false
+  const url = new URL(value)
+  return url.protocol === 'https:' && !url.username && !url.password
+}
+
 const providerSchema = z.object({
   type: z.literal('http'),
   behavior: z.enum(['domain', 'ipcidr', 'classical']),
-  url: z.url().refine(v => {
-    const u = new URL(v)
-    return u.protocol === 'https:' && !u.username && !u.password
-  }),
+  url: z.string().max(4096).refine(isHttpsTemplateUrl),
   path: z.string().optional(),
   interval: z.number().int().positive().optional(),
   format: z.enum(['yaml', 'text', 'mrs']).optional(),
 }).strict()
 
 const templateSchema = z.object({
-  'proxy-groups': z.array(groupSchema).min(1),
-  rules: z.array(z.string().min(1)).min(1),
-  'rule-providers': z.record(z.string(), providerSchema).optional(),
+  'proxy-groups': z.array(groupSchema).min(1).max(MAX_GROUPS),
+  rules: z.array(z.string().min(1)).min(1).max(MAX_RULES),
+  'rule-providers': z.record(z.string().regex(/^[^,\s\p{Cc}]{1,100}$/u), providerSchema)
+    .refine(providers => Object.keys(providers).length <= MAX_PROVIDERS).optional(),
 })
 
 export type Template = z.infer<typeof templateSchema>
@@ -47,64 +56,80 @@ export interface ValidationResult {
   ignored: string[]
   diagnostics: Diagnostic[]
   normalized: Template
-  contentHash: string
 }
 
-export interface StructureValidationResult {
-  template: Template
-  ignored: string[]
-  diagnostics: Diagnostic[]
-}
+export class TemplateValidationError extends Error {
+  readonly diagnostics: Diagnostic[]
 
-/**
- * Validates YAML structure: single document, unique keys, no unknown tags, alias limits.
- * Returns parsed template and ignored fields.
- */
-export function validateStructure(yaml: string): StructureValidationResult {
-  const diagnostics: Diagnostic[] = []
-
-  if (new TextEncoder().encode(yaml).length > 5 * 1024 * 1024) {
-    throw new Error('模板超过 5 MB')
+  constructor(diagnostics: Diagnostic[]) {
+    super(diagnostics.filter(item => item.severity === 'error').map(item => item.message).join('\n'))
+    this.diagnostics = diagnostics
   }
+}
 
-  const doc = parseDocument(yaml, { uniqueKeys: true })
-  if (doc.errors.length) {
-    for (const e of doc.errors) {
-      diagnostics.push({
-        code: 'YAML_PARSE_ERROR',
-        severity: 'error',
-        path: '',
-        line: e.linePos?.[0]?.start?.line,
-        column: e.linePos?.[0]?.start?.column,
-        message: e.message,
-      })
+function invalid(code: string, message: string): never {
+  throw new TemplateValidationError([{ code, message, severity: 'error', path: '' }])
+}
+
+function validateStructure(yaml: string) {
+  if (new TextEncoder().encode(yaml).length > MAX_TEMPLATE_BYTES) {
+    invalid('YAML_TOO_LARGE', '模板超过 5 MiB')
+  }
+  const lineCounter = new LineCounter()
+  const doc = parseDocument(yaml, { uniqueKeys: true, lineCounter })
+  const problems = [...doc.errors, ...doc.warnings]
+  if (problems.length) {
+    throw new TemplateValidationError(problems.map(error => ({
+      code: error.code, severity: 'error', path: '',
+      line: error.linePos?.[0]?.line, column: error.linePos?.[0]?.col,
+      message: error.message.split(' at line ')[0],
+    })))
+  }
+  let raw: unknown
+  try {
+    raw = doc.toJS({ maxAliasCount: 50, mapAsMap: true })
+  } catch {
+    invalid('YAML_ALIAS_LIMIT', 'YAML 别名展开超过限制')
+  }
+  if (!(raw instanceof Map) || [...raw.keys()].some(key => typeof key !== 'string')) {
+    invalid('YAML_OBJECT_REQUIRED', '模板必须是字符串键的 YAML 对象')
+  }
+  const active = new WeakSet<object>()
+  function toObject(value: unknown): unknown {
+    if (!Array.isArray(value) && !(value instanceof Map)) return value
+    if (active.has(value)) invalid('YAML_CYCLIC_ALIAS', 'YAML 别名不能形成循环')
+    active.add(value)
+    let converted: unknown
+    if (Array.isArray(value)) {
+      converted = value.map(toObject)
+    } else {
+      if ([...value.keys()].some(key => typeof key !== 'string')) invalid('YAML_STRING_KEYS_REQUIRED', 'YAML 对象键必须是字符串')
+      converted = Object.fromEntries([...value].map(([key, item]) => [key, toObject(item)]))
     }
-    throw new Error(doc.errors.map(e => e.message).join('\n'))
+    active.delete(value)
+    return converted
   }
-
-  const raw: unknown = doc.toJS({ maxAliasCount: 50 })
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('模板必须是 YAML 对象')
-  }
-
   const allowed = ['proxy-groups', 'rules', 'rule-providers']
-  const values = raw as Record<string, unknown>
-  const ignored = Object.keys(values).filter(k => !allowed.includes(k))
-
-  for (const field of ignored) {
-    diagnostics.push({
-      code: 'FIELD_IGNORED',
-      severity: 'info',
-      path: field,
-      message: `字段 "${field}" 将被忽略`,
-    })
+  const ignored = [...raw.keys()].filter(key => !allowed.includes(key)) as string[]
+  const diagnostics: Diagnostic[] = ignored.map(field => ({
+    code: 'FIELD_IGNORED', severity: 'info', path: field, message: `字段 "${field}" 将被忽略`,
+  }))
+  function locate(diagnostic: Diagnostic, path: (string | number)[]) {
+    const node = doc.getIn(path, true)
+    if (!isNode(node) || !node.range) return diagnostic
+    const { line, col } = lineCounter.linePos(node.range[0])
+    return { ...diagnostic, line, column: col }
   }
-
-  const template = templateSchema.parse(Object.fromEntries(
-    Object.entries(values).filter(([k]) => allowed.includes(k))
+  const result = templateSchema.safeParse(Object.fromEntries(
+    [...raw].filter(([key]) => allowed.includes(key)).map(([key, item]) => [key, toObject(item)])
   ))
-
-  return { template, ignored, diagnostics }
+  if (!result.success) {
+    throw new TemplateValidationError(result.error.issues.map(issue => {
+      const path = issue.path.map(key => typeof key === 'number' ? key : String(key))
+      return locate({ code: 'INVALID_STRUCTURE', severity: 'error', path: path.join('.'), message: issue.message }, path)
+    }))
+  }
+  return { template: result.data, ignored, diagnostics, locate }
 }
 
 /**
@@ -145,9 +170,9 @@ export function validateGroups(template: Template, baseDiagnostics: Diagnostic[]
     }
   }
 
-  for (const g of groups) {
-    for (const p of g.proxies) {
-      if (p !== NODES) target(p, `proxy-groups.${g.name}`)
+  for (const [groupIndex, g] of groups.entries()) {
+    for (const [index, p] of g.proxies.entries()) {
+      if (p !== NODES) target(p, `proxy-groups.${groupIndex}.proxies.${index}`)
     }
   }
 
@@ -231,7 +256,7 @@ export function validateRules(template: Template, baseDiagnostics: Diagnostic[])
     }
 
     const hasNoResolve = parts.at(-1) === 'no-resolve'
-    const noResolveTypes = ['GEOIP', 'IP-CIDR', 'IP-CIDR6', 'IP-ASN', 'RULE-SET']
+    const noResolveTypes = ['GEOIP', 'IP-CIDR', 'IP-CIDR6', 'IP-SUFFIX', 'IP-ASN', 'RULE-SET']
     if (hasNoResolve && !noResolveTypes.includes(parts[0])) {
       diagnostics.push({
         code: 'NO_RESOLVE_INCOMPATIBLE',
@@ -243,13 +268,14 @@ export function validateRules(template: Template, baseDiagnostics: Diagnostic[])
 
     const final = parts[0] === 'MATCH'
     const expectedLength = final ? 2 : (hasNoResolve ? 4 : 3)
-    if (parts.length !== expectedLength) {
+    if (parts.length !== expectedLength || parts.some(part => !part)) {
       diagnostics.push({
-        code: 'INVALID_RULE_FORMAT',
+        code: parts[0].endsWith('-REGEX') ? 'UNSUPPORTED_REGEX_SYNTAX' : 'INVALID_RULE_FORMAT',
         severity: 'error',
         path,
-        message: `${path}: 规则格式无效`,
+        message: parts[0].endsWith('-REGEX') ? `${path}: 暂不支持含逗号的正则表达式` : `${path}: 规则格式无效`,
       })
+      continue
     }
 
     if (final && i !== template.rules.length - 1) {
@@ -264,17 +290,21 @@ export function validateRules(template: Template, baseDiagnostics: Diagnostic[])
     const targetIndex = parts.length - (hasNoResolve ? 2 : 1)
     if (parts[targetIndex]) target(parts[targetIndex], path)
 
-    if (parts[0] === 'RULE-SET' && !template['rule-providers']?.[parts[1]]) {
-      diagnostics.push({
-        code: 'UNKNOWN_RULE_PROVIDER',
-        severity: 'error',
-        path,
-        message: `${path}: 未知规则集 ${parts[1]}`,
-      })
+    if (!final && !validRuleValue(parts[0], parts[1])) {
+      diagnostics.push({ code: 'INVALID_RULE_VALUE', severity: 'error', path, message: `${path}: 规则参数无效` })
+    }
+    if (parts[0] === 'RULE-SET') {
+      const providers = template['rule-providers']
+      const provider = providers && Object.hasOwn(providers, parts[1]) ? providers[parts[1]] : undefined
+      if (!provider) {
+        diagnostics.push({ code: 'UNKNOWN_RULE_PROVIDER', severity: 'error', path, message: `${path}: 未知规则集 ${parts[1]}` })
+      } else if (hasNoResolve && provider.behavior === 'domain') {
+        diagnostics.push({ code: 'NO_RESOLVE_INCOMPATIBLE', severity: 'error', path, message: `${path}: 域名规则集不支持 no-resolve` })
+      }
     }
   }
 
-  if (!template.rules.at(-1)?.startsWith('MATCH,')) {
+  if (template.rules.at(-1)?.split(',')[0].trim() !== 'MATCH') {
     diagnostics.push({
       code: 'MISSING_MATCH_FALLBACK',
       severity: 'error',
@@ -286,146 +316,114 @@ export function validateRules(template: Template, baseDiagnostics: Diagnostic[])
   return diagnostics
 }
 
-/**
- * Validates rule-providers: HTTPS URLs, stable paths, no traversal.
- */
-export function validateRuleProviders(template: Template, baseDiagnostics: Diagnostic[]): Diagnostic[] {
-  const diagnostics = [...baseDiagnostics]
-  const providers = template['rule-providers']
-  if (!providers) return diagnostics
+function validCidr(value: string) {
+  const [address, prefix, extra] = value.split('/')
+  if (extra !== undefined || !/^\d{1,3}$/u.test(prefix ?? '')) return false
+  if (address.includes(':')) {
+    if (!/^[\da-f:.]+$/iu.test(address) || Number(prefix) > 128) return false
+    return URL.canParse(`https://[${address}]/`)
+  }
+  if (Number(prefix) > 32) return false
+  const octets = address.split('.')
+  return octets.length === 4 && octets.every(octet => /^(0|[1-9]\d{0,2})$/u.test(octet) && Number(octet) <= 255)
+}
 
-  const usedPaths = new Set<string>()
+function validRanges(value: string, min: number, max: number) {
+  const enclosed = value.startsWith('[') && value.endsWith(']')
+  return (enclosed ? value.slice(1, -1) : value).split('/').every(item => {
+    const match = /^(\d+)(?:-(\d+))?$/u.exec(item)
+    if (!match) return false
+    const low = Number(match[1])
+    const high = Number(match[2] ?? match[1])
+    return low >= min && high <= max && low <= high
+  })
+}
 
-  for (const [name, provider] of Object.entries(providers)) {
-    const path = `rule-providers.${name}`
-
-    // Validate URL is HTTPS
+function validRuleValue(type: string, value: string) {
+  if (type.endsWith('-REGEX')) {
+    // Support the simple expression syntax common to JavaScript and Mihomo,
+    // including the leading inline flags shown in the Mihomo examples.
+    const inline = /^\(\?([ims]+)\)/u.exec(value)
     try {
-      const url = new URL(provider.url)
-      if (url.protocol !== 'https:' || url.username || url.password) {
-        diagnostics.push({
-          code: 'INVALID_PROVIDER_URL',
-          severity: 'error',
-          path,
-          message: `${path}: URL 必须为 HTTPS 且不含凭据`,
-        })
-      }
+      new RegExp(inline ? value.slice(inline[0].length) : value, inline?.[1])
+      return true
     } catch {
-      diagnostics.push({
-        code: 'INVALID_PROVIDER_URL',
-        severity: 'error',
-        path,
-        message: `${path}: URL 格式无效`,
-      })
-    }
-
-    // Generate stable relative path
-    const pathSuffix = provider.path ?? name
-    if (pathSuffix.includes('..') || pathSuffix.startsWith('/') || pathSuffix.includes(':')) {
-      diagnostics.push({
-        code: 'INVALID_PROVIDER_PATH',
-        severity: 'error',
-        path,
-        message: `${path}: 路径包含非法字符`,
-      })
-    }
-
-    if (usedPaths.has(pathSuffix)) {
-      diagnostics.push({
-        code: 'DUPLICATE_PROVIDER_PATH',
-        severity: 'error',
-        path,
-        message: `${path}: 规则集路径冲突`,
-      })
-    }
-    usedPaths.add(pathSuffix)
-
-    // Validate behavior/format compatibility (mrs requires format)
-    if (provider.behavior === 'classical' && !provider.format) {
-      diagnostics.push({
-        code: 'MISSING_PROVIDER_FORMAT',
-        severity: 'warning',
-        path,
-        message: `${path}: classical behavior 建议指定 format`,
-      })
+      return false
     }
   }
-
-  return diagnostics
-}
-
-/**
- * Validates placeholder expansion: only in group members, structured expansion.
- */
-export function validatePlaceholder(template: Template, baseDiagnostics: Diagnostic[]): Diagnostic[] {
-  const diagnostics = [...baseDiagnostics]
-
-  // Check rule-providers for placeholder
-  if (JSON.stringify(template['rule-providers'] ?? {}).includes(NODES)) {
-    diagnostics.push({
-      code: 'PLACEHOLDER_IN_PROVIDERS',
-      severity: 'error',
-      path: 'rule-providers',
-      message: 'rule-providers: 占位符只能用于策略组成员',
-    })
+  switch (type) {
+    case 'DOMAIN':
+    case 'DOMAIN-SUFFIX':
+      return value.length <= 253 && value.replace(/\.$/u, '').split('.')
+        .every(label => /^[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?$/iu.test(label))
+    case 'DOMAIN-KEYWORD':
+      return !/\s/u.test(value)
+    case 'IP-CIDR':
+    case 'IP-CIDR6':
+    case 'SRC-IP-CIDR':
+    case 'IP-SUFFIX':
+      return validCidr(value)
+    case 'SRC-PORT':
+    case 'DST-PORT':
+      return validRanges(value, 1, 65_535)
+    case 'DSCP':
+      return /^\d{1,2}$/u.test(value) && Number(value) <= 63
+    case 'UID':
+      return validRanges(value, 0, 4_294_967_295)
+    case 'IP-ASN':
+      return /^\d+$/u.test(value) && Number(value) > 0 && Number(value) <= 4_294_967_295
+    case 'NETWORK':
+      return /^(tcp|udp)$/iu.test(value)
+    case 'GEOIP':
+    case 'GEOSITE':
+      return /^[a-z0-9_@.-]+$/iu.test(value)
+    default:
+      return !/\p{Cc}/u.test(value)
   }
-
-  return diagnostics
 }
 
-/**
- * Computes content hash of normalized template for deduplication.
- */
-export function computeContentHash(template: Template): string {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(JSON.stringify(template))
-  // Simple hash for demo; in production use crypto.subtle.digest
-  const hash = Array.from(new Uint8Array(data)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return hash.slice(0, 64)
+function normalizeRuleProviders(template: Template, diagnostics: Diagnostic[]): Template {
+  if (!template['rule-providers']) return template
+  const providers = Object.fromEntries(Object.entries(template['rule-providers']).map(([name, provider]) => {
+    const path = `rule-providers.${name}`
+    const format = provider.format ?? 'yaml'
+    if (format === 'mrs' && provider.behavior === 'classical') {
+      diagnostics.push({ code: 'INCOMPATIBLE_PROVIDER_FORMAT', severity: 'error', path, message: `${path}: mrs 仅支持 domain 和 ipcidr` })
+    }
+    if (name.includes(NODES) || provider.url.includes(NODES) || provider.path?.includes(NODES)) {
+      diagnostics.push({ code: 'PLACEHOLDER_IN_PROVIDERS', severity: 'error', path, message: `${path}: 占位符只能用于策略组成员` })
+    }
+    const key = Array.from(new TextEncoder().encode(name), byte => byte.toString(16).padStart(2, '0')).join('')
+    return [name, { ...provider, format, interval: provider.interval ?? 86400, path: `./rulesets/subpanel-${key}.${format}` }]
+  }))
+  return { ...template, 'rule-providers': providers }
 }
 
-/**
- * Full validation pipeline: structure -> groups -> rules -> providers -> placeholders.
- * Returns normalized template, ignored fields, diagnostics, and content hash.
- */
 export function validateTemplate(yaml: string): ValidationResult {
-  // Step 1: Structure validation
-  const { template, ignored, diagnostics } = validateStructure(yaml)
+  const { template, ignored, diagnostics, locate } = validateStructure(yaml)
+  const rules = validateRules(template, validateGroups(template, diagnostics))
+  const normalized = normalizeRuleProviders({ ...template, rules: template.rules.map(rule => rule.split(',').map(part => part.trim()).join(',')) }, rules)
+  const providerPrefix = 'rule-providers.'
+  const located = rules.map(item => {
+    const path = item.path.startsWith(providerPrefix)
+      ? ['rule-providers', item.path.slice(providerPrefix.length)]
+      : item.path.split('.').map(part => /^\d+$/u.test(part) ? Number(part) : part)
+    return locate(item, path)
+  })
+  if (located.some(item => item.severity === 'error')) throw new TemplateValidationError(located)
+  return { template: normalized, normalized, ignored, diagnostics: located }
+}
 
-  // Step 2: Group validation
-  const groupDiagnostics = validateGroups(template, diagnostics)
-
-  // Step 3: Rules validation
-  const ruleDiagnostics = validateRules(template, groupDiagnostics)
-
-  // Step 4: Rule-providers validation
-  const providerDiagnostics = validateRuleProviders(template, ruleDiagnostics)
-
-  // Step 5: Placeholder validation
-  const finalDiagnostics = validatePlaceholder(template, providerDiagnostics)
-
-  // Check for errors
-  const hasErrors = finalDiagnostics.some(d => d.severity === 'error')
-  if (hasErrors) {
-    const errorMessages = finalDiagnostics
-      .filter(d => d.severity === 'error')
-      .map(d => d.message)
-      .join('\n')
-    throw new Error(errorMessages)
-  }
-
-  const normalized = template // Already normalized by schema parsing
-  const contentHash = computeContentHash(normalized)
-
-  return { template: normalized, ignored, diagnostics: finalDiagnostics, normalized, contentHash }
+export function computeContentHash(template: Template) {
+  return sha256Base64Url(JSON.stringify(template))
 }
 
 export function expandTemplate(template: Template, nodes: string[]) {
   return {
     ...template,
-    'proxy-groups': template['proxy-groups'].map(g => ({
-      ...g,
-      proxies: g.proxies.flatMap(p => p === NODES ? nodes : [p]),
+    'proxy-groups': template['proxy-groups'].map(group => ({
+      ...group,
+      proxies: [...new Set(group.proxies.flatMap(member => member === NODES ? nodes : [member]))],
     })),
   }
 }

@@ -1,5 +1,8 @@
 import { env as workerEnv } from 'cloudflare:workers'
 import { z } from 'zod'
+import { toBase64Url } from './hash.js'
+
+export { sha256Base64Url as hashToken, toBase64Url } from './hash.js'
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
@@ -30,12 +33,6 @@ export const encryptedValueSchema = z.object({
 export type CryptoMaterial = z.infer<typeof cryptoMaterialSchema>
 export type EncryptedValue = z.infer<typeof encryptedValueSchema>
 
-export function toBase64Url(bytes: Uint8Array): string {
-  let binary = ''
-  for (const byte of bytes) binary += String.fromCharCode(byte)
-  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
-}
-
 export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const base64 = value.replaceAll('-', '+').replaceAll('_', '/')
   const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
@@ -50,10 +47,6 @@ function randomBytes(length: number): Uint8Array<ArrayBuffer> {
 }
 
 export const randomToken = (): string => toBase64Url(randomBytes(32))
-
-export async function hashToken(token: string): Promise<string> {
-  return toBase64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', encoder.encode(token))))
-}
 
 function parseCryptoMaterial(raw: string): CryptoMaterial {
   try {

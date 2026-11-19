@@ -148,7 +148,6 @@ export type AdminSubscription = {
   links: Record<string, string>
   linkError?: string | null
   diagnostics: Record<string, SubscriptionDiagnostic>
-  templateBinding?: SubscriptionTemplateBinding
 }
 
 export type BootstrapResponse = {
@@ -160,20 +159,16 @@ export type TemplateReference = {
   isDefault: boolean
   directBindings: number
   inheritedCount: number
-  summary: string
 }
 
 export type SubscriptionTemplate = {
   id: string
   name: string
   revision: number
-  draftHash: string | null
-  status: 'draft' | 'published' | 'archived'
+  status: 'draft' | 'published' | 'modified' | 'archived'
   publishedVersionId: string | null
-  sourceUrl: string | null
-  sourceFetchedAt: string | null
-  sourceEtag: string | null
-  sourceLastModified: string | null
+  publishedAt: string | null
+  publishedSequence: number | null
   updatedAt: string
   createdAt: string
   references: TemplateReference
@@ -191,12 +186,21 @@ export type TemplateVersion = {
 export type TemplateListResponse = {
   templates: SubscriptionTemplate[]
   defaultId: string | null
+  defaultRevision: number
   total: number
   page: number
   pageSize: number
 }
 
-export type TemplateDetailResponse = SubscriptionTemplate
+export type TemplateDetailResponse = Omit<SubscriptionTemplate, 'publishedAt' | 'publishedSequence'> & {
+  draft: string
+  draftHash: string
+  publishedVersion: TemplateVersion | null
+  sourceUrl: string | null
+  sourceFetchedAt: string | null
+  sourceEtag: string | null
+  sourceLastModified: string | null
+}
 
 export type TemplateValidateResponse = {
   normalized: TemplateStructure
@@ -209,9 +213,10 @@ export type TemplateValidateResponse = {
 export type TemplatePreviewResponse = {
   ignored: string[]
   diagnostics: Diagnostic[]
-  groups: unknown[]
-  rules: unknown[]
-  ruleProviders: Record<string, unknown>
+  groups: TemplateStructure['proxy-groups']
+  rules: string[]
+  ruleProviders: NonNullable<TemplateStructure['rule-providers']>
+  rendererVersion?: string
   subscriptionName: string | null
   outputNodes: number | null
   effectiveVersionId: string | null
@@ -235,17 +240,23 @@ export type TemplateStructure = {
   }>
 }
 
-export type TemplateImportResponse = {
+export type TemplateSource = {
+  url: string
+  fetchedAt: string
+  etag: string | null
+  lastModified: string | null
+}
+
+export type TemplateImportResponse = { notModified: true; message: string } | {
+  notModified: false
   candidate: {
     yaml: string
+    normalized: TemplateStructure
     ignored: string[]
     diagnostics: Diagnostic[]
     contentHash: string
   }
-  source: {
-    url: string
-    fetchedAt: string
-  }
+  source: TemplateSource
 }
 
 export type TemplatePublishResponse = {
@@ -261,8 +272,8 @@ export type TemplateBinding = {
   mode: 'inherit' | 'specific' | 'base'
   templateId: string | null
   revision: number
-  updatedAt: string
-  effectiveTemplate?: {
+  updatedAt: string | null
+  effectiveTemplate: {
     templateId: string
     templateName: string
     versionId: string
@@ -270,11 +281,9 @@ export type TemplateBinding = {
   } | null
 }
 
-export type SubscriptionTemplateBinding = {
-  mode: 'inherit' | 'specific' | 'base'
-  templateId: string | null
-  revision?: number
-}
+export type SubscriptionTemplateBinding =
+  | { mode: 'inherit' | 'base'; templateId?: null; expectedRevision: number }
+  | { mode: 'specific'; templateId: string; expectedRevision: number }
 
 export type Diagnostic = {
   code: string
@@ -340,6 +349,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     )
   }
   return payload as T
+}
+
+export const subscriptionTemplatesPath = '/api/admin/system/subscription-templates'
+
+export async function loadSubscriptionTemplates() {
+  const templates: SubscriptionTemplate[] = []
+  const first = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100`)
+  templates.push(...first.templates)
+  for (let page = 2; templates.length < first.total; page += 1) {
+    const result = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100&page=${page}`)
+    if (!result.templates.length) break
+    templates.push(...result.templates)
+  }
+  return { templates, defaultId: first.defaultId, defaultRevision: first.defaultRevision }
 }
 
 export const jsonBody = (value: unknown): string => JSON.stringify(value)

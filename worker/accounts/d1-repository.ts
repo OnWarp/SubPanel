@@ -374,6 +374,10 @@ export async function purgeUserFromD1(
       `DELETE FROM subscription_groups
        WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id = ?)`,
     ).bind(user.id),
+    db.prepare(`
+      DELETE FROM subscription_template_bindings
+      WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id=?)
+    `).bind(user.id),
     db.prepare('DELETE FROM subscriptions WHERE user_id = ?').bind(user.id),
     db.prepare(
       `DELETE FROM invitation_redemptions

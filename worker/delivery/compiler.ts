@@ -1,4 +1,4 @@
-import { resolvedTemplate, getEffectiveTemplate } from '../templates/repository.js'
+import { resolvedTemplate } from '../templates/repository.js'
 import type { Template } from '../templates/validation.js'
 import { getUserEntitlement } from '../entitlements/service.js'
 import { readCatalog } from '../catalog/repository.js'
@@ -55,7 +55,6 @@ async function artifactFor(
   catalogRevision: number,
   now: string,
   template?: Template,
-  templateVersionId?: string,
 ): Promise<CompiledArtifact> {
   const rendered = renderClient(client, await nodesForClient(client, nodes), template)
   const digest = await hashToken(rendered.body)
@@ -74,8 +73,6 @@ async function artifactFor(
     skippedNodes: rendered.skippedNodes,
     diagnostics: rendered.diagnostics,
     available: rendered.outputNodes > 0,
-    rendererVersion: '2026.11.20',
-    templateVersionId,
   })
 }
 
@@ -86,15 +83,13 @@ export async function compileSubscription(
 ): Promise<CompiledArtifact[]> {
   const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
-  const { catalog, nodes, speed, templateVersionId } = await entitledNodes(env, subscription, now)
-  const artifacts = await Promise.all(CLIENT_IDS.map((client) =>
-    artifactFor(subscription, client, speedLimitedNodes(nodes, client, speed), catalog.revision, now, undefined, templateVersionId)
-  ))
+  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
+  const artifacts = await Promise.all(CLIENT_IDS.map((client) => artifactFor(subscription, client, speedLimitedNodes(nodes, client, speed), catalog.revision, now)))
   await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
   const keep = new Set(artifacts.map((artifact) => compiledKey(subscription.tokenHash, artifact.client)))
   const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-  const stale = listed.keys.filter(({ name }: { name: string }) => !keep.has(name))
-  if (stale.length > 0) await Promise.all(stale.map(({ name }: { name: string }) => kv.delete(name)))
+  const stale = listed.keys.filter(({ name }) => !keep.has(name))
+  if (stale.length > 0) await Promise.all(stale.map(({ name }) => kv.delete(name)))
   return artifacts
 }
 
@@ -105,7 +100,7 @@ export async function compileAllSubscriptions(env: DataEnv, options: CompileOpti
     if (subscription.enabled) await compileSubscription(env, subscription, options)
     else {
       const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-      if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }: { name: string }) => kv.delete(name)))
+      if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }) => kv.delete(name)))
     }
   }
 }
@@ -128,15 +123,7 @@ async function entitledNodes(env: DataEnv, subscription: Subscription, now: stri
   const nodes = rights.current
     ? selectedNodes(catalog, { ...subscription, groupIds: subscription.groupIds.filter((id) => rights.current!.plan.groupIds.includes(id)) })
     : []
-
-  // Get template version ID for Mihomo clients (for cache invalidation)
-  let templateVersionId: string | undefined
-  if (nodes.length > 0) {
-    const effective = await getEffectiveTemplate(env.DB, subscription.id)
-    if (effective) templateVersionId = effective.version.id
-  }
-
-  return { catalog, nodes, speed: rights.current?.plan.speedLimitMbps ?? 0, templateVersionId }
+  return { catalog, nodes, speed: rights.current?.plan.speedLimitMbps ?? 0 }
 }
 
 function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {
@@ -148,14 +135,6 @@ function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: Rend
 }
 
 export async function renderEntitledSubscription(env: DataEnv, subscription: Subscription, client: RenderClient, now = new Date().toISOString(), previewTemplate?: Template): Promise<CompiledArtifact> {
-  const { catalog, nodes, speed, templateVersionId } = await entitledNodes(env, subscription, now)
-  return artifactFor(
-    subscription,
-    client,
-    speedLimitedNodes(nodes, client, speed),
-    catalog.revision,
-    now,
-    client === 'mihomo' && nodes.some(n => n.enabled) ? previewTemplate ?? await resolvedTemplate(env.DB, subscription.id) : undefined,
-    templateVersionId
-  )
+  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
+  return artifactFor(subscription,client,speedLimitedNodes(nodes,client,speed),catalog.revision,now, client === 'mihomo' && nodes.some(n => n.enabled) ? previewTemplate ?? await resolvedTemplate(env.DB, subscription.id) : undefined)
 }

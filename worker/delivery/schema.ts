@@ -34,17 +34,6 @@ const uniqueGroupIds = z.array(groupIdSchema).refine(
   'Duplicate group identifiers are not allowed',
 )
 
-const bindingModeSchema = z.enum(['inherit', 'specific', 'base'])
-
-const subscriptionBindingSchema = z.object({
-  mode: bindingModeSchema,
-  templateId: z.string().nullable().optional(),
-  revision: z.number().int().positive().optional(),
-}).refine(
-  (val) => val.mode !== 'specific' || (val.templateId && val.templateId.length > 0),
-  { message: 'specific 模式需要 templateId' }
-)
-
 export const subscriptionSchema = z.object({
   id: subscriptionIdSchema,
   userId: userIdSchema.nullable(),
@@ -60,7 +49,6 @@ export const subscriptionSchema = z.object({
   expiresAt: storedEpochSchema,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-  templateBinding: subscriptionBindingSchema.optional(),
 })
 
 export const deliverySnapshotSchema = z.object({
@@ -95,8 +83,6 @@ export type ClientId = z.infer<typeof clientIdSchema>
 export type Subscription = z.infer<typeof subscriptionSchema>
 export type DeliverySnapshot = z.infer<typeof deliverySnapshotSchema>
 export type RenderDiagnostic = z.infer<typeof renderDiagnosticSchema>
-export type TemplateBindingMode = z.infer<typeof bindingModeSchema>
-export type SubscriptionTemplateBinding = z.infer<typeof subscriptionBindingSchema>
 export type { EncryptedValue }
 
 export type PublicSubscription = Omit<Subscription, 'tokenHash' | 'encryptedToken'>
@@ -105,6 +91,14 @@ export const toPublicSubscription = (subscription: Subscription): PublicSubscrip
   const { tokenHash: _tokenHash, encryptedToken: _encryptedToken, ...publicValue } = subscription
   return publicValue
 }
+
+export const emptyDeliverySnapshot = (now = '1970-01-01T00:00:00.000Z'): DeliverySnapshot => ({
+  schemaVersion: 1,
+  revision: 0,
+  updatedAt: now,
+  nextSubscriptionId: 1,
+  subscriptions: [],
+})
 
 const artifactFileNameSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u)
 const artifactContentTypeSchema = z.string().min(1).max(256).regex(/^[\x20-\x7E]+$/u)
@@ -124,7 +118,6 @@ export const compiledArtifactSchema = z.object({
   skippedNodes: z.number().int().nonnegative(),
   diagnostics: z.array(renderDiagnosticSchema),
   available: z.boolean(),
-  // New optional fields for template version tracking
   rendererVersion: z.string().optional(),
   templateVersionId: z.string().optional(),
 }).superRefine((artifact, ctx) => {
