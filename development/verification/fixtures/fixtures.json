@@ -1,0 +1,145 @@
+[
+  {
+    "name": "valid-private-direct",
+    "file": "valid-private-direct.yaml",
+    "nodes_file": "nodes.json",
+    "description": "方案 §4 的 IPv4 私网直连示例模板（有效基线，应全程通过）",
+    "expected": {
+      "target_stage": "kernel",
+      "validation": "pass",
+      "render": "pass",
+      "kernel": "pass",
+      "summary": "全程通过"
+    }
+  },
+  {
+    "name": "dup-node-names",
+    "file": "dup-node-names.yaml",
+    "nodes_file": "nodes-dup.json",
+    "description": "示例节点名单里含重名节点，预期渲染层稳定改名后内核可过",
+    "expected": {
+      "target_stage": "render",
+      "validation": "pass",
+      "render": "disambiguate_rename",
+      "kernel": "pass",
+      "summary": "渲染层稳定改名后内核可过"
+    }
+  },
+  {
+    "name": "node-name-eq-group",
+    "file": "node-name-eq-group.yaml",
+    "nodes_file": "nodes-eq-group.json",
+    "description": "节点名与策略组同名，预期渲染层改名消解",
+    "expected": {
+      "target_stage": "render",
+      "validation": "pass",
+      "render": "disambiguate_rename",
+      "kernel": "pass",
+      "summary": "渲染层改名消解后内核可过"
+    }
+  },
+  {
+    "name": "reserved-name",
+    "file": "reserved-name.yaml",
+    "nodes_file": "nodes-reserved.json",
+    "description": "节点名撞保留目标（DIRECT / REJECT / MATCH 等），预期渲染层改名消解",
+    "expected": {
+      "target_stage": "render",
+      "validation": "pass",
+      "render": "disambiguate_rename",
+      "kernel": "pass",
+      "summary": "渲染层改名消解后内核可过"
+    }
+  },
+  {
+    "name": "dup-groups",
+    "file": "dup-groups.yaml",
+    "nodes_file": "nodes.json",
+    "description": "模板里两个同名策略组，预期校验层拦截并定位",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截并定位"
+    }
+  },
+  {
+    "name": "group-cycle",
+    "file": "group-cycle.yaml",
+    "nodes_file": "nodes.json",
+    "description": "策略组互相引用成环，预期校验层拦截",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截循环引用"
+    }
+  },
+  {
+    "name": "bad-rule-target",
+    "file": "bad-rule-target.yaml",
+    "nodes_file": "nodes.json",
+    "description": "规则指向不存在的策略组，预期校验层拦截",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截未知目标"
+    }
+  },
+  {
+    "name": "bad-cidr",
+    "file": "bad-cidr.yaml",
+    "nodes_file": "nodes.json",
+    "description": "IP-CIDR 参数是错误网段，预期校验层拦截并定位行号",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截并定位行号"
+    }
+  },
+  {
+    "name": "unknown-ruleset",
+    "file": "unknown-ruleset.yaml",
+    "nodes_file": "nodes.json",
+    "description": "规则引用未在 rule-providers 中声明的 RULE-SET，预期校验层拦截",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截未知规则集"
+    }
+  },
+  {
+    "name": "missing-match",
+    "file": "missing-match.yaml",
+    "nodes_file": "nodes.json",
+    "description": "规则末尾没有 MATCH 兜底，预期校验层拦截",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层拦截缺少末尾 MATCH 兜底"
+    }
+  },
+  {
+    "name": "unsupported-expr",
+    "file": "unsupported-expr.yaml",
+    "nodes_file": "nodes.json",
+    "description": "含逗号的正则（DOMAIN-REGEX）或逻辑嵌套等首版不支持表达式，预期校验层给出具体不支持诊断",
+    "expected": {
+      "target_stage": "validation",
+      "validation": "intercept",
+      "render": "skip",
+      "kernel": "skip",
+      "summary": "校验层给出具体不支持诊断"
+    }
+  }
+]

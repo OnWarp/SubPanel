@@ -1,0 +1,44 @@
+[
+  {
+    "id": "node-dummy-reserved-direct",
+    "name": "DIRECT",
+    "displayName": "DIRECT",
+    "protocol": "shadowsocks",
+    "server": "192.0.2.31",
+    "port": 8388,
+    "credentials": {
+      "method": "aes-128-gcm",
+      "password": "dummy-password-direct"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-res-01",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 1,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "node-dummy-reserved-reject",
+    "name": "REJECT",
+    "displayName": "REJECT",
+    "protocol": "shadowsocks",
+    "server": "192.0.2.32",
+    "port": 8388,
+    "credentials": {
+      "method": "aes-128-gcm",
+      "password": "dummy-password-reject"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-res-02",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 2,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  }
+]

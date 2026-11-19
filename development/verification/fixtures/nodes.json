@@ -1,0 +1,76 @@
+[
+  {
+    "id": "node-dummy-hk-01",
+    "name": "Dummy-HK-01",
+    "displayName": "Dummy-HK-01",
+    "protocol": "shadowsocks",
+    "server": "192.0.2.10",
+    "port": 8388,
+    "credentials": {
+      "method": "aes-128-gcm",
+      "password": "dummy-password-hk-01"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-01",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 1,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "node-dummy-jp-01",
+    "name": "Dummy-JP-01",
+    "displayName": "Dummy-JP-01",
+    "protocol": "vmess",
+    "server": "198.51.100.20",
+    "port": 443,
+    "credentials": {
+      "uuid": "00000000-0000-0000-0000-000000000001",
+      "alterId": 0,
+      "security": "auto"
+    },
+    "tls": {
+      "tls": true
+    },
+    "transport": {
+      "type": "ws",
+      "path": "/dummy-ws"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-02",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 2,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  },
+  {
+    "id": "node-dummy-us-01",
+    "name": "Dummy-US-01",
+    "displayName": "Dummy-US-01",
+    "protocol": "trojan",
+    "server": "203.0.113.30",
+    "port": 443,
+    "credentials": {
+      "password": "dummy-trojan-password"
+    },
+    "tls": {
+      "tls": true,
+      "sni": "us01.dummy.example.com"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-03",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 3,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  }
+]

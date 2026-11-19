@@ -1,0 +1,9 @@
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - "$SUBPANEL_NODES"
+      - DIRECT
+rules:
+  - RULE-SET,undeclared-provider,DIRECT
+  - MATCH,Proxy

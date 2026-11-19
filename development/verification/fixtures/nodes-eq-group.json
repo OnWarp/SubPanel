@@ -1,0 +1,23 @@
+[
+  {
+    "id": "node-dummy-eq-group",
+    "name": "Proxy",
+    "displayName": "Proxy",
+    "protocol": "shadowsocks",
+    "server": "192.0.2.21",
+    "port": 8388,
+    "credentials": {
+      "method": "aes-128-gcm",
+      "password": "dummy-password-proxy"
+    },
+    "extensions": {},
+    "fingerprint": "dummy-fp-eq-01",
+    "sourceIds": [],
+    "rawVariants": [],
+    "enabled": true,
+    "retained": true,
+    "order": 1,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z"
+  }
+]

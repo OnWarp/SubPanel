@@ -1,0 +1,12 @@
+proxy-groups:
+  - name: GroupA
+    type: select
+    proxies:
+      - "$SUBPANEL_NODES"
+      - GroupB
+  - name: GroupB
+    type: select
+    proxies:
+      - GroupA
+rules:
+  - MATCH,GroupA

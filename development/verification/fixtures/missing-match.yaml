@@ -1,0 +1,8 @@
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - "$SUBPANEL_NODES"
+      - DIRECT
+rules:
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
