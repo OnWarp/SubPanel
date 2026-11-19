@@ -1,11 +1,14 @@
-import { resolvedTemplate } from '../templates/repository.js'
-import type { Template } from '../templates/validation.js'
+import { readAccounts } from '../accounts/repository.js'
+import { getEffectiveTemplate } from '../templates/repository.js'
+import { validateTemplate, type Template } from '../templates/validation.js'
+import { apiError } from '../platform/api-error.js'
+import { effectiveStartsAt } from './expiry.js'
 import { getUserEntitlement } from '../entitlements/service.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import { hashToken } from '../platform/crypto.js'
-import { CLIENT_IDS, renderClient, type RenderClient } from '../renderers/index.js'
+import { CLIENT_IDS, prepareClientRender, type RenderClient } from '../renderers/index.js'
 import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from './schema.js'
 import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
 
@@ -48,17 +51,35 @@ async function nodesForClient(client: RenderClient, nodes: ReturnType<typeof sel
   }))
 }
 
+export const RENDERER_VERSION = '2'
+export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' | 'noEntitlement' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible' | 'ownerUnavailable'
+
 async function artifactFor(
+  env: DataEnv,
   subscription: Subscription,
   client: RenderClient,
-  nodes: ReturnType<typeof selectedNodes>,
-  catalogRevision: number,
+  context: Awaited<ReturnType<typeof entitledNodes>>,
   now: string,
-  template?: Template,
-): Promise<CompiledArtifact> {
-  const rendered = renderClient(client, await nodesForClient(client, nodes), template)
+  previewTemplate?: Template,
+) {
+  const { nodes, catalog, speed, zeroNodeReason } = context
+  const prepared = prepareClientRender(client, await nodesForClient(client, speedLimitedNodes(nodes, client, speed)))
+  let template = previewTemplate
+  let templateVersionId: string | undefined
+  if (client === 'mihomo' && prepared.outputNodes > 0 && !template) {
+    const effective = await getEffectiveTemplate(env.DB, subscription.id)
+    templateVersionId = effective.version_id ?? undefined
+    if (effective.yaml !== null) {
+      try {
+        template = validateTemplate(effective.yaml).template
+      } catch {
+        throw apiError(500, 'TEMPLATE_OUTPUT_INVALID', '已发布配置校验失败')
+      }
+    }
+  }
+  const rendered = prepared.render(template)
   const digest = await hashToken(rendered.body)
-  return compiledArtifactSchema.parse({
+  const artifact = compiledArtifactSchema.parse({
     schemaVersion: 2,
     client,
     body: rendered.body,
@@ -67,13 +88,16 @@ async function artifactFor(
     etag: `"${digest}"`,
     lastModified: now,
     subscriptionRevision: subscription.revision,
-    catalogRevision,
+    catalogRevision: catalog.revision,
     inputNodes: rendered.inputNodes,
     outputNodes: rendered.outputNodes,
     skippedNodes: rendered.skippedNodes,
     diagnostics: rendered.diagnostics,
     available: rendered.outputNodes > 0,
+    rendererVersion: RENDERER_VERSION,
+    templateVersionId,
   })
+  return { ...artifact, zeroNodeReason: artifact.available ? null : zeroNodeReason ?? ('incompatible' satisfies ZeroNodeReason) }
 }
 
 export async function compileSubscription(
@@ -83,13 +107,13 @@ export async function compileSubscription(
 ): Promise<CompiledArtifact[]> {
   const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
-  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
-  const artifacts = await Promise.all(CLIENT_IDS.map((client) => artifactFor(subscription, client, speedLimitedNodes(nodes, client, speed), catalog.revision, now)))
+  const context = await entitledNodes(env, subscription, now)
+  const artifacts = await Promise.all(CLIENT_IDS.map(client => artifactFor(env, subscription, client, context, now)))
   await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
   const keep = new Set(artifacts.map((artifact) => compiledKey(subscription.tokenHash, artifact.client)))
   const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-  const stale = listed.keys.filter(({ name }) => !keep.has(name))
-  if (stale.length > 0) await Promise.all(stale.map(({ name }) => kv.delete(name)))
+  const stale = listed.keys.filter(({ name }: { name: string }) => !keep.has(name))
+  if (stale.length > 0) await Promise.all(stale.map(({ name }: { name: string }) => kv.delete(name)))
   return artifacts
 }
 
@@ -100,7 +124,7 @@ export async function compileAllSubscriptions(env: DataEnv, options: CompileOpti
     if (subscription.enabled) await compileSubscription(env, subscription, options)
     else {
       const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-      if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }) => kv.delete(name)))
+      if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }: { name: string }) => kv.delete(name)))
     }
   }
 }
@@ -118,12 +142,25 @@ export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOption
 // Public requests repeat the live decision even when a cached artifact exists:
 // entitlement expiry and plan edits do not change subscription/catalog revisions.
 async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
-  const rights = await getUserEntitlement(env.DB, subscription.userId ?? '', now)
   const catalog = await readCatalog(env)
-  const nodes = rights.current
-    ? selectedNodes(catalog, { ...subscription, groupIds: subscription.groupIds.filter((id) => rights.current!.plan.groupIds.includes(id)) })
-    : []
-  return { catalog, nodes, speed: rights.current?.plan.speedLimitMbps ?? 0 }
+  const time = Date.parse(now)
+  const blocked: ZeroNodeReason | null =
+    subscription.expiresAt !== null && subscription.expiresAt <= time ? 'expired'
+    : !subscription.enabled ? 'disabled'
+    : !subscription.userId ? 'unassigned'
+    : time < effectiveStartsAt(subscription) ? 'pending'
+    : null
+  if (blocked) return { catalog, nodes: [], speed: 0, zeroNodeReason: blocked }
+
+  const owner = (await readAccounts(env)).users.find(user => user.id === subscription.userId)
+  if (!owner || owner.deletedAt || !owner.enabled) return { catalog, nodes: [], speed: 0, zeroNodeReason: 'ownerUnavailable' as const }
+  const { current } = await getUserEntitlement(env.DB, owner.id, now)
+  if (!current) return { catalog, nodes: [], speed: 0, zeroNodeReason: 'noEntitlement' as const }
+  const groupIds = subscription.groupIds.filter(id => current.plan.groupIds.includes(id))
+  const nodes = selectedNodes(catalog, { ...subscription, groupIds })
+  const zeroNodeReason: ZeroNodeReason | null = !groupIds.length ? 'noGroupIntersection'
+    : nodes.some(node => node.enabled) ? null : 'noEnabledNodes'
+  return { catalog, nodes, speed: current.plan.speedLimitMbps ?? 0, zeroNodeReason }
 }
 
 function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {
@@ -134,7 +171,12 @@ function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: Rend
   })
 }
 
-export async function renderEntitledSubscription(env: DataEnv, subscription: Subscription, client: RenderClient, now = new Date().toISOString(), previewTemplate?: Template): Promise<CompiledArtifact> {
-  const { catalog, nodes, speed } = await entitledNodes(env, subscription, now)
-  return artifactFor(subscription,client,speedLimitedNodes(nodes,client,speed),catalog.revision,now, client === 'mihomo' && nodes.some(n => n.enabled) ? previewTemplate ?? await resolvedTemplate(env.DB, subscription.id) : undefined)
+export async function renderEntitledSubscription(
+  env: DataEnv,
+  subscription: Subscription,
+  client: RenderClient,
+  now = new Date().toISOString(),
+  previewTemplate?: Template,
+) {
+  return artifactFor(env, subscription, client, await entitledNodes(env, subscription, now), now, previewTemplate)
 }

@@ -144,14 +144,21 @@ describe('bounded remote catalog sources', () => {
       .rejects.toThrow('REMOTE_BODY_TOO_LARGE')
   })
 
-  it('aborts after the configured timeout', async () => {
-    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(AbortSignal.abort())
-    const fetcher: typeof fetch = async (_input, init) => {
-      expect(init?.signal?.aborted).toBe(true)
-      throw new DOMException('aborted', 'AbortError')
-    }
+  it('applies one deadline through redirects and response body reads', async () => {
+    const controller = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async () => new Response(null, { status: 302, headers: { location: '/next' } }))
+      .mockImplementationOnce(async () => new Response(new ReadableStream<Uint8Array>({
+        pull() {
+          controller.abort(new DOMException('timeout', 'TimeoutError'))
+        },
+      })))
+
     await expect(fetchRemoteText({ url: 'https://example.com/source', headers: {} }, fetcher)).rejects.toThrow('REMOTE_TIMEOUT')
-    expect(timeout).toHaveBeenCalledWith(REMOTE_TIMEOUT_MS)
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(REMOTE_TIMEOUT_MS)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls[1][1]?.signal).toBe(controller.signal)
   })
 
   it('never includes URL or header values in thrown messages', async () => {

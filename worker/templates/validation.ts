@@ -76,7 +76,12 @@ function validateStructure(yaml: string) {
     invalid('YAML_TOO_LARGE', '模板超过 5 MiB')
   }
   const lineCounter = new LineCounter()
-  const doc = parseDocument(yaml, { uniqueKeys: true, lineCounter })
+  let doc: ReturnType<typeof parseDocument>
+  try {
+    doc = parseDocument(yaml, { uniqueKeys: true, lineCounter })
+  } catch {
+    invalid('YAML_PARSE_ERROR', '无法解析 YAML，请检查文档结构和嵌套深度')
+  }
   const problems = [...doc.errors, ...doc.warnings]
   if (problems.length) {
     throw new TemplateValidationError(problems.map(error => ({
@@ -95,16 +100,17 @@ function validateStructure(yaml: string) {
     invalid('YAML_OBJECT_REQUIRED', '模板必须是字符串键的 YAML 对象')
   }
   const active = new WeakSet<object>()
-  function toObject(value: unknown): unknown {
+  function toObject(value: unknown, depth = 0): unknown {
     if (!Array.isArray(value) && !(value instanceof Map)) return value
+    if (depth > 32) invalid('YAML_NESTING_LIMIT', '模板结构嵌套过深')
     if (active.has(value)) invalid('YAML_CYCLIC_ALIAS', 'YAML 别名不能形成循环')
     active.add(value)
     let converted: unknown
     if (Array.isArray(value)) {
-      converted = value.map(toObject)
+      converted = value.map(item => toObject(item, depth + 1))
     } else {
       if ([...value.keys()].some(key => typeof key !== 'string')) invalid('YAML_STRING_KEYS_REQUIRED', 'YAML 对象键必须是字符串')
-      converted = Object.fromEntries([...value].map(([key, item]) => [key, toObject(item)]))
+      converted = Object.fromEntries([...value].map(([key, item]) => [key, toObject(item, depth + 1)]))
     }
     active.delete(value)
     return converted
@@ -393,7 +399,8 @@ function normalizeRuleProviders(template: Template, diagnostics: Diagnostic[]): 
     if (name.includes(NODES) || provider.url.includes(NODES) || provider.path?.includes(NODES)) {
       diagnostics.push({ code: 'PLACEHOLDER_IN_PROVIDERS', severity: 'error', path, message: `${path}: 占位符只能用于策略组成员` })
     }
-    const key = Array.from(new TextEncoder().encode(name), byte => byte.toString(16).padStart(2, '0')).join('')
+    const hex = Array.from(new TextEncoder().encode(name), byte => byte.toString(16).padStart(2, '0')).join('')
+    const key = hex.match(/.{1,160}/gu)!.join('/')
     return [name, { ...provider, format, interval: provider.interval ?? 86400, path: `./rulesets/subpanel-${key}.${format}` }]
   }))
   return { ...template, 'rule-providers': providers }

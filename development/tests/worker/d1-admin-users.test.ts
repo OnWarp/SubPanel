@@ -1,3 +1,4 @@
+import { grantDeliveryFixture } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { clearAccountsStorage } from '../../../worker/accounts/d1-repository'
@@ -322,6 +323,7 @@ describe('D1 admin user management (batch 8)', () => {
       name: 'Dave group', sourceIds: [sourceId], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [catalog.nodes[0].id],
     }))
     const groupId = ((await groupResponse.json()) as { group: { id: string } }).group.id
+    await grantDeliveryFixture(dave.id, [groupId])
     const created = await adminCall(admin, '/api/admin/subscriptions', jsonRequest({
       userId: dave.id, name: 'Dave sub', groupIds: [groupId], defaultClient: 'mihomo',
     }))

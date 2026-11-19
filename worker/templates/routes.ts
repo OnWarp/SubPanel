@@ -236,7 +236,7 @@ templateRoutes.post('/preview', async c => {
     outputNodes: artifact.outputNodes,
     rendererVersion: artifact.rendererVersion,
     effectiveVersionId: artifact.templateVersionId ?? null,
-    zeroNodeReason: artifact.available ? null : 'noNodes',
+    zeroNodeReason: artifact.zeroNodeReason,
   })
 })
 

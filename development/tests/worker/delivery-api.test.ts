@@ -1,3 +1,5 @@
+import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import worker from '../../../worker/index'
 import { createFixtureAccount } from './helpers'
 import { createShare, exportShare } from '../../../worker/shares/service'
 import { runCron } from '../../../worker/operations/cron'
@@ -221,11 +223,13 @@ describe('Delivery APIs and public subscriptions', () => {
     artifact.schemaVersion = 1
     await env.DATA.put(artifactKey, JSON.stringify(artifact))
 
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(200)
+    const ctx = createExecutionContext()
+    expect((await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${token}/mihomo`), env, ctx)).status).toBe(200)
+    await waitOnExecutionContext(ctx)
     expect(JSON.parse((await env.DATA.get(artifactKey))!).schemaVersion).toBe(2)
   })
 
-  it('fails closed for a corrupt compiled artifact', async () => {
+  it('rebuilds a corrupt compiled artifact', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
@@ -237,9 +241,9 @@ describe('Delivery APIs and public subscriptions', () => {
     await env.DATA.put(artifact!.name, '{}')
 
     const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
-    expect(response.status).toBe(404)
+    expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(await response.json()).toEqual({ error: { code: 'SUBSCRIPTION_NOT_FOUND', message: '订阅不存在' } })
+    expect(await response.text()).toContain('Delivery node')
   })
 
   it('rejects a compiled artifact when its current subscription is disabled or deleted', async () => {
@@ -269,7 +273,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/mihomo`)).status).toBe(404)
   })
 
-  it('rejects an artifact compiled for an older subscription revision', async () => {
+  it('rebuilds an artifact compiled for an older subscription revision', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
@@ -286,14 +290,18 @@ describe('Delivery APIs and public subscriptions', () => {
     )
     await env.DATA.put(artifactKey, staleArtifact)
 
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/mihomo`)).status).toBe(404)
+    const ctx = createExecutionContext()
+    const response = await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${body.token}/mihomo`), env, ctx)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('profile-title')).toBe(encodeURIComponent('New subscription revision'))
+    await waitOnExecutionContext(ctx)
     const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as {
       subscriptions: Array<{ id: string; diagnostics: Record<string, unknown> }>
     }
-    expect(listed.subscriptions.find(({ id }) => id === body.subscription.id)?.diagnostics).not.toHaveProperty('mihomo')
+    expect(listed.subscriptions.find(({ id }) => id === body.subscription.id)?.diagnostics).toHaveProperty('mihomo')
   })
 
-  it('rejects an artifact compiled for an older Catalog revision', async () => {
+  it('rebuilds an artifact compiled for an older Catalog revision', async () => {
     const admin = await login()
     const groupId = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
@@ -311,7 +319,9 @@ describe('Delivery APIs and public subscriptions', () => {
     )
     await env.DATA.put(artifactKey, staleArtifact)
 
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(404)
+    const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain('New Catalog revision')
   })
 
   it('returns a warning instead of a false failure when initial compilation fails', async () => {
@@ -606,5 +616,197 @@ describe('Admin subscriptions list pagination', () => {
 
     const enabledOnlyExpired = await listAdminSubscriptions(admin, '?enabled=1&expiry=expired')
     expect(namesOf(enabledOnlyExpired)).toEqual([])
+  })
+})
+
+describe('live Mihomo policy delivery', () => {
+  const templateRoot = '/api/admin/system/subscription-templates'
+  beforeEach(async () => {
+    await env.DB.prepare('UPDATE subscription_template_default SET template_id=NULL, revision=1').run()
+  })
+  const yaml = `proxy-groups:
+  - name: Policy
+    type: select
+    proxies: ["$SUBPANEL_NODES", DIRECT]
+rules:
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - MATCH,Policy
+`
+
+  function mutation(path: string, cookie: string, body: unknown, method = 'POST') {
+    return exports.default.fetch(TEST_ORIGIN + path, jsonRequest(body, withCookie(cookie, { method })))
+  }
+
+  async function fixture() {
+    const admin = await login()
+    const groupId = await createCatalogGroup(admin)
+    const created = await mutation('/api/admin/subscriptions', admin, { userId: 'usr_1', name: 'Policy pull', groupIds: [groupId] })
+    expect(created.status).toBe(201)
+    const { subscription, token } = await created.json() as { subscription: { id: string }; token: string }
+    return { admin, subscription, token, groupId }
+  }
+
+  async function createPolicy(admin: string) {
+    const response = await mutation(templateRoot, admin, { name: 'Policy', yaml })
+    expect(response.status).toBe(201)
+    return await response.json() as { id: string; revision: number; draftHash: string }
+  }
+
+  it('rebuilds missing artifacts, serves changed template bytes and reuses the original ETag after rollback', async () => {
+    const { admin, subscription, token } = await fixture()
+    const template = await createPolicy(admin)
+    const path = `${templateRoot}/${template.id}`
+    const firstVersion = await mutation(path + '/publish', admin, { expectedRevision: 1, draftHash: template.draftHash })
+    expect(firstVersion.status).toBe(200)
+    const { versionId } = await firstVersion.json() as { versionId: string }
+    expect((await mutation(templateRoot + '/default', admin, { templateId: template.id, expectedRevision: 1 }, 'PUT')).status).toBe(200)
+
+    const { hashToken } = await import('../../../worker/platform/crypto')
+    const key = `compiled:${await hashToken(token)}:mihomo`
+    const pull = (etag?: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`, {
+      headers: etag ? { 'If-None-Match': etag } : {},
+    })
+    await env.DATA.delete(key)
+    const ctx = createExecutionContext()
+    const first = await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${token}/mihomo`), env, ctx)
+    expect(first.status).toBe(200)
+    expect(first.headers.get('last-modified')).toBeNull()
+    const firstEtag = first.headers.get('etag')!
+    const firstBody = await first.text()
+    expect(firstBody).toContain('IP-CIDR,10.0.0.0/8,DIRECT,no-resolve')
+    await waitOnExecutionContext(ctx)
+    expect(JSON.parse((await env.DATA.get(key))!)).toMatchObject({ templateVersionId: versionId, body: firstBody, etag: firstEtag })
+
+    const { compileSubscriptionById } = await import('../../../worker/delivery/compiler')
+    const compiled = await compileSubscriptionById(env, subscription.id)
+    expect(compiled.find(value => value.client === 'mihomo')).toMatchObject({ templateVersionId: versionId, body: firstBody, etag: firstEtag })
+    expect(compiled.find(value => value.client === 'singbox')?.templateVersionId).toBeUndefined()
+
+    const share = await mutation('/api/shares', admin, { subscriptionId: subscription.id })
+    expect(share.status).toBe(201)
+    const { token: shareToken } = await share.json() as { token: string }
+    const pullShare = () => exports.default.fetch(`${TEST_ORIGIN}/api/shares/${shareToken}/export?client=mihomo`)
+    const firstShare = await pullShare()
+    expect(firstShare.status).toBe(200)
+    expect(await firstShare.text()).toBe(firstBody)
+
+    const preview = await mutation(templateRoot + '/preview', admin, { subscriptionId: subscription.id })
+    expect(preview.status).toBe(200)
+    const previewData = await preview.text()
+    expect(JSON.parse(previewData)).toMatchObject({
+      outputNodes: 1, effectiveVersionId: versionId, zeroNodeReason: null,
+      groups: [{ name: 'Policy', proxies: ['Delivery node', 'DIRECT'] }],
+    })
+    expect(previewData).not.toContain('ss.example.com')
+    expect(previewData).not.toContain('password')
+    expect((await pull(firstEtag)).status).toBe(304)
+
+    const saved = await mutation(path, admin, {
+      name: 'Policy', yaml: yaml.replace('10.0.0.0/8', '192.168.0.0/16'), expectedRevision: 2,
+    }, 'PUT')
+    expect(saved.status).toBe(200)
+    const { draftHash } = await saved.json() as { draftHash: string }
+    expect((await mutation(path + '/publish', admin, { expectedRevision: 3, draftHash })).status).toBe(200)
+    const changed = await pull(firstEtag)
+    expect(changed.status).toBe(200)
+    expect(changed.headers.get('etag')).not.toBe(firstEtag)
+    const changedBody = await changed.text()
+    expect(changedBody).toContain('192.168.0.0/16')
+    expect(await (await pullShare()).text()).toBe(changedBody)
+
+    expect((await mutation(path + '/rollback', admin, { versionId, expectedRevision: 4 })).status).toBe(200)
+    expect((await pull(firstEtag)).status).toBe(304)
+    const audit = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action='template.rollback' AND target_id=?").bind(template.id).first<{ detail: string }>()
+    expect(JSON.parse(audit!.detail)).toMatchObject({ versionId })
+  })
+
+  it('rejects a matching cached ETag after entitlement expiry and explains zero nodes', async () => {
+    const { admin, subscription, token } = await fixture()
+    const url = `${TEST_ORIGIN}/sub/${token}/mihomo`
+    const active = await exports.default.fetch(url)
+    expect(active.status).toBe(200)
+    const dates = await env.DB.prepare("SELECT id, starts_at, expires_at FROM user_entitlements WHERE user_id='usr_1' AND status='active'")
+      .first<{ id: string; starts_at: string; expires_at: string }>()
+    expect(dates).not.toBeNull()
+    const setDates = (startsAt: string, expiresAt: string) => env.DB.prepare('UPDATE user_entitlements SET starts_at=?, expires_at=? WHERE id=?')
+      .bind(startsAt, expiresAt, dates!.id).run()
+    await setDates('2000-01-01T00:00:00.000Z', '2000-01-02T00:00:00.000Z')
+    try {
+      const expired = await exports.default.fetch(url, { headers: { 'If-None-Match': active.headers.get('etag')! } })
+      expect(expired.status).toBe(422)
+      expect(await expired.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason: 'noEntitlement' } } })
+      const preview = () => mutation(templateRoot + '/preview', admin, { subscriptionId: subscription.id, yaml })
+      expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'noEntitlement', rules: expect.any(Array) })
+
+      const path = `/api/admin/subscriptions/${subscription.id}`
+      expect((await mutation(path, admin, { enabled: false }, 'PATCH')).status).toBe(200)
+      expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'disabled' })
+      expect((await mutation(path, admin, { enabled: true, startsAt: Date.now() + 60_000 }, 'PATCH')).status).toBe(200)
+      expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'pending' })
+    } finally {
+      await setDates(dates!.starts_at, dates!.expires_at)
+    }
+  })
+
+  it('returns TEMPLATE_OUTPUT_INVALID when published policy storage is damaged', async () => {
+    const { admin, token } = await fixture()
+    const template = await createPolicy(admin)
+    expect((await mutation(`${templateRoot}/${template.id}/publish`, admin, { expectedRevision: 1, draftHash: template.draftHash })).status).toBe(200)
+    const current = await (await exports.default.fetch(TEST_ORIGIN + templateRoot, withCookie(admin))).json() as { defaultRevision: number }
+    expect((await mutation(templateRoot + '/default', admin, { templateId: template.id, expectedRevision: current.defaultRevision }, 'PUT')).status).toBe(200)
+    await env.DB.prepare('UPDATE subscription_template_versions SET yaml=? WHERE template_id=?').bind('malformed: true', template.id).run()
+    const failed = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
+    expect(failed.status).toBe(500)
+    expect(await failed.json()).toMatchObject({ error: { code: 'TEMPLATE_OUTPUT_INVALID' } })
+    await mutation(templateRoot + '/default', admin, { templateId: null, expectedRevision: current.defaultRevision + 1 }, 'PUT')
+  })
+
+  it('returns conditional remote candidates and preserves the draft on failure', async () => {
+    const admin = await login()
+    const template = await createPolicy(admin)
+    const path = `${templateRoot}/${template.id}`
+    const url = 'https://policy.example/config.yaml?secret=private'
+    const provider = yaml + `rule-providers:
+  ads:
+    type: http
+    behavior: domain
+    url: https://rules.example/ads.yaml
+    path: ../client-chosen
+`
+    const fetcher = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async () => new Response(provider, { headers: { ETag: '"v1"', 'Last-Modified': 'Sat, 01 Jan 2000 00:00:00 GMT' } }))
+      .mockImplementationOnce(async () => new Response(null, { status: 304 }))
+      .mockImplementationOnce(async () => new Response(null, { status: 302, headers: { Location: 'http://policy.example/plain' } }))
+      .mockImplementationOnce(async () => new Response('x'.repeat(5 * 1024 * 1024 + 1)))
+    vi.stubGlobal('fetch', fetcher)
+    const runImport = (expectedRevision: number) => mutation(path + '/import', admin, { url, expectedRevision })
+
+    const first = await runImport(1)
+    expect(first.status, await first.clone().text()).toBe(200)
+    const result = await first.json() as { source: object; candidate: { yaml: string } }
+    expect(result).toMatchObject({
+      source: { url, etag: '"v1"', lastModified: 'Sat, 01 Jan 2000 00:00:00 GMT' },
+      candidate: { normalized: { 'rule-providers': { ads: { path: './rulesets/subpanel-616473.yaml' } } } },
+    })
+    const detail = () => exports.default.fetch(TEST_ORIGIN + path, withCookie(admin))
+    expect(await (await detail()).json()).toMatchObject({ draft: yaml, revision: 1 })
+    expect((await mutation(path, admin, { expectedRevision: 1, name: 'Policy', yaml: result.candidate.yaml, source: result.source }, 'PUT')).status).toBe(200)
+
+    expect(await (await runImport(2)).json()).toMatchObject({ notModified: true })
+    expect(fetcher.mock.calls[1][1]?.headers).toMatchObject({ 'If-None-Match': '"v1"', 'If-Modified-Since': 'Sat, 01 Jan 2000 00:00:00 GMT' })
+    expect((await runImport(2)).status).toBe(422)
+    expect(await (await runImport(2)).json()).toMatchObject({ error: { code: 'REMOTE_BODY_TOO_LARGE' } })
+    fetcher.mockImplementationOnce(async () => { throw new DOMException('timeout', 'TimeoutError') })
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      expect(await (await runImport(2)).json()).toMatchObject({ error: { code: 'REMOTE_TIMEOUT' } })
+      expect(timeout).toHaveBeenCalledWith(10_000)
+    } finally {
+      timeout.mockRestore()
+    }
+    expect(fetcher).toHaveBeenCalledTimes(5)
+    expect(await (await detail()).json()).toMatchObject({ draft: provider, revision: 2, publishedVersionId: null })
+    const audits = await env.DB.prepare('SELECT detail FROM audit_logs').all<{ detail: string }>()
+    expect(JSON.stringify(audits.results)).not.toContain('secret=private')
   })
 })

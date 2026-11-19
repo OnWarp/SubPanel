@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { renderEntitledSubscription } from '../../../worker/delivery/compiler'
-import { getUserEntitlement } from '../../../worker/entitlements/service'
 import { templateRoutes } from '../../../worker/templates/routes'
 import { resolvedTemplate } from '../../../worker/templates/repository'
 import { renderClient, type RenderNode } from '../../../worker/renderers'
@@ -12,14 +11,15 @@ const hashToken = async (body:string) => createHash('sha256').update(body).diges
 import { ApiError } from '../../../worker/platform/api-error'
 vi.mock('../../../worker/delivery/service',()=>({getSubscription:async (_env:unknown,id:string)=>({id,name:id,groupIds:['grp_1']})}))
 vi.mock('../../../worker/delivery/compiler',()=>({renderEntitledSubscription:vi.fn()}))
-vi.mock('../../../worker/entitlements/service',()=>({getUserEntitlement:vi.fn()}))
 let db:D1Database, app:Hono
 const base='proxy-groups:\n - name: Proxy\n   type: select\n   proxies: ["$SUBPANEL_NODES"]\nrules:\n - MATCH,Proxy\n'
 const changed=base.replace(' - MATCH,Proxy',' - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve\n - MATCH,Proxy')
 const node={id:'nod_1',displayName:'A',enabled:true,protocol:'trojan',server:'secret.example',port:443,credentials:{password:'secret'},rawVariants:[],tls:{},transport:{},plugin:{},extensions:{}} as RenderNode
 beforeEach(()=>{
  const sqlite=new DatabaseSync(':memory:')
- sqlite.exec(readFileSync('migrations/0015_subscription_templates.sql','utf8'))
+ for (const file of ['0001_init.sql', '0015_subscription_templates.sql', '0016_template_enhancements.sql']) {
+  sqlite.exec(readFileSync(`migrations/${file}`,'utf8'))
+ }
  const prepare=(sql:string)=>{
   let values:unknown[]=[]
   const stmt={bind:(...args:unknown[])=>{values=args;return stmt},first:async()=>sqlite.prepare(sql).get(...values as never[])??null,all:async()=>({results:sqlite.prepare(sql).all(...values as never[])}),run:async()=>({meta:{changes:sqlite.prepare(sql).run(...values as never[]).changes}})}
@@ -29,7 +29,26 @@ beforeEach(()=>{
  app=new Hono();app.route('/templates',templateRoutes as never)
  app.onError((e,c)=>c.json({error:e.message},e instanceof ApiError?e.status:500))
 })
-const request=(path:string,body?:unknown,method='POST')=>app.request('/templates'+path,{method,headers:{'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})},{DB:db})
+async function request(path: string, body?: Record<string, unknown>, method = 'POST') {
+ const match = /^\/([^/]+)(?:\/(.*))?$/u.exec(path)
+ let payload = body
+ if (match && (method === 'PUT' || ['publish', 'rollback', 'archive', 'import'].includes(match[2]))) {
+  if (match[1] === 'default') {
+   const row = await db.prepare('SELECT revision FROM subscription_template_default').first()
+   payload = { expectedRevision: row?.revision, ...body }
+  } else if (match[1] === 'bindings') {
+   const row = await db.prepare('SELECT revision FROM subscription_template_bindings WHERE subscription_id=?').bind(match[2]).first()
+   payload = { expectedRevision: row?.revision ?? 1, ...body }
+  } else {
+   const row = await db.prepare('SELECT revision,draft_hash FROM subscription_templates WHERE id=?').bind(match[1]).first()
+   payload = { expectedRevision: row?.revision, ...(match[2] === 'publish' ? { draftHash: row?.draft_hash } : {}), ...body }
+  }
+ }
+ return app.request('/templates' + path, {
+  method, headers: { 'Content-Type': 'application/json' },
+  ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+ }, { DB: db, DATA: { get: async () => null } })
+}
 async function create(){const r=await request('',{name:'Policy',yaml:base});return (await r.json() as {id:string}).id}
 async function output(id:string){return renderClient('mihomo',[node],await resolvedTemplate(db,id)).body}
 it('keeps legacy output; isolates single binding; default changes final ETag; base overrides default; rollback restores bytes',async()=>{
@@ -71,27 +90,26 @@ it('blocks unsafe redirects without requesting their target',async()=>{
  try{expect((await request(`/${id}/import`,{url:'https://template.example/policy'})).status).toBe(422);expect(fetcher).toHaveBeenCalledTimes(1)}finally{vi.unstubAllGlobals()}
 })
 
-it.each([
- ['无有效权益',false,[],0],
- ['分组无交集',true,[],0],
- ['组内无启用节点',true,['grp_1'],0],
- ['格式不兼容',true,['grp_1'],1],
-])('explains zero nodes: %s',async(reason,current,groupIds,inputNodes)=>{
- vi.mocked(getUserEntitlement).mockResolvedValue({current:current?{plan:{groupIds}}:null} as never)
- vi.mocked(renderEntitledSubscription).mockResolvedValue({body:renderClient('mihomo',[]).body,outputNodes:0,inputNodes} as never)
+it.each(['noEntitlement', 'noGroupIntersection', 'noEnabledNodes', 'incompatible'])('explains zero nodes: %s',async zeroNodeReason => {
+ vi.mocked(renderEntitledSubscription).mockResolvedValue({
+  body:renderClient('mihomo',[]).body,outputNodes:0,available:false,zeroNodeReason,
+ } as never)
  const response=await request('/preview',{yaml:base,subscriptionId:'zero'})
  expect(response.status).toBe(200)
- const data=await response.json() as {reason:string;outputNodes:number;subscriptionName:string}
- expect(data).toMatchObject({reason,outputNodes:0,subscriptionName:'zero'})
+ const data=await response.json()
+ expect(data).toMatchObject({zeroNodeReason,outputNodes:0,subscriptionName:'zero'})
  expect(JSON.stringify(data)).not.toContain('secret')
 })
-it('imports into draft only and leaves HTTPS rule-providers entirely to the client',async()=>{
+it('imports a candidate before explicit save and leaves HTTPS rule-providers entirely to the client',async()=>{
  const id=await create();await request(`/${id}/publish`);await request('/default',{templateId:id},'PUT')
  const original=await output('old')
  const providerYaml=changed+'rule-providers:\n  ads:\n    type: http\n    behavior: domain\n    url: https://rules.example/ads.yaml\n'
  const fetcher=vi.fn().mockResolvedValue(new Response(providerYaml));vi.stubGlobal('fetch',fetcher)
  try{
- expect((await request(`/${id}/import`,{url:'https://template.example/policy'})).status).toBe(200)
+ const imported = await request(`/${id}/import`,{url:'https://template.example/policy'})
+ expect(imported.status).toBe(200)
+ const { candidate, source } = await imported.json() as { candidate: { yaml: string }; source: unknown }
+ expect((await request(`/${id}`,{name:'Policy',yaml:candidate.yaml,source},'PUT')).status).toBe(200)
  expect(await output('old')).toBe(original)
  await request(`/${id}/publish`)
  expect(await output('old')).toContain('https://rules.example/ads.yaml')

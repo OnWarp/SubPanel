@@ -10,7 +10,7 @@ import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { compileAllSubscriptions, compileSubscription } from './compiler.js'
+import { compileAllSubscriptions, compileSubscription, RENDERER_VERSION } from './compiler.js'
 import {
   createSubscription,
   transferSubscription,
@@ -129,6 +129,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     if (
       subscription.enabled &&
       artifact.success &&
+      artifact.data.rendererVersion === RENDERER_VERSION &&
       artifact.data.subscriptionRevision === subscription.revision &&
       artifact.data.catalogRevision === currentCatalogRevision
     ) diagnostics[name] = {

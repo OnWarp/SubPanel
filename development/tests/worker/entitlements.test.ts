@@ -97,6 +97,11 @@ const proxies = async (token: string) => {
   expect(response.status).toBe(200)
   return (parseYaml(await response.text()) as { proxies: Array<Record<string, unknown>> }).proxies
 }
+async function expectNoMihomoNodes(token: string, reason = 'noEntitlement') {
+  const response = await fetchApi(`/sub/${token}/mihomo`)
+  expect(response.status).toBe(422)
+  expect(await response.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason } } })
+}
 describe('live subscription gating', () => {
   it('gates compiled artifacts as well as public downloads', async () => {
     const { token,ids } = await deliveryFixture()
@@ -110,23 +115,23 @@ describe('live subscription gating', () => {
     expect(artifacts.find((a) => a.client === 'mihomo')?.outputNodes).toBe(1)
     expect((await proxies(token)).length).toBe(1)
   })
-  it('returns format-native empty subscriptions without rights and reports none', async () => {
+  it('blocks Mihomo without rights, keeps the generic empty response and reports none', async () => {
     const { token } = await deliveryFixture()
-    expect(await proxies(token)).toEqual([])
+    await expectNoMihomoNodes(token)
     expect(await (await fetchApi(`/sub/${token}/generic`)).text()).toBe('')
     const status = await fetchApi('/api/account/entitlement',withCookie(cookie))
     expect(await status.json()).toMatchObject({ state: 'none',current: null })
   })
-  it('returns empty for expired and revoked rights despite populated cached artifacts', async () => {
+  it('blocks Mihomo for expired and revoked rights despite populated cached artifacts', async () => {
     const { token,ids } = await deliveryFixture()
     const plan = await savePlan(env.DB,{ name: 'Expired',groupIds: ids,durationDays: 1 })
     await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
-    expect(await proxies(token)).toEqual([])
+    await expectNoMihomoNodes(token)
     expect((await getUserEntitlement(env.DB,'usr_1')).state).toBe('expired')
     await operateEntitlement(env.DB,'usr_1','renew')
     expect((await proxies(token)).length).toBe(2)
     await operateEntitlement(env.DB,'usr_1','revoke')
-    expect(await proxies(token)).toEqual([])
+    await expectNoMihomoNodes(token)
   })
   it('filters by plan groups, injects supported speed fields and reacts to plan edits', async () => {
     const { token,ids,catalog } = await deliveryFixture()
@@ -138,9 +143,9 @@ describe('live subscription gating', () => {
     expect(generic.status).toBe(200)
     expect(atob(await generic.text())).not.toContain('allowed.example.com')
     await savePlan(env.DB,{ ...plan,groupIds: [] },plan.id)
-    expect(await proxies(token)).toEqual([])
+    await expectNoMihomoNodes(token, 'noGroupIntersection')
     await savePlan(env.DB,{ ...plan,enabled: false },plan.id)
-    expect(await proxies(token)).toEqual([])
+    await expectNoMihomoNodes(token)
   })
 })
 

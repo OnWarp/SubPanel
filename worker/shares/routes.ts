@@ -173,7 +173,6 @@ shareRoutes.get('/:token/export', async (c) => {
   ))
   if (result.kind === 'link') return c.json({ link: result.link })
   c.header('ETag', result.etag)
-  c.header('Last-Modified', new Date(result.lastModified).toUTCString())
   c.header('Content-Type', result.contentType)
   c.header('Content-Disposition', contentDisposition(result.fileName, result.downloadName))
   if (result.profileTitle) c.header('profile-title', encodeURIComponent(result.profileTitle))
