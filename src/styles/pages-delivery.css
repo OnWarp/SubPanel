@@ -256,11 +256,12 @@
     width: auto;
   }
   .del-admin .del-table .sp-table tbody tr {
-    margin: 0 0 var(--space-3);
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card);
-    background: var(--color-surface);
+    margin: 0;
+    padding: var(--space-3) 0;
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    border-radius: 0;
+    background: transparent;
   }
   .del-admin .del-table .sp-table td {
     display: grid;

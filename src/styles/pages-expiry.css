@@ -47,10 +47,10 @@
 
 .exp-alert {
   min-width: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .exp-alert .form-message { overflow-wrap: anywhere; }
