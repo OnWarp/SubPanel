@@ -145,9 +145,9 @@ export function ShareSettingsSection() {
 
   return (
     <form id="ops-share-settings" className="sys-share-settings" onSubmit={save} noValidate>
-      <section className="data-section sys-share-card" aria-labelledby="sys-share-title">
+      <section className="data-section" aria-labelledby="sys-share-title">
         <DataHeader id="sys-share-title" title="分享开关" actions={
-          ready ? <button className="button primary ops-primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+          ready ? <button className="button primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
         } />
         {loading ? <LoadingState label="正在加载分享设置" /> : null}
         {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
@@ -167,7 +167,7 @@ export function ShareSettingsSection() {
       </section>
       {ready ? (
         <>
-          <section className="data-section sys-share-card" aria-labelledby="sys-share-policy-title">
+          <section className="data-section" aria-labelledby="sys-share-policy-title">
             <DataHeader id="sys-share-policy-title" title="默认策略" />
             <div className="sys-form">
               <div className="sys-toggles">
@@ -190,7 +190,7 @@ export function ShareSettingsSection() {
               <p className="sys-hint">公网基址留空时使用当前访问地址</p>
             </div>
           </section>
-          <section className="data-section sys-share-card" aria-labelledby="sys-share-limits-title">
+          <section className="data-section" aria-labelledby="sys-share-limits-title">
             <DataHeader id="sys-share-limits-title" title="分享限额" />
             <div className="sys-form sys-share-limits">
               <FormField label="单订阅分享上限" htmlFor="sys-share-max-shares" error={errors.maxSharesPerSubscription}>

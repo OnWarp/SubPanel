@@ -1,4 +1,3 @@
-import { OperationsHeading } from '../admin/OperationsCard'
 import { Input, FormSelect } from '../../ui/Controls'
 import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
@@ -287,7 +286,7 @@ function MailSection() {
   return (
     <section className="data-section sys-section" aria-labelledby="sys-mail-title">
       <DataHeader id="sys-mail-title" title="邮件" actions={
-        !loading && !loadError && form && settings ? <button className="button primary ops-primary" type="submit" form="ops-mail-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+        !loading && !loadError && form && settings ? <button className="button primary" type="submit" form="ops-mail-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
       } />
       {loading ? <LoadingState label="正在加载邮件设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
@@ -377,7 +376,7 @@ function HealthSection() {
     catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
   useEffect(() => { void load() }, [load])
-  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary ops-primary" onClick={() => { void load() }}>刷新</button>} />
+  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>} />
     <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
       <p>服务健康：{health.ok ? '正常' : '异常'} · 版本 {health.version}</p>
       <h3 className="sys-subtitle">来源刷新定时任务</h3>
@@ -475,14 +474,11 @@ export function SystemPage() {
   const showDeliverySettings = active === 'distribution' && !query.get('config')
   return <div className="page-stack sys-page ops-page">
     <PageHeader title="系统设置" />
-    <div className={showDeliverySettings ? 'ops-system sys-delivery' : 'ops-card ops-system'}>
-      <OperationsHeading title="系统设置" />
-      <div className="sys-content">
+    <div className="page-stack settings-sections">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
         {active === 'distribution' ? <>{showDeliverySettings && <><DomainSettingsSection /><ShareSettingsSection /></>}<TemplatesSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
-      </div>
     </div>
   </div>
 }
