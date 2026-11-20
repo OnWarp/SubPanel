@@ -221,8 +221,18 @@ export type TemplatePreviewResponse = {
   subscriptionName: string | null
   outputNodes: number | null
   effectiveVersionId: string | null
-  zeroNodeReason: string | null
+  zeroNodeReason: TemplateZeroNodeReason | null
 }
+
+export type TemplateZeroNodeReason =
+  | 'disabled' | 'unassigned' | 'pending' | 'expired' | 'ownerUnavailable'
+  | 'noEntitlement' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible'
+
+export type TemplateDraftWrite = { id: string; revision: number; draftHash: string }
+export type TemplateDraftUpdate = Omit<TemplateDraftWrite, 'id'> & { ok: true }
+export type TemplateVersionPage = { versions: TemplateVersion[]; total: number; page: number; pageSize: number }
+export type TemplateDefaultWrite = { ok: true; revision: number; references: TemplateReference; inheritedCount: number }
+export type TemplateRollback = { ok: true; revision: number; versionId: string; references: TemplateReference }
 
 export type TemplateStructure = {
   'proxy-groups': Array<{
@@ -304,6 +314,7 @@ type ApiErrorPayload = {
   error?: {
     code?: string
     message?: string
+    details?: unknown
   }
 }
 
@@ -311,11 +322,14 @@ export class ApiClientError extends Error {
   readonly status: number
   readonly code: string
 
-  constructor(status: number, code: string, message: string) {
+  readonly details?: unknown
+
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message)
     this.name = 'ApiClientError'
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -347,6 +361,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       response.status,
       error?.error?.code ?? 'REQUEST_FAILED',
       error?.error?.message ?? '请求失败',
+      error?.error?.details,
     )
   }
   return payload as T
@@ -354,16 +369,26 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const subscriptionTemplatesPath = '/api/admin/system/subscription-templates'
 
-export async function loadSubscriptionTemplates() {
+export async function loadSubscriptionTemplates(archived = false) {
   const templates: SubscriptionTemplate[] = []
-  const first = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100`)
+  const path = `${subscriptionTemplatesPath}?pageSize=100${archived ? '&archived=true' : ''}`
+  const first = await api<TemplateListResponse>(path)
   templates.push(...first.templates)
   for (let page = 2; templates.length < first.total; page += 1) {
-    const result = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100&page=${page}`)
+    const result = await api<TemplateListResponse>(`${path}&page=${page}`)
     if (!result.templates.length) break
     templates.push(...result.templates)
   }
   return { templates, defaultId: first.defaultId, defaultRevision: first.defaultRevision }
+}
+
+export async function loadTemplateSubscriptions(signal?: AbortSignal) {
+  const subscriptions: Pick<AdminSubscription, 'id' | 'name'>[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await api<{ subscriptions: typeof subscriptions; total: number }>(`/api/admin/subscriptions?pageSize=100&page=${page}`, { signal })
+    subscriptions.push(...result.subscriptions.map(({ id, name }) => ({ id, name })))
+    if (subscriptions.length >= result.total || result.subscriptions.length === 0) return subscriptions
+  }
 }
 
 export const jsonBody = (value: unknown): string => JSON.stringify(value)

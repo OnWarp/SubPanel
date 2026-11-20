@@ -5,7 +5,7 @@ import { TemplateBinding } from '../system/TemplateBinding'
 import { CheckCircle2, KeyRound, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { loadAdminUserOptions, api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
+import { loadAdminUserOptions, api, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { CopyButton } from '../../ui/CopyButton'
@@ -43,6 +43,7 @@ type SubscriptionForm = {
   enabled: boolean
   startsAt: string
   expiresAt: string
+  templateBinding?: SubscriptionTemplateBinding
 }
 
 type ExpiryFilter = 'all' | ExpiryKind | '7' | '15' | '30'
@@ -87,6 +88,8 @@ const UNIFIED_FILTERS: Array<{ key: UnifiedFilter; label: string }> = [
   { key: 'permanent', label: '永久有效' },
   { key: 'disabled', label: '已停用' },
 ]
+
+const INHERITED_TEMPLATE_BINDING: SubscriptionTemplateBinding = { mode: 'inherit', expectedRevision: 1 }
 
 const EMPTY_FORM: SubscriptionForm = { userId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
 
@@ -141,6 +144,38 @@ export function SubscriptionsPage() {
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [drawerError, setDrawerError] = useState('')
+  const [bindingData, setBindingData] = useState<{ initial: SubscriptionTemplateBinding; options: SubscriptionTemplate[]; effective: Binding['effectiveTemplate'] }>()
+  const [bindingError, setBindingError] = useState('')
+  const [bindingLoading, setBindingLoading] = useState(false)
+  const [bindingAttempt, setBindingAttempt] = useState(0)
+  const editing = drawer === 'create' || (drawer !== null && drawer.kind === 'edit')
+
+  useEffect(() => {
+    if (drawer === null || (drawer !== 'create' && drawer.kind !== 'edit')) return
+    const abort = new AbortController()
+    setBindingLoading(true)
+    setBindingError('')
+    void Promise.all([
+      loadSubscriptionTemplates(),
+      drawer === 'create' ? undefined : api<Binding>(
+        `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(drawer.subscription.id)}`, { signal: abort.signal },
+      ),
+    ]).then(([templates, binding]) => {
+      if (abort.signal.aborted) return
+      const initial: SubscriptionTemplateBinding = binding?.mode === 'specific'
+        ? { mode: 'specific', templateId: binding.templateId ?? '', expectedRevision: binding.revision }
+        : { mode: binding?.mode ?? 'inherit', expectedRevision: binding?.revision ?? 1 }
+      const defaultRow = templates.templates.find((row) => row.id === templates.defaultId)
+      const effective = binding ? binding.effectiveTemplate : defaultRow?.publishedVersionId ? {
+        templateId: defaultRow.id, templateName: defaultRow.name, versionId: defaultRow.publishedVersionId,
+        sequence: defaultRow.publishedSequence ?? 1,
+      } : null
+      setBindingData({ initial, options: templates.templates.filter((row) => row.publishedVersionId), effective })
+    }).catch((cause) => { if (!abort.signal.aborted) setBindingError(errorMessage(cause, '加载附加配置失败')) })
+      .finally(() => { if (!abort.signal.aborted) setBindingLoading(false) })
+    return () => abort.abort()
+  }, [drawer, bindingAttempt])
+
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [progress, setProgress] = useState('')
   const [transfer, setTransfer] = useState<AdminSubscription | null>(null)
@@ -239,6 +274,9 @@ export function SubscriptionsPage() {
   }
 
   const openCreate = () => {
+    setBindingData(undefined)
+    setBindingError('')
+    setBindingLoading(true)
     setForm({ ...EMPTY_FORM })
     setFieldErrors({})
     setDrawerError('')
@@ -246,6 +284,9 @@ export function SubscriptionsPage() {
   }
 
   const openEdit = (subscription: AdminSubscription) => {
+    setBindingData(undefined)
+    setBindingError('')
+    setBindingLoading(true)
     setForm({
       userId: subscription.userId ?? '',
       name: subscription.name,
@@ -300,6 +341,13 @@ export function SubscriptionsPage() {
       setFieldErrors(windowErrors)
       return
     }
+    const templateBinding = form.templateBinding
+    if (templateBinding?.mode === 'specific' && !templateBinding.templateId) {
+      setDrawerError('请选择已发布模板')
+      return
+    }
+    const bindingChanged = templateBinding && (templateBinding.mode !== bindingData?.initial.mode ||
+      templateBinding.templateId !== bindingData?.initial.templateId)
     const startsAt = fromDatetimeLocal(form.startsAt)
     const expiresAt = fromDatetimeLocal(form.expiresAt)
     setBusy(true)
@@ -307,14 +355,14 @@ export function SubscriptionsPage() {
       if (drawer === 'create') {
         const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>('/api/admin/subscriptions', {
           method: 'POST',
-          body: jsonBody({ userId: form.userId || null, name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt }),
+          body: jsonBody({ userId: form.userId || null, name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
         })
         setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
         setMessage('订阅已添加')
       } else if (drawer.kind === 'edit') {
         const result = await api<{ subscription: AdminSubscription; warning: string }>(`/api/admin/subscriptions/${drawer.subscription.id}`, {
           method: 'PATCH',
-          body: jsonBody({ name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt }),
+          body: jsonBody({ name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
         })
         setMessage(`订阅已更新。${result.warning}`)
       }
@@ -512,9 +560,12 @@ export function SubscriptionsPage() {
         <ResourceFooter count={total} unit="个订阅" pagination={{ page, pageCount, onPageChange: setPage }} />
       </section>
 
-      <EditDrawer open={drawer === 'create' || (drawer !== null && drawer.kind === 'edit')} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>
+      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>
         <form className="form-stack" onSubmit={saveSubscription}>
-          {drawer !== null && drawer !== 'create' ? <TemplateBinding subscriptionId={drawer.subscription.id} /> : null}
+          {editing && <TemplateBinding value={form.templateBinding ?? bindingData?.initial ?? INHERITED_TEMPLATE_BINDING}
+            onChange={(templateBinding) => setForm((current) => ({ ...current, templateBinding }))}
+            options={bindingData?.options ?? []} effective={bindingData?.effective ?? null} busy={busy || bindingLoading}
+            error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
           <label className="field"><span>订阅名称</span><Input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
           <label className="field"><span>所属用户</span><FormSelect aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
           <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>

@@ -479,7 +479,7 @@ export function SystemPage() {
       <div className="sys-content">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><TemplatesSection /></> : null}
+        {active === 'distribution' ? <>{!query.get('config') && <><DomainSettingsSection /><ShareSettingsSection /></>}<TemplatesSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
       </div>
     </div>
