@@ -36,7 +36,8 @@ function groupSummary(groupIds: string[]): string {
 export function MySubscriptionsPage() {
   const downloadsEnabled = useDownloadsEnabled()
   const [params, setParams] = useSearchParams()
-  const shareParam = params.get('share') ?? ''
+  const [shareEnabled, setShareEnabled] = useState(false)
+  const shareParam = shareEnabled ? params.get('share') ?? '' : ''
   const shareButtonRef = useRef<HTMLButtonElement>(null)
   const appliedShare = useRef('')
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
@@ -56,12 +57,13 @@ export function MySubscriptionsPage() {
     setLoadError('')
     setError('')
     try {
-      const result = await api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions')
+      const result = await api<{ subscriptions: AdminSubscription[], shareEnabled: boolean }>('/api/account/subscriptions')
       setSubscriptions(result.subscriptions)
+      setShareEnabled(result.shareEnabled)
       setSelectedId((current) => {
         if (result.subscriptions.some((subscription) => subscription.id === current)) return current
         const requested = new URLSearchParams(window.location.search).get('share')
-        if (requested && result.subscriptions.some((subscription) => subscription.id === requested)) return requested
+        if (result.shareEnabled && requested && result.subscriptions.some((subscription) => subscription.id === requested)) return requested
         return result.subscriptions[0]?.id ?? ''
       })
     } catch (cause) {
@@ -206,7 +208,7 @@ export function MySubscriptionsPage() {
                 <StatusBadge tone={selected.planState === 'active' || (selected.planState === undefined && selected.enabled) ? 'success' : 'muted'}>{selected.planState ? subscriptionPlanLabels[selected.planState] : selected.enabled ? '正常' : '已停用'}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
-              <button ref={shareButtonRef} className="button primary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button>
+              {shareEnabled ? <button ref={shareButtonRef} className="button primary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button> : null}
             </div>
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">

@@ -1,3 +1,4 @@
+import type { Principal } from '../app-env.js'
 import type { User } from '../accounts/schema.js'
 import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
@@ -94,8 +95,12 @@ function assertExpiry(expiresAt: string, nowMs: number, maxValidityDays: number)
   }
 }
 
-function assertFeatureEnabled(settings: ShareSettings): void {
-  if (!settings.enabled) throw shareError(403, 'SHARE_DISABLED', '分享功能已关闭')
+export function canUseShareFeature(role: Principal['role'], settings: ShareSettings): boolean {
+  return role === 'admin' || settings.enabled
+}
+
+function assertFeatureEnabled(role: Principal['role'], settings: ShareSettings): void {
+  if (!canUseShareFeature(role, settings)) throw shareError(403, 'SHARE_DISABLED', '分享功能已关闭')
 }
 
 function byNewest(records: ShareRecord[]): ShareRecord[] {
@@ -196,12 +201,12 @@ async function guard(
   return { share, subscription, settings }
 }
 
-async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date): Promise<ShareRecord> {
+async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date, actorRole: Principal['role']): Promise<ShareRecord> {
   if (share.status === status) return share
   if (share.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能变更状态')
   if (status === 'active') {
     const settings = await readShareSettings(env)
-    assertFeatureEnabled(settings)
+    assertFeatureEnabled(actorRole, settings)
     await assertActiveCapacity(env, settings, share.ownerUserId)
   }
   const next: ShareRecord = { ...share, status, updatedAt: now.toISOString() }
@@ -223,9 +228,10 @@ export async function createShare(
   ownerUserId: string,
   input: CreateShareInput,
   now = new Date(),
+  actorRole: Principal['role'] = 'user',
 ): Promise<{ share: ShareView, token: string }> {
   const settings = await readShareSettings(env)
-  assertFeatureEnabled(settings)
+  assertFeatureEnabled(actorRole, settings)
   if (!settings.createAllowed) throw shareError(403, 'SHARE_CREATE_DISABLED', '当前不允许创建分享')
   const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === input.subscriptionId)
@@ -289,11 +295,12 @@ export async function updateShare(
   ownerUserId: string,
   input: UpdateShareInput,
   now = new Date(),
+  actorRole: Principal['role'] = 'user',
 ): Promise<ShareView> {
   const current = await requireOwned(env, id, ownerUserId)
   if (current.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能修改')
   const settings = await readShareSettings(env)
-  assertFeatureEnabled(settings)
+  assertFeatureEnabled(actorRole, settings)
   const next: ShareRecord = {
     ...current,
     remark: input.remark ?? current.remark,
@@ -318,8 +325,9 @@ export async function changeOwnStatus(
   ownerUserId: string,
   status: ShareStatus,
   now = new Date(),
+  actorRole: Principal['role'] = 'user',
 ): Promise<ShareView> {
-  return toShareView(await setStatus(env, await requireOwned(env, id, ownerUserId), status, now))
+  return toShareView(await setStatus(env, await requireOwned(env, id, ownerUserId), status, now, actorRole))
 }
 
 export async function resetShareToken(
@@ -327,10 +335,11 @@ export async function resetShareToken(
   id: string,
   ownerUserId: string,
   now = new Date(),
+  actorRole: Principal['role'] = 'user',
 ): Promise<{ share: ShareView, token: string }> {
   const current = await requireOwned(env, id, ownerUserId)
   if (current.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能重置令牌')
-  assertFeatureEnabled(await readShareSettings(env))
+  assertFeatureEnabled(actorRole, await readShareSettings(env))
   const token = randomToken()
   const sealed = await sealToken(env.DATA, token)
   if (sealed.tokenHash !== current.tokenHash && await readShare(env, sealed.tokenHash)) {
@@ -361,9 +370,10 @@ export async function revealOriginalLink(
   ownerUserId: string,
   requestUrl: string,
   now = new Date(),
+  actorRole: Principal['role'] = 'user',
 ): Promise<{ link: string }> {
   const current = await requireOwned(env, id, ownerUserId)
-  assertFeatureEnabled(await readShareSettings(env))
+  assertFeatureEnabled(actorRole, await readShareSettings(env))
   if (current.status !== 'active' || Date.parse(current.expiresAt) <= now.getTime()) {
     throw shareError(409, 'SHARE_UNAVAILABLE', '分享当前不可用')
   }
@@ -497,5 +507,5 @@ export async function adminChangeStatus(
   status: 'disabled' | 'revoked',
   now = new Date(),
 ): Promise<ShareView> {
-  return toShareView(await setStatus(env, await requireById(env, id), status, now))
+  return toShareView(await setStatus(env, await requireById(env, id), status, now, 'admin'))
 }

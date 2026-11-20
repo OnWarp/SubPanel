@@ -1,3 +1,5 @@
+import { readShareSettings } from '../shares/repository.js'
+import { canUseShareFeature } from '../shares/service.js'
 import { bindingSchema } from '../templates/repository.js'
 import { listPlans, subscriptionPlanState } from './plans.js'
 import { Hono } from 'hono'
@@ -321,14 +323,15 @@ export const userDeliveryRoutes = new Hono<AppEnv>()
 
 userDeliveryRoutes.get('/', async (c) => {
   await disableExpiredSubscriptions(c.env)
-  const [subscriptions, catalog] = await Promise.all([
+  const [subscriptions, catalog, shareSettings] = await Promise.all([
     listAllSubscriptions(c.env),
     readCatalog(c.env),
+    readShareSettings(c.env),
   ])
-  const userId = c.get('principal').id
+  const { id: userId, role } = c.get('principal')
   const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
     .map(subscription => view(c, subscription, catalog.revision)))
-  return c.json({ subscriptions: views })
+  return c.json({ subscriptions: views, shareEnabled: canUseShareFeature(role, shareSettings) })
 })
 
 userDeliveryRoutes.post('/:id/token/reset', async (c) => {

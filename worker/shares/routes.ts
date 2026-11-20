@@ -95,14 +95,16 @@ shareRoutes.get('/', async (c) => {
 
 shareRoutes.post('/', async (c) => {
   const input = await readJson(c, createShareSchema)
-  const result = await run(() => createShare(c.env, c.get('principal').id, input))
+  const actor = c.get('principal')
+  const result = await run(() => createShare(c.env, actor.id, input, undefined, actor.role))
   const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   return c.json({ ...result, linkBaseUrl }, 201)
 })
 
 shareRoutes.put('/:id', async (c) => {
   const input = await readJson(c, updateShareSchema)
-  const share = await run(() => updateShare(c.env, requireShareId(c.req.param('id')), c.get('principal').id, input))
+  const actor = c.get('principal')
+  const share = await run(() => updateShare(c.env, requireShareId(c.req.param('id')), actor.id, input, undefined, actor.role))
   return c.json({ share })
 })
 
@@ -114,7 +116,8 @@ shareRoutes.post('/:id/disable', async (c) => {
 
 shareRoutes.post('/:id/enable', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => changeOwnStatus(c.env, requireShareId(c.req.param('id')), c.get('principal').id, 'active'))
+  const actor = c.get('principal')
+  const share = await run(() => changeOwnStatus(c.env, requireShareId(c.req.param('id')), actor.id, 'active', undefined, actor.role))
   return c.json({ share })
 })
 
@@ -126,14 +129,16 @@ shareRoutes.post('/:id/revoke', async (c) => {
 
 shareRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => resetShareToken(c.env, requireShareId(c.req.param('id')), c.get('principal').id))
+  const actor = c.get('principal')
+  const result = await run(() => resetShareToken(c.env, requireShareId(c.req.param('id')), actor.id, undefined, actor.role))
   const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   return c.json({ ...result, linkBaseUrl })
 })
 
 shareRoutes.post('/:id/reveal', async (c) => {
   await readJson(c, emptySchema)
-  const result = await run(() => revealOriginalLink(c.env, requireShareId(c.req.param('id')), c.get('principal').id, c.req.url))
+  const actor = c.get('principal')
+  const result = await run(() => revealOriginalLink(c.env, requireShareId(c.req.param('id')), actor.id, c.req.url, undefined, actor.role))
   return c.json(result)
 })
 
@@ -189,7 +194,7 @@ adminShareRoutes.post('/shares', async (c) => {
   })
   const ownerUserId = subscription.userId
   if (!ownerUserId) throw apiError(409, 'SUBSCRIPTION_UNASSIGNED', '请先分配订阅')
-  const result = await run(() => createShare(c.env, ownerUserId, input))
+  const result = await run(() => createShare(c.env, ownerUserId, input, undefined, c.get('principal').role))
   const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   return c.json({ ...result, linkBaseUrl }, 201)
 })
