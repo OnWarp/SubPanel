@@ -1,3 +1,4 @@
+import { DataHeader } from '../../ui/DataHeader'
 import { Ellipsis } from 'lucide-react'
 import { useId, useRef, type ReactNode } from 'react'
 import { Checkbox } from '../../ui/Controls'
@@ -5,12 +6,7 @@ import { Pagination, type PaginationProps } from '../../ui/Pagination'
 import './resource-card.css'
 
 export function ResourceHeading({ id, title, action }: { id: string; title: string; action?: ReactNode }) {
-  return (
-    <header className="resource-card-heading">
-      <h1 id={id}>{title}</h1>
-      {action}
-    </header>
-  )
+  return <DataHeader id={id} title={title} actions={action} />
 }
 
 export function ResourceFooter({ count, unit, pagination, children }: {

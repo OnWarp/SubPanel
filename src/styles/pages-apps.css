@@ -530,7 +530,7 @@
   overflow-wrap: anywhere;
 }
 
-.appu-detail .sp-empty,
+.appu-detail .empty-state,
 .appu-detail .sp-error,
 .appu-detail .sp-loading {
   max-width: 100%;

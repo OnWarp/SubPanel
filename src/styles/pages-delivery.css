@@ -46,7 +46,7 @@
 }
 .del-admin .sp-loading,
 .del-admin .sp-error,
-.del-admin .sp-empty {
+.del-admin .empty-state {
   margin: var(--space-4);
 }
 .del-table {

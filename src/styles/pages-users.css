@@ -164,6 +164,7 @@
   .usr-table .sp-table tr,
   .usr-table .sp-table thead { display: none; }
   .usr-table .sp-table tr { padding: var(--space-3); border-bottom: 1px solid var(--color-border); }
+  .usr-table .sp-table td { display: flex; min-width: 0; gap: var(--space-3); justify-content: space-between; overflow-wrap: anywhere; }
   .usr-table .sp-table td::before {
     content: attr(data-label);
     color: var(--color-text-muted);

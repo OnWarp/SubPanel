@@ -67,9 +67,9 @@ export function PlansPage() {
     ]} />}
     {!loading && <OperationsFooter total={plans.length} unit="个" />}
     </section>
-    <section className="data-section"><form className="form-stack" onSubmit={(e) => { void saveTrial(e) }}><h2>注册试用</h2>
+    <section className="data-section"><OperationsHeading title="注册试用" action={<button className="button primary" form="trial-settings" disabled={busy}>保存试用设置</button>} /><form id="trial-settings" className="form-stack settings-fields" onSubmit={(e) => { void saveTrial(e) }}>
       <FormField label="试用计划" htmlFor="trial-plan"><FormSelect id="trial-plan" value={trial.trialPlanId ?? ''} onChange={(e) => setTrial({ ...trial,trialPlanId: e.target.value || null })}><option value="">关闭</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</FormSelect></FormField>
-      <FormField label="试用天数" htmlFor="trial-days"><Input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField><button className="button primary" disabled={busy}>保存试用设置</button>
+      <FormField label="试用天数" htmlFor="trial-days"><Input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField>
     </form></section>
     <EditDrawer open={draft !== null} title={draft?.id ? '编辑计划' : '新增计划'} busy={busy} onClose={() => setDraft(null)}>
       {draft ? <form className="form-stack" onSubmit={(e) => { void save(e) }}>

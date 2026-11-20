@@ -55,7 +55,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty, pagination, classNa
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="sp-table-empty">{empty ?? '暂无数据'}</td>
+              <td colSpan={columns.length} className="empty-row">{empty ?? '暂无数据'}</td>
             </tr>
           ) : rows.map((row) => (
             <tr key={rowKey(row)}>

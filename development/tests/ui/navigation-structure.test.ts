@@ -134,15 +134,17 @@ describe('navigation ownership and route compatibility', () => {
     expect(render(path)).toContain(`data-redirect="${target}"`)
   })
   it.each([
-    ['/dashboard', '概览'],
     ['/plans', '订阅计划'],
     ['/delivery/tickets', '工单'],
     ['/operations/notices', '公告'],
     ['/kb/manage', '知识库管理'],
     ['/catalog/apps', '客户端下载'],
     ['/audit-logs', '审计日志'],
-  ])('renders the operations card heading on %s', (path, title) => {
-    expect(render(path)).toContain(`<header class="ops-heading"><h2>${title}</h2>`)
+  ])('renders the shared section heading on %s', (path, title) => {
+    expect(render(path)).toContain(`<div class="section-heading data-header"><div class="data-header-main"><h2>${title}</h2>`)
+  })
+  it('renders the dashboard page title', () => {
+    expect(render('/dashboard')).toContain('<h1>概览</h1>')
   })
   it('keeps the filter controls and total in the audit card', () => {
     const html = render('/audit-logs')
