@@ -1,0 +1,9 @@
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - "$SUBPANEL_NODES"
+      - DIRECT
+rules:
+  - DOMAIN-REGEX,^https?://(foo,bar)\.com$,DIRECT
+  - MATCH,Proxy
