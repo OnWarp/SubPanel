@@ -130,6 +130,43 @@ async function listShares(cookie: string): Promise<ShareView[]> {
 }
 
 describe('Share backend', () => {
+  it.each([
+    { role: 'admin', enabled: false, status: 201 },
+    { role: 'user', enabled: false, status: 403 },
+    { role: 'user', enabled: true, status: 201 },
+  ])('returns $status for share creation by $role with enabled=$enabled', async ({ role, enabled, status }) => {
+    const admin = await login()
+    const owner = await provisionUser(admin, 'toggle-user', 'toggle user password')
+    const groupId = await createGroup(admin, 'Toggle group', 'Toggle node', 'toggle.example.com')
+    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Toggle subscription')
+    await putSettings(admin, { enabled })
+
+    const actor = role === 'admin' ? admin : owner.cookie
+    const account = await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(actor))
+    expect(account.status).toBe(200)
+    expect(await account.json()).toMatchObject({ shareEnabled: role === 'admin' || enabled })
+
+    const path = role === 'admin' ? '/api/admin/shares' : '/api/shares'
+    const response = await exports.default.fetch(`${TEST_ORIGIN}${path}`, jsonRequest({ subscriptionId }, withCookie(actor)))
+    if (status === 403) {
+      await expectError(response, 403, 'SHARE_DISABLED')
+      return
+    }
+
+    expect(response.status).toBe(201)
+    const { share, token } = await response.json() as { share: ShareView, token: string }
+    expect(share).toMatchObject({ ownerUserId: owner.id, subscriptionId, status: 'active' })
+    expect(await listShares(owner.cookie)).toContainEqual(share)
+
+    if (!enabled) {
+      await expectError(
+        await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${token}/meta`, withCookie(admin)),
+        404,
+        'SHARE_NOT_FOUND',
+      )
+    }
+  })
+
   it('rejects shares past the policy caps and expiry window', async () => {
     const admin = await login()
     expect(await env.DATA.get('state:share-settings')).toBeNull()
