@@ -3,7 +3,7 @@ import { batch } from '../db/db.js'
 import { getSetting, decodeSettingJson } from '../db/settings-repository.js'
 import { DELIVERY_D1_READY_KEY, DELIVERY_SETTING_KEYS, isModuleReady, markModuleReady, type DataEnv } from '../db/module-switch.js'
 import { readDeliveryKv } from './repository.js'
-import { readDeliveryFromD1 } from './d1-repository.js'
+import { parseStoredOrder, readDeliveryFromD1, resolveSubscriptionOrder } from './d1-repository.js'
 import { effectiveStartsAt } from './expiry.js'
 import { randomToken } from '../platform/crypto.js'
 import { createToken } from './service.js'
@@ -74,7 +74,7 @@ export async function deletePlan(db: D1Database, id: string): Promise<void> {
   catch { throw apiError(409, 'PLAN_IN_USE', '计划已有订阅记录，请停用') }
 }
 
-export function subscriptionPlanState(subscription: Subscription, plan: Plan | null, now: number): SubscriptionPlanSummary['state'] {
+export function subscriptionPlanState(subscription: Pick<Subscription, 'planRevoked' | 'expiresAt' | 'startsAt' | 'createdAt' | 'enabled'>, plan: Plan | null, now: number): SubscriptionPlanSummary['state'] {
   if (!plan) return 'none'
   if (subscription.planRevoked) return 'revoked'
   if (subscription.expiresAt !== null && subscription.expiresAt <= now) return 'expired'
@@ -84,11 +84,26 @@ export function subscriptionPlanState(subscription: Subscription, plan: Plan | n
 
 // Historical response shape retained for existing API clients.
 export async function getSubscriptionPlanSummary(db: D1Database, userId: string, now = new Date().toISOString()): Promise<SubscriptionPlanSummary> {
-  const subscriptions = (await readDeliveryFromD1(db)).subscriptions.filter(s => s.userId === userId && s.planId)
-  const plans = new Map((await listPlans(db)).map(plan => [plan.id, plan]))
-  const candidates = subscriptions.map(subscription => {
-    const plan = plans.get(subscription.planId!)!
-    return { subscription, plan, state: subscriptionPlanState(subscription, plan, Date.parse(now)) }
+  const [rows, planList, order] = await Promise.all([
+    db.prepare(`SELECT id, plan_id AS planId, enabled, starts_at AS startsAt, expires_at AS expiresAt,
+      created_at AS createdAt, updated_at AS updatedAt, plan_revoked AS planRevoked,
+      plan_source AS planSource, plan_note AS planNote, traffic_gb AS trafficGb,
+      speed_limit_mbps AS speedLimitMbps, device_limit AS deviceLimit
+      FROM subscriptions WHERE user_id = ? AND plan_id IS NOT NULL`).bind(userId).all<
+        Pick<Subscription, 'id' | 'startsAt' | 'expiresAt' | 'createdAt' | 'updatedAt' |
+          'planSource' | 'planNote' | 'trafficGb' | 'speedLimitMbps' | 'deviceLimit'> &
+        { planId: string; enabled: number; planRevoked: number }
+      >(),
+    listPlans(db),
+    getSetting(db, DELIVERY_SETTING_KEYS.entityOrder),
+  ])
+  const plans = new Map(planList.map(plan => [plan.id, plan]))
+  const time = Date.parse(now)
+  const candidates = resolveSubscriptionOrder(rows.results, parseStoredOrder(order), false).flatMap(row => {
+    const plan = plans.get(row.planId)
+    if (!plan) return []
+    const subscription = { ...row, enabled: row.enabled === 1, planRevoked: row.planRevoked === 1 }
+    return [{ subscription, plan, state: subscriptionPlanState(subscription, plan, time) }]
   })
   const match = candidates.find(candidate => candidate.state === 'active') ??
     candidates.sort((a, b) => Number(!!a.subscription.planRevoked) - Number(!!b.subscription.planRevoked)

@@ -505,7 +505,8 @@ describe('subscription compile on D1 matches KV', () => {
     await setupAdmin()
     await writeCatalog(env, catalogFixture(), NOW)
     const fixture = deliveryFixture()
-    const plan = await createDeliveryFixturePlan(fixture.subscriptions[0].groupIds, NOW)
+    const enabledFixture = fixture.subscriptions.find((item) => item.id === 'sub_1')!
+    const plan = await createDeliveryFixturePlan(enabledFixture.groupIds, NOW)
     const saved = await writeDelivery(env, {
       ...fixture,
       subscriptions: fixture.subscriptions.map(subscription => subscription.enabled ? {

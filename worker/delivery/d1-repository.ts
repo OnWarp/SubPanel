@@ -43,7 +43,7 @@ function parseJson(raw: string): unknown {
   }
 }
 
-function parseStoredOrder(raw: string | null): unknown {
+export function parseStoredOrder(raw: string | null): unknown {
   if (raw === null) return undefined
   try {
     return JSON.parse(raw)
@@ -57,7 +57,7 @@ function parseStoredOrder(raw: string | null): unknown {
 // relative order for subscriptions that still exist, drop stale ids, and
 // append any missing subscriptions by ascending id instead of rejecting the
 // whole snapshot. Read-only: the derived order is never written back.
-function resolveSubscriptionOrder<T extends { id: string }>(rows: T[], storedOrder: unknown): T[] {
+export function resolveSubscriptionOrder<T extends { id: string }>(rows: T[], storedOrder: unknown, warnOnMismatch = true): T[] {
   const byId = new Map(rows.map((row) => [row.id, row]))
   const kept: string[] = []
   if (Array.isArray(storedOrder)) {
@@ -73,7 +73,7 @@ function resolveSubscriptionOrder<T extends { id: string }>(rows: T[], storedOrd
   const intact = Array.isArray(storedOrder)
     && storedOrder.length === resolved.length
     && storedOrder.every((id, index) => id === resolved[index])
-  if (!intact) {
+  if (warnOnMismatch && !intact) {
     console.warn('[delivery] delivery_entity_order missing or out of sync; using derived subscription order')
   }
   return resolved.map((id) => byId.get(id)!)
