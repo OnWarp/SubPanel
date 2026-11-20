@@ -245,7 +245,7 @@ export function MySubscriptionsPage() {
                 </div>
               </>
             ) : platforms.status === 'ready' && !selected.linkError ? (
-              <p className="section-empty">当前暂无可用的订阅入口</p>
+              <EmptyState title="当前暂无可用的订阅入口" />
             ) : (
               <p className="del-link-missing">暂无订阅链接</p>
             )}
@@ -261,7 +261,7 @@ export function MySubscriptionsPage() {
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
             <summary id="diagnostics-title">兼容诊断</summary>
-            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
+            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <EmptyState title="暂无编译诊断" />}
           </details>
 
           <section className="data-section del-reset" aria-labelledby="reset-token-title">

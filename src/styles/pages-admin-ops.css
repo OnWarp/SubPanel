@@ -399,8 +399,6 @@
 .ops-page .ops-system .ops-template .data-header h2 { overflow-wrap: anywhere; }
 .template-list-controls { align-items: end; }
 .template-list-controls .sp-select-value { white-space: normal; overflow-wrap: anywhere; }
-.template-empty { padding-block: var(--space-4); border-top: 1px solid var(--color-border); }
-.template-empty p { margin: 0 0 var(--space-3); }
 
 .template-table {
   width: 100%;

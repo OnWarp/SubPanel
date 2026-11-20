@@ -11,9 +11,6 @@
   background: transparent;
   overflow-x: auto;
 }
-.cat-empty-wrap {
-  padding: var(--space-6) var(--space-4);
-}
 
 /* Filter bar ------------------------------------------------------------- */
 .cat-filter-search {
@@ -99,5 +96,4 @@
     padding: var(--space-2) 0;
     border-bottom: 0;
   }
-  .cat-empty-wrap { padding: var(--space-5) 0; }
 }

@@ -1,3 +1,4 @@
+import { EmptyState } from '../../ui/EmptyState'
 import { Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -163,7 +164,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
         </FormField>
         <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}>添加</button>
       </form>
-      {items.length === 0 ? <p className="section-empty">暂无域名</p> : (
+      {items.length === 0 ? <EmptyState title="暂无域名" /> : (
         <ul className="sys-domain-rows">
           {items.map((item) => {
             const isPrimary = item.id === primaryId

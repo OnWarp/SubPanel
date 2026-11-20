@@ -1,3 +1,4 @@
+import { EmptyState } from '../../ui/EmptyState'
 import { useEffect, useState } from 'react'
 import {
   api, ApiClientError, jsonBody, loadSubscriptionTemplates, loadTemplateSubscriptions, subscriptionTemplatesPath as ROOT,
@@ -133,8 +134,8 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
     {loadError ? <div className="template-actions"><StatusMessage tone="error">{loadError}</StatusMessage>
       <button className="button secondary" type="button" onClick={() => void load().then(() => setLoadError('')).catch((cause) => setLoadError(templateError(cause)))}>重试</button></div>
       : !rows ? <p role="status">正在加载附加配置</p>
-      : rows.length === 0 ? <div className="template-empty"><p>{archived ? '暂无已归档配置' : '暂无附加配置'}</p>
-        {!archived && <button className="button secondary" type="button" onClick={() => onOpen('new')}>新增配置</button>}</div>
+      : rows.length === 0 ? <EmptyState title={archived ? '暂无已归档配置' : '暂无附加配置'}>
+        {!archived && <button className="button secondary" type="button" onClick={() => onOpen('new')}>新增配置</button>}</EmptyState>
       : <table className="template-table" aria-label="附加配置列表">
         <thead><tr>{['名称', '状态', '当前发布版本', '更新时间', '引用数', '操作'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id}>

@@ -179,9 +179,6 @@
 }
 
 .upd-subs .del-diagnostics .diagnostic-list,
-.upd-subs .del-diagnostics > .section-empty {
-  padding: 0 var(--space-6) var(--space-6);
-}
 
 /* Nodes: one filter row, two-line rows, dot status, count footer. */
 .upd-nodes .node-list { overflow: visible; }

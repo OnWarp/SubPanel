@@ -233,9 +233,9 @@ export function NodesPage() {
         </FilterBar>
         <BatchToolbar selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && !catalog ? (
-          <div className="cat-empty-wrap"><LoadingState label="正在加载节点" /></div>
+          <LoadingState label="正在加载节点" />
         ) : nodes.length === 0 ? (
-          <div className="cat-empty-wrap"><EmptyState title="暂无节点" description="来源导入节点后会在这里显示" /></div>
+          <EmptyState title="暂无节点" description="来源导入节点后会在这里显示" />
         ) : (
           <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={visibleRows} rowKey={(node) => node.id} empty="暂无匹配节点" />
         )}

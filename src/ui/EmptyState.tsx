@@ -10,7 +10,7 @@ type EmptyStateProps = {
 
 export function EmptyState({ icon: Icon, title, description, children }: EmptyStateProps) {
   return (
-    <div className="sp-empty">
+    <div className="empty-state">
       {Icon ? <span className="sp-empty-icon" aria-hidden="true"><Icon size={22} /></span> : null}
       <p className="sp-empty-title">{title}</p>
       {description ? <p className="sp-empty-description">{description}</p> : null}
