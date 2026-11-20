@@ -282,13 +282,14 @@ tbody tr:last-child td { border-bottom: 0; }
 .user-link-row input { background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: var(--font-xs); }
 .user-link-actions { display: flex; gap: 5px; }
 .user-diagnostic-list { padding: 12px 14px 14px; }
-.subscription-details { display: grid; gap: 20px; }
-.subscription-details section { display: grid; gap: 8px; }
+.subscription-details { display: grid; gap: var(--space-3); }
+.subscription-details section { display: grid; gap: var(--space-3); }
 .subscription-details h3, .subscription-details p { margin: 0; }
 .subscription-details h3 { font-size: var(--font-body); }
 .detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .detail-heading > div { display: grid; gap: 3px; }
-.link-list, .diagnostic-list { display: grid; gap: 7px; }
+.link-list { display: grid; gap: 0; }
+.diagnostic-list { display: grid; gap: 7px; }
 .link-list > div { display: grid; grid-template-columns: 84px minmax(0,1fr) auto; align-items: center; gap: 7px; }
 .link-list > div > span { font-size: var(--font-xs); font-weight: var(--weight-semibold); }
 .diagnostic-list article { display: grid; gap: 6px; min-width: 0; padding: var(--space-3) 0; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: transparent; }
