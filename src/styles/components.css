@@ -117,18 +117,22 @@
   white-space: nowrap;
   transition: color var(--duration-ui) ease, background-color var(--duration-ui) ease, border-color var(--duration-ui) ease;
 }
-.sp-chip:hover {
-  background: var(--color-surface-subtle);
-  color: var(--color-text);
+@media (hover: hover) {
+  .sp-chip:hover {
+    background: var(--color-surface-subtle);
+    color: var(--color-text);
+  }
 }
 .sp-chip-active {
   border-color: var(--color-primary);
   background: var(--color-primary-soft);
   color: var(--color-text);
 }
-.sp-chip-active:hover {
-  background: var(--color-primary-soft);
-  color: var(--color-text);
+@media (hover: hover) {
+  .sp-chip-active:hover {
+    background: var(--color-primary-soft);
+    color: var(--color-text);
+  }
 }
 
 /* EmptyState ------------------------------------------------------------- */
@@ -217,7 +221,9 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
 }
-.sp-error-action:hover { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .sp-error-action:hover { background: var(--color-surface-subtle); }
+}
 
 /* Pagination ------------------------------------------------------------- */
 .sp-pagination {
@@ -243,10 +249,12 @@
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
-.sp-pagination-step:hover:not(:disabled),
+@media (hover: hover) {
+  .sp-pagination-step:hover:not(:disabled),
 .sp-pagination-page:hover:not([aria-current='page']) {
-  background: var(--color-surface-subtle);
-  color: var(--color-text);
+    background: var(--color-surface-subtle);
+    color: var(--color-text);
+  }
 }
 .sp-pagination-page[aria-current='page'] {
   border-color: var(--color-primary);
@@ -298,7 +306,9 @@
   white-space: nowrap;
 }
 .sp-table tbody tr:last-child td { border-bottom: 0; }
-.sp-table tbody tr:hover td { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .sp-table tbody tr:hover td { background: var(--color-surface-subtle); }
+}
 .sp-table-empty {
   height: 70px;
   color: var(--color-text-muted);
@@ -386,7 +396,9 @@
   color: var(--color-text-muted);
   cursor: pointer;
 }
-.sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+@media (hover: hover) {
+  .sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+}
 .sp-dialog-body { padding: 0 var(--space-5) var(--space-5); }
 .sp-dialog-footer {
   display: flex;
@@ -422,7 +434,9 @@
     border-radius: 0;
     background: transparent;
   }
-  .sp-table tbody tr:hover td { background: transparent; }
+  @media (hover: hover) {
+    .sp-table tbody tr:hover td { background: transparent; }
+  }
   .sp-table td {
     display: grid;
     height: auto;
@@ -482,7 +496,9 @@
   font-size: var(--font-sm); font-weight: var(--weight-medium); color: var(--color-text);
   cursor: pointer; white-space: nowrap;
 }
-.sp-select-option:hover { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .sp-select-option:hover { background: var(--color-surface-subtle); }
+}
 .sp-select-option > svg { flex: 0 0 auto; margin-left: auto; }
 .sp-select-option-active { color: var(--color-accent); font-weight: var(--weight-semibold); }
 
@@ -527,7 +543,9 @@
   font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
-.sp-segmented button:hover { color: var(--color-text); }
+@media (hover: hover) {
+  .sp-segmented button:hover { color: var(--color-text); }
+}
 .sp-segmented button[aria-pressed='true'] {
   background: var(--color-surface-raised);
   color: var(--color-text);
@@ -598,7 +616,9 @@
 .sp-stat-card, .sp-plan-card, .sp-quick-entry { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); color: var(--color-text); }
 .sp-stat-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); width: 100%; padding: var(--space-5); text-align: start; }
 .sp-stat-action { border: 0; border-radius: inherit; background: none; color: inherit; cursor: pointer; }
-.sp-stat-action:hover, .sp-quick-entry:hover { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .sp-stat-action:hover, .sp-quick-entry:hover { background: var(--color-surface-subtle); }
+}
 .sp-stat-label, .sp-stat-sub { color: var(--color-text-muted); }
 .sp-stat-value { display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-display); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
 .sp-stat-warning .sp-stat-value { color: var(--color-warning); }

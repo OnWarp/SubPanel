@@ -17,7 +17,9 @@
 .user-center summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .user-center nav { position: absolute; bottom: 100%; left: 8px; right: 8px; padding: 8px; display: grid; gap: 4px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-raised); z-index: 20; }
 .user-center nav a, .user-center nav button { display: block; text-align: left; padding: 10px; color: var(--color-text); background: transparent; border: 0; border-radius: var(--radius-ctl); font: inherit; cursor: pointer; }
-.user-center nav a:hover, .user-center nav button:hover { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .user-center nav a:hover, .user-center nav button:hover { background: var(--color-surface-subtle); }
+}
 .sidebar-collapsed .user-center summary span, .sidebar-collapsed .user-center summary > svg:last-child { display: none; }
 .sidebar-collapsed .user-center nav { width: 200px; }
 .password-input { display: flex; align-items: center; position: relative; }

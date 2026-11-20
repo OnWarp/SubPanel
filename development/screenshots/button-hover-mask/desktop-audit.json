@@ -1,0 +1,1384 @@
+[
+  {
+    "route": "/dashboard",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/catalog/nodes",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/catalog/sources",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/catalog/sources",
+    "index": 1,
+    "label": "添加来源",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/catalog/groups",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/catalog/groups",
+    "index": 1,
+    "label": "添加分组",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/delivery/subscriptions",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/delivery/subscriptions",
+    "index": 1,
+    "label": "添加订阅",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 169,
+        "w": 110.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/delivery/shares",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/delivery/shares",
+    "index": 1,
+    "label": "分享策略",
+    "cls": "button",
+    "beforeTop": {
+      "tag": "A",
+      "cls": "button",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1106.796875,
+        "y": 614.484375,
+        "w": 82.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "A",
+      "cls": "button",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1106.796875,
+        "y": 614.484375,
+        "w": 82.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/plans",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/plans",
+    "index": 1,
+    "label": "新增计划",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1091.796875,
+        "y": 165,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1091.796875,
+        "y": 165,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/plans",
+    "index": 2,
+    "label": "保存试用设置",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 311.1875,
+        "y": 701.21875,
+        "w": 866.625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 311.1875,
+        "y": 701.21875,
+        "w": 866.625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/users",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/users",
+    "index": 1,
+    "label": "邀请用户",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1079.796875,
+        "y": 169,
+        "w": 109.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1079.796875,
+        "y": 169,
+        "w": 109.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/users",
+    "index": 2,
+    "label": "admin 的操作",
+    "cls": "icon-button",
+    "beforeTop": {
+      "tag": "circle",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1089.7396240234375,
+        "y": 353.0833435058594,
+        "w": 1.333251953125,
+        "h": 1.33331298828125
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "circle",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1089.7396240234375,
+        "y": 353.0833435058594,
+        "w": 1.333251953125,
+        "h": 1.33331298828125
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/users",
+    "index": 3,
+    "label": "上一页",
+    "cls": "icon-button",
+    "beforeTop": {
+      "tag": "svg",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1090.671875,
+        "y": 398,
+        "w": 16,
+        "h": 16
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "svg",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1090.671875,
+        "y": 398,
+        "w": 16,
+        "h": 16
+      }
+    },
+    "duringStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/users",
+    "index": 4,
+    "label": "下一页",
+    "cls": "icon-button",
+    "beforeTop": {
+      "tag": "svg",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1168.8125,
+        "y": 398,
+        "w": 16,
+        "h": 16
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "svg",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1168.8125,
+        "y": 398,
+        "w": 16,
+        "h": 16
+      }
+    },
+    "duringStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/registration",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/distribution",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/distribution",
+    "index": 1,
+    "label": "保存设置",
+    "cls": "button primary ops-primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary ops-primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1091.796875,
+        "y": 345.0625,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary ops-primary",
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1091.796875,
+        "y": 345.0625,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/distribution",
+    "index": 2,
+    "label": "新增配置",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "none",
+      "cls": "",
+      "bg": "",
+      "color": "",
+      "rect": null
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "none",
+      "cls": "",
+      "bg": "",
+      "color": "",
+      "rect": null
+    },
+    "duringStyle": {
+      "bg": "color(srgb 0.0136471 0.403608 0.797961)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/distribution",
+    "index": 3,
+    "label": "查看已归档",
+    "cls": "button secondary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button secondary",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 635.65625,
+        "w": 95.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button secondary",
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1082.796875,
+        "y": 635.65625,
+        "w": 95.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/system/distribution",
+    "index": 4,
+    "label": "重试",
+    "cls": "button secondary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button secondary",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 414.203125,
+        "y": 682.15625,
+        "w": 56.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button secondary",
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 414.203125,
+        "y": 682.15625,
+        "w": 56.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/audit-logs",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/tickets",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/kb/manage",
+    "index": 0,
+    "label": "收起侧栏",
+    "cls": "icon-button sidebar-toggle",
+    "beforeTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "path",
+      "cls": "",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 302.8541564941406,
+        "y": 35.16666793823242,
+        "w": 3.333343505859375,
+        "h": 6.666664123535156
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/kb/manage",
+    "index": 1,
+    "label": "新建文章",
+    "cls": "button primary",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1106.796875,
+        "y": 165,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button primary",
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "rect": {
+        "x": 1106.796875,
+        "y": 165,
+        "w": 86.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(0, 113, 227)",
+      "color": "rgb(255, 255, 255)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  },
+  {
+    "route": "/kb/manage",
+    "index": 2,
+    "label": "刷新",
+    "cls": "button ghost",
+    "beforeTop": {
+      "tag": "BUTTON",
+      "cls": "button ghost",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "rect": {
+        "x": 1124.796875,
+        "y": 384.75,
+        "w": 56.015625,
+        "h": 33.5
+      }
+    },
+    "beforeStyle": {
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(110, 110, 115)",
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "duringTop": {
+      "tag": "BUTTON",
+      "cls": "button ghost",
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "rect": {
+        "x": 1124.796875,
+        "y": 384.75,
+        "w": 56.015625,
+        "h": 33.5
+      }
+    },
+    "duringStyle": {
+      "bg": "rgb(233, 233, 238)",
+      "color": "rgb(29, 29, 31)",
+      "hoverMatches": true,
+      "beforeContent": "none",
+      "beforeBg": "rgba(0, 0, 0, 0)",
+      "afterContent": "none",
+      "afterBg": "rgba(0, 0, 0, 0)"
+    },
+    "covered": false
+  }
+]

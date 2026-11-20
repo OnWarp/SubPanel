@@ -21,8 +21,10 @@
   overflow-wrap: anywhere;
 }
 
-.tk-title-link:hover {
-  color: var(--color-primary);
+@media (hover: hover) {
+  .tk-title-link:hover {
+    color: var(--color-primary);
+  }
 }
 
 .tk-cell-time {
@@ -192,8 +194,10 @@
   border-bottom: 0;
 }
 
-.nav-notice-item:hover {
-  background: var(--color-surface-subtle);
+@media (hover: hover) {
+  .nav-notice-item:hover {
+    background: var(--color-surface-subtle);
+  }
 }
 
 .nav-notice-title {

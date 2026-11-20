@@ -1,0 +1,11 @@
+{
+  "afterTap": {
+    "hoverMatches": false,
+    "bg": "rgb(94, 106, 210)",
+    "activeMatches": false
+  },
+  "afterElsewhere": {
+    "hoverMatches": false,
+    "bg": "rgb(94, 106, 210)"
+  }
+}

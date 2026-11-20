@@ -138,7 +138,9 @@
 
 .nav-menu-item:last-child { border-bottom: 0; }
 
-.nav-menu-item:hover { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .nav-menu-item:hover { background: var(--color-surface-subtle); }
+}
 
 .nav-menu-item:disabled {
   cursor: wait;
@@ -339,7 +341,9 @@
 .nav-menu-item.danger { color: var(--color-danger); }
 
 .nav-session-row { cursor: default; }
-.nav-session-row:hover { background: transparent; }
+@media (hover: hover) {
+  .nav-session-row:hover { background: transparent; }
+}
 
 .nav-logout {
   display: block;
