@@ -106,3 +106,119 @@
 .section-tabs a:focus-visible {
   outline-offset: -2px;
 }
+
+.admin-desktop-topbar {
+  display: none;
+}
+
+.admin-layout .admin-layout-options {
+  display: grid;
+  gap: var(--space-1);
+  padding-block: var(--space-1);
+  border-block: 1px solid var(--color-border);
+}
+
+.admin-layout .admin-layout-options > span {
+  padding-inline: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.admin-layout .admin-layout-options button[aria-pressed='true'] {
+  background: var(--color-surface-subtle);
+  font-weight: var(--weight-semibold);
+}
+
+@media (width > 760px) {
+  .app-layout.admin-topbar-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .admin-topbar-layout .admin-desktop-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-4);
+    min-height: var(--size-topbar);
+    padding-inline: var(--space-4);
+    position: relative;
+    z-index: var(--z-topbar);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .admin-topbar-layout .admin-topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .admin-topbar-layout .admin-top-navigation {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
+  .admin-topbar-layout .admin-top-navigation a {
+    display: grid;
+    place-items: center;
+    position: relative;
+    min-height: 40px;
+    padding-inline: var(--space-2);
+    border-radius: var(--radius-ctl);
+    color: var(--color-text-muted);
+    font-size: var(--font-body);
+    white-space: nowrap;
+  }
+
+  .admin-topbar-layout .admin-top-navigation a:hover {
+    background: var(--color-surface-subtle);
+  }
+
+  .admin-topbar-layout .admin-top-navigation a.active {
+    color: var(--color-text);
+    font-weight: var(--weight-semibold);
+  }
+
+  .admin-topbar-layout .admin-top-navigation a.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: var(--space-4);
+    height: 2px;
+    border-radius: var(--radius-pill);
+    background: currentColor;
+  }
+
+  .admin-topbar-layout .admin-desktop-topbar .admin-account {
+    grid-column: 3;
+    justify-self: end;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .admin-topbar-layout .admin-desktop-topbar .admin-account-info,
+  .admin-topbar-layout .admin-desktop-topbar summary > svg:last-child {
+    display: none;
+  }
+
+  .admin-topbar-layout .admin-desktop-topbar nav[aria-label='管理员账号菜单'] {
+    inset: calc(100% + var(--space-1)) 0 auto auto;
+    width: 220px;
+  }
+
+  .admin-topbar-layout .workspace {
+    align-self: stretch;
+    height: auto;
+    margin: var(--space-shell);
+  }
+
+  .admin-topbar-layout .workspace-content:has(dialog:modal) {
+    overflow-y: hidden;
+  }
+
+  .admin-topbar-layout .admin-desktop-topbar:has(details[open]) {
+    z-index: calc(var(--z-topbar) + 1);
+  }
+}

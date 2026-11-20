@@ -61,16 +61,17 @@ type RowAction = {
   danger?: boolean
   disabled?: boolean
   checked?: boolean
-  onClick: () => void
+  onClick: (trigger: HTMLButtonElement | null) => void
 }
 
 export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
   const id = useId()
   const popup = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
 
   return (
     <>
-      <button className="icon-button resource-card-more" type="button" aria-label="更多操作" popoverTarget={id} disabled={actions.every((action) => action.disabled)}>
+      <button ref={trigger} className="icon-button resource-card-more" type="button" aria-label="更多操作" popoverTarget={id} disabled={actions.every((action) => action.disabled)}>
         <Ellipsis aria-hidden="true" size={18} />
       </button>
       <div className="resource-card-actions" id={id} ref={popup} popover="auto" role="group" aria-label="行操作">
@@ -84,7 +85,7 @@ export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
             disabled={disabled}
             onClick={() => {
               popup.current?.hidePopover()
-              onClick()
+              onClick(trigger.current)
             }}
           >{label}{checked !== undefined && <span aria-hidden="true">{checked ? ' ✓' : ''}</span>}</button>
         ))}
