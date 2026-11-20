@@ -264,13 +264,8 @@
 
 .ops-page .ops-system .ops-template {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
-}
-
-.ops-page .ops-template-row {
-  padding-block: .75rem;
-  border-bottom: 1px solid var(--color-border);
-  overflow-wrap: anywhere;
 }
 
 .ops-page .ops-overview .sp-stat-card,
@@ -314,10 +309,6 @@
   margin-inline: 0;
 }
 
-.ops-page .ops-system .ops-template > .ops-group {
-  margin-bottom: var(--space-5);
-}
-
 @media (max-width: 760px) {
   .ops-page .ops-card {
     padding: var(--space-4);
@@ -345,4 +336,106 @@
   .ops-page .ops-system .sys-nav-item {
     padding-inline: .5rem;
   }
+}
+
+.ops-template .data-header,
+.template-list-controls,
+.template-actions,
+.template-history-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ops-template .data-header,
+.template-list-controls,
+.template-history-row {
+  justify-content: space-between;
+}
+
+.template-list-controls .sp-form-field {
+  flex: 1 1 16rem;
+  max-width: 28rem;
+  min-width: 0;
+}
+
+.ops-page .ops-system .ops-template .data-header h2 { overflow-wrap: anywhere; }
+.template-list-controls { align-items: end; }
+.template-list-controls .sp-select-value { white-space: normal; overflow-wrap: anywhere; }
+.template-empty { padding-block: var(--space-4); border-top: 1px solid var(--color-border); }
+.template-empty p { margin: 0 0 var(--space-3); }
+
+.template-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.template-table th,
+.template-table td {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.template-table tr > :first-child { padding-inline-start: 0; }
+.template-table tr > :last-child { padding-inline-end: 0; }
+.template-table .template-actions { flex-wrap: nowrap; }
+.template-table th[scope="row"] { font-weight: 600; }
+
+.template-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: var(--space-5);
+}
+
+.template-editor-status { color: var(--color-text-muted); }
+.template-editor-grid > *, .template-standalone > * { min-width: 0; }
+.ops-template .form-stack { grid-template-columns: minmax(0, 1fr); }
+.template-preview { align-self: start; }
+.template-preview-result, .template-validation, .template-editor-footer {
+  padding-block-start: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+.template-preview-result { overflow-wrap: anywhere; }
+.template-preview-result summary { cursor: pointer; }
+.template-preview-result pre, .template-edit-fields textarea {
+  max-width: 100%;
+  overflow: auto;
+  font-family: monospace;
+}
+.template-preview-result pre { padding: var(--space-3); border: 1px solid var(--color-border); }
+.template-preview-result ol, .template-preview-result ul { padding-inline-start: 1.75rem; }
+.template-preview-result h4 { margin-bottom: var(--space-2); }
+.template-diagnostics { margin: 0; padding-inline-start: 1.25rem; }
+.template-diagnostics li { overflow-wrap: anywhere; }
+.template-diagnostics li > * { margin-inline-end: var(--space-2); }
+.template-history-row { padding-block: var(--space-2); border-bottom: 1px solid var(--color-border); }
+.ops-template .template-tabs { display: none; }
+
+@media (max-width: 760px) {
+  .template-table, .template-table tbody { display: block; }
+  .template-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+    overflow: hidden;
+  }
+  .template-table tbody tr {
+    display: grid;
+    gap: var(--space-2);
+    padding-block: var(--space-3);
+    border-block-start: 1px solid var(--color-border);
+  }
+  .template-table th, .template-table td { padding: 0; border: 0; }
+  .template-table td[data-label] { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .template-table td[data-label]::before { content: attr(data-label); color: var(--color-text-muted); }
+  .template-editor-grid { display: block; }
+  .ops-template .template-tabs { display: flex; }
+  .template-tabs [aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
+  .template-editor-grid[data-pane="preview"] > .template-edit-fields,
+  .template-editor-grid[data-pane="edit"] > .template-preview { display: none; }
 }
