@@ -101,7 +101,7 @@ test.describe.serial('Administrator frontend', () => {
     await drawer.getByLabel('来源类型').click()
     await drawer.getByRole('option', { name: '文件', exact: true }).click()
     const content = 'ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@file.example.com:8388#File'
-    await drawer.getByLabel('来源文件').setInputFiles({ name: 'nodes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) })
+    await drawer.locator('input[type="file"]').setInputFiles({ name: 'nodes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) })
     await expect(drawer.getByLabel('来源内容')).toHaveValue(content)
     await drawer.getByRole('button', { name: '预览' }).click()
     await expect(drawer.getByText('检测到 1 个节点')).toBeVisible()
