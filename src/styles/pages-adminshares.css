@@ -69,7 +69,7 @@
 }
 .ashr-list .sp-loading,
 .ashr-list .sp-error,
-.ashr-list .sp-empty {
+.ashr-list .empty-state {
   margin: var(--space-4);
 }
 .ashr-empty,

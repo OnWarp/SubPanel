@@ -230,9 +230,9 @@ export function GroupsPage() {
         </FilterBar>
         <BatchToolbar selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && !catalog ? (
-          <div className="cat-empty-wrap"><LoadingState label="正在加载分组" /></div>
+          <LoadingState label="正在加载分组" />
         ) : filteredGroups.length === 0 ? (
-          <div className="cat-empty-wrap"><EmptyState title="暂无分组" description={query ? '换个关键词试试' : '创建分组后即可组合来源与节点'} /></div>
+          <EmptyState title="暂无分组" description={query ? '换个关键词试试' : '创建分组后即可组合来源与节点'} />
         ) : (
           <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={filteredGroups} rowKey={(group) => group.id} empty="暂无匹配分组" />
         )}

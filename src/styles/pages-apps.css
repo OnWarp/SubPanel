@@ -279,7 +279,7 @@
 .appu-results,
 .appu-section,
 .appu-grid,
-.appu-card,
+.appu-item,
 .appu-detail,
 .appu-platform,
 .appu-import {
@@ -323,18 +323,14 @@
   gap: var(--space-4);
 }
 
-.appu-card {
+.appu-item {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
 }
 
 @media (hover: hover) {
-  .appu-card:hover {
+  .appu-item:hover {
     border-color: var(--color-border-strong);
   }
 }
@@ -403,7 +399,7 @@
   line-height: 1.3;
 }
 
-.appu-card .appu-name {
+.appu-item .appu-name {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -534,7 +530,7 @@
   overflow-wrap: anywhere;
 }
 
-.appu-detail .sp-empty,
+.appu-detail .empty-state,
 .appu-detail .sp-error,
 .appu-detail .sp-loading {
   max-width: 100%;
@@ -569,7 +565,7 @@
 }
 
 /* User app cards: one-line summary and a text link for docs (plan 8). */
-.appu-card .appu-copy {
+.appu-item .appu-copy {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;

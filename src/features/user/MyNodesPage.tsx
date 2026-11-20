@@ -193,7 +193,7 @@ export function MyNodesPage() {
         </EmptyState>
       ) : null}
       {!loading && !error && (total > 0 || filtersActive) ? (
-        <section className="data-section node-list upd-card" aria-labelledby="node-list-title">
+        <section className="data-section node-list" aria-labelledby="node-list-title">
           <DataHeader id="node-list-title" title="节点列表" />
           <UserNodesFilters
             query={query}

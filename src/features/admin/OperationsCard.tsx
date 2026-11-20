@@ -1,10 +1,11 @@
+import { DataHeader } from '../../ui/DataHeader'
 import { useId, type PropsWithChildren, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { PaginationProps } from '../../ui/Pagination'
 import '../../styles/pages-admin-ops.css'
 
 export function OperationsHeading({ title, action }: { title: string; action?: ReactNode }) {
-  return <header className="ops-heading"><h2>{title}</h2>{action}</header>
+  return <DataHeader title={title} actions={action} />
 }
 
 export function OperationsFooter({ total, unit = '条', pagination }: { total: number; unit?: string; pagination?: PaginationProps }) {

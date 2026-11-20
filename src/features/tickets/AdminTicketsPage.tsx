@@ -101,9 +101,9 @@ export function AdminTicketsPage() {
   return (
     <div className="page-stack tk-page ops-page">
       <PageHeader title="工单" />
-      <section className="ops-card ops-table" aria-label="工单">
+      <section className="data-section" aria-label="工单">
         <OperationsHeading title="工单" />
-        <div className="ops-filters">
+        <div className="page-toolbar ops-filters">
           <FormSelect aria-label="工单状态" value={statusFilter} onChange={(event) => changeStatus(event.currentTarget.value as StatusFilter)}>
             <option value="all">全部状态</option>
             <option value="open">处理中</option>

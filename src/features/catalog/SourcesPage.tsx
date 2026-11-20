@@ -376,9 +376,9 @@ export function SourcesPage() {
         </FilterBar>
         <BatchToolbar selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => setSelected(new Set())} actions={batchActions} busy={busy} progress={batchProgress} />
         {loading && !catalog ? (
-          <div className="cat-empty-wrap"><LoadingState label="正在加载来源" /></div>
+          <LoadingState label="正在加载来源" />
         ) : sources.length === 0 ? (
-          <div className="cat-empty-wrap"><EmptyState icon={Rss} title="暂无来源" description="添加来源后即可在这里查看节点来源状态" /></div>
+          <EmptyState icon={Rss} title="暂无来源" description="添加来源后即可在这里查看节点来源状态" />
         ) : (
           <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={filteredSources} rowKey={(source) => source.id} empty="暂无匹配来源" />
         )}

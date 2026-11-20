@@ -5,7 +5,7 @@ import { formatProfileDate } from './profile'
 export function ProfileCard({ profile }: { profile: AccountProfile }) {
   const roleLabel = profile.user.role === 'admin' ? '管理员' : '用户'
   return (
-    <section className="data-section profile-card" aria-label="账户资料">
+    <section className="object-card profile-layout" aria-label="账户资料">
       <img className="profile-avatar" src={profile.avatar.url} alt="" width={56} height={56} />
       <div className="profile-card-main">
         <div className="profile-card-name">
@@ -14,7 +14,7 @@ export function ProfileCard({ profile }: { profile: AccountProfile }) {
             {roleLabel}
           </StatusBadge>
         </div>
-        <dl className="profile-fields">
+        <dl className="key-value-rows">
           <div>
             <dt>邮箱</dt>
             <dd>{profile.emailBound ? profile.user.email : '未绑定'}</dd>

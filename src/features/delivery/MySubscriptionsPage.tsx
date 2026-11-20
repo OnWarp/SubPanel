@@ -201,7 +201,7 @@ export function MySubscriptionsPage() {
         {selected && expiry && expiryBadge ? <>
           {expiry.kind === 'expired' ? <div className="exp-alert"><InlineMessage tone="warning">订阅已过期，请联系管理员续期</InlineMessage></div> : null}
           {expiry.kind === 'pending' ? <div className="exp-alert"><InlineMessage tone="warning">{`将于 ${formatExpiryTime(expiry.startsAt)} 生效`}</InlineMessage></div> : null}
-          <section className="data-section user-subscription-overview del-status-card" aria-labelledby="current-subscription-title">
+          <section className="object-card user-subscription-overview" aria-labelledby="current-subscription-title">
             <div className="del-status-head">
               <h2 id="current-subscription-title">{selected.name}</h2>
               <span className="exp-badges">
@@ -225,7 +225,7 @@ export function MySubscriptionsPage() {
             {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
           </section>
 
-          <section className="data-section del-link-card" aria-labelledby="subscription-link-title">
+          <section className="data-section subscription-link-section" aria-labelledby="subscription-link-title">
             <h2 id="subscription-link-title">订阅链接</h2>
             {linkEntries.length ? (
               <>
@@ -247,7 +247,7 @@ export function MySubscriptionsPage() {
                 </div>
               </>
             ) : platforms.status === 'ready' && !selected.linkError ? (
-              <p className="section-empty">当前暂无可用的订阅入口</p>
+              <EmptyState title="当前暂无可用的订阅入口" />
             ) : (
               <p className="del-link-missing">暂无订阅链接</p>
             )}
@@ -263,7 +263,7 @@ export function MySubscriptionsPage() {
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
             <summary id="diagnostics-title">兼容诊断</summary>
-            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="section-empty">暂无编译诊断</p>}
+            {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <EmptyState title="暂无编译诊断" />}
           </details>
 
           <section className="data-section del-reset" aria-labelledby="reset-token-title">

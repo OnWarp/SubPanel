@@ -11,9 +11,6 @@
   background: transparent;
   overflow-x: auto;
 }
-.cat-empty-wrap {
-  padding: var(--space-6) var(--space-4);
-}
 
 /* Filter bar ------------------------------------------------------------- */
 .cat-filter-search {
@@ -77,27 +74,9 @@
 }
 
 @media (max-width: 760px) {
-  .cat-data-section {
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  .cat-data-section .section-heading {
-    padding: 0 0 var(--space-3);
-    border-bottom: 0;
-  }
-  .cat-data-section .sp-table-wrap { overflow: visible; }
-  .cat-data-section .sp-table td { overflow-wrap: anywhere; }
-  .cat-data-section .sp-table-pagination {
-    border-top: 0;
-    background: transparent;
-    padding: var(--space-2) 0;
-  }
   .cat-filter-search { width: 160px; }
   .cat-table-tools {
     padding: var(--space-2) 0;
     border-bottom: 0;
   }
-  .cat-empty-wrap { padding: var(--space-5) 0; }
 }

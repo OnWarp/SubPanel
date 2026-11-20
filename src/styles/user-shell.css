@@ -10,7 +10,7 @@
 .user-qr img { display: block; max-width: 100%; height: auto; }
 .user-account-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
 .user-account-card .security-form { padding: 0; }
-.user-account-card .profile-fields { margin-top: 16px; }
+.user-account-card .key-value-rows { margin-top: 16px; }
 .user-center { margin-top: auto; padding: 12px; position: relative; }
 .user-center summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 40px; }
 .user-center summary img { border-radius: var(--radius-pill); }

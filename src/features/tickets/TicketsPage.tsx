@@ -93,8 +93,8 @@ export function TicketsPage() {
           {tickets.map((ticket) => {
             const state = ticketState(ticket)
             const level = levelLabel(ticket.level)
-            return <article className="data-section tk-list-card" key={ticket.id}>
-              <div className="ntc-card-head"><Link className="tk-title-link" to={`/tickets/${ticket.id}`}>{ticket.title}</Link><StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill></div>
+            return <article className="object-card" key={ticket.id}>
+              <div className="ntc-card-head"><Link className="tk-title-link object-card-title" to={`/tickets/${ticket.id}`}>{ticket.title}</Link><StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill></div>
               <div className="tk-card-meta"><StatusBadge tone={level.tone} size="sm">{level.label}</StatusBadge><span>最后回复：{ticket.lastReplyBy === 'admin' ? '管理员' : ticket.lastReplyBy === 'user' ? '我' : '暂无回复'}</span><time dateTime={ticketTime(ticket)}>{formatTicketTime(ticketTime(ticket))}</time></div>
             </article>
           })}

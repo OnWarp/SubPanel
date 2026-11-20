@@ -47,9 +47,9 @@ export function AuditLogsPage() {
   return (
     <div className="page-stack ops-page">
       <PageHeader title="审计日志" />
-      <section className="ops-card ops-table" aria-label="审计日志">
+      <section className="data-section" aria-label="审计日志">
         <OperationsHeading title="审计日志" />
-        <div className="ops-filters">
+        <div className="page-toolbar ops-filters">
           <label>操作<Input value={action} onChange={(event) => { setAction(event.target.value); setPage(1) }} /></label>
           <label>管理员 ID<Input value={actor} onChange={(event) => { setActor(event.target.value); setPage(1) }} /></label>
           <label>开始时间<DateTimeInput value={from} onChange={(event) => { setFrom(event.target.value); setPage(1) }} /></label>

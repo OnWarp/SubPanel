@@ -1,3 +1,4 @@
+import { EmptyState } from '../../ui/EmptyState'
 import { Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -146,13 +147,10 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   }
 
   return (
-    <section className="sys-domain-block" aria-labelledby={`${idPrefix}-title`}>
-      <header className="ops-heading">
-        <h3 id={`${idPrefix}-title`} className="sys-domain-card-title">{title}</h3>
-        <button className="button primary" type="button" aria-expanded={expanded} aria-controls={`${idPrefix}-add`} disabled={adding} onClick={() => setExpanded(!expanded)}>
+    <section className="data-section" aria-labelledby={`${idPrefix}-title`}>
+      <DataHeader id={`${idPrefix}-title`} title={title} actions={<button className="button primary" type="button" aria-expanded={expanded} aria-controls={`${idPrefix}-add`} disabled={adding} onClick={() => setExpanded(!expanded)}>
           <Plus aria-hidden="true" size={16} />添加域名
-        </button>
-      </header>
+        </button>} />
       <p className="sys-hint">{description}</p>
       <form id={`${idPrefix}-add`} className="sys-domain-add" hidden={!expanded} onSubmit={submit}>
         <FormField label="域名" htmlFor={`${idPrefix}-hostname`}>
@@ -163,7 +161,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
         </FormField>
         <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}>添加</button>
       </form>
-      {items.length === 0 ? <p className="section-empty">暂无域名</p> : (
+      {items.length === 0 ? <EmptyState title="暂无域名" /> : (
         <ul className="sys-domain-rows">
           {items.map((item) => {
             const isPrimary = item.id === primaryId
@@ -313,18 +311,18 @@ export function DomainSettingsSection() {
       {loading ? <LoadingState label="正在加载域名设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && domains ? (
-        <div className="dom-stack">
+        <div className="page-stack settings-fields">
           {feedback ? <InlineMessage tone={feedback.tone}>{feedback.text}</InlineMessage> : null}
 
-          <div className="dom-block">
+          <div className="settings-group">
             <FormField label="域名限制">
               <Switch checked={domains.restrictionEnabled} disabled={busyId === 'all'} ariaLabel="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
             </FormField>
             <p className="sys-hint">开启后，面板只接受已启用的面板域名访问，订阅与分享只接受已启用的订阅域名访问；某一类没有已启用的域名时，该类不做限制，不会把任何人锁在门外</p>
           </div>
 
-          <div className="dom-block">
-            <h3 className="dom-card-title">订阅平台展示</h3>
+          <div className="settings-group">
+            <h3 className="object-card-title">订阅平台展示</h3>
             <p className="sys-hint">关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响</p>
             {platforms ? (
               <ul className="dom-platform-list">

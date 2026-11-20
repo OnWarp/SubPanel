@@ -4,18 +4,12 @@
   max-width: 100%;
 }
 
-.sys-body {
-  display: grid;
-  min-width: 0;
-  gap: var(--space-5);
-  padding: var(--space-5);
-}
-
+.sys-body,
 .sys-form {
   display: grid;
   min-width: 0;
-  gap: var(--space-5);
-  padding: var(--space-5);
+  gap: var(--space-3);
+  padding: var(--space-4);
 }
 
 .sys-form > *,
@@ -229,37 +223,6 @@
 }
 
 /* Domain stage: domain management + subscription platform display. */
-.dom-stack {
-  display: grid;
-  gap: var(--space-5);
-  min-width: 0;
-}
-
-.dom-stack > * + * {
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
-}
-
-.dom-block,
-.sys-domain-block {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.dom-card-title {
-  margin: 0;
-  font-size: var(--font-md);
-  color: var(--color-text);
-}
-
-.sys-domain-card-title {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
 .sys-domain-rows {
   margin: 0;
   padding: 0;
@@ -466,3 +429,10 @@
   display: grid;
   gap: var(--space-2);
 }
+
+.settings-fields { padding: var(--space-4); }
+.settings-group { display: grid; gap: var(--space-3); }
+.settings-sections :is(.sp-form-field, .field, .compact-field) { width: 100%; max-width: 460px; }
+.settings-sections .sys-domain-add { max-width: 460px; }
+.settings-fields > .data-section > .sys-hint { padding: var(--space-3); }
+.settings-fields .sys-domain-row { padding: 10px 12px; }

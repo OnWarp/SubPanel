@@ -256,7 +256,7 @@ export function UsersDirectory({
           ) : (
             <DataTable className="usr-table" columns={columns} rows={users} rowKey={(user) => user.id} empty="暂无匹配用户" />
           )}
-          <footer className="usr-card-foot">
+          <footer className="section-footer">
             <span>共 {total} 位用户</span>
             <div className="usr-pager">
               <button type="button" className="icon-button" aria-label="上一页" disabled={page <= 1 || mutating} onClick={() => onPage(page - 1)}>

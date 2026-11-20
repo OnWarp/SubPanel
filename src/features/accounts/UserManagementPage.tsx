@@ -12,8 +12,8 @@ export function UserManagementPage() {
   return (
     <div className="page-stack">
       <PageHeader title="用户管理" />
-      <section className="usr-card" aria-labelledby="users-card-title">
-        <header className="usr-card-head">
+      <section className="data-section" aria-labelledby="users-card-title">
+        <header className="section-heading">
           <h2 id="users-card-title">用户管理</h2>
           <button className="button primary" type="button" onClick={() => navigate(`/invites${search}`)}>
             <UserPlus aria-hidden="true" size={16} />

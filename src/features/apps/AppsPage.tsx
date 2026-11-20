@@ -89,7 +89,7 @@ export function AppsPage() {
           {entries.length ? (
             <div className="appu-grid">
               {entries.map(({ app, entry }) => (
-                <article className="appu-card" key={app.id}>
+                <article className="object-card appu-item" key={app.id}>
                   <div className="appu-card-head">
                     <span className="appu-mark"><AppWindow aria-hidden="true" size={24} /></span>
                     <div className="appu-card-id">
