@@ -1,6 +1,6 @@
 import { AppWindow, Download } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -43,17 +43,17 @@ function errorMessage(cause: unknown, fallback: string) {
 }
 
 export function AppsPage() {
-  const [response, setResponse] = useState<AppsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [response, setResponse] = useState<AppsResponse | null>(() => peekApi<AppsResponse>('/api/apps') ?? null)
+  const [loading, setLoading] = useState(() => peekApi<AppsResponse>('/api/apps') === undefined)
   const [error, setError] = useState('')
   const [platform, setPlatform] = useState<PlatformName>('windows')
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const next = await api<AppsResponse>('/api/apps')
-      setResponse(next)
-      return next
+      await watchApi<AppsResponse>('/api/apps', (next) => {
+        setResponse(next)
+      })
     } catch (cause) {
       setError(errorMessage(cause, '加载 APP 列表失败'))
       return null

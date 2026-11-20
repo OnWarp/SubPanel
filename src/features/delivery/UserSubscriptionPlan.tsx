@@ -1,12 +1,13 @@
 import { FormSelect, Textarea } from '../../ui/Controls'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, jsonBody } from '../../app/api'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { subscriptionPlanLabels, type SubscriptionPlanState, type Plan } from './plan-types'
 export function UserSubscriptionPlan({ userId, username, showSummary = true, active = false, onActiveChange, onSave }: { userId: string; username: string; showSummary?: boolean; active?: boolean; onActiveChange?: (active: boolean) => void; onSave?: () => void }) {
-  const [rights, setRights] = useState<SubscriptionPlanState | null>(null)
+  const path = `/api/admin/users/${userId}/subscription-plan`
+  const [rights, setRights] = useState(() => peekApi<SubscriptionPlanState>(path) ?? null)
   const [plans, setPlans] = useState<Plan[]>([])
   const [open, setOpen] = useState(false)
   const [action, setAction] = useState('grant')
@@ -15,9 +16,9 @@ export function UserSubscriptionPlan({ userId, username, showSummary = true, act
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
-    try { setRights(await api<SubscriptionPlanState>(`/api/admin/users/${userId}/subscription-plan`)); setError('') }
+    try { await watchApi<SubscriptionPlanState>(path, setRights); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : '加载订阅计划失败') }
-  }, [userId])
+  }, [path])
   useEffect(() => { if (showSummary) void load() }, [load, showSummary])
   const edit = async () => {
     setOpen(true); setNote(''); setError('')

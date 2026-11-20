@@ -1,4 +1,4 @@
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, ApiClientError, jsonBody, peekApi, watchApi } from '../../app/api'
 
 /**
  * Shapes match worker/shares/schema.ts ShareView, ShareMeta, and the create/update inputs.
@@ -128,8 +128,12 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
   return plain?.[1] || fallback
 }
 
-export function listShares(): Promise<{ shares: ShareView[] }> {
-  return api('/api/shares')
+export function peekShares() {
+  return peekApi<{ shares: ShareView[] }>('/api/shares')
+}
+
+export function watchShares(apply: (shares: ShareView[]) => void, signal?: AbortSignal) {
+  return watchApi<{ shares: ShareView[] }>('/api/shares', (result) => apply(result.shares), { signal })
 }
 
 export function createShare(input: CreateShareInput, admin = false): Promise<ShareIssued> {

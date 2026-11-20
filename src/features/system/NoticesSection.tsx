@@ -3,7 +3,7 @@ import { DataTable } from '../../ui/DataTable'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Input, Textarea, DateTimeInput } from '../../ui/Controls'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
@@ -41,8 +41,8 @@ function toDateTimeInput(value: string): string {
 
 export function NoticesSection() {
   const noticeForm = useRef<HTMLFormElement>(null)
-  const [items, setItems] = useState<Notice[]>([])
-  const [loading, setLoading] = useState(true)
+  const [items, setItems] = useState<Notice[]>(() => peekApi<{ notices: Notice[] }>('/api/admin/notices')?.notices ?? [])
+  const [loading, setLoading] = useState(() => peekApi<{ notices: Notice[] }>('/api/admin/notices') === undefined)
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -51,11 +51,12 @@ export function NoticesSection() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ notices: Notice[] }>('/api/admin/notices') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ notices: Notice[] }>('/api/admin/notices')
-      setItems(result.notices)
+      await watchApi<{ notices: Notice[] }>('/api/admin/notices', (result) => {
+        setItems(result.notices)
+      })
     } catch (cause) {
       setItems([])
       setLoadError(errorMessage(cause, '加载公告失败'))

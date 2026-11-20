@@ -2,7 +2,7 @@ import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { UserSubscriptionPlan } from '../delivery/UserSubscriptionPlan'
 import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { api, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -275,9 +275,21 @@ export function UsersDirectory({
 }
 
 export function UsersPage({ view = 'active' }: { view?: UsersView }) {
-  const [users, setUsers] = useState<UserSummary[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [page, setPage] = useState(1)
+  const params = new URLSearchParams({
+    deleted: view === 'trash' ? 'only' : 'active',
+    page: String(page),
+    pageSize: String(PAGE_SIZE),
+  })
+  const needle = query.trim()
+  if (needle) params.set('q', needle)
+  if (statusFilter !== 'all') params.set('status', statusFilter)
+  const usersPath = `/api/admin/users?${params.toString()}`
+  const [users, setUsers] = useState<UserSummary[]>(() => peekApi<AdminUsersResponse>(usersPath)?.users ?? [])
+  const [total, setTotal] = useState(() => peekApi<AdminUsersResponse>(usersPath)?.total ?? 0)
+  const [loading, setLoading] = useState(() => peekApi(usersPath) === undefined)
   const [loadError, setLoadError] = useState('')
   const [editUser, setEditUser] = useState<UserSummary | null>(null)
   const [editEmail, setEditEmail] = useState('')
@@ -289,31 +301,24 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<Exclude<BatchKind, 'enable'> | null>(null)
   const [batchProgress, setBatchProgress] = useState('')
-  const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [page, setPage] = useState(1)
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
   const [subscriptionPlanUser, setSubscriptionPlanUser] = useState<UserSummary | null>(null)
   const toast = useToast()
   const usersRequestSeq = useRef(0)
 
   const loadUsers = useCallback(async () => {
-    const params = new URLSearchParams({
-      deleted: view === 'trash' ? 'only' : 'active',
-      page: String(page),
-      pageSize: String(PAGE_SIZE),
-    })
-    const needle = query.trim()
-    if (needle) params.set('q', needle)
-    if (statusFilter !== 'all') params.set('status', statusFilter)
     const seq = ++usersRequestSeq.current
-    const result = await api<AdminUsersResponse>(`/api/admin/users?${params.toString()}`)
-    if (seq !== usersRequestSeq.current) return
-    setUsers(result.users)
-    setTotal(result.total)
-    setLoadError('')
-    setSelectedUsers((current) => new Set([...current].filter((id) => result.users.some((user) => user.id === id))))
-  }, [page, query, statusFilter, view])
+    await watchApi<AdminUsersResponse>(usersPath, (result) => {
+      if (seq !== usersRequestSeq.current) return
+      setUsers(result.users)
+      setTotal(result.total)
+      setLoadError('')
+      setSelectedUsers((current) => {
+        const retained = [...current].filter((id) => result.users.some((user) => user.id === id))
+        return retained.length === current.size ? current : new Set(retained)
+      })
+    })
+  }, [usersPath])
 
   const load = useCallback(async () => {
     await loadUsers()
@@ -321,7 +326,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   }, [loadUsers])
 
   useEffect(() => {
-    setLoading(true)
+    setLoading(peekApi(usersPath) === undefined)
     load()
       .catch((cause) => setLoadError(errorMessage(cause, '加载用户失败')))
       .finally(() => setLoading(false))
@@ -352,7 +357,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   }, [page, total])
 
   const retry = () => {
-    setLoading(true)
+    setLoading(peekApi(usersPath) === undefined)
     setLoadError('')
     load()
       .catch((cause) => setLoadError(errorMessage(cause, '加载用户失败')))

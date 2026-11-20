@@ -1,16 +1,34 @@
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
 import { useCallback, useEffect, useState } from 'react'
-import { api,jsonBody } from '../../app/api'
+import { api, jsonBody, peekApi, readData } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { FormField } from '../../ui/FormField'
 import { ErrorState } from '../../ui/ErrorState'
 type Template={key:string;subject:string;body:string}
 type Broadcast={id:string;subject:string;status:string;total:number;sent:number;failed:number;created_at:string}
 export function AdminMailSection() {
- const [templates,setTemplates]=useState<Template[]>([]),[history,setHistory]=useState<Broadcast[]>([])
- const [subject,setSubject]=useState(''),[body,setBody]=useState(''),[target,setTarget]=useState('all'),[days,setDays]=useState(3)
+ const [templates, setTemplates] = useState(() => peekApi<{ templates: Template[] }>('/api/admin/mail-templates')?.templates ?? [])
+ const [history, setHistory] = useState(() => peekApi<{ broadcasts: Broadcast[] }>('/api/admin/mail-broadcasts')?.broadcasts ?? [])
+ const [subject,setSubject]=useState(''),[body,setBody]=useState(''),[target,setTarget]=useState('all')
+ const [days, setDays] = useState(() => peekApi<{ reminder_days: number }>('/api/admin/system/reminders')?.reminder_days ?? 3)
  const [error,setError]=useState(''),[result,setResult]=useState(''),[busy,setBusy]=useState(false)
- const load=useCallback(async()=>{try {const [t,h,r]=await Promise.all([api<{templates:Template[]}>('/api/admin/mail-templates'),api<{broadcasts:Broadcast[]}>('/api/admin/mail-broadcasts'),api<{reminder_days:number}>('/api/admin/system/reminders')]);setTemplates(t.templates);setHistory(h.broadcasts);setDays(r.reminder_days)}catch(e){setError(e instanceof Error?e.message:'加载失败')}},[])
+ const load = useCallback(async () => {
+  const before = peekApi<{ templates: Template[] }>('/api/admin/mail-templates')?.templates
+  const beforeDays = peekApi<{ reminder_days: number }>('/api/admin/system/reminders')?.reminder_days ?? 3
+  try {
+   await readData((read) => Promise.all([
+    read<{ templates: Template[] }>('/api/admin/mail-templates'),
+    read<{ broadcasts: Broadcast[] }>('/api/admin/mail-broadcasts'),
+    read<{ reminder_days: number }>('/api/admin/system/reminders'),
+   ]), ([templateData, broadcastData, reminders]) => {
+    setTemplates((current) => !before || current === before ? templateData.templates : current)
+    setHistory(broadcastData.broadcasts)
+    setDays((current) => current === beforeDays ? reminders.reminder_days : current)
+   })
+  } catch (cause) {
+   setError(cause instanceof Error ? cause.message : '加载失败')
+  }
+ }, [])
  useEffect(()=>{void load()},[load])
  async function run(action:()=>Promise<unknown>) {setBusy(true);setError('');setResult('');try{const value=await action();const counts=value as {total?:number;processed?:number;sent?:number;failed?:number;skipped?:number}|null;setResult(counts && typeof counts.sent==='number' ? `处理 ${counts.processed ?? counts.total ?? 0}，发送 ${counts.sent}，失败 ${counts.failed ?? 0}，跳过 ${counts.skipped ?? 0}` : '已保存');await load()}catch(e){setError(e instanceof Error?e.message:'操作失败')}finally{setBusy(false)}}
  return <section className="data-section sys-section"><DataHeader title="邮件模板与群发" />

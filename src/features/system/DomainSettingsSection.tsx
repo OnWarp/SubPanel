@@ -2,7 +2,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, readData, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -200,9 +200,9 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
 }
 
 export function DomainSettingsSection() {
-  const [domains, setDomains] = useState<DomainsResponse | null>(null)
-  const [platforms, setPlatforms] = useState<PlatformItem[] | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [domains, setDomains] = useState<DomainsResponse | null>(() => peekApi<DomainsResponse>('/api/admin/system/domains') ?? null)
+  const [platforms, setPlatforms] = useState<PlatformItem[] | null>(() => peekApi<{ platforms: PlatformItem[] }>('/api/admin/system/subscription-platforms')?.platforms ?? null)
+  const [loading, setLoading] = useState(() => peekApi('/api/admin/system/domains') === undefined || peekApi('/api/admin/system/subscription-platforms') === undefined)
   const [loadError, setLoadError] = useState('')
   const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const [busyId, setBusyId] = useState('')
@@ -210,15 +210,17 @@ export function DomainSettingsSection() {
   const [pendingDelete, setPendingDelete] = useState<{ kind: DomainKind; item: DomainItem } | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/system/domains') === undefined || peekApi('/api/admin/system/subscription-platforms') === undefined)
     setLoadError('')
     try {
-      const [domainData, platformData] = await Promise.all([
-        api<DomainsResponse>('/api/admin/system/domains'),
-        api<{ platforms: PlatformItem[] }>('/api/admin/system/subscription-platforms'),
-      ])
-      setDomains(domainData)
-      setPlatforms(platformData.platforms)
+      await readData((read) => Promise.all([
+        read<DomainsResponse>('/api/admin/system/domains'),
+        read<{ platforms: PlatformItem[] }>('/api/admin/system/subscription-platforms'),
+      ]), ([domainData, platformData]) => {
+        setDomains(domainData)
+        setPlatforms(platformData.platforms)
+        setLoading(false)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '无法加载域名设置'))
     } finally {

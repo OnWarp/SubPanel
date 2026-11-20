@@ -2,7 +2,7 @@ import { GateEmptyState } from '../../ui/GateEmptyState'
 import { Network } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { FormSelect } from '../../ui/Controls'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -118,13 +118,14 @@ export function UserNodesFooter({ total, page, pageCount, onPage }: {
 }
 
 export function MyNodesPage() {
-  const [hasActiveSubscription, setHasActiveSubscription] = useState(false)
-  const [nodes, setNodes] = useState<UserNode[]>([])
-  const [total, setTotal] = useState(0)
+  const [initial] = useState(() => peekApi<UserNodesResponse>(`/api/user/nodes?page=1&pageSize=${PAGE_SIZE}&subscriptionId=all&groupId=all`))
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(initial?.hasActiveSubscription ?? false)
+  const [nodes, setNodes] = useState<UserNode[]>(initial?.nodes ?? [])
+  const [total, setTotal] = useState(initial?.total ?? 0)
   const [page, setPage] = useState(1)
-  const [subscriptionOptions, setSubscriptionOptions] = useState<NodeRef[]>(EMPTY_REFS)
-  const [groupOptions, setGroupOptions] = useState<NodeRef[]>(EMPTY_REFS)
-  const [loading, setLoading] = useState(true)
+  const [subscriptionOptions, setSubscriptionOptions] = useState<NodeRef[]>(initial?.subscriptionOptions ?? EMPTY_REFS)
+  const [groupOptions, setGroupOptions] = useState<NodeRef[]>(initial?.groupOptions ?? EMPTY_REFS)
+  const [loading, setLoading] = useState(initial === undefined)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [subscriptionId, setSubscriptionId] = useState('all')
@@ -134,29 +135,32 @@ export function MyNodesPage() {
   const activeSubscription = subscriptionId !== 'all' && subscriptionOptions.some((item) => item.id === subscriptionId) ? subscriptionId : 'all'
   const activeGroup = groupId !== 'all' && groupOptions.some((item) => item.id === groupId) ? groupId : 'all'
 
+  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+  const needle = query.trim()
+  if (needle) params.set('q', needle)
+  params.set('subscriptionId', activeSubscription)
+  params.set('groupId', activeGroup)
+  const path = `/api/user/nodes?${params}`
+
   const load = useCallback(async () => {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
-    const needle = query.trim()
-    if (needle) params.set('q', needle)
-    params.set('subscriptionId', activeSubscription)
-    params.set('groupId', activeGroup)
     const seq = ++requestSeq.current
     try {
-      const result = await api<UserNodesResponse>(`/api/user/nodes?${params.toString()}`)
-      if (seq !== requestSeq.current) return
-      setHasActiveSubscription(result.hasActiveSubscription)
-      setNodes(result.nodes)
-      setTotal(result.total)
-      setSubscriptionOptions(result.subscriptionOptions)
-      setGroupOptions(result.groupOptions)
-      setError('')
+      await watchApi<UserNodesResponse>(path, (result) => {
+        if (seq !== requestSeq.current) return
+        setHasActiveSubscription(result.hasActiveSubscription)
+        setNodes(result.nodes)
+        setTotal(result.total)
+        setSubscriptionOptions(result.subscriptionOptions)
+        setGroupOptions(result.groupOptions)
+        setError('')
+      })
     } catch (cause) {
       if (seq !== requestSeq.current) return
       setError(errorMessage(cause, '加载节点失败'))
     } finally {
       if (seq === requestSeq.current) setLoading(false)
     }
-  }, [activeGroup, activeSubscription, page, query])
+  }, [path])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 

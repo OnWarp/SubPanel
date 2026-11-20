@@ -7,7 +7,7 @@ import { versionLabel } from '../system/template-display'
 import { CheckCircle2, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { loadAdminUserOptions, api, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
+import { loadAdminUserOptions, peekAdminUserOptions, api, peekApi, readData, watchApi, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { CopyButton } from '../../ui/CopyButton'
@@ -133,9 +133,9 @@ function toggle(values: string[], id: string): string[] {
 
 export function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
-  const [plans, setPlans] = useState<Plan[]>([])
-  const [users, setUsers] = useState<UserSummary[]>([])
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
+  const [plans, setPlans] = useState<Plan[]>(() => peekApi<{ plans: Plan[] }>('/api/admin/plans')?.plans ?? [])
+  const [users, setUsers] = useState<UserSummary[]>(() => peekAdminUserOptions()?.users ?? [])
+  const [catalog, setCatalog] = useState<CatalogResponse | null>(() => peekApi<CatalogResponse>('/api/admin/catalog') ?? null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -170,12 +170,12 @@ export function SubscriptionsPage() {
     const abort = new AbortController()
     setBindingLoading(true)
     setBindingError('')
-    void Promise.all([
-      loadSubscriptionTemplates(),
-      drawer === 'create' ? undefined : api<Binding>(
+    void readData((read) => Promise.all([
+      loadSubscriptionTemplates(false, read),
+      drawer === 'create' ? undefined : read<Binding>(
         `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(drawer.subscription.id)}`, { signal: abort.signal },
       ),
-    ]).then(([templates, binding]) => {
+    ]), ([templates, binding]) => {
       if (abort.signal.aborted) return
       const initial: SubscriptionTemplateBinding = binding?.mode === 'specific'
         ? { mode: 'specific', templateId: binding.templateId ?? '', expectedRevision: binding.revision }
@@ -185,6 +185,7 @@ export function SubscriptionsPage() {
         templateId: defaultRow.id, templateName: defaultRow.name, versionId: defaultRow.publishedVersionId,
         sequence: defaultRow.publishedSequence ?? 1,
       } : null
+      setBindingLoading(false)
       setBindingData({ initial, options: templates.templates.filter((row) => row.publishedVersionId), effective })
     }).catch((cause) => { if (!abort.signal.aborted) setBindingError(errorMessage(cause, '加载附加配置失败')) })
       .finally(() => { if (!abort.signal.aborted) setBindingLoading(false) })
@@ -214,16 +215,15 @@ export function SubscriptionsPage() {
     setSelected((current) => new Set([...current].filter((id) => result.subscriptions.some((subscription) => subscription.id === id))))
   }, [enabledOnly, expiryFilter, page, query, statusFilter])
 
-  const loadMeta = useCallback(async () => {
-    const [userResult, nextCatalog, planResult] = await Promise.all([
-      loadAdminUserOptions(),
-      api<CatalogResponse>('/api/admin/catalog'),
-      api<{ plans: Plan[] }>('/api/admin/plans'),
-    ])
+  const loadMeta = useCallback(() => readData((read) => Promise.all([
+    loadAdminUserOptions(read),
+    read<CatalogResponse>('/api/admin/catalog'),
+    read<{ plans: Plan[] }>('/api/admin/plans'),
+  ]), ([userResult, nextCatalog, planResult]) => {
     setPlans(planResult.plans)
     setUsers(userResult.users)
     setCatalog(nextCatalog)
-  }, [])
+  }), [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -561,11 +561,9 @@ export function SubscriptionsPage() {
   useEffect(() => {
     if (!detailsId) return
     const abort = new AbortController()
-    void api<Binding>(
-      `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(detailsId)}`, { signal: abort.signal },
-    ).then((binding) => {
-      if (!abort.signal.aborted) setDetailsBinding(binding)
-    }).catch((cause) => {
+    void watchApi<Binding>(
+      `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(detailsId)}`, setDetailsBinding, { signal: abort.signal },
+    ).catch((cause) => {
       if (!abort.signal.aborted) setDetailsBindingError(errorMessage(cause, '加载附加配置失败'))
     })
     return () => abort.abort()

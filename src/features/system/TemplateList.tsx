@@ -1,7 +1,7 @@
 import { EmptyState } from '../../ui/EmptyState'
 import { useEffect, useState } from 'react'
 import {
-  api, ApiClientError, jsonBody, loadSubscriptionTemplates, loadTemplateSubscriptions, subscriptionTemplatesPath as ROOT,
+  api, peekApi, peekSubscriptionTemplates, readData, watchApi, ApiClientError, jsonBody, loadSubscriptionTemplates, loadTemplateSubscriptions, subscriptionTemplatesPath as ROOT,
   type SubscriptionTemplate, type TemplateBinding, type TemplateDefaultWrite, type TemplateDraftWrite, type TemplateReference,
   type TemplateRollback, type TemplateVersion, type TemplateVersionPage,
 } from '../../app/api'
@@ -37,8 +37,8 @@ async function countInherited() {
 }
 
 export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
-  const [data, setData] = useState<Awaited<ReturnType<typeof loadSubscriptionTemplates>>>()
-  const [archivedRows, setArchivedRows] = useState<SubscriptionTemplate[]>()
+  const [data, setData] = useState(() => peekSubscriptionTemplates())
+  const [archivedRows, setArchivedRows] = useState(() => archived ? peekSubscriptionTemplates(true)?.templates : undefined)
   const [action, setAction] = useState<ListAction>()
   const [copyName, setCopyName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -54,9 +54,9 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
   useEffect(() => {
     let active = true
     setLoadError('')
-    setArchivedRows(undefined)
-    void Promise.all([loadSubscriptionTemplates(), archived ? loadSubscriptionTemplates(true) : undefined])
-      .then(([next, history]) => {
+    setArchivedRows(archived ? peekSubscriptionTemplates(true)?.templates : undefined)
+    void readData((read) => Promise.all([loadSubscriptionTemplates(false, read), archived ? loadSubscriptionTemplates(true, read) : undefined]),
+      ([next, history]) => {
         if (active) { setData(next); setArchivedRows(history?.templates) }
       }).catch((cause) => { if (active) setLoadError(templateError(cause)) })
     return () => { active = false }
@@ -187,27 +187,26 @@ function TemplateHistory({ row, onClose, onRollback }: {
   onRollback: (version: TemplateVersion, result: TemplateRollback) => void
 }) {
   const [page, setPage] = useState(1)
-  const [result, setResult] = useState<TemplateVersionPage>()
+  const path = `${ROOT}/${encodeURIComponent(row.id)}/versions?page=${page}&pageSize=20`
+  const [result, setResult] = useState(() => peekApi<TemplateVersionPage>(path))
   const [selected, setSelected] = useState<TemplateVersion>()
   const [current, setCurrent] = useState({ id: row.publishedVersionId, revision: row.revision })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const toast = useToast()
-  const path = `${ROOT}/${encodeURIComponent(row.id)}`
 
   useEffect(() => {
     const abort = new AbortController()
-    void api<TemplateVersionPage>(`${path}/versions?page=${page}&pageSize=20`, { signal: abort.signal })
-      .then(setResult).catch((cause) => { if (!abort.signal.aborted) setError(templateError(cause)) })
+    void watchApi<TemplateVersionPage>(path, setResult, { signal: abort.signal }).catch((cause) => { if (!abort.signal.aborted) setError(templateError(cause)) })
     return () => abort.abort()
-  }, [page, path])
+  }, [path])
 
   const rollback = async () => {
     if (!selected) return
     setBusy(true)
     setError('')
     try {
-      const next = await api<TemplateRollback>(`${path}/rollback`, {
+      const next = await api<TemplateRollback>(`${ROOT}/${encodeURIComponent(row.id)}/rollback`, {
         method: 'POST', body: jsonBody({ versionId: selected.id, expectedRevision: current.revision }),
       })
       setCurrent({ id: next.versionId, revision: next.revision })

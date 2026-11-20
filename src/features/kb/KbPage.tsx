@@ -1,7 +1,7 @@
 import { BookOpen, ChevronRight, Search } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -28,8 +28,8 @@ function ArticleLink({ article }: { article: KbArticleSummary }) {
 }
 
 export function KbPage() {
-  const [categories, setCategories] = useState<UserKbCategory[]>([])
-  const [loading, setLoading] = useState(true)
+  const [categories, setCategories] = useState<UserKbCategory[]>(() => peekApi<{ categories: UserKbCategory[] }>('/api/kb')?.categories ?? [])
+  const [loading, setLoading] = useState(() => peekApi<{ categories: UserKbCategory[] }>('/api/kb') === undefined)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<KbArticleSummary[] | null>(null)
@@ -38,11 +38,12 @@ export function KbPage() {
   const [searchNonce, setSearchNonce] = useState(0)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ categories: UserKbCategory[] }>('/api/kb') === undefined)
     setError('')
     try {
-      const result = await api<{ categories: UserKbCategory[] }>('/api/kb')
-      setCategories(result.categories)
+      await watchApi<{ categories: UserKbCategory[] }>('/api/kb', (result) => {
+        setCategories(result.categories)
+      })
     } catch (cause) {
       setCategories([])
       setError(errorMessage(cause, '加载知识库失败'))
@@ -62,11 +63,13 @@ export function KbPage() {
       return
     }
     let cancelled = false
-    setSearching(true)
+    const path = `/api/kb/search?q=${encodeURIComponent(trimmed)}`
+    const cached = peekApi<{ articles: KbArticleSummary[] }>(path)
+    if (cached) setResults(cached.articles)
+    setSearching(!cached)
     setSearchError('')
     const timer = window.setTimeout(() => {
-      api<{ articles: KbArticleSummary[] }>(`/api/kb/search?q=${encodeURIComponent(trimmed)}`)
-        .then((result) => {
+      void watchApi<{ articles: KbArticleSummary[] }>(path, (result) => {
           if (!cancelled) setResults(result.articles)
         })
         .catch((cause: unknown) => {

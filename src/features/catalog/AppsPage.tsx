@@ -4,7 +4,7 @@ import { AppDownloadsSection } from './AppDownloadsSection'
 import { Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EditDrawer } from '../../ui/EditDrawer'
@@ -132,8 +132,8 @@ function validateForm(form: AppForm): string {
 }
 
 export function AppsPage() {
-  const [catalog, setCatalog] = useState<AppsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [catalog, setCatalog] = useState<AppsResponse | null>(() => peekApi<AppsResponse>('/api/admin/apps') ?? null)
+  const [loading, setLoading] = useState(() => catalog === null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>('all')
@@ -149,9 +149,10 @@ export function AppsPage() {
   const load = useCallback(async () => {
     setError('')
     try {
-      const next = await api<AppsResponse>('/api/admin/apps')
-      setCatalog(next)
-      return next
+      await watchApi<AppsResponse>('/api/admin/apps', (next) => {
+        setCatalog(next)
+        return next
+      })
     } catch (cause) {
       setError(errorMessage(cause, '加载 APP 失败'))
       return null

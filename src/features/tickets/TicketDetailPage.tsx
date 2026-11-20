@@ -2,7 +2,7 @@ import { Textarea } from '../../ui/Controls'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
@@ -18,8 +18,8 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 export function TicketDetailPage() {
   const { id = '' } = useParams()
-  const [thread, setThread] = useState<TicketThreadData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [thread, setThread] = useState<TicketThreadData | null>(() => peekApi<TicketThreadData>(`/api/tickets/${id}`) ?? null)
+  const [loading, setLoading] = useState(() => peekApi<TicketThreadData>(`/api/tickets/${id}`) === undefined)
   const [loadError, setLoadError] = useState('')
   const [reply, setReply] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,10 +27,10 @@ export function TicketDetailPage() {
   const [closeOpen, setCloseOpen] = useState(false)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<TicketThreadData>(`/api/tickets/${id}`) === undefined)
     setLoadError('')
     try {
-      setThread(await api<TicketThreadData>(`/api/tickets/${id}`))
+      await watchApi<TicketThreadData>(`/api/tickets/${id}`, setThread)
     } catch (cause) {
       setThread(null)
       setLoadError(errorMessage(cause, '加载工单失败'))

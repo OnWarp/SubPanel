@@ -1,7 +1,7 @@
 import { CalendarClock, Layers, Network, Package, Ticket, Users, type LucideIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
 import { PageHeader } from '../../ui/PageHeader'
 
@@ -26,17 +26,16 @@ const metrics: { field: keyof DashboardStats; label: string; icon: LucideIcon; t
 ]
 
 export function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(() => peekApi<DashboardStats>('/api/admin/stats') ?? null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
   const loading = !stats && !error
 
   useEffect(() => {
     const controller = new AbortController()
-    api<DashboardStats>('/api/admin/stats', { signal: controller.signal })
-      .then(setStats)
+    watchApi<DashboardStats>('/api/admin/stats', setStats, { signal: controller.signal })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && peekApi('/api/admin/stats') === undefined) {
           setError(cause instanceof ApiClientError ? cause.message : '加载概览失败')
         }
       })

@@ -1,3 +1,5 @@
+import { cacheable, cachedRequest, cachedValue, cacheKey, inFamily, invalidateCache, requestPath, superseded } from './data-cache'
+
 export type Role = 'admin' | 'user'
 
 export type UserSummary = {
@@ -339,7 +341,120 @@ export class ApiClientError extends Error {
   }
 }
 
+const subscriptionRoutes = [
+  '/api/admin/subscriptions', '/api/admin/delivery', '/api/admin/entitlements',
+  '/api/account/subscriptions', '/api/account/delivery', '/api/subscriptions', '/api/user/subscriptions',
+]
+const shareRoutes = ['/api/admin/shares', '/api/shares']
+export const subscriptionTemplatesPath = '/api/admin/system/subscription-templates'
+const subscriptionFamilies = [
+  ...subscriptionRoutes, ...shareRoutes, subscriptionTemplatesPath,
+  '/api/account/entitlement', '/api/user/nodes', '/api/admin/users',
+]
+const writeFamilies: Array<[string[], string[]]> = [
+  [['/api/admin/catalog'], ['/api/admin/catalog', ...subscriptionFamilies]],
+  [['/api/admin/plans'], ['/api/admin/plans', '/api/account/plans', ...subscriptionFamilies]],
+  [[...subscriptionRoutes, ...shareRoutes, subscriptionTemplatesPath], subscriptionFamilies],
+  [['/api/admin/share-settings'], ['/api/admin/share-settings', ...subscriptionFamilies]],
+  [['/api/admin/apps', '/api/admin/system/app-downloads'], ['/api/admin/apps', '/api/apps', '/api/admin/system/app-downloads']],
+  [['/api/admin/tickets', '/api/tickets'], ['/api/admin/tickets', '/api/tickets']],
+  [['/api/admin/notices'], ['/api/admin/notices', '/api/notices']],
+  [['/api/admin/kb'], ['/api/admin/kb', '/api/kb']],
+]
+const sessionWrites = new Set([
+  '/api/login', '/api/setup', '/api/register', '/api/password/reset',
+  '/api/account/password', '/api/account/logout', '/api/account/logout-all',
+])
+const sessionChannel = typeof window !== 'undefined' && typeof window.BroadcastChannel === 'function'
+  ? new BroadcastChannel('subpanel-session')
+  : undefined
+
+let identity: string | undefined
+let sessionEpoch = 0
+
+function changeSession(user?: UserSummary | null) {
+  identity = user ? JSON.stringify([user.id, user.role]) : ''
+  sessionEpoch++
+  invalidateCache()
+}
+
+sessionChannel?.addEventListener('message', (event) => {
+  if (event.data === 'changed') changeSession()
+})
+
+export function onSessionChange(listener: () => void): () => void {
+  const receive = (event: MessageEvent) => { if (event.data === 'changed') listener() }
+  sessionChannel?.addEventListener('message', receive)
+  return () => sessionChannel?.removeEventListener('message', receive)
+}
+
+export function peekApi<T>(path: string, init: RequestInit = {}): T | undefined {
+  return cacheable(path) ? cachedValue<T>(cacheKey(path, init)) : undefined
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if ((init.method?.toUpperCase() ?? 'GET') !== 'GET' || !cacheable(path)) return fetchApi<T>(path, init)
+  const key = cacheKey(path, init)
+  const epoch = sessionEpoch
+  while (epoch === sessionEpoch && !init.signal?.aborted) {
+    try {
+      const result = await cachedRequest(key, init.signal, (signal) => fetchApi<T>(path, { ...init, signal }))
+      if (epoch === sessionEpoch) return result
+    } catch (cause) {
+      if (cause === superseded) continue
+      if (!init.signal?.aborted) throw cause
+      break
+    }
+  }
+  throw new ApiClientError(0, 'NETWORK_ERROR', '无法连接服务，请稍后重试')
+}
+
+export async function watchApi<T>(path: string, apply: (data: T) => void, init: RequestInit = {}): Promise<void> {
+  const cached = peekApi<T>(path, init)
+  if (cached !== undefined && !init.signal?.aborted) apply(cached)
+  let fresh: T
+  try {
+    fresh = await api<T>(path, init)
+  } catch (cause) {
+    if (cached === undefined || !Object.is(peekApi<T>(path, init), cached) || init.signal?.aborted) throw cause
+    return
+  }
+  if (!init.signal?.aborted && !Object.is(fresh, cached)) apply(fresh)
+}
+
+type Reader = typeof api
+const missing = Symbol('cache miss')
+
+// Publish a complete cached view, then publish fresh results only if an input changed.
+export async function readData<T>(load: (read: Reader) => Promise<T>, apply: (data: T) => void): Promise<void> {
+  const snapshot = new Map<string, unknown>()
+  const epoch = sessionEpoch
+  const cached = await load(async <R>(path: string, init?: RequestInit) => {
+    const result = peekApi<R>(path, init)
+    if (result === undefined || init?.signal?.aborted) throw missing
+    snapshot.set(cacheKey(path, init ?? {}), result)
+    return result
+  }).then((value) => ({ value }), () => undefined)
+  if (epoch !== sessionEpoch) return
+  if (cached) apply(cached.value)
+
+  let changed = false
+  let value: T
+  try {
+    value = await load(async <R>(path: string, init?: RequestInit) => {
+      const result = await api<R>(path, init)
+      if (!Object.is(result, snapshot.get(cacheKey(path, init ?? {})))) changed = true
+      return result
+    })
+  } catch (cause) {
+    if (!cached || epoch !== sessionEpoch || [...snapshot.keys()].some((key) => cachedValue(key) === undefined)) throw cause
+    return
+  }
+  if (epoch === sessionEpoch && (!cached || changed)) apply(value)
+}
+
+async function fetchApi<T>(path: string, init: RequestInit): Promise<T> {
+  const epoch = sessionEpoch
   const headers = new Headers(init.headers)
   if (init.body !== undefined && !headers.has('content-type')) headers.set('content-type', 'application/json')
   let response: Response
@@ -347,6 +462,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     response = await fetch(path, { ...init, headers, credentials: 'same-origin' })
   } catch {
     throw new ApiClientError(0, 'NETWORK_ERROR', '无法连接服务，请稍后重试')
+  }
+  const url = requestPath(path)
+  const method = init.method?.toUpperCase() ?? 'GET'
+  const sessionWrite = sessionWrites.has(url)
+  if (response.ok && method !== 'GET' && method !== 'HEAD') {
+    if (sessionWrite) {
+      changeSession()
+      sessionChannel?.postMessage('changed')
+    } else {
+      const rule = writeFamilies.find(([writes]) => writes.some((family) => inFamily(url, family)))
+      invalidateCache(rule && [...rule[1], '/api/admin/stats', '/api/admin/audit-logs', '/api/admin/system/status'])
+    }
   }
   let payload: ApiErrorPayload | T | null = null
   if (response.status !== 204) {
@@ -363,6 +490,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const error = payload as ApiErrorPayload | null
+    if (epoch === sessionEpoch && response.status === 401 && error?.error?.code === 'AUTH_REQUIRED') changeSession()
     throw new ApiClientError(
       response.status,
       error?.error?.code ?? 'REQUEST_FAILED',
@@ -370,22 +498,50 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       error?.error?.details,
     )
   }
+  if ((url === '/api/bootstrap' && epoch === sessionEpoch) || (sessionWrite && method === 'POST')) {
+    const session = payload as { user?: UserSummary | null } | null
+    if (session && 'user' in session) {
+      const next = session.user ? JSON.stringify([session.user.id, session.user.role]) : ''
+      if (identity !== next) changeSession(session.user)
+    }
+  }
   return payload as T
 }
 
-export const subscriptionTemplatesPath = '/api/admin/system/subscription-templates'
-
-export async function loadSubscriptionTemplates(archived = false) {
-  const templates: SubscriptionTemplate[] = []
+function* templatePages(archived: boolean): Generator<string, Pick<TemplateListResponse, 'templates' | 'defaultId' | 'defaultRevision'>, TemplateListResponse> {
   const path = `${subscriptionTemplatesPath}?pageSize=100${archived ? '&archived=true' : ''}`
-  const first = await api<TemplateListResponse>(path)
-  templates.push(...first.templates)
+  const first: TemplateListResponse = yield path
+  const templates = [...first.templates]
   for (let page = 2; templates.length < first.total; page += 1) {
-    const result = await api<TemplateListResponse>(`${path}&page=${page}`)
+    const result: TemplateListResponse = yield `${path}&page=${page}`
     if (!result.templates.length) break
     templates.push(...result.templates)
   }
   return { templates, defaultId: first.defaultId, defaultRevision: first.defaultRevision }
+}
+
+function peekPages<T, R>(pages: Generator<string, T, R>): T | undefined {
+  let next = pages.next()
+  while (!next.done) {
+    const page = peekApi<R>(next.value)
+    if (page === undefined) return undefined
+    next = pages.next(page)
+  }
+  return next.value
+}
+
+async function readPages<T, R>(pages: Generator<string, T, R>, read: Reader, signal?: AbortSignal): Promise<T> {
+  let next = pages.next()
+  while (!next.done) next = pages.next(await read<R>(next.value, { signal }))
+  return next.value
+}
+
+export function peekSubscriptionTemplates(archived = false) {
+  return peekPages(templatePages(archived))
+}
+
+export function loadSubscriptionTemplates(archived = false, read: Reader = api) {
+  return readPages(templatePages(archived), read)
 }
 
 export async function loadTemplateSubscriptions(signal?: AbortSignal) {
@@ -399,13 +555,28 @@ export async function loadTemplateSubscriptions(signal?: AbortSignal) {
 
 export const jsonBody = (value: unknown): string => JSON.stringify(value)
 
-// Metadata selectors need every user, not the default first page of twenty.
-export async function loadAdminUserOptions(): Promise<{ users: UserSummary[] }> {
+type UserOptions = { users: UserSummary[] }
+
+// Metadata selectors need every user, including pages beyond the first.
+function* adminUserPages(): Generator<string, UserOptions, UserOptions & { total: number }> {
   const users: UserSummary[] = []
   for (let page = 1; ; page += 1) {
-    const result = await api<{ users: UserSummary[]; total: number }>(`/api/admin/users?pageSize=100&page=${page}`)
+    const result = yield `/api/admin/users?pageSize=100&page=${page}`
     users.push(...result.users)
     if (users.length >= result.total) return { users }
     if (!result.users.length) throw new Error('用户列表不完整，请重试')
   }
+}
+
+export function peekAdminUserOptions() {
+  try {
+    return peekPages(adminUserPages())
+  } catch {
+    // Pages cached at different times can have inconsistent totals.
+    return undefined
+  }
+}
+
+export function loadAdminUserOptions(read: Reader = api): Promise<UserOptions> {
+  return readPages(adminUserPages(), read)
 }

@@ -3,7 +3,7 @@ import { FormSelect } from '../../ui/Controls'
 import { MessageSquare } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
@@ -20,22 +20,25 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 export function AdminTicketsPage() {
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [total, setTotal] = useState(0)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
+  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+  if (statusFilter !== 'all') params.set('status', statusFilter)
+  const path = `/api/admin/tickets?${params}`
+  type Result = { tickets: Ticket[]; total: number }
+  const [tickets, setTickets] = useState<Ticket[]>(() => peekApi<Result>(path)?.tickets ?? [])
+  const [total, setTotal] = useState(() => peekApi<Result>(path)?.total ?? 0)
+  const [loading, setLoading] = useState(() => peekApi(path) === undefined)
   const [loadError, setLoadError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi(path) === undefined)
     setLoadError('')
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
-    if (statusFilter !== 'all') params.set('status', statusFilter)
     try {
-      const result = await api<{ tickets: Ticket[], total: number }>(`/api/admin/tickets?${params.toString()}`)
-      setTickets(result.tickets)
-      setTotal(result.total)
+      await watchApi<Result>(path, (result) => {
+        setTickets(result.tickets)
+        setTotal(result.total)
+      })
     } catch (cause) {
       setTickets([])
       setTotal(0)
@@ -43,7 +46,7 @@ export function AdminTicketsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusFilter])
+  }, [path])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 

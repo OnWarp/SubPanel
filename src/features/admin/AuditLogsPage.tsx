@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../../app/api'
+import { peekApi, watchApi } from '../../app/api'
 import { DateTimeInput, Input } from '../../ui/Controls'
 import { DataTable } from '../../ui/DataTable'
 import { ErrorState } from '../../ui/ErrorState'
@@ -16,10 +16,13 @@ type Log = {
   detail: string
 }
 
+type AuditResult = { logs: Log[]; pagination: { pageCount: number; total: number } }
+const initialPath = '/api/admin/audit-logs?page=1&pageSize=20&action=&actor='
+
 export function AuditLogsPage() {
-  const [logs, setLogs] = useState<Log[]>([])
+  const [logs, setLogs] = useState<Log[]>(() => peekApi<AuditResult>(initialPath)?.logs ?? [])
   const [page, setPage] = useState(1)
-  const [pagination, setPagination] = useState({ pageCount: 1, total: 0 })
+  const [pagination, setPagination] = useState(() => peekApi<AuditResult>(initialPath)?.pagination ?? { pageCount: 1, total: 0 })
   const [action, setAction] = useState('')
   const [actor, setActor] = useState('')
   const [from, setFrom] = useState('')
@@ -34,9 +37,10 @@ export function AuditLogsPage() {
         ...(from ? { from: new Date(from).toISOString() } : {}),
         ...(to ? { to: new Date(to).toISOString() } : {}),
       })
-      const result = await api<{ logs: Log[]; pagination: typeof pagination }>(`/api/admin/audit-logs?${query}`)
-      setLogs(result.logs)
-      setPagination(result.pagination)
+      await watchApi<AuditResult>(`/api/admin/audit-logs?${query}`, (result) => {
+        setLogs(result.logs)
+        setPagination(result.pagination)
+      })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '加载失败')
     }

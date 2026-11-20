@@ -20,7 +20,8 @@ import {
   deleteShare,
   disableShare,
   enableShare,
-  listShares,
+  peekShares,
+  watchShares,
   resetShareToken,
   type ShareStatus,
   type ShareView,
@@ -189,7 +190,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
   returnFocusRef?: RefObject<HTMLButtonElement | null>
 }) {
   const subscriptionId = subscription?.id ?? ''
-  const [shares, setShares] = useState<ShareView[]>([])
+  const [shares, setShares] = useState(() => peekShares()?.shares.filter((share) => share.subscriptionId === subscriptionId) ?? [])
   const [issued, setIssued] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -203,16 +204,15 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
   const [pending, setPending] = useState<Pending | null>(null)
   const [busyId, setBusyId] = useState('')
 
-  const load = useCallback(async (id: string) => {
-    setLoading(true)
+  const load = useCallback(async (id: string, signal?: AbortSignal) => {
+    setLoading(peekShares() === undefined)
     setLoadError('')
     try {
-      const result = await listShares()
-      setShares(result.shares.filter((share) => share.subscriptionId === id))
+      await watchShares((result) => setShares(result.filter((share) => share.subscriptionId === id)), signal)
     } catch (cause) {
-      setLoadError(errorText(cause, '加载分享失败'))
+      if (!signal?.aborted) setLoadError(errorText(cause, '加载分享失败'))
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [])
 
@@ -225,7 +225,9 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
     setStatus('all')
     setPage(1)
     setNotice(null)
-    load(subscriptionId).catch(() => undefined)
+    const controller = new AbortController()
+    void load(subscriptionId, controller.signal)
+    return () => controller.abort()
   }, [load, subscriptionId])
 
   useEffect(() => { setPage(1) }, [query, status])

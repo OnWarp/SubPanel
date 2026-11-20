@@ -1,6 +1,6 @@
 import { Input, FormSelect } from '../../ui/Controls'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, ApiClientError } from '../../app/api'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { api, peekApi, watchApi, ApiClientError } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
@@ -94,20 +94,27 @@ function parseSettingsForm(form: SettingsForm): { settings: ShareSettings | null
 }
 
 export function ShareSettingsSection() {
-  const [form, setForm] = useState<SettingsForm | null>(null)
+  const [form, setForm] = useState<SettingsForm | null>(() => {
+    const initial = peekApi<{ settings: ShareSettings }>('/api/admin/share-settings')
+    return initial ? toSettingsForm(initial.settings) : null
+  })
+  const serverForm = useRef(form)
   const [errors, setErrors] = useState<SettingsErrors>({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => form === null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/share-settings') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ settings: ShareSettings }>('/api/admin/share-settings')
-      setForm(toSettingsForm(result.settings))
-      setErrors({})
+      await watchApi<{ settings: ShareSettings }>('/api/admin/share-settings', (result) => {
+        const previous = serverForm.current
+        const next = toSettingsForm(result.settings)
+        serverForm.current = next
+        setForm((current) => current === previous ? next : current)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载分享设置失败'))
     } finally {
@@ -132,7 +139,8 @@ export function ShareSettingsSection() {
         method: 'PUT',
         body: JSON.stringify(parsed.settings),
       })
-      setForm(toSettingsForm(result.settings))
+      serverForm.current = toSettingsForm(result.settings)
+      setForm(serverForm.current)
       toast.notify('分享设置已保存')
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '保存分享设置失败'))

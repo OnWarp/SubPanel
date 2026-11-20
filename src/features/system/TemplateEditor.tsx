@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker } from 'react-router-dom'
 import {
-  api, ApiClientError, jsonBody, subscriptionTemplatesPath as ROOT,
+  api, peekApi, watchApi, ApiClientError, jsonBody, subscriptionTemplatesPath as ROOT,
   type Diagnostic, type TemplateDetailResponse, type TemplateDraftUpdate, type TemplateDraftWrite,
   type TemplateImportResponse, type TemplatePreviewResponse, type TemplatePublishResponse, type TemplateSource, type TemplateValidateResponse,
 } from '../../app/api'
@@ -39,10 +39,11 @@ type Validation = { diagnostics: Diagnostic[]; ignored: string[] }
 export default function TemplateEditor({ config, previewOnly, onReturn, onCreated }: EditorProps) {
   const isNew = config === 'new'
   const path = `${ROOT}/${encodeURIComponent(config)}`
-  const [detail, setDetail] = useState<TemplateDetailResponse>()
-  const [name, setName] = useState('')
-  const [yaml, setYaml] = useState(INITIAL)
-  const [mode, setMode] = useState('direct')
+  const [initial] = useState(() => isNew ? undefined : peekApi<TemplateDetailResponse>(path))
+  const [detail, setDetail] = useState(initial)
+  const [name, setName] = useState(initial?.name ?? '')
+  const [yaml, setYaml] = useState(initial?.draft ?? INITIAL)
+  const [mode, setMode] = useState(initial?.sourceUrl ? 'remote' : 'direct')
   const [url, setUrl] = useState('')
   const [source, setSource] = useState<TemplateSource>()
   const [imported, setImported] = useState<Validation>()
@@ -65,6 +66,8 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
   const archived = detail?.status === 'archived'
   const readOnly = previewOnly || archived
   const dirty = !readOnly && (name !== (detail?.name ?? '') || yaml !== (detail?.draft ?? INITIAL) || Boolean(source))
+  const editing = useRef(false)
+  editing.current = dirty || busy
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (bypass.current || (!dirty && !busy)) return false
     return currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
@@ -81,13 +84,13 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
     if (isNew) return
     const abort = new AbortController()
     setLoadError('')
-    void api<TemplateDetailResponse>(path, { signal: abort.signal }).then((next) => {
-      if (abort.signal.aborted) return
+    void watchApi<TemplateDetailResponse>(path, (next) => {
+      if (editing.current) return
       setDetail(next)
       setName(next.name)
       setYaml(next.draft)
       setMode(next.sourceUrl ? 'remote' : 'direct')
-    }).catch((cause) => { if (!abort.signal.aborted) setLoadError(templateError(cause)) })
+    }, { signal: abort.signal }).catch((cause) => { if (!abort.signal.aborted) setLoadError(templateError(cause)) })
     return () => abort.abort()
   }, [isNew, loadAttempt, path])
 

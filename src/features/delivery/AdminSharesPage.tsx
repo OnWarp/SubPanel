@@ -3,7 +3,7 @@ import { FormSelect } from '../../ui/Controls'
 import { Share2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { loadAdminUserOptions, api, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
+import { loadAdminUserOptions, peekAdminUserOptions, api, peekApi, readData, watchApi, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -63,15 +63,23 @@ function effectiveStatus(share: AdminShare, now: number): EffectiveStatus {
 }
 
 export function AdminSharesPage() {
-  const [shares, setShares] = useState<AdminShare[]>(EMPTY_SHARES)
-  const [users, setUsers] = useState<UserSummary[]>(EMPTY_USERS)
-  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
-  const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [userId, setUserId] = useState('')
   const [subscriptionId, setSubscriptionId] = useState('')
+  const params = new URLSearchParams()
+  if (userId) params.set('user', userId)
+  if (subscriptionId) params.set('subscription', subscriptionId)
+  if (statusFilter === 'active' || statusFilter === 'expired') params.set('status', 'active')
+  else if (statusFilter !== 'all') params.set('status', statusFilter)
+  const suffix = params.toString()
+  const path = `/api/admin/shares${suffix ? `?${suffix}` : ''}`
+  type Result = { shares: AdminShare[] }
+  const [shares, setShares] = useState<AdminShare[]>(() => peekApi<Result>(path)?.shares ?? EMPTY_SHARES)
+  const [users, setUsers] = useState(() => peekAdminUserOptions()?.users ?? EMPTY_USERS)
+  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
+  const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [sharesLoading, setSharesLoading] = useState(true)
+  const [sharesLoading, setSharesLoading] = useState(() => peekApi(path) === undefined)
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<{ share: AdminShare; action: PendingAction } | null>(null)
@@ -80,37 +88,30 @@ export function AdminSharesPage() {
 
   const loadShares = useCallback(async () => {
     const current = ++requestId.current
-    setSharesLoading(true)
+    setSharesLoading(peekApi(path) === undefined)
     setLoadError('')
-    const params = new URLSearchParams()
-    if (userId) params.set('user', userId)
-    if (subscriptionId) params.set('subscription', subscriptionId)
-    if (statusFilter === 'active' || statusFilter === 'expired') params.set('status', 'active')
-    else if (statusFilter !== 'all') params.set('status', statusFilter)
-    const suffix = params.toString()
     try {
-      const result = await api<{ shares: AdminShare[] }>(`/api/admin/shares${suffix ? `?${suffix}` : ''}`)
-      if (current !== requestId.current) return
-      setShares(result.shares)
+      await watchApi<Result>(path, (result) => {
+        if (current !== requestId.current) return
+        setShares(result.shares)
+      })
     } catch (cause) {
       if (current !== requestId.current) return
       setLoadError(errorMessage(cause, '加载分享失败'))
     } finally {
       if (current === requestId.current) setSharesLoading(false)
     }
-  }, [statusFilter, subscriptionId, userId])
+  }, [path])
 
   useEffect(() => { loadShares().catch(() => undefined) }, [loadShares])
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      loadAdminUserOptions(),
-      api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
-    ]).then(([userResult, subscriptionResult]) => {
-      if (!active) return
-      setUsers(userResult.users)
-      setSubscriptions(subscriptionResult.subscriptions)
+    void readData(loadAdminUserOptions, (result) => {
+      if (active) setUsers(result.users)
+    }).catch(() => undefined)
+    void api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions').then((result) => {
+      if (active) setSubscriptions(result.subscriptions)
     }).catch(() => undefined)
     return () => { active = false }
   }, [])

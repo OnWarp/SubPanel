@@ -2,7 +2,7 @@ import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll 
 import { Checkbox, Input, FormSelect, Textarea, FileInput } from '../../ui/Controls'
 import { CheckCircle2, FileUp, Plus, RefreshCw, Rss, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
@@ -83,8 +83,8 @@ function statusTone(source: CatalogSource): StatusBadgeTone {
 }
 
 export function SourcesPage() {
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [catalog, setCatalog] = useState<CatalogResponse | null>(() => peekApi<CatalogResponse>('/api/admin/catalog') ?? null)
+  const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [warning, setWarning] = useState('')
@@ -102,12 +102,16 @@ export function SourcesPage() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/catalog') === undefined)
     setError('')
     try {
-      const next = await api<CatalogResponse>('/api/admin/catalog')
-      setCatalog(next)
-      setSelected((current) => new Set([...current].filter((id) => next.sources.some((source) => source.id === id))))
+      await watchApi<CatalogResponse>('/api/admin/catalog', (next) => {
+        setCatalog(next)
+        setSelected((current) => {
+          const retained = [...current].filter((id) => next.sources.some((source) => source.id === id))
+          return retained.length === current.size ? current : new Set(retained)
+        })
+      })
     } catch (cause) {
       setWarning('')
       setError(errorMessage(cause, '加载来源失败'))

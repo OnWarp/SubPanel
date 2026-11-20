@@ -2,7 +2,7 @@ import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin
 import { FormSelect, Input, Textarea } from '../../ui/Controls'
 import { BookOpen } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
@@ -62,18 +62,23 @@ function parseSort(value: string): number {
 }
 
 export function AdminKbPage() {
-  const [categories, setCategories] = useState<KbCategory[]>([])
-  const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [categories, setCategories] = useState<KbCategory[]>(() => peekApi<{ categories: KbCategory[] }>('/api/admin/kb/categories')?.categories ?? [])
+  const [categoriesLoading, setCategoriesLoading] = useState(() => peekApi('/api/admin/kb/categories') === undefined)
   const [categoriesError, setCategoriesError] = useState('')
   const [categoryForm, setCategoryForm] = useState<CategoryForm>(EMPTY_CATEGORY_FORM)
   const [categoryBusy, setCategoryBusy] = useState(false)
 
-  const [articles, setArticles] = useState<KbArticleSummary[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [publishedFilter, setPublishedFilter] = useState<PublishedFilter>('all')
-  const [articlesLoading, setArticlesLoading] = useState(true)
+  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
+  if (categoryFilter !== 'all') params.set('categoryId', categoryFilter)
+  if (publishedFilter !== 'all') params.set('published', publishedFilter)
+  const articlesPath = `/api/admin/kb/articles?${params}`
+  type ArticlesResult = { articles: KbArticleSummary[]; total: number }
+  const [articles, setArticles] = useState<KbArticleSummary[]>(() => peekApi<ArticlesResult>(articlesPath)?.articles ?? [])
+  const [total, setTotal] = useState(() => peekApi<ArticlesResult>(articlesPath)?.total ?? 0)
+  const [articlesLoading, setArticlesLoading] = useState(() => peekApi(articlesPath) === undefined)
   const [articlesError, setArticlesError] = useState('')
 
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -86,11 +91,10 @@ export function AdminKbPage() {
   const toast = useToast()
 
   const loadCategories = useCallback(async () => {
-    setCategoriesLoading(true)
+    setCategoriesLoading(peekApi('/api/admin/kb/categories') === undefined)
     setCategoriesError('')
     try {
-      const result = await api<{ categories: KbCategory[] }>('/api/admin/kb/categories')
-      setCategories(result.categories)
+      await watchApi<{ categories: KbCategory[] }>('/api/admin/kb/categories', (result) => setCategories(result.categories))
     } catch (cause) {
       setCategories([])
       setCategoriesError(errorMessage(cause, '加载分类失败'))
@@ -100,15 +104,13 @@ export function AdminKbPage() {
   }, [])
 
   const loadArticles = useCallback(async () => {
-    setArticlesLoading(true)
+    setArticlesLoading(peekApi(articlesPath) === undefined)
     setArticlesError('')
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
-    if (categoryFilter !== 'all') params.set('categoryId', categoryFilter)
-    if (publishedFilter !== 'all') params.set('published', publishedFilter)
     try {
-      const result = await api<{ articles: KbArticleSummary[], total: number }>(`/api/admin/kb/articles?${params.toString()}`)
-      setArticles(result.articles)
-      setTotal(result.total)
+      await watchApi<ArticlesResult>(articlesPath, (result) => {
+        setArticles(result.articles)
+        setTotal(result.total)
+      })
     } catch (cause) {
       setArticles([])
       setTotal(0)
@@ -116,7 +118,7 @@ export function AdminKbPage() {
     } finally {
       setArticlesLoading(false)
     }
-  }, [page, categoryFilter, publishedFilter])
+  }, [articlesPath])
 
   useEffect(() => { loadCategories().catch(() => undefined) }, [loadCategories])
   useEffect(() => { loadArticles().catch(() => undefined) }, [loadArticles])

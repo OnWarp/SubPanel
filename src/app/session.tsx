@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { api, ApiClientError, jsonBody, type BootstrapResponse, type UserSummary } from './api'
+import { api, ApiClientError, jsonBody, onSessionChange, type BootstrapResponse, type UserSummary } from './api'
 
 type SessionState = BootstrapResponse & {
   loading: boolean
@@ -46,7 +46,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh])
 
-  useEffect(() => { retryBootstrap().catch(() => undefined) }, [retryBootstrap])
+  useEffect(() => {
+    const retry = () => { void retryBootstrap() }
+    retry()
+    return onSessionChange(retry)
+  }, [retryBootstrap])
 
   const login = useCallback(async (username: string, password: string) => {
     const result = await api<{ user: UserSummary }>('/api/login', {

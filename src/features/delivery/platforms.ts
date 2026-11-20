@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../../app/api'
+import { peekApi, watchApi } from '../../app/api'
 
 export type SubscriptionPlatformEntry = {
   platform: string
@@ -13,30 +13,35 @@ export type EnabledPlatformsState = {
   names: Record<string, string>
 }
 
+type PlatformsResponse = { platforms: SubscriptionPlatformEntry[] }
+
+function platformState(result: PlatformsResponse): EnabledPlatformsState {
+  return {
+    status: 'ready',
+    order: result.platforms.map((entry) => entry.platform),
+    names: Object.fromEntries(result.platforms.map((entry) => [entry.platform, entry.displayName])),
+  }
+}
+
 /**
  * Loads the user-visible subscription platform list. The display switch is
  * a presentation preference, not an access control: while loading or when
  * the request fails, callers fall back to rendering every link entry.
  */
 export function useEnabledPlatforms(): EnabledPlatformsState {
-  const [state, setState] = useState<EnabledPlatformsState>({ status: 'loading', order: [], names: {} })
+  const path = '/api/account/subscription-platforms'
+  const [state, setState] = useState<EnabledPlatformsState>(() => {
+    const initial = peekApi<PlatformsResponse>(path)
+    return initial ? platformState(initial) : { status: 'loading', order: [], names: {} }
+  })
+
   useEffect(() => {
-    let cancelled = false
-    api<{ platforms: SubscriptionPlatformEntry[] }>('/api/account/subscription-platforms')
-      .then((result) => {
-        if (cancelled) return
-        setState({
-          status: 'ready',
-          order: result.platforms.map((entry) => entry.platform),
-          names: Object.fromEntries(result.platforms.map((entry) => [entry.platform, entry.displayName])),
-        })
-      })
+    const controller = new AbortController()
+    void watchApi<PlatformsResponse>(path, (result) => setState(platformState(result)), { signal: controller.signal })
       .catch(() => {
-        if (!cancelled) setState({ status: 'failed', order: [], names: {} })
+        if (!controller.signal.aborted) setState({ status: 'failed', order: [], names: {} })
       })
-    return () => {
-      cancelled = true
-    }
+    return () => controller.abort()
   }, [])
   return state
 }

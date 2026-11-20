@@ -2,7 +2,7 @@ import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll 
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { CheckCircle2, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
@@ -47,8 +47,8 @@ function nodeStatus(node: CatalogNode): string {
 }
 
 export function NodesPage() {
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [catalog, setCatalog] = useState<CatalogResponse | null>(() => peekApi<CatalogResponse>('/api/admin/catalog') ?? null)
+  const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -66,12 +66,16 @@ export function NodesPage() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/catalog') === undefined)
     setError('')
     try {
-      const next = await api<CatalogResponse>('/api/admin/catalog')
-      setCatalog(next)
-      setSelected((current) => new Set([...current].filter((id) => next.nodes.some((node) => node.id === id))))
+      await watchApi<CatalogResponse>('/api/admin/catalog', (next) => {
+        setCatalog(next)
+        setSelected((current) => {
+          const retained = [...current].filter((id) => next.nodes.some((node) => node.id === id))
+          return retained.length === current.size ? current : new Set(retained)
+        })
+      })
     } catch (cause) {
       setError(errorMessage(cause, '加载节点失败'))
     } finally {

@@ -2,7 +2,7 @@ import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin
 import { StatusBadge } from '../../ui/StatusBadge'
 import { FormSelect, Input, Textarea, Checkbox } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { api, jsonBody } from '../../app/api'
+import { api, peekApi, readData, jsonBody } from '../../app/api'
 import { PageHeader } from '../../ui/PageHeader'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -14,19 +14,21 @@ import { ErrorState } from '../../ui/ErrorState'
 import type { Plan } from './plan-types'
 const empty: Plan = { id: '', name: '', description: '', groupIds: [], durationDays: 30, trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0, enabled: true, sortOrder: 0 }
 export function PlansPage() {
-  const [plans, setPlans] = useState<Plan[]>([])
-  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>([])
+  const [plans, setPlans] = useState<Plan[]>(() => peekApi<{ plans: Plan[] }>('/api/admin/plans')?.plans ?? [])
+  const [groups, setGroups] = useState<Array<{ id: string; name: string }>>(() => peekApi<{ groups: Array<{ id: string; name: string }> }>('/api/admin/catalog')?.groups ?? [])
   const [draft, setDraft] = useState<Plan | null>(null)
   const [remove, setRemove] = useState<Plan | null>(null)
   const [busy, setBusy] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => ['/api/admin/plans', '/api/admin/catalog', '/api/admin/subscriptions/trial'].some((path) => peekApi(path) === undefined))
   const [error, setError] = useState('')
-  const [trial, setTrial] = useState({ trialPlanId: null as string | null, trialDays: null as number | null })
+  const [trial, setTrial] = useState(() => peekApi<{ trialPlanId: string | null; trialDays: number | null }>('/api/admin/subscriptions/trial') ?? { trialPlanId: null, trialDays: null })
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(['/api/admin/plans', '/api/admin/catalog', '/api/admin/subscriptions/trial'].some((path) => peekApi(path) === undefined))
     try {
-      const [p, g, t] = await Promise.all([api<{ plans: Plan[] }>('/api/admin/plans'),api<{ groups: Array<{ id: string; name: string }> }>('/api/admin/catalog'),api<typeof trial>('/api/admin/subscriptions/trial')])
-      setPlans(p.plans); setGroups(g.groups); setTrial(t); setError('')
+      await readData((read) => Promise.all([read<{ plans: Plan[] }>('/api/admin/plans'),read<{ groups: Array<{ id: string; name: string }> }>('/api/admin/catalog'),read<typeof trial>('/api/admin/subscriptions/trial')]), ([p, g, t]) => {
+        setPlans(p.plans); setGroups(g.groups); setTrial(t); setError('')
+        setLoading(false)
+      })
     } catch (cause) { setError(cause instanceof Error ? cause.message : '加载失败') }
     finally { setLoading(false) }
   }, [])

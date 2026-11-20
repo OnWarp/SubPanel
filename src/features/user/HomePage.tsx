@@ -1,7 +1,7 @@
 import { Network } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type AdminSubscription } from '../../app/api'
+import { api, peekApi, watchApi, type AdminSubscription } from '../../app/api'
 import { useSession } from '../../app/session'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -38,23 +38,23 @@ export function HomePage() {
   const navigate = useNavigate()
   const { user } = useSession()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
-  const [notices, setNotices] = useState<Notice[]>([])
-  const [counts, setCounts] = useState({ total: 0, groupOptions: [] as { id: string }[] })
+  const [notices, setNotices] = useState<Notice[]>(() => peekApi<{ notices: Notice[] }>('/api/notices')?.notices ?? [])
+  const [counts, setCounts] = useState(() => peekApi<{ total: number; groupOptions: { id: string }[] }>('/api/user/nodes?page=1&pageSize=1') ?? { total: 0, groupOptions: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [s, n] = await Promise.all([
-        api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions'),
-        api<{ total: number; groupOptions: { id: string }[] }>('/api/user/nodes?page=1&pageSize=1'),
+      await Promise.all([
+        api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions')
+          .then((result) => setSubscriptions(result.subscriptions)),
+        watchApi<{ total: number; groupOptions: { id: string }[] }>('/api/user/nodes?page=1&pageSize=1', setCounts),
       ])
-      setSubscriptions(s.subscriptions); setCounts(n)
     } catch (cause) { setError(cause instanceof Error ? cause.message : '加载首页失败') }
     finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
-  useEffect(() => { api<{ notices: Notice[] }>('/api/notices').then(r => setNotices(r.notices)).catch(() => setNotices([])) }, [])
+  useEffect(() => { void watchApi<{ notices: Notice[] }>('/api/notices', (result) => setNotices(result.notices)).catch(() => setNotices([])) }, [])
   const active = subscriptions.filter(subscription => subscription.planState === 'active')
   const current = active[0] ?? subscriptions[0]
   const nextExpiry = active.reduce<number | null>((earliest, subscription) => subscription.expiresAt === null

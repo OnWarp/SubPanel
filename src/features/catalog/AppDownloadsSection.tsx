@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
@@ -12,18 +12,19 @@ function errorMessage(cause: unknown, fallback: string) {
 }
 
 export function AppDownloadsSection() {
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [enabled, setEnabled] = useState<boolean | null>(() => peekApi<{ enabled: boolean }>('/api/admin/system/app-downloads')?.enabled ?? null)
+  const [loading, setLoading] = useState(() => peekApi<{ enabled: boolean }>('/api/admin/system/app-downloads') === undefined)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ enabled: boolean }>('/api/admin/system/app-downloads') === undefined)
     setLoadError('')
     try {
-      const data = await api<{ enabled: boolean }>('/api/admin/system/app-downloads')
-      setEnabled(data.enabled)
+      await watchApi<{ enabled: boolean }>('/api/admin/system/app-downloads', (data) => {
+        setEnabled(data.enabled)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载客户端下载设置失败'))
     } finally {

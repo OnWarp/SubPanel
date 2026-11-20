@@ -3,7 +3,7 @@ import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
 import { Megaphone } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -19,22 +19,24 @@ export function NoticesPage() {
   const selectedNotice = params.get('notice')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [notices, setNotices] = useState<Notice[]>([])
-  const [total, setTotal] = useState(0)
+  const path = `/api/notices?${new URLSearchParams({ q: query.trim(), page: String(page), pageSize: '10' })}`
+  type NoticesResult = { notices: Notice[]; total: number }
+  const [notices, setNotices] = useState<Notice[]>(() => peekApi<NoticesResult>(path)?.notices ?? [])
+  const [total, setTotal] = useState(() => peekApi<NoticesResult>(path)?.total ?? 0)
   const requestSeq = useRef(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => peekApi(path) === undefined)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     const seq = ++requestSeq.current
-    setLoading(true)
+    setLoading(peekApi(path) === undefined)
     setError('')
     try {
-      const params = new URLSearchParams({ q: query.trim(), page: String(page), pageSize: '10' })
-      const result = await api<{ notices: Notice[]; total: number }>(`/api/notices?${params}`)
-      if (seq !== requestSeq.current) return
-      setTotal(result.total)
-      setNotices(result.notices)
+      await watchApi<NoticesResult>(path, (result) => {
+        if (seq !== requestSeq.current) return
+        setTotal(result.total)
+        setNotices(result.notices)
+      })
     } catch (cause) {
       if (seq !== requestSeq.current) return
       setNotices([])
@@ -42,7 +44,7 @@ export function NoticesPage() {
     } finally {
       if (seq === requestSeq.current) setLoading(false)
     }
-  }, [query, page])
+  }, [path])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
 

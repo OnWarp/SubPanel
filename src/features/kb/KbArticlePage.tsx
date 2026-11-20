@@ -1,7 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, ApiClientError } from '../../app/api'
+import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
@@ -14,16 +14,17 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 export function KbArticlePage() {
   const { id = '' } = useParams()
-  const [article, setArticle] = useState<KbArticle | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [article, setArticle] = useState<KbArticle | null>(() => peekApi<{ article: KbArticle }>(`/api/kb/articles/${id}`)?.article ?? null)
+  const [loading, setLoading] = useState(() => peekApi<{ article: KbArticle }>(`/api/kb/articles/${id}`) === undefined)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ article: KbArticle }>(`/api/kb/articles/${id}`) === undefined)
     setError('')
     try {
-      const result = await api<{ article: KbArticle }>(`/api/kb/articles/${id}`)
-      setArticle(result.article)
+      await watchApi<{ article: KbArticle }>(`/api/kb/articles/${id}`, (result) => {
+        setArticle(result.article)
+      })
     } catch (cause) {
       setArticle(null)
       setError(errorMessage(cause, '加载文章失败'))

@@ -2,7 +2,7 @@ import { Input, Textarea } from '../../ui/Controls'
 import { Plus, Ticket as TicketIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { StatusPill } from '../../ui/StatusPill'
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
@@ -20,8 +20,8 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 export function TicketsPage() {
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [loading, setLoading] = useState(true)
+  const [tickets, setTickets] = useState<Ticket[]>(() => peekApi<{ tickets: Ticket[] }>('/api/tickets')?.tickets ?? [])
+  const [loading, setLoading] = useState(() => peekApi<{ tickets: Ticket[] }>('/api/tickets') === undefined)
   const [loadError, setLoadError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [title, setTitle] = useState('')
@@ -32,11 +32,12 @@ export function TicketsPage() {
   const navigate = useNavigate()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ tickets: Ticket[] }>('/api/tickets') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ tickets: Ticket[] }>('/api/tickets')
-      setTickets(result.tickets)
+      await watchApi<{ tickets: Ticket[] }>('/api/tickets', (result) => {
+        setTickets(result.tickets)
+      })
     } catch (cause) {
       setTickets([])
       setLoadError(errorMessage(cause, '加载工单失败'))

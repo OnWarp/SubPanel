@@ -2,7 +2,7 @@ import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll 
 import { Checkbox, Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
@@ -39,9 +39,9 @@ function toggle(values: string[], id: string): string[] {
 }
 
 export function GroupsPage() {
-  const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
+  const [catalog, setCatalog] = useState<CatalogResponse | null>(() => peekApi<CatalogResponse>('/api/admin/catalog') ?? null)
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -54,16 +54,21 @@ export function GroupsPage() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/catalog') === undefined)
     setError('')
     try {
-      const [nextCatalog, result] = await Promise.all([
-        api<CatalogResponse>('/api/admin/catalog'),
-        api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
+      await Promise.all([
+        watchApi<CatalogResponse>('/api/admin/catalog', (next) => {
+          setCatalog(next)
+          setLoading(false)
+          setSelected((current) => {
+            const retained = [...current].filter((id) => next.groups.some((group) => group.id === id))
+            return retained.length === current.size ? current : new Set(retained)
+          })
+        }),
+        api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions')
+          .then((result) => setSubscriptions(result.subscriptions)),
       ])
-      setCatalog(nextCatalog)
-      setSubscriptions(result.subscriptions)
-      setSelected((current) => new Set([...current].filter((id) => nextCatalog.groups.some((group) => group.id === id))))
     } catch (cause) {
       setError(errorMessage(cause, '加载分组失败'))
     } finally {

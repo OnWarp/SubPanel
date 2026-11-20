@@ -2,9 +2,9 @@ import { Input, FormSelect } from '../../ui/Controls'
 import { TemplatesSection } from './TemplatesSection'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Info } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useParams } from 'react-router-dom'
-import { api, ApiClientError, jsonBody } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
@@ -39,18 +39,19 @@ const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string; hint: 
 ]
 
 function RegistrationSection() {
-  const [mode, setMode] = useState<RegistrationMode | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<RegistrationMode | null>(() => peekApi<{ mode: RegistrationMode }>('/api/admin/system/registration')?.mode ?? null)
+  const [loading, setLoading] = useState(() => peekApi<{ mode: RegistrationMode }>('/api/admin/system/registration') === undefined)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ mode: RegistrationMode }>('/api/admin/system/registration') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ mode: RegistrationMode }>('/api/admin/system/registration')
-      setMode(result.mode)
+      await watchApi<{ mode: RegistrationMode }>('/api/admin/system/registration', (result) => {
+        setMode(result.mode)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载注册设置失败'))
     } finally {
@@ -99,8 +100,10 @@ function RegistrationSection() {
 }
 
 function EmailDomains() {
-  const [domains, setDomains] = useState<EmailDomainEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const [domains, setDomains] = useState<EmailDomainEntry[]>(() =>
+    (peekApi<{ domains: Array<EmailDomainEntry | string> }>('/api/admin/email-domains')?.domains ?? [])
+      .map((entry) => typeof entry === 'string' ? { domain: entry } : entry))
+  const [loading, setLoading] = useState(() => peekApi('/api/admin/email-domains') === undefined)
   const [notReady, setNotReady] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [draft, setDraft] = useState('')
@@ -108,12 +111,13 @@ function EmailDomains() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/email-domains') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ domains: Array<EmailDomainEntry | string> }>('/api/admin/email-domains')
-      setDomains(result.domains.map((entry) => (typeof entry === 'string' ? { domain: entry } : entry)))
-      setNotReady(false)
+      await watchApi<{ domains: Array<EmailDomainEntry | string> }>('/api/admin/email-domains', (result) => {
+        setDomains(result.domains.map((entry) => typeof entry === 'string' ? { domain: entry } : entry))
+        setNotReady(false)
+      })
     } catch (cause) {
       if (isNotFound(cause)) {
         setNotReady(true)
@@ -205,9 +209,13 @@ function EmailDomains() {
 }
 
 function MailSection() {
-  const [settings, setSettings] = useState<SystemMailSettings | null>(null)
-  const [form, setForm] = useState<MailSettingsForm | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [settings, setSettings] = useState(() => peekApi<{ settings: SystemMailSettings }>('/api/admin/system/mail')?.settings ?? null)
+  const [form, setForm] = useState<MailSettingsForm | null>(() => {
+    const initial = peekApi<{ settings: SystemMailSettings }>('/api/admin/system/mail')
+    return initial ? toMailSettingsForm(initial.settings) : null
+  })
+  const serverForm = useRef(form)
+  const [loading, setLoading] = useState(() => form === null)
   const [loadError, setLoadError] = useState('')
   const [saving, setSaving] = useState(false)
   const [portError, setPortError] = useState('')
@@ -217,12 +225,16 @@ function MailSection() {
   const toast = useToast()
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi('/api/admin/system/mail') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ settings: SystemMailSettings }>('/api/admin/system/mail')
-      setSettings(result.settings)
-      setForm(toMailSettingsForm(result.settings))
+      await watchApi<{ settings: SystemMailSettings }>('/api/admin/system/mail', (result) => {
+        setSettings(result.settings)
+        const previous = serverForm.current
+        const next = toMailSettingsForm(result.settings)
+        serverForm.current = next
+        setForm((current) => current === previous ? next : current)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载邮件设置失败'))
     } finally {
@@ -258,7 +270,8 @@ function MailSection() {
         body: jsonBody(patch),
       })
       setSettings(result.settings)
-      setForm(toMailSettingsForm(result.settings))
+      serverForm.current = toMailSettingsForm(result.settings)
+      setForm(serverForm.current)
       toast.notify('邮件设置已保存')
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '保存邮件设置失败'))
@@ -368,11 +381,11 @@ function MailSection() {
 type ServiceHealth = { ok: boolean; version: string; cron: { status: 'idle' | 'success' | 'failed'; ranAt: string; finishedAt: string; errorCode?: string } | null }
 
 function HealthSection() {
-  const [health, setHealth] = useState<ServiceHealth | null>(null)
+  const [health, setHealth] = useState<ServiceHealth | null>(() => peekApi<ServiceHealth>('/api/health') ?? null)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     setError('')
-    try { setHealth(await api<ServiceHealth>('/api/health')) }
+    try { await watchApi<ServiceHealth>('/api/health', setHealth) }
     catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
   useEffect(() => { void load() }, [load])
@@ -387,16 +400,17 @@ function HealthSection() {
 }
 
 function StatusSection() {
-  const [status, setStatus] = useState<SystemStatus | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [status, setStatus] = useState<SystemStatus | null>(() => peekApi<{ status: SystemStatus }>('/api/admin/system/status')?.status ?? null)
+  const [loading, setLoading] = useState(() => peekApi<{ status: SystemStatus }>('/api/admin/system/status') === undefined)
   const [loadError, setLoadError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setLoading(peekApi<{ status: SystemStatus }>('/api/admin/system/status') === undefined)
     setLoadError('')
     try {
-      const result = await api<{ status: SystemStatus }>('/api/admin/system/status')
-      setStatus(result.status)
+      await watchApi<{ status: SystemStatus }>('/api/admin/system/status', (result) => {
+        setStatus(result.status)
+      })
     } catch (cause) {
       setLoadError(errorMessage(cause, '加载系统状态失败'))
     } finally {
