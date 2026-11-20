@@ -133,8 +133,13 @@ describe('navigation ownership and route compatibility', () => {
   ])('maps legacy location %s to %s and preserves other query parameters', (path, target) => {
     expect(render(path)).toContain(`data-redirect="${target}"`)
   })
+  it('renders the overview heading and seven placeholders in one loading grid', () => {
+    const html = render('/dashboard')
+    expect(html).toContain('<header><h1>概览</h1></header>')
+    const grid = html.match(/<section class="adm-stat-grid"[^>]*aria-busy="true"[^>]*>(.*?)<\/section>/)?.[1]
+    expect(grid?.match(/class="sp-stat-card sp-stat-body"/g)).toHaveLength(7)
+  })
   it.each([
-    ['/dashboard', '概览'],
     ['/plans', '订阅计划'],
     ['/delivery/tickets', '工单'],
     ['/operations/notices', '公告'],
