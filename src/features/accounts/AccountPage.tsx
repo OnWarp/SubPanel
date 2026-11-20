@@ -104,7 +104,7 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
         <DataHeader title="会话与安全" />
         <div className="security-form">
           {profile?.session ? (
-            <dl className="profile-fields">
+            <dl className="key-value-rows">
               <div>
                 <dt>本次登录</dt>
                 <dd>{formatProfileDate(profile.session.issuedAt)}</dd>

@@ -1,13 +1,3 @@
-.ops-page .ops-card {
-  display: grid;
-  gap: 1.25rem;
-  min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card-lg);
-  background: var(--color-surface);
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-text) 5%, transparent);
-}
 
 .ops-page .ops-heading {
   display: flex;
@@ -17,16 +7,7 @@
   gap: .75rem;
 }
 
-.ops-page .ops-heading h2 {
-  margin: 0;
-  font-size: var(--font-md);
-  font-weight: 600;
-}
 
-.ops-page .ops-heading .primary,
-.ops-page .ops-primary {
-  border-radius: 999px;
-}
 
 .ops-page .ops-filters {
   display: flex;
@@ -50,28 +31,9 @@
   border-radius: var(--radius-inset);
 }
 
-.ops-page .ops-table .sp-table-wrap {
-  border: 0;
-  border-radius: 0;
-  overflow-x: auto;
-}
 
-.ops-page .ops-table .sp-table th {
-  background: transparent;
-  font-weight: 500;
-}
 
-.ops-page .ops-table .sp-table td {
-  padding-block: .875rem;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
 
-.ops-page .ops-table .sp-badge {
-  background: transparent;
-  border: 0;
-  padding-inline: 0;
-}
 
 .ops-page .ops-main {
   display: block;
@@ -190,52 +152,23 @@
 }
 
 @media (hover: hover) {
-  .ops-page .ops-system .sys-nav-item:hover {
-    color: var(--color-accent);
-  }
 }
 
-.ops-page .ops-system .ops-template {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
-}
 
-.ops-page .ops-system .sys-form + .sys-form {
-  border-top: 1px solid var(--color-border);
-}
 
-.ops-page .ops-system .ops-template > :not(.data-header) {
-  margin-inline: 0;
-}
 
 @media (max-width: 760px) {
-  .ops-page .ops-card {
-    padding: var(--space-4);
-  }
 
   .ops-action-popover .button,
   .ops-action-popover .button.ghost,
   .ops-action-popover .button.secondary,
   .ops-action-popover .button.danger {
-    min-height: 44px;
+    min-height: 32px;
   }
 
-  .ops-page .ops-table .sp-table td {
-    padding-block: .5rem;
-  }
 
-  .ops-page .ops-table .sp-table td > .ops-overflow {
-    justify-self: end;
-  }
 
-  .ops-page .ops-table .sp-table-wrap {
-    overflow: visible;
-  }
 
-  .ops-page .ops-system .sys-nav-item {
-    padding-inline: .5rem;
-  }
 }
 
 .ops-template .data-header,
@@ -260,7 +193,6 @@
   min-width: 0;
 }
 
-.ops-page .ops-system .ops-template .data-header h2 { overflow-wrap: anywhere; }
 .template-list-controls { align-items: end; }
 .template-list-controls .sp-select-value { white-space: normal; overflow-wrap: anywhere; }
 

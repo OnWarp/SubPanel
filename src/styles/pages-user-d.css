@@ -19,8 +19,6 @@
   font-size: var(--font-sm);
 }
 
-.upd-card,
-.upd-home .sp-stat-card,
 .upd-home .sp-notice-carousel,
 .upd-home .sp-quick-entry,
 .upd-subs .data-section,
@@ -31,8 +29,6 @@
 }
 
 :root[data-theme='dark'] .upd-page .sp-page-hero,
-:root[data-theme='dark'] .upd-card,
-:root[data-theme='dark'] .upd-home .sp-stat-card,
 :root[data-theme='dark'] .upd-home .sp-notice-carousel,
 :root[data-theme='dark'] .upd-home .sp-quick-entry,
 :root[data-theme='dark'] .upd-subs .data-section,
@@ -101,18 +97,18 @@
 }
 
 .upd-subs .user-subscription-overview,
-.upd-subs .del-link-card,
+.upd-subs .subscription-link-section,
 .upd-subs .del-reset,
 .upd-subs .ui3-platform-list {
-  padding: var(--space-6);
+  padding: var(--space-4);
 }
 
-.upd-subs .del-status-card h2,
-.upd-subs .del-link-card h2,
+.upd-subs .user-subscription-overview h2,
+.upd-subs .subscription-link-section h2,
 .upd-subs .del-reset h2,
 .upd-subs .ui3-platform-list h2 {
-  font-size: var(--font-title);
-  font-weight: var(--weight-semibold);
+  font-size: var(--font-md);
+  font-weight: var(--weight-strong);
 }
 
 .upd-subs .sp-badge {
@@ -318,12 +314,11 @@
 }
 
 @media (max-width: 767px) {
-  .upd-home .sp-stat-body { padding: var(--space-5) var(--space-4); }
   .upd-mine .user-account-card { padding: var(--space-5); }
   .upd-subs .user-subscription-overview,
-  .upd-subs .del-link-card,
+  .upd-subs .subscription-link-section,
   .upd-subs .del-reset,
-  .upd-subs .ui3-platform-list { padding: var(--space-5); }
+  .upd-subs .ui3-platform-list { padding: var(--space-4); }
   .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr); }
   .upd-subs .ui3-platform-row .button { width: 100%; }
   .upd-auth .auth-panel { padding: 28px 20px 24px; }

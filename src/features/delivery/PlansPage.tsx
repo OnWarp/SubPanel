@@ -54,7 +54,7 @@ export function PlansPage() {
     catch (cause) { setError(cause instanceof Error ? cause.message : '保存失败') }
     finally { setBusy(false) }
   }
-  return <div className="page-stack ops-page"><PageHeader title="订阅计划" /><section className="ops-card ops-table"><OperationsHeading title="订阅计划" action={<button className="button primary" onClick={() => { setError(''); setDraft({ ...empty }) }}>新增计划</button>} />
+  return <div className="page-stack ops-page"><PageHeader title="订阅计划" /><section className="data-section"><OperationsHeading title="订阅计划" action={<button className="button primary" onClick={() => { setError(''); setDraft({ ...empty }) }}>新增计划</button>} />
     {error && !draft ? <ErrorState message={error} onRetry={() => { void load() }} /> : null}
     {loading ? <LoadingState /> : <DataTable rows={plans} rowKey={(p) => p.id} empty="暂无计划" columns={[
       { key: 'name',header: '计划',render: (p) => <strong className="ops-main">{p.name}<span className="ops-meta">{p.description || p.id}</span></strong> },
@@ -67,7 +67,7 @@ export function PlansPage() {
     ]} />}
     {!loading && <OperationsFooter total={plans.length} unit="个" />}
     </section>
-    <section className="ops-card"><form className="form-stack" onSubmit={(e) => { void saveTrial(e) }}><h2>注册试用</h2>
+    <section className="data-section"><form className="form-stack" onSubmit={(e) => { void saveTrial(e) }}><h2>注册试用</h2>
       <FormField label="试用计划" htmlFor="trial-plan"><FormSelect id="trial-plan" value={trial.trialPlanId ?? ''} onChange={(e) => setTrial({ ...trial,trialPlanId: e.target.value || null })}><option value="">关闭</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</FormSelect></FormField>
       <FormField label="试用天数" htmlFor="trial-days"><Input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField><button className="button primary" disabled={busy}>保存试用设置</button>
     </form></section>

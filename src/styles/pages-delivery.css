@@ -105,7 +105,7 @@
   min-width: 0;
   max-width: 100%;
 }
-.del-status-card {
+.user-subscription-overview {
   display: grid;
   gap: var(--space-3);
 }
@@ -117,7 +117,7 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
-.del-status-card h2 {
+.user-subscription-overview h2 {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
@@ -131,14 +131,14 @@
   color: var(--color-text-muted);
   font-size: var(--font-sm);
 }
-.del-link-card,
+.subscription-link-section,
 .del-reset {
   display: grid;
   min-width: 0;
   gap: var(--space-3);
   padding: var(--space-4);
 }
-.del-link-card h2,
+.subscription-link-section h2,
 .del-reset h2 {
   margin: 0;
   font-size: var(--font-md);
@@ -232,7 +232,7 @@
   .del-admin .section-heading { grid-template-columns: minmax(0, 1fr); }
   .del-reset .button,
   .del-link-line .button { width: 100%; }
-  .del-status-card h2 { font-size: var(--font-md); }
+  .user-subscription-overview h2 { font-size: var(--font-md); }
 }
 
 @media (max-width: 1100px) {

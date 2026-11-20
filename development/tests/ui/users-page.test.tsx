@@ -136,9 +136,9 @@ describe('users directory', () => {
 })
 
 describe('user management shell', () => {
-  it('puts the title and invite action around the users list in one card', () => {
+  it('puts the title and invite action around the users list in one section', () => {
     const html = shell('/users')
-    expect(html).toContain('usr-card')
+    expect(html).toContain('class="data-section"')
     expect(html).toContain('用户管理')
     expect(html).toContain('邀请用户')
     expect(html).toContain('正在加载用户')
@@ -148,9 +148,9 @@ describe('user management shell', () => {
     expect(html).not.toContain('注册邀请码')
   })
 
-  it('keeps invite management inside the same card', () => {
+  it('keeps invite management inside the same section', () => {
     const html = shell('/invites')
-    expect(html).toContain('usr-card')
+    expect(html).toContain('class="data-section"')
     expect(html).toContain('邀请用户')
     expect(html).toContain('注册邀请码')
     expect(html).toContain('无需邮箱验证码')

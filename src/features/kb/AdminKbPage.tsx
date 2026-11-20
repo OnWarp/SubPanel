@@ -316,11 +316,11 @@ export function AdminKbPage() {
     <div className="page-stack kb-page kb-admin ops-page">
       <PageHeader title="知识库管理" description="维护教程分类与文章" />
 
-      <section className="ops-card ops-table" aria-label="知识库管理">
+      <section className="data-section" aria-label="知识库管理">
         <OperationsHeading title="知识库管理" action={
           <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>新建文章</button>
         } />
-        <div className="ops-filters">
+        <div className="page-toolbar ops-filters">
           <FormSelect aria-label="按分类筛选" value={categoryFilter} onChange={(event) => changeCategoryFilter(event.currentTarget.value)}>
             {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </FormSelect>
@@ -350,7 +350,7 @@ export function AdminKbPage() {
         {!articlesLoading && !articlesError && <OperationsFooter total={total} pagination={{ page, pageCount, onPageChange: setPage }} />}
       </section>
 
-      <section className="ops-card ops-table" aria-labelledby="kb-admin-categories-title">
+      <section className="data-section" aria-labelledby="kb-admin-categories-title">
         <DataHeader
           id="kb-admin-categories-title"
           title="分类"

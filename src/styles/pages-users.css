@@ -5,30 +5,8 @@
  * as a labelled list with hairlines, not a card inside the card.
  */
 
-.usr-card {
-  min-width: 0;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-panel);
-}
 
-.usr-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-5) var(--space-5) var(--space-3);
-}
 
-.usr-card-head h2 {
-  min-width: 0;
-  margin: 0;
-  color: var(--color-text);
-  font-size: var(--font-md);
-  font-weight: var(--weight-strong);
-  line-height: var(--leading-tight);
-}
 
 .usr-tabs {
   display: flex;
@@ -92,25 +70,14 @@
 .usr-status-muted { color: var(--color-text-muted); }
 .usr-status-danger { color: var(--color-danger); }
 
-.usr-card .usr-table.sp-table-wrap {
+.data-section .usr-table.sp-table-wrap {
   overflow: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
 }
 
-.usr-table .sp-table th {
-  letter-spacing: 0;
-  text-transform: none;
-  font-size: var(--font-sm);
-}
 
-.usr-table .sp-table td {
-  height: auto;
-  min-height: 52px;
-  white-space: normal;
-  vertical-align: middle;
-}
 
 .usr-menu { position: relative; display: inline-block; }
 .usr-menu > summary { list-style: none; }
@@ -153,7 +120,7 @@
 .usr-menu-panel button.danger { color: var(--color-danger); }
 .usr-menu-panel button:disabled { cursor: not-allowed; opacity: .4; }
 
-.usr-card-foot {
+.section-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -172,19 +139,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.usr-directory .sp-empty { border: 0; border-radius: 0; background: transparent; }
+.usr-directory .empty-state { border: 0; border-radius: 0; background: transparent; }
 .usr-card-body { padding: var(--space-4) var(--space-5) var(--space-5); }
-.usr-card-body .sys-subsection { padding-top: 0; border-top: 0; }
 
 @media (max-width: 760px) {
-  .usr-card-head,
   .usr-filter,
   .usr-batch,
-  .usr-card-foot,
-  .usr-card-body { padding-right: var(--space-4); padding-left: var(--space-4); }
-  .usr-card-head { align-items: flex-start; flex-wrap: wrap; }
+  .section-footer { padding-right: var(--space-4); padding-left: var(--space-4); }
   .usr-tabs { gap: var(--space-4); padding: 0 var(--space-4); overflow-x: auto; }
-  .usr-card-foot { align-items: flex-start; flex-wrap: wrap; }
+  .section-footer { align-items: flex-start; flex-wrap: wrap; }
   .usr-select-all-narrow {
     display: flex;
     align-items: center;
@@ -199,19 +162,8 @@
   .usr-table .sp-table,
   .usr-table .sp-table tbody,
   .usr-table .sp-table tr,
-  .usr-table .sp-table td { display: block; width: 100%; }
   .usr-table .sp-table thead { display: none; }
   .usr-table .sp-table tr { padding: var(--space-3); border-bottom: 1px solid var(--color-border); }
-  .usr-table .sp-table td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    min-height: 0;
-    padding: var(--space-2) 0;
-    text-align: left;
-    overflow-wrap: anywhere;
-  }
   .usr-table .sp-table td::before {
     content: attr(data-label);
     color: var(--color-text-muted);

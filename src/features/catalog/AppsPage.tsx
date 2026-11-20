@@ -334,7 +334,7 @@ export function AppsPage() {
   return (
     <div className="page-stack app-page ops-page">
       <PageHeader title="客户端下载" description={description} />
-      <section className="ops-card ops-table app-data" aria-label="APP 列表">
+      <section className="data-section app-data" aria-label="APP 列表">
         <OperationsHeading title="客户端下载" action={
           <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>
         } />
@@ -343,7 +343,7 @@ export function AppsPage() {
         {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !error ? (
           <>
-            <div className="ops-filters">
+            <div className="page-toolbar ops-filters">
               <Input type="search" aria-label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
               <FormSelect aria-label="按启用筛选" value={enabledFilter} onChange={(event) => setEnabledFilter(event.currentTarget.value as EnabledFilter)}>
                 <option value="all">全部状态</option>

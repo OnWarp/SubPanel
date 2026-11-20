@@ -53,7 +53,7 @@ export function UserSubscriptionPlan({ userId, username, showSummary = true, act
       <form className="form-stack" onSubmit={(e) => { e.preventDefault(); void save() }}>
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
         {rights?.latest ? <p>{rights.latest.plan.name} · {(rights.latest.expiresAt ? new Date(rights.latest.expiresAt).toLocaleString() : '永久有效')} · {subscriptionPlanLabels[rights.state]}</p> : null}
-        {rights?.latest ? <dl className="profile-fields">
+        {rights?.latest ? <dl className="key-value-rows">
           <div><dt>流量额度</dt><dd>{rights.latest.plan.trafficGb ? `${rights.latest.plan.trafficGb} GB` : '不限'}</dd></div>
           <div><dt>限速</dt><dd>{rights.latest.plan.speedLimitMbps ? `${rights.latest.plan.speedLimitMbps} Mbps` : '不限'}</dd></div>
           <div><dt>设备数</dt><dd>{rights.latest.plan.deviceLimit || '不限'}</dd></div>

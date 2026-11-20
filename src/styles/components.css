@@ -140,7 +140,7 @@
   display: grid;
   justify-items: center;
   gap: var(--space-2);
-  padding: var(--space-6);
+  padding: 30px var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -613,10 +613,10 @@
 .sp-notice-title button { padding: 0; border: 0; background: none; color: var(--color-text); text-align: start; cursor: pointer; }
 .sp-notice-count { color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sp-notice-carousel > .icon-button { flex-shrink: 0; }
-.sp-stat-card, .sp-plan-card, .sp-quick-entry { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); color: var(--color-text); }
+.sp-quick-entry { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); color: var(--color-text); }
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--space-3); }
 .sp-stat-label { font-size: var(--font-md); font-weight: var(--weight-strong); }
-.sp-stat-body { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); width: 100%; padding: var(--space-4); text-align: start; }
+.sp-stat-body { color: inherit; text-decoration: none; position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); width: 100%; padding: 0; text-align: start; }
 .sp-stat-action { border: 0; border-radius: inherit; background: none; color: inherit; cursor: pointer; }
 @media (hover: hover) {
   .sp-stat-action:hover, .sp-quick-entry:hover { background: var(--color-surface-subtle); }
@@ -631,16 +631,15 @@
 .sp-stat-fill { stroke: var(--color-accent); }
 .sp-stat-progress-bar { display: block; width: 100%; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
 .sp-stat-progress-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--color-accent); }
-.sp-plan-card { padding: var(--space-4); }
-.sp-plan-card-highlighted { border-color: var(--color-primary); }
-.sp-card-heading h2 { margin: 0; font-size: var(--font-title); overflow-wrap: anywhere; }
+.object-card-highlighted { border-color: var(--color-primary); }
+.sp-card-heading h2 { margin: 0; font-size: var(--font-md); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
 .sp-plan-badge { padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); background: var(--color-primary-soft); color: var(--color-primary); font-size: var(--font-sm); }
 .sp-plan-specs { display: grid; gap: var(--space-3); margin: var(--space-5) 0 0; }
 .sp-plan-specs > div { display: flex; justify-content: space-between; gap: var(--space-4); }
 .sp-plan-specs dt { color: var(--color-text-muted); }
 .sp-plan-specs dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
-.sp-card-footer { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
-.sp-plan-card > .sp-card-footer { margin-top: var(--space-5); padding: var(--space-4) 0 0; }
+.sp-card-footer { padding: var(--space-4) 0 0; margin-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.object-card > .sp-card-footer { margin-top: var(--space-5); padding: var(--space-4) 0 0; }
 .sp-quick-entry { position: relative; display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-4); text-align: start; cursor: pointer; }
 .sp-quick-entry-icon { display: inline-flex; flex-shrink: 0; color: var(--color-accent); }
 .sp-quick-entry-text { display: grid; min-width: 0; flex: 1; gap: var(--space-1); padding-right: var(--space-4); }

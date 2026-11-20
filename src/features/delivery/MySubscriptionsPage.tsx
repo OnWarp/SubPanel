@@ -199,7 +199,7 @@ export function MySubscriptionsPage() {
         {selected && expiry && expiryBadge ? <>
           {expiry.kind === 'expired' ? <div className="exp-alert"><InlineMessage tone="warning">订阅已过期，请联系管理员续期</InlineMessage></div> : null}
           {expiry.kind === 'pending' ? <div className="exp-alert"><InlineMessage tone="warning">{`将于 ${formatExpiryTime(expiry.startsAt)} 生效`}</InlineMessage></div> : null}
-          <section className="data-section user-subscription-overview del-status-card" aria-labelledby="current-subscription-title">
+          <section className="object-card user-subscription-overview" aria-labelledby="current-subscription-title">
             <div className="del-status-head">
               <h2 id="current-subscription-title">{selected.name}</h2>
               <span className="exp-badges">
@@ -223,7 +223,7 @@ export function MySubscriptionsPage() {
             {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
           </section>
 
-          <section className="data-section del-link-card" aria-labelledby="subscription-link-title">
+          <section className="data-section subscription-link-section" aria-labelledby="subscription-link-title">
             <h2 id="subscription-link-title">订阅链接</h2>
             {linkEntries.length ? (
               <>
