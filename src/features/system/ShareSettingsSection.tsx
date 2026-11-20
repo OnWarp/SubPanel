@@ -141,55 +141,71 @@ export function ShareSettingsSection() {
     }
   }
 
+  const ready = !loading && !loadError && form
+
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-share-title">
-      <DataHeader id="sys-share-title" title="分享设置" actions={
-        !loading && !loadError && form ? <button className="button primary ops-primary" type="submit" form="ops-share-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
-      } />
-      {loading ? <LoadingState label="正在加载分享设置" /> : null}
-      {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
-      {!loading && !loadError && form ? (
-        <form id="ops-share-settings" className="sys-form" onSubmit={save} noValidate>
-          <p className="sys-hint">关闭分享功能后，所有分享链接会立即失效</p>
-          <div className="sys-toggles">
-            <FormField label="分享功能">
-              <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
-            </FormField>
-            <FormField label="创建分享">
-              <Switch checked={form.createAllowed} disabled={saving} ariaLabel="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
-            </FormField>
-            <FormField label="默认允许原始链接">
-              <Switch checked={form.defaultAllowOriginalLink} disabled={saving} ariaLabel="默认允许原始链接" onChange={(defaultAllowOriginalLink) => setForm({ ...form, defaultAllowOriginalLink })} />
-            </FormField>
-            <FormField label="默认要求登录">
-              <Switch checked={form.requireLoginDefault} disabled={saving} ariaLabel="默认要求登录" onChange={(requireLoginDefault) => setForm({ ...form, requireLoginDefault })} />
-            </FormField>
-          </div>
-          <div className="sys-grid">
-            <FormField label="单订阅分享上限" htmlFor="sys-share-max-shares" error={errors.maxSharesPerSubscription}>
-              <Input id="sys-share-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={saving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
-            </FormField>
-            <FormField label="单用户有效分享上限" htmlFor="sys-share-max-active" error={errors.maxActiveSharesPerUser}>
-              <Input id="sys-share-max-active" type="number" inputMode="numeric" min={1} max={1000} step={1} value={form.maxActiveSharesPerUser} disabled={saving} onChange={(event) => setForm({ ...form, maxActiveSharesPerUser: event.currentTarget.value })} />
-            </FormField>
-            <FormField label="最长有效期（天）" htmlFor="sys-share-max-days" error={errors.maxValidityDays}>
-              <Input id="sys-share-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={saving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
-            </FormField>
-            <FormField label="默认访问保护" htmlFor="sys-share-access-control">
-              <FormSelect id="sys-share-access-control" value={form.defaultAccessControl} disabled={saving} onChange={(event) => setForm({ ...form, defaultAccessControl: event.currentTarget.value === 'password' ? 'password' : 'none' })}>
-                <option value="none">无访问密码</option>
-                <option value="password">访问密码</option>
-              </FormSelect>
-            </FormField>
-            <div className="sys-field-wide">
-              <FormField label="公网基址" htmlFor="sys-share-public-base" error={errors.publicBaseUrl}>
-                <Input id="sys-share-public-base" type="url" placeholder="https://share.example.com" value={form.publicBaseUrl} disabled={saving} onChange={(event) => setForm({ ...form, publicBaseUrl: event.currentTarget.value })} />
+    <form id="ops-share-settings" className="sys-share-settings" onSubmit={save} noValidate>
+      <section className="data-section sys-share-card" aria-labelledby="sys-share-title">
+        <DataHeader id="sys-share-title" title="分享开关" actions={
+          ready ? <button className="button primary ops-primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+        } />
+        {loading ? <LoadingState label="正在加载分享设置" /> : null}
+        {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
+        {ready ? (
+          <div className="sys-form">
+            <p className="sys-hint">关闭分享功能后，所有分享链接会立即失效</p>
+            <div className="sys-toggles">
+              <FormField label="分享功能">
+                <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
+              </FormField>
+              <FormField label="创建分享">
+                <Switch checked={form.createAllowed} disabled={saving} ariaLabel="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
               </FormField>
             </div>
           </div>
-          <p className="sys-hint">公网基址留空时使用当前访问地址</p>
-        </form>
+        ) : null}
+      </section>
+      {ready ? (
+        <>
+          <section className="data-section sys-share-card" aria-labelledby="sys-share-policy-title">
+            <DataHeader id="sys-share-policy-title" title="默认策略" />
+            <div className="sys-form">
+              <div className="sys-toggles">
+                <FormField label="默认允许原始链接">
+                  <Switch checked={form.defaultAllowOriginalLink} disabled={saving} ariaLabel="默认允许原始链接" onChange={(defaultAllowOriginalLink) => setForm({ ...form, defaultAllowOriginalLink })} />
+                </FormField>
+                <FormField label="默认要求登录">
+                  <Switch checked={form.requireLoginDefault} disabled={saving} ariaLabel="默认要求登录" onChange={(requireLoginDefault) => setForm({ ...form, requireLoginDefault })} />
+                </FormField>
+              </div>
+              <FormField label="默认访问保护" htmlFor="sys-share-access-control">
+                <FormSelect id="sys-share-access-control" value={form.defaultAccessControl} disabled={saving} onChange={(event) => setForm({ ...form, defaultAccessControl: event.currentTarget.value === 'password' ? 'password' : 'none' })}>
+                  <option value="none">无访问密码</option>
+                  <option value="password">访问密码</option>
+                </FormSelect>
+              </FormField>
+              <FormField label="公网基址" htmlFor="sys-share-public-base" error={errors.publicBaseUrl}>
+                <Input id="sys-share-public-base" type="url" placeholder="https://share.example.com" value={form.publicBaseUrl} disabled={saving} onChange={(event) => setForm({ ...form, publicBaseUrl: event.currentTarget.value })} />
+              </FormField>
+              <p className="sys-hint">公网基址留空时使用当前访问地址</p>
+            </div>
+          </section>
+          <section className="data-section sys-share-card" aria-labelledby="sys-share-limits-title">
+            <DataHeader id="sys-share-limits-title" title="分享限额" />
+            <div className="sys-form sys-share-limits">
+              <FormField label="单订阅分享上限" htmlFor="sys-share-max-shares" error={errors.maxSharesPerSubscription}>
+                <Input id="sys-share-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={saving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
+              </FormField>
+              <FormField label="单用户有效分享上限" htmlFor="sys-share-max-active" error={errors.maxActiveSharesPerUser}>
+                <Input id="sys-share-max-active" type="number" inputMode="numeric" min={1} max={1000} step={1} value={form.maxActiveSharesPerUser} disabled={saving} onChange={(event) => setForm({ ...form, maxActiveSharesPerUser: event.currentTarget.value })} />
+              </FormField>
+              <FormField label="最长有效期（天）" htmlFor="sys-share-max-days" error={errors.maxValidityDays}>
+                <Input id="sys-share-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={saving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
+              </FormField>
+            </div>
+          </section>
+        </>
       ) : null}
-    </section>
+    </form>
   )
 }
