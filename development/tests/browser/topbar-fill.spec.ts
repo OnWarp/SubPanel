@@ -1,0 +1,78 @@
+import { expect, test } from '@playwright/test'
+
+test('fills the desktop workspace away from the selected navigation edge', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await page.getByLabel('管理员用户名').fill('Admin')
+  await page.getByLabel('管理员密码').fill('correct horse battery staple')
+  await page.getByRole('button', { name: '创建管理员' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+  await page.getByLabel('用户名', { exact: true }).fill('admin')
+  await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/\/dashboard$/)
+  const workspace = page.locator('.workspace')
+  const main = page.locator('.workspace-content')
+  const topbar = page.locator('.admin-desktop-topbar')
+  const routes = [
+    { path: '/dashboard', name: 'dashboard', card: '.ops-overview', ready: page.getByRole('region', { name: '系统统计' }) },
+    { path: '/users', name: 'users', card: '.usr-card', ready: page.getByRole('row', { name: /admin/i }) },
+    { path: '/system/registration', name: 'settings', card: '.ops-system', ready: page.getByRole('heading', { name: '邮箱域名白名单' }) },
+  ]
+
+  for (const layout of ['sidebar', 'topbar'] as const) {
+    if (layout === 'topbar') {
+      await page.locator('.sidebar .admin-account summary').click()
+      await page.getByRole('button', { name: '顶部导航', exact: true }).click()
+      await expect(topbar).toBeVisible()
+    }
+
+    for (const { path, name, card, ready } of routes) {
+      await page.goto(path)
+      const surface = main.locator(card)
+      await expect(surface).toBeVisible()
+      await expect(ready).toBeVisible()
+      await expect(page.locator('.workspace-topbar')).toHaveCSS('border-bottom-width', '0px')
+
+      const workspaceBox = (await workspace.boundingBox())!
+      const contentBox = (await main.boundingBox())!
+      const cardBox = (await surface.boundingBox())!
+      expect(workspaceBox.x + workspaceBox.width).toBe(1440)
+      expect(workspaceBox.y + workspaceBox.height).toBe(900)
+      expect(cardBox.x).toBe(contentBox.x)
+      expect(cardBox.y + cardBox.height).toBeGreaterThanOrEqual(900)
+      const dimensions = await main.evaluate(element => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      }))
+      expect(cardBox.width).toBe(dimensions.clientWidth)
+      expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
+
+      if (layout === 'topbar') {
+        const topbarBox = (await topbar.boundingBox())!
+        expect(workspaceBox.x).toBe(0)
+        expect(workspaceBox.y).toBeGreaterThan(topbarBox.y + topbarBox.height)
+        await expect(topbar).toHaveCSS('border-bottom-width', '0px')
+        expect(await topbar.evaluate(element => parseFloat(getComputedStyle(element).borderTopLeftRadius))).toBeGreaterThan(0)
+      } else {
+        const sidebarBox = (await page.locator('.sidebar').boundingBox())!
+        expect(workspaceBox.y).toBe(0)
+        expect(workspaceBox.x).toBeGreaterThan(sidebarBox.x + sidebarBox.width)
+      }
+
+      await page.screenshot({ path: testInfo.outputPath(`${layout}-${name}.png`) })
+      await testInfo.attach(`${layout}-${name}`, {
+        path: testInfo.outputPath(`${layout}-${name}.png`),
+        contentType: 'image/png',
+      })
+    }
+
+    await page.setViewportSize({ width: 1440, height: 240 })
+    await expect(main).toHaveCSS('overflow-y', 'auto')
+    await main.hover()
+    await page.mouse.wheel(0, 600)
+    await expect.poll(() => main.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    await page.setViewportSize({ width: 1440, height: 900 })
+  }
+})
