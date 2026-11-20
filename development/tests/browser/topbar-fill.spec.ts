@@ -53,7 +53,8 @@ test('fills the desktop workspace away from the selected navigation edge', async
         expect(workspaceBox.x).toBe(0)
         expect(workspaceBox.y).toBeGreaterThan(topbarBox.y + topbarBox.height)
         await expect(topbar).toHaveCSS('border-bottom-width', '0px')
-        expect(await topbar.evaluate(element => parseFloat(getComputedStyle(element).borderTopLeftRadius))).toBeGreaterThan(0)
+        expect(await topbar.evaluate(element => parseFloat(getComputedStyle(element).borderTopLeftRadius))).toBe(0)
+        expect(await topbar.evaluate(element => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)")
       } else {
         const sidebarBox = (await page.locator('.sidebar').boundingBox())!
         expect(workspaceBox.y).toBe(0)
