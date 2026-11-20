@@ -19,7 +19,7 @@
 
 .ops-page .ops-heading h2 {
   margin: 0;
-  font-size: 1.375rem;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 

@@ -325,7 +325,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .dialog-heading, .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dialog-heading { margin-bottom: 16px; }
 .dialog-heading h2, .dialog-heading p { margin: 0; }
-.dialog-heading h2 { font-size: var(--font-lg); font-weight: var(--weight-strong); }
+.dialog-heading h2 { font-size: var(--font-md); font-weight: var(--weight-strong); }
 .dialog-heading p { margin-top: 3px; color: var(--color-text-muted); font-size: var(--font-sm); }
 .dialog-actions { margin-top: 18px; justify-content: flex-end; }
 
@@ -418,7 +418,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .profile-avatar { width: 56px; height: 56px; flex: 0 0 auto; border-radius: var(--radius-pill); object-fit: cover; background: var(--color-primary-soft); }
 .profile-card-main { display: grid; gap: 10px; min-width: 0; }
 .profile-card-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.profile-card-name strong { font-size: var(--font-lg); overflow-wrap: anywhere; }
+.profile-card-name strong { font-size: var(--font-md); overflow-wrap: anywhere; }
 .profile-fields { display: grid; gap: 6px; margin: 0; }
 .profile-fields > div { display: flex; gap: 12px; min-width: 0; }
 .profile-fields dt { flex: 0 0 auto; min-width: 64px; color: var(--color-text-muted); }
