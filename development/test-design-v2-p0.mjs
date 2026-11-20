@@ -52,7 +52,8 @@ try {
   }
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--duration-ui').trim()), '0ms')
+  // Built CSS minifies 0ms to 0s; either serialisation means zero duration.
+  assert.match(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--duration-ui').trim()), /^0(m?s)?$/)
 
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 844 })
