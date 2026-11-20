@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, type ReactNode, type RefObject } from 'react'
 type EditDrawerProps = {
   open: boolean
   title: string
+  headerStatus?: ReactNode
+  headerActions?: ReactNode
   busy?: boolean
   onClose: () => void
   returnFocusRef?: RefObject<HTMLElement | null>
@@ -11,7 +13,7 @@ type EditDrawerProps = {
   children: ReactNode
 }
 
-export function EditDrawer({ open, title, busy = false, onClose, returnFocusRef, size = 'medium', children }: EditDrawerProps) {
+export function EditDrawer({ open, title, headerStatus, headerActions, busy = false, onClose, returnFocusRef, size = 'medium', children }: EditDrawerProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
@@ -40,8 +42,11 @@ export function EditDrawer({ open, title, busy = false, onClose, returnFocusRef,
     >
       <div className="drawer-panel">
         <header className="dialog-heading">
-          <h2 id={titleId}>{title}</h2>
-          <button className="icon-button" type="button" aria-label="关闭" title="关闭" onClick={close} disabled={busy}><X aria-hidden="true" size={18} /></button>
+          {headerStatus ? <div className="drawer-heading-title"><h2 id={titleId}>{title}</h2>{headerStatus}</div> : <h2 id={titleId}>{title}</h2>}
+          <div className="drawer-heading-actions">
+            {headerActions}
+            <button className="icon-button" type="button" aria-label="关闭" title="关闭" onClick={close} disabled={busy}><X aria-hidden="true" size={18} /></button>
+          </div>
         </header>
         <div className="drawer-content">{children}</div>
       </div>

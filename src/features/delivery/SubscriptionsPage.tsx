@@ -3,7 +3,8 @@ import { CreateShareForm } from '../shares/ShareDrawer'
 import type { Plan } from './plan-types'
 import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
 import { TemplateBinding } from '../system/TemplateBinding'
-import { CheckCircle2, KeyRound, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
+import { versionLabel } from '../system/template-display'
+import { CheckCircle2, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { loadAdminUserOptions, api, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
@@ -19,6 +20,7 @@ import { FilterBar } from '../../ui/FilterBar'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
+import { Select } from '../../ui/Select'
 import { Switch } from '../../ui/Switch'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -91,6 +93,12 @@ const UNIFIED_FILTERS: Array<{ key: UnifiedFilter; label: string }> = [
   { key: 'disabled', label: '已停用' },
 ]
 
+const BINDING_MODE_LABELS: Record<Binding['mode'], string> = {
+  inherit: '继承默认',
+  base: '基础配置',
+  specific: '指定模板',
+}
+
 const INHERITED_TEMPLATE_BINDING: SubscriptionTemplateBinding = { mode: 'inherit', expectedRevision: 1 }
 
 const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
@@ -145,6 +153,9 @@ export function SubscriptionsPage() {
   const detailsTrigger = useRef<HTMLButtonElement>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
+  const [selectedClient, setSelectedClient] = useState('')
+  const [detailsBinding, setDetailsBinding] = useState<Binding>()
+  const [detailsBindingError, setDetailsBindingError] = useState('')
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [drawerError, setDrawerError] = useState('')
@@ -532,6 +543,9 @@ export function SubscriptionsPage() {
           { label: '查看详情', onClick: (trigger) => {
             detailsTrigger.current = trigger
             setDrawerError('')
+            setSelectedClient(subscription.defaultClient)
+            setDetailsBinding(undefined)
+            setDetailsBindingError('')
             setDrawer({ kind: 'details', subscription })
           } },
           { label: '编辑', onClick: () => openEdit(subscription) },
@@ -543,6 +557,24 @@ export function SubscriptionsPage() {
   ], [busy, groupNames, selected, subscriptions, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
+  const detailsId = details?.id
+  useEffect(() => {
+    if (!detailsId) return
+    const abort = new AbortController()
+    void api<Binding>(
+      `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(detailsId)}`, { signal: abort.signal },
+    ).then((binding) => {
+      if (!abort.signal.aborted) setDetailsBinding(binding)
+    }).catch((cause) => {
+      if (!abort.signal.aborted) setDetailsBindingError(errorMessage(cause, '加载附加配置失败'))
+    })
+    return () => abort.abort()
+  }, [detailsId])
+
+  const linkEntries = Object.entries(details?.links ?? {})
+  const [client = '', link = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
+  const clientLabel = CLIENT_LABELS[client] ?? client
+  const effectiveTemplate = detailsBinding?.effectiveTemplate
 
   return (
     <div className="page-stack resource-pages del-admin-page">
@@ -626,17 +658,62 @@ export function SubscriptionsPage() {
         </form>
       </EditDrawer>
 
-      <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer} returnFocusRef={detailsTrigger}>
+      <EditDrawer
+        open={details !== null}
+        title={details?.name ?? '订阅详情'}
+        headerStatus={details && <StatusBadge tone={details.enabled ? 'success' : 'muted'} size="sm">{details.enabled ? '正常' : '已停用'}</StatusBadge>}
+        headerActions={details && <ResourceRowActions actions={[
+          { label: '重置令牌', disabled: busy, onClick: () => resetToken(details) },
+        ]} />}
+        busy={busy}
+        size="wide"
+        onClose={closeDrawer}
+        returnFocusRef={detailsTrigger}
+      >
         {details ? <div className="subscription-details">
-          {details.planId ? <dl className="profile-fields">
-            <div><dt>订阅计划</dt><dd>{details.planName}</dd></div>
-            <div><dt>流量额度</dt><dd>{details.trafficGb ? `${details.trafficGb} GB` : '不限'}</dd></div>
-            <div><dt>限速</dt><dd>{details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限'}</dd></div>
-            <div><dt>设备数</dt><dd>{details.deviceLimit || '不限'}</dd></div>
-          </dl> : null}
-          <section><div className="detail-heading"><div><h3>{details.name}</h3><p>{details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'} · {details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</p></div><button className="button secondary" type="button" onClick={() => resetToken(details)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置令牌</button></div></section>
-          <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><span className="link-url" title={link}>{link}</span><span className="row-actions"><CopyButton value={link} iconOnly label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
-          <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>
+          <section>
+            <h3>基本信息</h3>
+            <dl className="profile-fields subscription-detail-fields">
+              <div><dt>所属用户</dt><dd>{details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'}</dd></div>
+              <div><dt>使用分组</dt><dd>{details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</dd></div>
+              {details.planId && <>
+                <div><dt>订阅计划</dt><dd>{details.planName ?? '—'}</dd></div>
+                <div><dt>流量额度</dt><dd>{details.trafficGb ? `${details.trafficGb} GB` : '不限'}</dd></div>
+                <div><dt>限速</dt><dd>{details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限'}</dd></div>
+                <div><dt>设备数</dt><dd>{details.deviceLimit || '不限'}</dd></div>
+              </>}
+            </dl>
+          </section>
+          <section>
+            <h3>客户端链接</h3>
+            <div className="subscription-detail-fields">
+              {linkEntries.length ? <>
+                <div>
+                  <div className="subscription-client-format">
+                    <span>格式</span>
+                    <Select label="格式" value={client} onChange={setSelectedClient}
+                      options={linkEntries.map(([key]) => ({ value: key, label: CLIENT_LABELS[key] ?? key }))} />
+                  </div>
+                </div>
+                <div className="subscription-link-row">
+                  <span className="link-url" title={link}>{link}</span>
+                  <CopyButton key={client} value={link} iconOnly label={`复制 ${clientLabel} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} />
+                  <button className="icon-button" type="button" aria-label={`显示 ${clientLabel} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button>
+                </div>
+              </> : <div>{details.linkError || '暂无客户端链接'}</div>}
+            </div>
+          </section>
+          <section>
+            <h3>附加配置</h3>
+            <dl className="profile-fields subscription-detail-fields" aria-busy={!detailsBinding && !detailsBindingError}>
+              <div><dt>生效方式</dt><dd>{detailsBinding ? BINDING_MODE_LABELS[detailsBinding.mode] : '—'}</dd></div>
+              <div><dt>模板</dt><dd>{effectiveTemplate?.templateName ?? '—'}</dd></div>
+              <div><dt>发布版本</dt><dd>{versionLabel(effectiveTemplate?.sequence)}</dd></div>
+            </dl>
+            {detailsBindingError ? <StatusMessage tone="error">{detailsBindingError}</StatusMessage>
+              : !detailsBinding ? <p className="drawer-note" role="status">正在加载附加配置</p> : null}
+            <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>
+          </section>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </div> : null}
       </EditDrawer>
