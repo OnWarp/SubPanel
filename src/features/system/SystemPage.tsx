@@ -472,14 +472,15 @@ export function SystemPage() {
     const search = query.size ? `?${query}` : ''
     return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.includes(active) ? active : 'registration'}`) + search} />
   }
+  const showDeliverySettings = active === 'distribution' && !query.get('config')
   return <div className="page-stack sys-page ops-page">
     <PageHeader title="系统设置" />
-    <div className="ops-card ops-system">
+    <div className={showDeliverySettings ? 'ops-system sys-delivery' : 'ops-card ops-system'}>
       <OperationsHeading title="系统设置" />
       <div className="sys-content">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <>{!query.get('config') && <><DomainSettingsSection /><ShareSettingsSection /></>}<TemplatesSection /></> : null}
+        {active === 'distribution' ? <>{showDeliverySettings && <><DomainSettingsSection /><ShareSettingsSection /></>}<TemplatesSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
       </div>
     </div>
