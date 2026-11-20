@@ -30,7 +30,8 @@ await page.route('http://ui.test/**', async (route) => {
     else if (url.pathname.endsWith('/token/reset')) { reset = true; body = { subscription: subscriptions[0], token: 'new-token', warning: '请保存新令牌' } }
     else if (url.pathname === '/api/account/subscription-platforms') body = { platforms: [{ platform: 'auto', displayName: '自动' }, { platform: 'mihomo', displayName: 'Mihomo' }] }
     else if (url.pathname === '/api/admin/catalog') body = { sources: [], nodes: [], groups: [] }
-    else if (url.pathname === '/api/admin/subscriptions') body = { subscriptions: [] }
+    else if (url.pathname === '/api/admin/subscriptions') body = { subscriptions: [], total: 0 }
+    else if (url.pathname === '/api/admin/tickets') body = { tickets: [], total: 0 }
     else if (url.pathname === '/api/admin/users') body = { total: 101, users: url.searchParams.get('page') === '2' ? [{ id: 'last' }] : Array.from({ length: 100 }, (_, i) => ({ id: `u${i}` })) }
     else if (url.pathname === '/api/admin/stats') {
       if (failedStats) return route.fulfill({ status: 503, json: { error: { message: '不可用' } } })
@@ -79,13 +80,25 @@ try {
   assert.equal(reset, true)
   role = 'admin'
   await page.goto('http://ui.test/dashboard'); await visible('总用户'); await visible('7 日内到期')
-  assert.deepEqual(await page.locator('.ui3-stat-grid .sp-stat-value').allTextContents(), ['101', '59', '12', '7'])
+  const grid = page.getByRole('region', { name: '概览统计与待办' })
+  await grid.waitFor()
+  assert.deepEqual(await grid.locator('.sp-stat-value').allTextContents(), ['101', '59', '12', '7', '0', '1', '0'])
+  assert.equal(await grid.getByText('总用户', { exact: true }).count(), 1)
+  assert.equal(await grid.getByRole('link').count(), 2)
+  await grid.getByRole('link', { name: /7 日内到期/ }).click()
+  await page.waitForURL('**/delivery/subscriptions?expiry=soon')
+  await page.goBack()
+  await grid.getByRole('link', { name: /待处理工单/ }).click()
+  await page.waitForURL('**/delivery/tickets')
+  await page.goBack()
   failedStats = true
   await page.reload(); await visible('不可用')
-  assert.equal(await page.locator('.ui3-stat-grid .sp-stat-card').count(), 0)
+  assert.equal(await page.locator('.adm-stat-grid .sp-stat-card').count(), 0)
   failedStats = false
-  await page.setViewportSize({ width: 375, height: 812 })
+  await page.setViewportSize({ width: 390, height: 812 })
   await page.goto('http://ui.test/dashboard'); await visible('总用户')
+  assert.equal(await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length), 2)
+  assert.equal(await grid.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   assert.deepEqual(errors, [])
   console.log('PASS: node gates (five states), active list/filter, notice pagination/search/full text, ticket states/thread/composer, subscription plan and quota, platform list/reset confirmation, paginated admin totals/partial failure/mobile overflow')

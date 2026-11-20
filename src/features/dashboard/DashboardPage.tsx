@@ -1,105 +1,82 @@
-import { OperationsHeading } from '../admin/OperationsCard'
-import { AlertTriangle, ArrowRight } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { CalendarClock, Layers, Network, Package, Ticket, Users, type LucideIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError, type AdminSubscription, type CatalogResponse } from '../../app/api'
+import { api, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
-import { LoadingState } from '../../ui/LoadingState'
-import { StatCard } from '../../ui/StatCard'
 import { PageHeader } from '../../ui/PageHeader'
 
-type DashboardData = {
-  stats: Record<string,number>
-  catalog: CatalogResponse
-  subscriptions: AdminSubscription[]
+type DashboardStats = {
+  users: number
+  activeSubscriptions: number
+  expiringSubscriptions: number
+  pendingTickets: number
+  plans: number
+  groups: number
+  nodes: number
 }
 
+const metrics: { field: keyof DashboardStats; label: string; icon: LucideIcon; to?: string }[] = [
+  { field: 'users', label: '总用户', icon: Users },
+  { field: 'activeSubscriptions', label: '有效订阅', icon: Layers },
+  { field: 'expiringSubscriptions', label: '7 日内到期', icon: CalendarClock, to: '/delivery/subscriptions?expiry=soon' },
+  { field: 'pendingTickets', label: '待处理工单', icon: Ticket, to: '/delivery/tickets' },
+  { field: 'nodes', label: '节点', icon: Network },
+  { field: 'plans', label: '计划', icon: Package },
+  { field: 'groups', label: '分组', icon: Layers },
+]
+
 export function DashboardPage() {
-  const [data, setData] = useState<DashboardData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  const loading = !stats && !error
 
-  const load = useCallback(async () => {
-    setError('')
-    setLoading(true)
-    try {
-      const [stats, catalog, subscriptionResult] = await Promise.all([
-        api<Record<string,number>>('/api/admin/stats'),
-        api<CatalogResponse>('/api/admin/catalog'),
-        api<{ subscriptions: AdminSubscription[] }>('/api/admin/subscriptions'),
-      ])
-      setData({ stats, catalog, subscriptions: subscriptionResult.subscriptions })
-    } catch (cause) {
-      setError(cause instanceof ApiClientError ? cause.message : '加载概览失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load().catch(() => undefined) }, [load])
-
-  const issues = data ? [
-    ...data.catalog.sources.filter((source) => source.lastErrorCode).map((source) => ({
-      key: `source-${source.id}`,
-      label: `来源「${source.name}」最近刷新失败`,
-      detail: source.lastErrorCode ?? '请检查来源状态',
-      to: '/catalog/sources',
-    })),
-    ...data.subscriptions.flatMap((subscription) => {
-      const skipped = Object.values(subscription.diagnostics).reduce((sum, item) => sum + item.skippedNodes, 0)
-      return skipped > 0 ? [{
-        key: `subscription-${subscription.id}`,
-        label: `订阅「${subscription.name}」存在兼容性跳过`,
-        detail: `${skipped} 个节点被目标格式跳过`,
-        to: '/delivery/subscriptions',
-      }] : []
-    }),
-  ] : []
+  useEffect(() => {
+    const controller = new AbortController()
+    api<DashboardStats>('/api/admin/stats', { signal: controller.signal })
+      .then(setStats)
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(cause instanceof ApiClientError ? cause.message : '加载概览失败')
+        }
+      })
+    return () => controller.abort()
+  }, [attempt])
 
   return (
-    <div className="page-stack ops-page">
-      <PageHeader title="概览" />
-      <section className="ops-card ops-overview" aria-label="概览">
-        <OperationsHeading title="概览" />
-        {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
-        {loading && !data ? <LoadingState label="正在加载概览" /> : null}
-        {data ? (
-          <>
-            <section className="ui3-stat-grid" aria-label="用户与订阅统计">
-              <StatCard label="总用户" value={data.stats.users} />
-              <StatCard label="有效订阅" value={data.stats.activeSubscriptions} />
-              <StatCard label="7 日内到期" value={data.stats.expiringSubscriptions} />
-              <StatCard label="待处理工单" value={data.stats.pendingTickets} sub="未关闭工单" />
-            </section>
-            <section className="adm-stat-grid" aria-label="系统统计">{Object.entries({plans:'计划',groups:'分组',nodes:'节点'}).map(([key,label])=><div className="adm-stat" key={key}><span className="adm-stat-label">{label}</span><strong className="adm-stat-value">{data.stats[key]}</strong></div>)}</section>
-            <section className="adm-stat-grid" aria-label="资源统计">
-              <Link className="adm-stat" to="/catalog/sources">
-                <span className="adm-stat-label">来源</span>
-                <strong className="adm-stat-value">{data.catalog.sources.length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/catalog/nodes">
-                <span className="adm-stat-label">启用节点</span>
-                <strong className="adm-stat-value">{data.catalog.nodes.filter((node) => node.enabled).length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/delivery/subscriptions">
-                <span className="adm-stat-label">订阅总数</span>
-                <strong className="adm-stat-value">{data.subscriptions.length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/users">
-                <span className="adm-stat-label">用户</span>
-                <strong className="adm-stat-value">{data.stats.users}</strong>
-              </Link>
-            </section>
-            {issues.length > 0 && (
-              <div className="adm-alert" role="alert">
-                <AlertTriangle aria-hidden="true" size={16} />
-                <span>{issues.length} 项需要处理</span>
-                <Link to="/catalog/sources" className="adm-alert-link">查看详情<ArrowRight aria-hidden="true" size={14} /></Link>
-              </div>
-            )}
-          </>
-        ) : null}
-      </section>
+    <div className="page-stack adm-overview">
+      <PageHeader
+        title="概览"
+        description={<span className="adm-overview-description">查看系统统计和待处理事项</span>}
+      />
+      {error ? <ErrorState message={error} onRetry={() => {
+        setError('')
+        setAttempt((current) => current + 1)
+      }} /> : (
+        <section
+          className="adm-stat-grid"
+          aria-label={loading ? '正在加载概览' : '概览统计与待办'}
+          aria-busy={loading}
+        >
+          {metrics.map(({ field, label, icon: Icon, to }) => {
+            const content = (
+              <>
+                <span className="sp-stat-label">
+                  {label}
+                  <Icon size={16} aria-hidden="true" />
+                </span>
+                <strong className="sp-stat-value">{stats?.[field]}</strong>
+              </>
+            )
+
+            if (stats && to) {
+              return <Link className="sp-stat-card sp-stat-body" key={field} to={to}>{content}</Link>
+            }
+
+            return <div className="sp-stat-card sp-stat-body" key={field} aria-hidden={loading || undefined}>{content}</div>
+          })}
+        </section>
+      )}
     </div>
   )
 }

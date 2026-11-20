@@ -1,45 +1,96 @@
-/*
- * Phase 4 page styles: dashboard + account (admin group).
- * Every class is adm- prefixed and page-local; shared primitives live in
- * components.css and are never overridden here.
- */
+/* Administrator overview -------------------------------------------------- */
+.adm-overview { container-type: inline-size; }
 
-/* Dashboard stat cards ---------------------------------------------------- */
+.topbar-page-title:has(.adm-overview-description) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.topbar-page-title p:has(.adm-overview-description) { display: block; }
+
 .adm-stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: var(--space-3);
 }
-.adm-stat {
-  display: grid;
+
+@container (min-width: 36rem) {
+  .adm-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container (min-width: 54rem) {
+  .adm-stat-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+}
+
+.adm-stat-grid .sp-stat-body {
+  min-height: 7rem;
+  justify-content: space-between;
+  gap: var(--space-3);
   padding: var(--space-4);
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  color: var(--color-text);
-  transition: border-color var(--duration-ui) ease;
+  box-shadow: var(--shadow-panel);
 }
-@media (hover: hover) {
-  .adm-stat:hover { border-color: var(--color-primary); }
+
+.adm-stat-grid .sp-stat-label {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-md);
+  line-height: 1.25;
 }
-.adm-stat-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-weight: 590;
-  letter-spacing: .02em;
+
+.adm-stat-grid .sp-stat-label svg {
+  flex: none;
+  order: -1;
 }
-.adm-stat-icon { color: var(--color-primary); }
-.adm-stat-value {
-  grid-column: 1 / -1;
-  font-size: var(--font-display);
-  font-weight: 590;
+
+.adm-stat-grid .sp-stat-value {
+  font-size: var(--font-title);
   font-variant-numeric: tabular-nums;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
+  line-height: 1;
 }
+
+.adm-stat-grid a.sp-stat-body {
+  text-decoration: none;
+  transition: border-color var(--duration-ui) ease, background-color var(--duration-ui) ease;
+}
+
+.adm-stat-grid a .sp-stat-label svg {
+  order: 0;
+  margin-inline-start: auto;
+  color: var(--color-accent);
+}
+
+.adm-stat-grid a .sp-stat-value { font-size: var(--font-display); }
+
+@media (hover: hover) {
+  .adm-stat-grid a:hover {
+    border-color: var(--color-accent);
+    background-color: var(--color-surface-subtle);
+  }
+}
+
+.adm-stat-grid a:focus-visible {
+  border-color: var(--color-accent);
+  outline: 0;
+  box-shadow: var(--shadow-focus);
+}
+
+.adm-stat-grid[aria-busy="true"] :is(.sp-stat-label, .sp-stat-value) {
+  width: min(100%, 6rem);
+  height: 1rem;
+  border-radius: var(--radius-field);
+  background: var(--color-surface-subtle);
+  color: transparent;
+}
+
+.adm-stat-grid[aria-busy="true"] .sp-stat-value { width: 2.25rem; height: var(--font-display); }
+.adm-stat-grid[aria-busy="true"] svg { visibility: hidden; }
 
 /* Account form ----------------------------------------------------------- */
 .adm-account-form input {
@@ -53,31 +104,6 @@
   font-size: var(--font-md);
 }
 
-@media (max-width: 900px) {
-  .adm-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
 @media (max-width: 760px) {
   .adm-account-form input { min-height: 44px; }
 }
-
-/* Alert banner ----------------------------------------------------------- */
-.adm-alert {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  color: color-mix(in srgb, var(--color-warning) 55%, var(--color-text));
-  background: var(--color-warning-soft);
-}
-.adm-alert-link {
-  margin-left: auto;
-  font-size: var(--font-sm);
-  color: var(--color-primary);
-}
-@media (hover: hover) {
-  .adm-alert-link:hover { text-decoration: underline; }
-}
-
