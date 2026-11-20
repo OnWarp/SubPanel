@@ -50,8 +50,7 @@ await page.route('http://nav.test/**', async route => {
   else if (url.pathname.endsWith('/notices')) body = { notices: [], total: 0 }
   else if (url.pathname === '/api/apps') body = { downloadsEnabled, apps: [] }
   else if (url.pathname === '/api/account/profile') body = { user: { id: 'usr_1', username: 'test', email: null }, avatar: { url: '', kind: 'dicebear', seed: 'test' }, emailBound: false, session: null }
-  else if (url.pathname === '/api/account/entitlement') body = { state: 'none', current: null, latest: null }
-  else if (url.pathname === '/api/user/nodes') body = { nodes: [], total: 0, groupOptions: [], subscriptionOptions: [] }
+  else if (url.pathname === '/api/user/nodes') body = { hasActiveSubscription: false, nodes: [], total: 0, groupOptions: [], subscriptionOptions: [] }
   else if (url.pathname === '/api/tickets') body = { tickets: [], total: 0 }
   else if (url.pathname === '/api/kb') body = { articles: [], total: 0 }
   return route.fulfill({ json: body })

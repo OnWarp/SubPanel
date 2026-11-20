@@ -1,4 +1,4 @@
-import { getUserEntitlement } from '../entitlements/service.js'
+import { getSubscriptionPlanSummary } from '../delivery/plans.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
@@ -168,7 +168,7 @@ adminAccountRoutes.get('/users/:id', async (c) => {
     ])
     return c.json({
       user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
-      entitlement: await getUserEntitlement(c.env.DB, accountUser.id),
+      entitlement: await getSubscriptionPlanSummary(c.env.DB, accountUser.id),
       subscriptions,
       invitationRedemptions,
     })
@@ -179,6 +179,10 @@ adminAccountRoutes.get('/users/:id', async (c) => {
     .map((subscription) => ({
       id: subscription.id,
       name: subscription.name,
+      planId: subscription.planId ?? null,
+      trafficGb: subscription.trafficGb ?? 0,
+      speedLimitMbps: subscription.speedLimitMbps ?? 0,
+      deviceLimit: subscription.deviceLimit ?? 0,
       tokenPrefix: subscription.tokenPrefix,
       enabled: subscription.enabled,
       defaultClient: subscription.defaultClient,
@@ -191,7 +195,7 @@ adminAccountRoutes.get('/users/:id', async (c) => {
     }))
   return c.json({
     user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
-      entitlement: await getUserEntitlement(c.env.DB, accountUser.id),
+    entitlement: await getSubscriptionPlanSummary(c.env.DB, accountUser.id),
     subscriptions,
     // KV mode never recorded redemptions once an invite was consumed.
     invitationRedemptions: [],

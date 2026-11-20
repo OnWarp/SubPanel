@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
 import { shareEntityKey } from '../../../worker/shares/repository'
 import { DEFAULT_SHARE_SETTINGS, type ShareSettings } from '../../../worker/shares/schema'
-import { enableD1Modules, grantDeliveryFixture, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { enableD1Modules, createDeliveryFixturePlan, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 type ShareView = {
   id: string
@@ -99,12 +99,12 @@ async function createSubscription(
   name: string,
   enabled = true,
 ): Promise<string> {
+  const plan = await createDeliveryFixturePlan([groupId])
   const response = await exports.default.fetch(
     `${TEST_ORIGIN}/api/admin/subscriptions`,
-    jsonRequest({ userId, name, groupIds: [groupId], enabled, defaultClient: 'mihomo' }, withCookie(adminCookie)),
+    jsonRequest({ userId, name, planId: plan.id, groupIds: [groupId], enabled, defaultClient: 'mihomo' }, withCookie(adminCookie)),
   )
   expect(response.status).toBe(201)
-  await grantDeliveryFixture(userId, [groupId])
   return (await response.json() as { subscription: { id: string } }).subscription.id
 }
 

@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
-import { getUserEntitlement, operateEntitlement, savePlan, deletePlan, listPlans } from '../../../worker/entitlements/service'
+import { getSubscriptionPlanSummary, operateSubscriptionPlan, savePlan, deletePlan, listPlans } from '../../../worker/delivery/plans'
 import { userAnchorStatement } from '../../../worker/db/ensure-users'
 import { readAccounts } from '../../../worker/accounts/repository'
 import { setEmailVerificationDeliverer } from '../../../worker/accounts/email'
@@ -15,7 +15,6 @@ const fetchApi = (path: string, init: RequestInit = {}) => exports.default.fetch
 let cookie: string
 beforeEach(async () => {
   await resetData(); await enableD1Modules(); await clearAccountsStorage(env.DB); await setupAdmin(); cookie = await login()
-  await env.DB.prepare('DELETE FROM user_entitlements').run()
   await env.DB.prepare('DELETE FROM plans').run()
   await putSetting(env.DB,'trial_plan_id',null); await putSetting(env.DB,'trial_days',null)
   await userAnchorStatement(env.DB,(await readAccounts(env)).users[0]).run()
@@ -26,55 +25,55 @@ const admin = (path: string, body: unknown, method = 'POST') => fetchApi(path,wi
 
 describe('central entitlement decisions and operations', () => {
   it('reports none, active, exact-boundary expiry, revoked and pending', async () => {
-    expect((await getUserEntitlement(env.DB,'usr_1',NOW)).state).toBe('none')
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1',NOW)).state).toBe('none')
     const plan = await makePlan(1)
-    const granted = await operateEntitlement(env.DB,'usr_1','grant',plan.id,'note',NOW)
+    const granted = await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'note',NOW)
     expect(granted.current).toMatchObject({ source: 'admin',note: 'note',startsAt: NOW,expiresAt: '2026-01-02T00:00:00.000Z' })
-    expect((await getUserEntitlement(env.DB,'usr_1','2025-12-31T23:59:59.999Z')).state).toBe('pending')
-    expect((await getUserEntitlement(env.DB,'usr_1','2026-01-02T00:00:00.000Z')).state).toBe('expired')
-    await operateEntitlement(env.DB,'usr_1','revoke',undefined,'',NOW)
-    expect((await getUserEntitlement(env.DB,'usr_1',NOW)).state).toBe('revoked')
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1','2025-12-31T23:59:59.999Z')).state).toBe('pending')
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1','2026-01-02T00:00:00.000Z')).state).toBe('expired')
+    await operateSubscriptionPlan(env,'usr_1','revoke',undefined,'',NOW)
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1',NOW)).state).toBe('revoked')
   })
   it('stacks renewal on future expiry and on now after expiry', async () => {
     const plan = await makePlan(10)
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
-    const first = await operateEntitlement(env.DB,'usr_1','renew',undefined,'','2026-01-05T00:00:00.000Z')
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
+    const first = await operateSubscriptionPlan(env,'usr_1','renew',undefined,'','2026-01-05T00:00:00.000Z')
     expect(first.current?.expiresAt).toBe('2026-01-21T00:00:00.000Z')
-    const second = await operateEntitlement(env.DB,'usr_1','renew',undefined,'','2026-02-01T00:00:00.000Z')
+    const second = await operateSubscriptionPlan(env,'usr_1','renew',undefined,'','2026-02-01T00:00:00.000Z')
     expect(second.current?.expiresAt).toBe('2026-02-11T00:00:00.000Z')
   })
   it('serializes concurrent renewals without losing days', async () => {
     const plan = await makePlan(1)
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
-    await Promise.all([operateEntitlement(env.DB,'usr_1','renew',undefined,'',NOW),operateEntitlement(env.DB,'usr_1','renew',undefined,'',NOW)])
-    expect((await getUserEntitlement(env.DB,'usr_1',NOW)).current?.expiresAt).toBe('2026-01-04T00:00:00.000Z')
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
+    await Promise.all([operateSubscriptionPlan(env,'usr_1','renew',undefined,'',NOW),operateSubscriptionPlan(env,'usr_1','renew',undefined,'',NOW)])
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1',NOW)).current?.expiresAt).toBe('2026-01-04T00:00:00.000Z')
   })
-  it('replaces a plan with an audited revoked row and rejects duplicate grants', async () => {
+  it('switches the plan on the same subscription and rejects duplicate grants', async () => {
     const plan = await makePlan()
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
-    await expect(operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)).rejects.toThrow()
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
+    await expect(operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)).rejects.toThrow()
     const other = await makePlan(7)
-    const changed = await operateEntitlement(env.DB,'usr_1','switch',other.id,'changed',NOW)
+    const changed = await operateSubscriptionPlan(env,'usr_1','switch',other.id,'changed',NOW)
     expect(changed.current?.planId).toBe(other.id)
-    const rows = await env.DB.prepare('SELECT status FROM user_entitlements WHERE user_id = ?').bind('usr_1').all<{ status: string }>()
-    expect(rows.results.map((r) => r.status).sort()).toEqual(['active','revoked'])
+    const rows = await env.DB.prepare('SELECT plan_id FROM subscriptions WHERE user_id = ?').bind('usr_1').all<{ plan_id: string }>()
+    expect(rows.results).toEqual([{ plan_id: other.id }])
   })
   it('disables access with the plan and preserves referenced plans', async () => {
     const plan = await makePlan()
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
     await savePlan(env.DB,{ ...plan,enabled: false },plan.id)
-    expect((await getUserEntitlement(env.DB,'usr_1',NOW)).state).toBe('disabled')
-    await expect(operateEntitlement(env.DB,'usr_1','renew',undefined,'',NOW)).rejects.toThrow()
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1',NOW)).state).toBe('disabled')
+    await expect(operateSubscriptionPlan(env,'usr_1','renew',undefined,'',NOW)).rejects.toThrow()
     await expect(deletePlan(env.DB,plan.id)).rejects.toThrow()
-    await operateEntitlement(env.DB,'usr_1','revoke',undefined,'',NOW)
+    await operateSubscriptionPlan(env,'usr_1','revoke',undefined,'',NOW)
     await expect(deletePlan(env.DB,plan.id)).rejects.toThrow()
   })
   it('validates limits, group references and empty operations', async () => {
     await expect(savePlan(env.DB,{ name: 'Bad',groupIds: [],durationDays: 0 })).rejects.toThrow()
     await expect(savePlan(env.DB,{ name: 'Bad',groupIds: ['grp_999'],durationDays: 1 })).rejects.toThrow()
-    await expect(operateEntitlement(env.DB,'usr_1','renew')).rejects.toThrow()
-    await expect(operateEntitlement(env.DB,'usr_1','switch','missing')).rejects.toThrow()
-    await expect(operateEntitlement(env.DB,'usr_999','grant','missing')).rejects.toThrow()
+    await expect(operateSubscriptionPlan(env,'usr_1','renew')).rejects.toThrow()
+    await expect(operateSubscriptionPlan(env,'usr_1','switch','missing')).rejects.toThrow()
+    await expect(operateSubscriptionPlan(env,'usr_999','grant','missing')).rejects.toThrow()
   })
 })
 
@@ -97,7 +96,7 @@ const proxies = async (token: string) => {
   expect(response.status).toBe(200)
   return (parseYaml(await response.text()) as { proxies: Array<Record<string, unknown>> }).proxies
 }
-async function expectNoMihomoNodes(token: string, reason = 'noEntitlement') {
+async function expectNoMihomoNodes(token: string, reason = 'noPlan') {
   const response = await fetchApi(`/sub/${token}/mihomo`)
   expect(response.status).toBe(422)
   expect(await response.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason } } })
@@ -110,8 +109,8 @@ describe('live subscription gating', () => {
     const subscription = (await readDelivery(env)).subscriptions[0]
     expect((await compileSubscription(env,subscription)).every((a) => a.outputNodes === 0)).toBe(true)
     const plan = await savePlan(env.DB,{ name: 'Compilation',groupIds: [ids[0]],durationDays: 30 })
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id)
-    const artifacts = await compileSubscription(env,subscription)
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id)
+    const artifacts = await compileSubscription(env,(await readDelivery(env)).subscriptions[0])
     expect(artifacts.find((a) => a.client === 'mihomo')?.outputNodes).toBe(1)
     expect((await proxies(token)).length).toBe(1)
   })
@@ -125,19 +124,37 @@ describe('live subscription gating', () => {
   it('blocks Mihomo for expired and revoked rights despite populated cached artifacts', async () => {
     const { token,ids } = await deliveryFixture()
     const plan = await savePlan(env.DB,{ name: 'Expired',groupIds: ids,durationDays: 1 })
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id,'',NOW)
-    await expectNoMihomoNodes(token)
-    expect((await getUserEntitlement(env.DB,'usr_1')).state).toBe('expired')
-    await operateEntitlement(env.DB,'usr_1','renew')
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
+    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(410)
+    expect((await getSubscriptionPlanSummary(env.DB,'usr_1')).state).toBe('expired')
+    await operateSubscriptionPlan(env,'usr_1','renew')
     expect((await proxies(token)).length).toBe(2)
-    await operateEntitlement(env.DB,'usr_1','revoke')
-    await expectNoMihomoNodes(token)
+    await operateSubscriptionPlan(env,'usr_1','revoke')
+    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(404)
+  })
+  it('uses each subscription plan independently and ignores the migration backup', async () => {
+    const { token, ids } = await deliveryFixture()
+    const plan = await savePlan(env.DB, { name: 'Separate', groupIds: ids, durationDays: 30, trafficGb: 42 })
+    const planned = await admin('/api/admin/subscriptions', { name: 'Planned sibling', userId: 'usr_1', planId: plan.id, groupIds: ids })
+    expect(planned.status).toBe(201)
+    const result = await planned.json() as { token: string; subscription: { planId: string; trafficGb: number } }
+    expect(result.subscription).toMatchObject({ planId: plan.id, trafficGb: 42 })
+    await env.DB.prepare(`INSERT INTO user_entitlements_legacy
+      (id,user_id,plan_id,starts_at,expires_at,status,source,created_at,updated_at)
+      VALUES ('legacy-test','usr_1',?,?,'2099-01-01T00:00:00.000Z','active','admin',?,?)`)
+      .bind(plan.id, NOW, NOW, NOW).run()
+    try {
+      await expectNoMihomoNodes(token)
+      expect(await proxies(result.token)).toHaveLength(ids.length)
+    } finally {
+      await env.DB.prepare("DELETE FROM user_entitlements_legacy WHERE id='legacy-test'").run()
+    }
   })
   it('filters by plan groups, injects supported speed fields and reacts to plan edits', async () => {
     const { token,ids,catalog } = await deliveryFixture()
     const hyIndex = catalog.nodes.findIndex((n) => n.displayName === 'Excluded')
     const plan = await savePlan(env.DB,{ name: 'Limited',groupIds: [ids[hyIndex]],durationDays: 30,speedLimitMbps: 20 })
-    await operateEntitlement(env.DB,'usr_1','grant',plan.id)
+    await operateSubscriptionPlan(env,'usr_1','grant',plan.id)
     expect(await proxies(token)).toEqual([expect.objectContaining({ name: 'Excluded',up: 20,down: 20 })])
     const generic = await fetchApi(`/sub/${token}/generic`)
     expect(generic.status).toBe(200)
@@ -192,21 +209,21 @@ describe('admin routes and registration trials', () => {
     const registration = await fetchApi('/api/register',jsonRequest({ username: 'trialuser',password: 'trial user password 123',email: 'trial@example.com',code }))
     expect(registration.status).toBe(201)
     const user = ((await registration.json()) as { user: { id: string } }).user
-    const rights = await getUserEntitlement(env.DB,user.id)
+    const rights = await getSubscriptionPlanSummary(env.DB,user.id)
     expect(rights.current).toMatchObject({ source: 'trial',planId: plan.id })
-    expect(Date.parse(rights.current!.expiresAt) - Date.parse(rights.current!.startsAt)).toBe(3 * 86400000)
+    expect(Date.parse(rights.current!.expiresAt!) - Date.parse(rights.current!.startsAt)).toBe(3 * 86400000)
     const again = await fetchApi('/api/register',jsonRequest({ username: 'trialother',password: 'trial user password 123',email: 'trial@example.com',code }))
     expect(again.status).not.toBe(201)
-    expect((await env.DB.prepare("SELECT count(*) AS count FROM user_entitlements WHERE source='trial'").first<{ count: number }>())?.count).toBe(1)
+    expect((await env.DB.prepare("SELECT count(*) AS count FROM subscriptions WHERE plan_source='trial'").first<{ count: number }>())?.count).toBe(1)
   })
   it('disables trial when either setting is empty', async () => {
-    const { trialGrantStatement } = await import('../../../worker/entitlements/service')
-    expect(await trialGrantStatement(env.DB,'usr_1',NOW)).toBeNull()
+    const { trialSubscriptionStatements } = await import('../../../worker/delivery/plans')
+    expect(await trialSubscriptionStatements(env,'usr_1',NOW)).toEqual([])
     const plan = await makePlan()
     await putSetting(env.DB,'trial_plan_id',plan.id)
-    expect(await trialGrantStatement(env.DB,'usr_1',NOW)).toBeNull()
+    expect(await trialSubscriptionStatements(env,'usr_1',NOW)).toEqual([])
     await putSetting(env.DB,'trial_days',3)
     await savePlan(env.DB,{ ...plan,enabled: false },plan.id)
-    expect(await trialGrantStatement(env.DB,'usr_1',NOW)).toBeNull()
+    expect(await trialSubscriptionStatements(env,'usr_1',NOW)).toEqual([])
   })
 })

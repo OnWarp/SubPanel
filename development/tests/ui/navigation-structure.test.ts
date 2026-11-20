@@ -104,7 +104,7 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each([
     ['/dashboard', '概览'], ['/catalog/nodes', '节点'], ['/catalog/sources', '来源'], ['/catalog/groups', '分组'],
-    ['/delivery/subscriptions', '订阅'], ['/delivery/shares', '分享管理'], ['/plans', '权益计划'],
+    ['/delivery/subscriptions', '订阅'], ['/delivery/shares', '分享管理'], ['/plans', '订阅计划'],
     ['/delivery/tickets', '工单'], ['/delivery/tickets/tkt_1', '工单'], ['/kb/manage', '知识库'],
     ['/catalog/apps', '客户端下载'], ['/operations/notices', '公告'], ['/audit-logs', '审计日志'], ['/account', '账户安全'],
   ])('keeps administrator route %s reachable', (path, marker) => {
@@ -135,7 +135,7 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each([
     ['/dashboard', '概览'],
-    ['/plans', '权益计划'],
+    ['/plans', '订阅计划'],
     ['/delivery/tickets', '工单'],
     ['/operations/notices', '公告'],
     ['/kb/manage', '知识库管理'],
@@ -216,6 +216,11 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each(['/home', '/subscriptions', '/nodes', '/me', '/apps', '/notices', '/kb', '/kb/article_1', '/tickets', '/tickets/tkt_1', '/account', '/entitlement', '/entitlements'])('keeps user route %s reachable with identical desktop and mobile navigation', path => {
     const html = render(path, 'user')
+    if (path === '/entitlement' || path === '/entitlements') {
+      expect(html).not.toContain('workspace-content')
+      expect(readFileSync(new URL('../../../src/app/router.tsx', import.meta.url), 'utf8')).toContain(`path="${path}" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace />`)
+      return
+    }
     expect(html).toContain('workspace-content')
     const expected = userSidebar.map(item => item.to)
     expect(links(nav(html, '主导航'))).toEqual(expected)

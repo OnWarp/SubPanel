@@ -11,7 +11,7 @@ import { DataTable } from '../../ui/DataTable'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { LoadingState } from '../../ui/LoadingState'
 import { ErrorState } from '../../ui/ErrorState'
-import type { Plan } from './types'
+import type { Plan } from './plan-types'
 const empty: Plan = { id: '', name: '', description: '', groupIds: [], durationDays: 30, trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0, enabled: true, sortOrder: 0 }
 export function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([])
@@ -25,7 +25,7 @@ export function PlansPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [p, g, t] = await Promise.all([api<{ plans: Plan[] }>('/api/admin/plans'),api<{ groups: Array<{ id: string; name: string }> }>('/api/admin/catalog'),api<typeof trial>('/api/admin/entitlements/trial')])
+      const [p, g, t] = await Promise.all([api<{ plans: Plan[] }>('/api/admin/plans'),api<{ groups: Array<{ id: string; name: string }> }>('/api/admin/catalog'),api<typeof trial>('/api/admin/subscriptions/trial')])
       setPlans(p.plans); setGroups(g.groups); setTrial(t); setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : '加载失败') }
     finally { setLoading(false) }
@@ -50,11 +50,11 @@ export function PlansPage() {
   }
   const saveTrial = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true)
-    try { await api('/api/admin/entitlements/trial',{ method: 'PUT',body: jsonBody(trial) }); setError('') }
+    try { await api('/api/admin/subscriptions/trial',{ method: 'PUT',body: jsonBody(trial) }); setError('') }
     catch (cause) { setError(cause instanceof Error ? cause.message : '保存失败') }
     finally { setBusy(false) }
   }
-  return <div className="page-stack ops-page"><PageHeader title="权益计划" /><section className="ops-card ops-table"><OperationsHeading title="权益计划" action={<button className="button primary" onClick={() => { setError(''); setDraft({ ...empty }) }}>新增计划</button>} />
+  return <div className="page-stack ops-page"><PageHeader title="订阅计划" /><section className="ops-card ops-table"><OperationsHeading title="订阅计划" action={<button className="button primary" onClick={() => { setError(''); setDraft({ ...empty }) }}>新增计划</button>} />
     {error && !draft ? <ErrorState message={error} onRetry={() => { void load() }} /> : null}
     {loading ? <LoadingState /> : <DataTable rows={plans} rowKey={(p) => p.id} empty="暂无计划" columns={[
       { key: 'name',header: '计划',render: (p) => <strong className="ops-main">{p.name}<span className="ops-meta">{p.description || p.id}</span></strong> },
@@ -82,6 +82,6 @@ export function PlansPage() {
         <button className="button primary" disabled={busy}>保存计划</button>
       </form> : null}
     </EditDrawer>
-    <ConfirmDialog open={remove !== null} title="删除计划" description={`删除 ${remove?.name ?? ''}？已有权益记录的计划请停用`} confirmLabel="删除" danger busy={busy} onClose={() => setRemove(null)} onConfirm={() => { void deleteSelected() }} />
+    <ConfirmDialog open={remove !== null} title="删除计划" description={`删除 ${remove?.name ?? ''}？已有订阅记录的计划请停用`} confirmLabel="删除" danger busy={busy} onClose={() => setRemove(null)} onConfirm={() => { void deleteSelected() }} />
   </div>
 }

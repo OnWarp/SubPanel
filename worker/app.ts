@@ -1,7 +1,7 @@
 import { templateRoutes } from './templates/routes.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
-import { adminEntitlementRoutes, userEntitlementRoutes } from './entitlements/routes.js'
+import { adminPlanRoutes, userPlanRoutes } from './delivery/plan-routes.js'
 import { Hono } from 'hono'
 import type { AppEnv } from './app-env.js'
 import { accountRoutes } from './accounts/account-routes.js'
@@ -72,8 +72,8 @@ app.use('/api/admin/*', requireAdmin)
 app.use('/api/admin/*', auditAdminMutation)
 app.route('/api/admin', adminManagementRoutes)
 app.route('/api/admin', adminAccountRoutes)
-app.route('/api/admin', adminEntitlementRoutes)
-app.route('/api/account', userEntitlementRoutes)
+app.route('/api/admin', adminPlanRoutes)
+app.route('/api/account', userPlanRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin', adminSystemRoutes)

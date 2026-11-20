@@ -15,7 +15,7 @@ import { build } from 'esbuild'
 const root = process.cwd()
 const temp = await mkdtemp(join(tmpdir(),'invite-registration-test-'))
 const output = join(temp,'worker.mjs')
-await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/entitlements/service.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
+await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/delivery/plans.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
   builder.onResolve({ filter: /^cloudflare:/ },(args) => ({ path: args.path,namespace: 'worker-bindings' }))
   builder.onLoad({ filter: /.*/,namespace: 'worker-bindings' },(args) => ({ contents: args.path === 'cloudflare:workers' ? 'export const env = globalThis.__entitlementEnv' : 'export function connect() { throw new Error("SMTP is not used by this test") }' }))
 } }] })
@@ -27,12 +27,13 @@ const db = { prepare(sql) {
     bind: (...args) => create(args),
     first: async (column) => { const row = statement.get(...values); return column ? row?.[column] ?? null : row ?? null },
     all: async () => ({ results: statement.all(...values),success: true,meta: {} }),
+    batch: async () => statement.columns().length ? { results: statement.all(...values), success: true, meta: {} } : create(values).run(),
     run: async () => { const result = statement.run(...values); return { success: true,results: [],meta: { changes: Number(result.changes) } } },
   })
   return create([])
 }, async batch(statements) {
   sqlite.exec('BEGIN')
-  try { const result = []; for (const statement of statements) result.push(await statement.run()); sqlite.exec('COMMIT'); return result }
+  try { const result = []; for (const statement of statements) result.push(await statement.batch()); sqlite.exec('COMMIT'); return result }
   catch (error) { sqlite.exec('ROLLBACK'); throw error }
 } }
 const values = new Map()
@@ -92,6 +93,23 @@ try {
   assert.equal(consumed.usedCount,2)
   assert.equal(consumed.remaining,0)
   assert.ok(!JSON.stringify(listed).includes(code.code))
+ })
+ await test('issuing a planned subscription is guarded by the successful invite redemption', async () => {
+  const plan=await w.savePlan(db,{name:'Invite trial',groupIds:[],durationDays:30,trafficGb:10})
+  await w.putSetting(db,'trial_plan_id',plan.id)
+  await w.putSetting(db,'trial_days',3)
+  const [code]=await makeCodes({type:'batch',count:1})
+  assert.equal((await register('plannedinvite',code.code)).status,201)
+  assert.equal((await register('alreadyused',code.code)).status,409)
+  const granted=sqlite.prepare(`SELECT s.* FROM subscriptions s JOIN users u ON u.id=s.user_id
+    WHERE u.username='plannedinvite'`).get()
+  assert.equal(granted.plan_id,plan.id)
+  assert.equal(granted.traffic_gb,10)
+  assert.equal(granted.plan_source,'trial')
+  assert.equal(granted.expires_at-granted.starts_at,3*86400000)
+  assert.equal(sqlite.prepare('SELECT count(*) AS total FROM subscriptions').get().total,1)
+  await w.putSetting(db,'trial_plan_id',null)
+  await w.putSetting(db,'trial_days',null)
  })
  await test('batch single-use codes, disabled and expired codes, and management authorization',async()=>{
   const codes=await makeCodes({type:'batch',count:3})

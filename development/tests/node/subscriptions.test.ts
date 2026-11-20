@@ -9,7 +9,6 @@ import type { DataEnv } from '../../../worker/db/module-switch'
 vi.mock('../../../worker/db/module-switch', async importOriginal => ({ ...await importOriginal<object>(), isModuleReady: async () => false }))
 vi.mock('../../../worker/accounts/repository', () => ({ readAccounts: async () => ({ users: [{ id: 'usr_1', enabled: true, deletedAt: null }, { id: 'usr_2', enabled: true, deletedAt: null }] }) }))
 vi.mock('../../../worker/catalog/repository', () => ({ readCatalog: async () => ({ revision: 1, groups: [], nodes: [] }) }))
-vi.mock('../../../worker/entitlements/service', () => ({ getUserEntitlement: async () => ({ current: null }) }))
 let env: DataEnv
 beforeEach(() => {
   const values = new Map<string, string>()

@@ -1,6 +1,6 @@
 export const templateDefaults = {
  verification: { subject: 'SubPanel 验证码 / Verification code', body: '{{username}}，你的 SubPanel 验证码是 {{code}}\n用途：{{purpose}}\n验证码 10 分钟内有效，请勿告诉任何人' },
- expiry_reminder: { subject: 'SubPanel 权益即将到期', body: '{{username}}，你的 {{plan}} 权益将于 {{expires_at}} 到期。' },
+ expiry_reminder: { subject: 'SubPanel 订阅即将到期', body: '{{username}}，你的 {{plan}} 订阅将于 {{expires_at}} 到期。' },
  broadcast: { subject: '{{subject}}', body: '{{body}}' },
 }
 export type TemplateKey = keyof typeof templateDefaults

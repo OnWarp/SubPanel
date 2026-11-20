@@ -1,7 +1,5 @@
 import { AuditLogsPage } from '../features/admin/AuditLogsPage'
-import { MyEntitlementPage } from '../features/entitlements/MyEntitlementPage'
-import { EntitlementsPage } from '../features/entitlements/EntitlementsPage'
-import { PlansPage } from '../features/entitlements/PlansPage'
+import { PlansPage } from '../features/delivery/PlansPage'
 import type { ReactNode } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AccountPage } from '../features/accounts/AccountPage'
@@ -92,10 +90,10 @@ export function AppRouter() {
       <Route path="/invites" element={user?.role === 'admin' ? shell(<UserManagementPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/apps" element={user ? shell(<UserAppsPage />) : <Navigate to={signedOut} replace />} />
       <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
-      <Route path="/entitlement" element={user?.role === 'user' ? shell(<MyEntitlementPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/entitlement" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace /> : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
-      <Route path="/entitlements" element={user?.role === 'user' ? shell(<EntitlementsPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/entitlements" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace /> : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/nodes" element={user?.role === 'user' ? shell(<MyNodesPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/notices" element={user?.role === 'user' ? shell(<NoticesPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/kb" element={user?.role === 'user' ? shell(<KbPage />) : <Navigate to={user ? home : signedOut} replace />} />

@@ -1,5 +1,5 @@
 import { bindingSchema } from '../templates/repository.js'
-import { getUserEntitlement } from '../entitlements/service.js'
+import { listPlans, subscriptionPlanState } from './plans.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
@@ -19,7 +19,6 @@ import {
   deleteSubscription,
   getSubscription,
   listAllSubscriptions,
-  listSubscriptionsForUser,
   resetSubscriptionToken,
   updateSubscription,
   DeliveryError,
@@ -32,6 +31,7 @@ const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2r
 const epochField = epochMillisSchema.nullable().optional()
 const createSchema = z.object({
   userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
+  planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)),
   enabled: z.boolean().optional(),
@@ -41,6 +41,7 @@ const createSchema = z.object({
   templateBinding: bindingSchema.optional(),
 })
 const updateSchema = z.object({
+  planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128).optional(),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)).optional(),
   enabled: z.boolean().optional(),
@@ -99,7 +100,13 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
-  const token = await decryptSubscriptionToken(c.env.DATA, subscription)
+  const token = await decryptSubscriptionToken(c.env, subscription)
+  if (!subscription.encryptedToken) {
+    const current = await getSubscription(c.env, subscription.id)
+    if (current.userId !== subscription.userId) throw apiError(409, 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
+    subscription = current
+  }
+  const plan = subscription.planId ? (await listPlans(c.env.DB)).find(plan => plan.id === subscription.planId) ?? null : null
   const currentCatalogRevision = catalogRevision ?? (await readCatalog(c.env)).revision
   // Subscription links are always generated on the primary subscription
   // domain (plan section 7.1). When no usable primary is configured the
@@ -143,7 +150,12 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     }
   }
   return {
-    entitlement: await getUserEntitlement(c.env.DB, subscription.userId ?? ''),
+    planId: subscription.planId ?? null,
+    planName: plan?.name ?? null,
+    planState: subscriptionPlanState(subscription, plan, Date.now()),
+    trafficGb: subscription.trafficGb ?? 0,
+    speedLimitMbps: subscription.speedLimitMbps ?? 0,
+    deviceLimit: subscription.deviceLimit ?? 0,
     id: subscription.id,
     userId: subscription.userId,
     name: subscription.name,
@@ -310,10 +322,12 @@ export const userDeliveryRoutes = new Hono<AppEnv>()
 userDeliveryRoutes.get('/', async (c) => {
   await disableExpiredSubscriptions(c.env)
   const [subscriptions, catalog] = await Promise.all([
-    listSubscriptionsForUser(c.env, c.get('principal').id),
+    listAllSubscriptions(c.env),
     readCatalog(c.env),
   ])
-  const views = await Promise.all(subscriptions.map(async (summary) => view(c, await getSubscription(c.env, summary.id), catalog.revision)))
+  const userId = c.get('principal').id
+  const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
+    .map(subscription => view(c, subscription, catalog.revision)))
   return c.json({ subscriptions: views })
 })
 

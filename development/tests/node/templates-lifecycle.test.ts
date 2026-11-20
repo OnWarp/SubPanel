@@ -90,7 +90,7 @@ it('blocks unsafe redirects without requesting their target',async()=>{
  try{expect((await request(`/${id}/import`,{url:'https://template.example/policy'})).status).toBe(422);expect(fetcher).toHaveBeenCalledTimes(1)}finally{vi.unstubAllGlobals()}
 })
 
-it.each(['noEntitlement', 'noGroupIntersection', 'noEnabledNodes', 'incompatible'])('explains zero nodes: %s',async zeroNodeReason => {
+it.each(['noPlan', 'noGroupIntersection', 'noEnabledNodes', 'incompatible'])('explains zero nodes: %s',async zeroNodeReason => {
  vi.mocked(renderEntitledSubscription).mockResolvedValue({
   body:renderClient('mihomo',[]).body,outputNodes:0,available:false,zeroNodeReason,
  } as never)

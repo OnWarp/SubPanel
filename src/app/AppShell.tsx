@@ -16,7 +16,7 @@ function UserCenter({ signOut }: { signOut: () => Promise<void> }) {
   return <div className="user-center"><details onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary title="用户中心">
     {profile ? <img src={profile.avatar.url} alt="" width={32} height={32} /> : <UserRound size={24} aria-hidden="true" />}
     <span>{profile?.user.email ?? user?.email ?? user?.username}</span><ChevronDown size={16} aria-hidden="true" />
-    </summary><nav aria-label="账号菜单"><Link to="/me">个人中心</Link><Link to="/entitlement">我的权益</Link><Link to="/account">安全与通知设置</Link><button type="button" onClick={() => { signOut().catch(() => setError('退出登录失败，请重试')) }}>退出登录</button></nav>
+    </summary><nav aria-label="账号菜单"><Link to="/me">个人中心</Link><Link to="/subscriptions">我的订阅</Link><Link to="/account">安全与通知设置</Link><button type="button" onClick={() => { signOut().catch(() => setError('退出登录失败，请重试')) }}>退出登录</button></nav>
     </details>{error ? <p role="alert">{error}</p> : null}</div>
 }
 

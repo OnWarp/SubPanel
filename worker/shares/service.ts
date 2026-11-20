@@ -372,7 +372,7 @@ export async function revealOriginalLink(
   const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
   if (!subscription?.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
   const settings = await readShareSettings(env)
-  const link = `${await publicOrigin(env, settings, requestUrl)}/sub/${await decryptSubscriptionToken(env.DATA, subscription)}`
+  const link = `${await publicOrigin(env, settings, requestUrl)}/sub/${await decryptSubscriptionToken(env, subscription)}`
   const nowIso = now.toISOString()
   // lastOriginalRevealAt 是审计占位：项目暂无审计表，这个字段不能当成完整审计日志。
   await writeShare(env, { ...current, lastOriginalRevealAt: nowIso, updatedAt: nowIso })
@@ -454,7 +454,7 @@ export async function exportShare(
   if (parsed.data.type === 'link') {
     if (!guarded.share.allowOriginalLink) throw notFound()
     assertSubscriptionAvailable(guarded.subscription, now.getTime())
-    const link = `${await publicOrigin(env, guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(env.DATA, guarded.subscription)}`
+    const link = `${await publicOrigin(env, guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(env, guarded.subscription)}`
     if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
     return { kind: 'link', link }
   }

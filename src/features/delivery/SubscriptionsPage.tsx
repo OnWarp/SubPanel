@@ -1,5 +1,6 @@
 import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { CreateShareForm } from '../shares/ShareDrawer'
+import type { Plan } from './plan-types'
 import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
 import { TemplateBinding } from '../system/TemplateBinding'
 import { CheckCircle2, KeyRound, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
@@ -37,6 +38,7 @@ import {
 
 type SubscriptionForm = {
   userId: string
+  planId: string
   name: string
   groupIds: string[]
   defaultClient: string
@@ -91,7 +93,7 @@ const UNIFIED_FILTERS: Array<{ key: UnifiedFilter; label: string }> = [
 
 const INHERITED_TEMPLATE_BINDING: SubscriptionTemplateBinding = { mode: 'inherit', expectedRevision: 1 }
 
-const EMPTY_FORM: SubscriptionForm = { userId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
+const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
 
 const LEGACY_EXPIRY_WINDOWS: ExpiryFilter[] = ['7', '15', '30']
 
@@ -123,6 +125,7 @@ function toggle(values: string[], id: string): string[] {
 
 export function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
+  const [plans, setPlans] = useState<Plan[]>([])
   const [users, setUsers] = useState<UserSummary[]>([])
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -200,10 +203,12 @@ export function SubscriptionsPage() {
   }, [enabledOnly, expiryFilter, page, query, statusFilter])
 
   const loadMeta = useCallback(async () => {
-    const [userResult, nextCatalog] = await Promise.all([
+    const [userResult, nextCatalog, planResult] = await Promise.all([
       loadAdminUserOptions(),
       api<CatalogResponse>('/api/admin/catalog'),
+      api<{ plans: Plan[] }>('/api/admin/plans'),
     ])
+    setPlans(planResult.plans)
     setUsers(userResult.users)
     setCatalog(nextCatalog)
   }, [])
@@ -290,6 +295,7 @@ export function SubscriptionsPage() {
     setForm({
       userId: subscription.userId ?? '',
       name: subscription.name,
+      planId: subscription.planId ?? '',
       groupIds: [...subscription.groupIds],
       defaultClient: subscription.defaultClient,
       enabled: subscription.enabled,
@@ -355,14 +361,14 @@ export function SubscriptionsPage() {
       if (drawer === 'create') {
         const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>('/api/admin/subscriptions', {
           method: 'POST',
-          body: jsonBody({ userId: form.userId || null, name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
+          body: jsonBody({ userId: form.userId || null, name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
         })
         setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
         setMessage('订阅已添加')
       } else if (drawer.kind === 'edit') {
         const result = await api<{ subscription: AdminSubscription; warning: string }>(`/api/admin/subscriptions/${drawer.subscription.id}`, {
           method: 'PATCH',
-          body: jsonBody({ name: form.name, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
+          body: jsonBody({ name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
         })
         setMessage(`订阅已更新。${result.warning}`)
       }
@@ -568,6 +574,21 @@ export function SubscriptionsPage() {
             error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
           <label className="field"><span>订阅名称</span><Input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
           <label className="field"><span>所属用户</span><FormSelect aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
+          <FormField label="订阅计划" htmlFor="subscription-plan">
+            <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
+              const plan = plans.find(item => item.id === event.currentTarget.value)
+              setForm(current => ({
+                ...current, planId: plan?.id ?? '',
+                groupIds: plan ? [...plan.groupIds] : current.groupIds,
+                expiresAt: plan && drawer === 'create'
+                  ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
+                  : current.expiresAt,
+              }))
+            }}>
+              <option value="">未分配计划</option>
+              {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+            </FormSelect>
+          </FormField>
           <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
           <label className="field"><span>默认客户端</span><FormSelect aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect></label>
 
@@ -602,6 +623,12 @@ export function SubscriptionsPage() {
 
       <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer}>
         {details ? <div className="subscription-details">
+          {details.planId ? <dl className="profile-fields">
+            <div><dt>订阅计划</dt><dd>{details.planName}</dd></div>
+            <div><dt>流量额度</dt><dd>{details.trafficGb ? `${details.trafficGb} GB` : '不限'}</dd></div>
+            <div><dt>限速</dt><dd>{details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限'}</dd></div>
+            <div><dt>设备数</dt><dd>{details.deviceLimit || '不限'}</dd></div>
+          </dl> : null}
           <section><div className="detail-heading"><div><h3>{details.name}</h3><p>{details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'} · {details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</p></div><button className="button secondary" type="button" onClick={() => resetToken(details)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置令牌</button></div></section>
           <section><h3>客户端链接</h3><div className="link-list">{Object.entries(details.links).map(([client, link]) => <div key={client}><span>{CLIENT_LABELS[client] ?? client}</span><Input aria-label={`${CLIENT_LABELS[client] ?? client} 链接`} value={link} readOnly /><span className="row-actions"><CopyButton value={link} iconOnly label={`复制 ${CLIENT_LABELS[client] ?? client} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /><button className="icon-button" type="button" aria-label={`显示 ${CLIENT_LABELS[client] ?? client} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button></span></div>)}</div></section>
           <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>

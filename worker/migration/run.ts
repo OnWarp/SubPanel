@@ -146,6 +146,9 @@ async function importDelivery(env: DataEnv, now: string): Promise<MigrationRepor
   } catch {
     throw new MigrationError('MIGRATION_SOURCE_INVALID', '订阅快照无法读取')
   }
+  if ((await readDeliveryFromD1(env.DB)).subscriptions.some(subscription => subscription.planId)) {
+    throw new MigrationError('MIGRATION_VERIFY_FAILED', 'D1 已包含订阅计划，不能用旧 KV 快照覆盖')
+  }
   const converted = convertDelivery(snapshot)
   const accounts = await readAccounts(env)
   try {

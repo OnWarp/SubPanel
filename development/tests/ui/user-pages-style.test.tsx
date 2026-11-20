@@ -47,10 +47,6 @@ describe('user page presentation', () => {
 
     const cards = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(HomeDashboard, {
       reminder: null,
-      entitlementName: '月付',
-      entitlementSub: '2026/12/1 到期 · 剩余 13 天',
-      entitlementPercent: 40,
-      entitlementTone: 'normal',
       subscriptionLabel: '有效',
       subscriptionTone: 'success',
       subscriptionSub: '2 个分组 · 8 个节点',
@@ -59,7 +55,7 @@ describe('user page presentation', () => {
       onOpenNodes: () => undefined,
     })))
     const labels = [...cards.matchAll(/class="sp-stat-label"[^>]*>([^<]+)/g)].map((match) => match[1])
-    expect(labels).toEqual(['权益', '订阅', '分组 / 节点'])
+    expect(labels).toEqual(['订阅', '分组 / 节点'])
     expect(cards).toContain('2 个分组 · 8 个节点')
     expect(cards).not.toContain('流量')
     expect(cards).not.toContain('配额')
@@ -110,10 +106,10 @@ describe('user page presentation', () => {
     expect(subscriptions).toContain('upd-subs')
     expect(subscriptions).toContain('我的订阅')
     expect(subscriptions).toContain('下载客户端')
-    expect(subscriptions).toContain('查看我的权益')
+    expect(subscriptions).not.toContain('查看我的权益')
     expect(subscriptions).toContain('aria-label="选择订阅"')
     const source = readFileSync(new URL('../../../src/features/delivery/MySubscriptionsPage.tsx', import.meta.url), 'utf8')
-    for (const action of ['分享', '复制', '订阅二维码', '重置订阅令牌', '兼容诊断', '各平台链接']) expect(source).toContain(action)
+    for (const action of ['分享', '复制', '订阅二维码', '重置订阅令牌', '兼容诊断', '各平台链接', '订阅计划', '流量额度', '到期时间']) expect(source).toContain(action)
     expect(source).not.toContain('注销')
 
     const login = page(createElement(LoginPage))
@@ -148,8 +144,8 @@ describe('user page presentation', () => {
     expect(html).toContain('账户信息')
     expect(html).toContain('通知设置')
     expect(html).toContain('到期提醒')
-    expect(html).toContain('仅保存在此浏览器，权益到期前 7 天在首页提醒')
-    expect(html).toContain('权益与计划')
+    expect(html).toContain('仅保存在此浏览器，订阅到期前 7 天在首页提醒')
+    expect(html).not.toContain('权益与计划')
     expect(html).toContain('aria-label="帮助与支持"')
     expect(html).toContain('href="/notices"')
     expect(html).toContain('href="/kb"')

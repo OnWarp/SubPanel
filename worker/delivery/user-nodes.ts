@@ -5,6 +5,7 @@ import { readCatalog } from '../catalog/repository.js'
 import type { CatalogSnapshot, Group, Node } from '../catalog/schema.js'
 import { ApiError } from '../platform/api-error.js'
 import { assertSubscriptionAvailable } from './expiry.js'
+import { listPlans, subscriptionPlanState } from './plans.js'
 import { readDelivery } from './repository.js'
 
 export type UserNodeRef = {
@@ -147,7 +148,16 @@ userNodeRoutes.get('/', async (c) => {
     readDelivery(c.env),
     readCatalog(c.env),
   ])
-  const nodes = collectUserNodes(delivery.subscriptions, catalog, c.get('principal').id)
+  const userId = c.get('principal').id
+  const assigned = delivery.subscriptions.filter(subscription => subscription.userId === userId && subscription.planId)
+  const plans = new Map(assigned.length ? (await listPlans(c.env.DB)).map(plan => [plan.id, plan]) : [])
+  const now = Date.now()
+  const eligible = assigned.flatMap(subscription => {
+    const plan = plans.get(subscription.planId!)
+    if (!plan || subscriptionPlanState(subscription, plan, now) !== 'active') return []
+    return [{ ...subscription, groupIds: subscription.groupIds.filter(id => plan.groupIds.includes(id)) }]
+  })
+  const nodes = collectUserNodes(eligible, catalog, userId, now)
   const query = c.req.query()
   if (!hasUserNodeParams(query)) return c.json({ nodes })
   const { page, pageSize } = parsePagination(query)
@@ -159,5 +169,6 @@ userNodeRoutes.get('/', async (c) => {
     pageSize,
     subscriptionOptions: uniqueNodeRefs(nodes, 'subscriptions'),
     groupOptions: uniqueNodeRefs(nodes, 'groups'),
+    hasActiveSubscription: eligible.length > 0,
   })
 })

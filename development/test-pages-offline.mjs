@@ -15,7 +15,7 @@ import { build } from 'esbuild'
 const root = process.cwd()
 const temp = await mkdtemp(join(tmpdir(),'pages-test-'))
 const output = join(temp,'worker.mjs')
-await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/entitlements/service.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
+await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/delivery/plans.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
   builder.onResolve({ filter: /^cloudflare:/ },(args) => ({ path: args.path,namespace: 'worker-bindings' }))
   builder.onLoad({ filter: /.*/,namespace: 'worker-bindings' },(args) => ({ contents: args.path === 'cloudflare:workers' ? 'export const env = globalThis.__entitlementEnv' : 'export function connect() { throw new Error("SMTP is not used by this test") }' }))
 } }] })
@@ -27,12 +27,13 @@ const db = { prepare(sql) {
     bind: (...args) => create(args),
     first: async (column) => { const row = statement.get(...values); return column ? row?.[column] ?? null : row ?? null },
     all: async () => ({ results: statement.all(...values),success: true,meta: {} }),
+    batch: async () => statement.columns().length ? { results: statement.all(...values), success: true, meta: {} } : create(values).run(),
     run: async () => { const result = statement.run(...values); return { success: true,results: [],meta: { changes: Number(result.changes) } } },
   })
   return create([])
 }, async batch(statements) {
   sqlite.exec('BEGIN')
-  try { const result = []; for (const statement of statements) result.push(await statement.run()); sqlite.exec('COMMIT'); return result }
+  try { const result = []; for (const statement of statements) result.push(await statement.batch()); sqlite.exec('COMMIT'); return result }
   catch (error) { sqlite.exec('ROLLBACK'); throw error }
 } }
 const values = new Map()
@@ -98,7 +99,7 @@ try {
  await test('stats endpoint supplies all dashboard counts under the admin guard',async()=>{
  const response=await request('/api/admin/stats');assert.equal(response.status,200)
  const stats=await response.json()
- assert.equal(stats.users,2);assert.equal(stats.activeEntitlements,0);assert.equal(stats.expiringEntitlements,0);assert.equal(stats.pendingTickets,0)
+ assert.equal(stats.users,2);assert.equal(stats.activeSubscriptions,0);assert.equal(stats.expiringSubscriptions,0);assert.equal(stats.pendingTickets,0)
  assert.equal((await request('/api/admin/stats',undefined,'GET',false)).status,401)
  })
 } finally { sqlite.close(); await rm(temp,{recursive:true,force:true}) }

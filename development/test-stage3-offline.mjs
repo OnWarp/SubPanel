@@ -15,7 +15,7 @@ import { build } from 'esbuild'
 const root = process.cwd()
 const temp = await mkdtemp(join(tmpdir(),'stage3-test-'))
 const output = join(temp,'worker.mjs')
-await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/entitlements/service.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
+await build({ stdin: { contents: `export { userAnchorStatement } from './worker/db/ensure-users.ts'; export { readAccounts, writeAccounts } from './worker/accounts/repository.ts'; export * from './worker/admin/service.ts'; export * from './worker/admin/templates.ts'; export * from './worker/admin/audit.ts'; export * from './worker/accounts/email.ts'; export { app } from './worker/app.ts'; export * from './worker/delivery/plans.ts'; export { setEmailVerificationDeliverer } from './worker/accounts/email.ts'; export { putSetting, putRegistrationMode } from './worker/db/settings-repository.ts'; export { markModuleReady, ACCOUNTS_D1_READY_KEY } from './worker/db/module-switch.ts';`,resolveDir: root },bundle: true,platform: 'node',format: 'esm',banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },outfile: output,plugins: [{ name: 'worker-bindings',setup(builder) {
   builder.onResolve({ filter: /^cloudflare:/ },(args) => ({ path: args.path,namespace: 'worker-bindings' }))
   builder.onLoad({ filter: /.*/,namespace: 'worker-bindings' },(args) => ({ contents: args.path === 'cloudflare:workers' ? 'export const env = globalThis.__entitlementEnv' : 'export function connect() { throw new Error("SMTP is not used by this test") }' }))
 } }] })
@@ -27,12 +27,13 @@ const db = { prepare(sql) {
     bind: (...args) => create(args),
     first: async (column) => { const row = statement.get(...values); return column ? row?.[column] ?? null : row ?? null },
     all: async () => ({ results: statement.all(...values),success: true,meta: {} }),
+    batch: async () => statement.columns().length ? { results: statement.all(...values), success: true, meta: {} } : create(values).run(),
     run: async () => { const result = statement.run(...values); return { success: true,results: [],meta: { changes: Number(result.changes) } } },
   })
   return create([])
 }, async batch(statements) {
   sqlite.exec('BEGIN')
-  try { const result = []; for (const statement of statements) result.push(await statement.run()); sqlite.exec('COMMIT'); return result }
+  try { const result = []; for (const statement of statements) result.push(await statement.batch()); sqlite.exec('COMMIT'); return result }
   catch (error) { sqlite.exec('ROLLBACK'); throw error }
 } }
 const values = new Map()
@@ -46,9 +47,10 @@ const request = async (path,body,method = body === undefined ? 'GET' : 'POST',au
 try {
  await test('0010 upgrades legacy audit rows and preserves actor after deletion',async()=>{
  const files=(await readdir(resolve(root,'migrations'))).filter(f=>f.endsWith('.sql')).sort()
- for(const file of files.filter(f=>!f.startsWith('0010'))) sqlite.exec(await readFile(resolve(root,'migrations',file),'utf8'))
+ for(const file of files.filter(f=>f<'0010')) sqlite.exec(await readFile(resolve(root,'migrations',file),'utf8'))
  sqlite.exec(`INSERT INTO audit_logs(created_at,action,entity_type,detail) VALUES('${NOW}','legacy','users','{}')`)
  sqlite.exec(await readFile(resolve(root,'migrations/0010_stage3_admin.sql'),'utf8'))
+ for(const file of files.filter(f=>f>'0010_stage3_admin.sql')) sqlite.exec(await readFile(resolve(root,'migrations',file),'utf8'))
  assert.equal(sqlite.prepare("SELECT target_type FROM audit_logs WHERE action='legacy'").get().target_type,'users')
  assert.equal((await w.templateContent(db,'broadcast',{subject:'Hi',body:'<script>'})).html,'<p>&lt;script&gt;</p>')
  })
@@ -66,7 +68,7 @@ try {
  assert.equal((await (await request(`/api/admin/audit-logs?actor=${actor}&pageSize=1&page=2`)).json()).logs.length,0)
  assert.equal((await (await request('/api/admin/audit-logs?actor=missing')).json()).pagination.total,0)
  })
- await test('audit metadata records settings and entitlement actions without secrets',async()=>{
+ await test('audit metadata records settings and subscription actions without secrets',async()=>{
  assert.equal((await request('/api/admin/system/reminders',{reminder_days:3},'PUT')).status,200)
  const invitation=await request('/api/admin/invites',{username:'invitee'})
  assert.equal(invitation.status,201)
@@ -80,12 +82,12 @@ try {
  assert.ok(rows.some(row=>row.target_id===id && JSON.parse(row.detail).enabled===false))
  assert.ok(!JSON.stringify(sqlite.prepare('SELECT detail FROM audit_logs').all()).includes('correct horse'))
  const planId=sqlite.prepare('SELECT id FROM plans').get().id
- assert.equal((await request(`/api/admin/users/${id}/entitlement`,{action:'grant',planId})).status,200)
- assert.ok(sqlite.prepare("SELECT id FROM audit_logs WHERE action='post.users.entitlement.grant'").get())
- assert.equal((await request(`/api/admin/users/${id}/entitlement`,{action:'revoke'})).status,200)
- assert.ok(sqlite.prepare("SELECT id FROM audit_logs WHERE action='post.users.entitlement.revoke'").get())
+ assert.equal((await request(`/api/admin/users/${id}/subscription-plan`,{action:'grant',planId})).status,200)
+ assert.ok(sqlite.prepare("SELECT id FROM audit_logs WHERE action='post.subscriptions.grant'").get())
+ assert.equal((await request(`/api/admin/users/${id}/subscription-plan`,{action:'revoke'})).status,200)
+ assert.ok(sqlite.prepare("SELECT id FROM audit_logs WHERE action='post.subscriptions.revoke'").get())
  // Keep the subsequent statistics fixture isolated.
- sqlite.prepare('DELETE FROM user_entitlements WHERE user_id=?').run(id)
+ sqlite.prepare('DELETE FROM subscriptions WHERE user_id=?').run(id)
  sqlite.prepare('DELETE FROM users WHERE id=?').run(id)
  })
  await test('templates list, update, rendering, delete and built-in verification fallback',async()=>{
@@ -103,20 +105,20 @@ try {
  assert.equal((await w.sendMail({to:'u@example.com',subject:'test',text:'test',html:'test'})).ok,false)
  })
  let plan
- await test('statistics use enabled accounts/plans and exact entitlement windows',async()=>{
+ await test('statistics use enabled accounts/plans and exact subscription windows',async()=>{
  plan=sqlite.prepare('SELECT id FROM plans').get().id
  // Duplicate admin fixture as regular users, preserving real account columns.
  for(let i=2;i<=8;i++) sqlite.prepare(`INSERT INTO users SELECT ?,?,'user',1,password_algorithm,password_iterations,password_salt,password_hash,0,?, ?,email_verified_at,created_at,updated_at,NULL FROM users WHERE id='usr_1'`).run('usr_'+i,'user'+i,'u'+i+'@example.com','u'+i+'@example.com')
- const insert=db.prepare("INSERT INTO user_entitlements(id,user_id,plan_id,starts_at,expires_at,status,source,created_at,updated_at) VALUES(?,?,?,?,?,?,'admin',?,?)")
+ const insert=db.prepare("INSERT INTO subscriptions(id,user_id,plan_id,starts_at,expires_at,enabled,plan_revoked,created_at,updated_at,  name,token_hash,token_prefix,encrypted_token,default_client,revision)  VALUES(?,?,?,?,?,?,?,?,?,'Fixture',?,'pending_','{}','mihomo',1)")
  const now=new Date(), iso=now.toISOString(),day=n=>new Date(now.getTime()+n*86400000).toISOString()
- for(const [id,start,end,status] of [[2,-1,1,'active'],[3,-1,8,'active'],[4,1,2,'active'],[5,-2,-1,'active'],[6,-1,1,'revoked'],[7,-1,1,'active'],[8,-1,1,'active']]) await insert.bind('ent_'+id,'usr_'+id,plan,day(start),day(end),status,iso,iso).run()
+ for(const [id,start,end,status] of [[2,-1,1,'active'],[3,-1,8,'active'],[4,1,2,'active'],[5,-2,-1,'active'],[6,-1,1,'revoked'],[7,-1,1,'active'],[8,-1,1,'active']]) await insert.bind('sub_'+id,'usr_'+id,plan,Date.parse(day(start)),Date.parse(day(end)),Number(status==='active'),Number(status==='revoked'),iso,iso,'fixture-'+id).run()
  sqlite.exec("UPDATE users SET enabled=0 WHERE id='usr_7'; UPDATE users SET deleted_at='2026-01-01' WHERE id='usr_8'")
  const stats=await w.adminStats(db,iso)
- assert.equal(stats.users,7);assert.equal(stats.activeEntitlements,2);assert.equal(stats.expiringEntitlements,1);assert.equal(stats.plans,1);assert.equal(stats.pendingTickets,0)
+ assert.equal(stats.users,7);assert.equal(stats.activeSubscriptions,2);assert.equal(stats.expiringSubscriptions,1);assert.equal(stats.plans,1);assert.equal(stats.pendingTickets,0)
  assert.equal((await w.recipients(db,'active',iso)).length,2)
  assert.equal((await w.recipients(db,'expiring',iso)).length,1)
  sqlite.prepare('UPDATE plans SET enabled=0 WHERE id=?').run(plan)
- assert.equal((await w.adminStats(db,iso)).activeEntitlements,0)
+ assert.equal((await w.adminStats(db,iso)).activeSubscriptions,0)
  sqlite.prepare('UPDATE plans SET enabled=1 WHERE id=?').run(plan)
  })
  await test('broadcast counts real transport outcomes, throws and unconfigured credentials',async()=>{
@@ -134,7 +136,7 @@ try {
  const good=async()=>({ok:true,provider:'resend'})
  const first=await w.expiryReminders(db,good);assert.deepEqual(first,{processed:1,sent:1,failed:0,skipped:0})
  const second=await w.expiryReminders(db,good);assert.equal(second.skipped,1);assert.equal(second.sent,0)
- sqlite.exec("UPDATE user_entitlements SET expires_at=strftime('%Y-%m-%dT%H:%M:%fZ',expires_at,'+1 day') WHERE id='ent_2'")
+ sqlite.exec("UPDATE subscriptions SET expires_at=expires_at+86400000 WHERE id='sub_2'")
  const failure=await w.expiryReminders(db,async()=>({ok:false,provider:null}));assert.equal(failure.failed,1)
  assert.equal((await w.expiryReminders(db,good)).sent,1)
  assert.equal((await request('/api/admin/system/reminders',{reminder_days:9},'PUT')).status,200)

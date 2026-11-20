@@ -52,7 +52,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
   }
 
-  const subscription = delivery.subscriptions.find((candidate) => candidate.tokenHash === tokenHash)
+  const subscription = delivery.subscriptions.find((candidate) => candidate.encryptedToken && candidate.tokenHash === tokenHash)
   if (subscription && subscription.expiresAt !== null && subscription.expiresAt <= Date.now()) {
     await disableExpiredSubscriptions(c.env)
     throw apiError(410, 'SUB_EXPIRED', '订阅已过期')

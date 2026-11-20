@@ -256,6 +256,11 @@ export async function countAdminUsers(db: AppDatabase, filters: AdminUserFilters
 
 export interface AdminUserSubscription {
   id: string
+  planId: string | null
+  planName: string | null
+  trafficGb: number
+  speedLimitMbps: number
+  deviceLimit: number
   name: string
   tokenPrefix: string
   enabled: boolean
@@ -269,6 +274,11 @@ export interface AdminUserSubscription {
 }
 
 interface SubscriptionRow {
+  plan_id: string | null
+  plan_name: string | null
+  traffic_gb: number
+  speed_limit_mbps: number
+  device_limit: number
   id: string
   name: string
   token_prefix: string
@@ -284,8 +294,8 @@ interface SubscriptionRow {
 export async function listAdminUserSubscriptions(db: AppDatabase, userId: string): Promise<AdminUserSubscription[]> {
   const listed = await db
     .prepare(
-      `SELECT id, name, token_prefix, enabled, default_client, revision, starts_at, expires_at, created_at, updated_at
-       FROM subscriptions WHERE user_id = ? ORDER BY CAST(substr(id, 5) AS INTEGER) ASC`,
+      `SELECT s.*, p.name AS plan_name FROM subscriptions s LEFT JOIN plans p ON p.id=s.plan_id
+       WHERE s.user_id = ? ORDER BY CAST(substr(s.id, 5) AS INTEGER) ASC`,
     )
     .bind(userId)
     .all<SubscriptionRow>()
@@ -307,6 +317,11 @@ export async function listAdminUserSubscriptions(db: AppDatabase, userId: string
   }
   return listed.results.map((row) => ({
     id: row.id,
+    planId: row.plan_id,
+    planName: row.plan_name,
+    trafficGb: row.traffic_gb,
+    speedLimitMbps: row.speed_limit_mbps,
+    deviceLimit: row.device_limit,
     name: row.name,
     tokenPrefix: row.token_prefix,
     enabled: row.enabled === 1,
