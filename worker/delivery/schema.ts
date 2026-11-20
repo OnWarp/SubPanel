@@ -118,6 +118,8 @@ export const compiledArtifactSchema = z.object({
   skippedNodes: z.number().int().nonnegative(),
   diagnostics: z.array(renderDiagnosticSchema),
   available: z.boolean(),
+  rendererVersion: z.string().optional(),
+  templateVersionId: z.string().optional(),
 }).superRefine((artifact, ctx) => {
   if (artifact.outputNodes + artifact.skippedNodes > artifact.inputNodes) {
     ctx.addIssue({ code: 'custom', path: ['outputNodes'], message: 'Rendered node counts exceed input nodes' })

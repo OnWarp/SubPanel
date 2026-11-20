@@ -1,3 +1,4 @@
+import type { BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
@@ -24,6 +25,7 @@ export type SubscriptionInput = {
   defaultClient?: ClientId
   startsAt?: number | null
   expiresAt?: number | null
+  templateBinding?: BindingInput
 }
 
 export type SubscriptionMutationOptions = {
@@ -135,7 +137,7 @@ export async function createSubscription(
     ...snapshot,
     nextSubscriptionId: snapshot.nextSubscriptionId + 1,
     subscriptions: [...snapshot.subscriptions, subscription],
-  }, now)
+  }, now, input.templateBinding ? { id, binding: input.templateBinding } : undefined)
   return { subscription, token }
 }
 
@@ -154,7 +156,7 @@ export async function getSubscription(env: DataEnv, id: string): Promise<Subscri
   return findSubscription(await readDelivery(env), id)
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding'>>
 
 export async function updateSubscription(
   env: DataEnv,
@@ -183,7 +185,8 @@ export async function updateSubscription(
     revision: current.revision + 1,
     updatedAt: now,
   }
-  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now)
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now,
+    input.templateBinding ? { id, binding: input.templateBinding } : undefined)
   return updated
 }
 
@@ -253,9 +256,8 @@ export async function deleteSubscription(
   const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
-  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) })
+  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) }, undefined, { id, deleteBinding: true })
   await deleteCompiledArtifacts(env.DATA, current.tokenHash)
-  await env.DB.prepare('DELETE FROM subscription_template_bindings WHERE subscription_id=?').bind(id).run()
 }
 
 export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Subscription): Promise<string> {

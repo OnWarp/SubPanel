@@ -1,3 +1,4 @@
+import { applyD1Migrations } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SHARE_SETTINGS } from '../../../worker/shares/schema'
@@ -37,6 +38,8 @@ import {
   REGISTRATION_MIGRATION_NAME,
   SHARES_FK_MIGRATION_NAME,
   TICKETS_NOTICES_MIGRATION_NAME,
+  templatesMigration,
+  templateEnhancementsMigration,
 } from './d1'
 import { resetData } from './helpers'
 
@@ -44,6 +47,29 @@ const NOW = '2026-01-01T00:00:00.000Z'
 const LATER = '2026-02-01T00:00:00.000Z'
 
 describe('D1 migrations', () => {
+  it('upgrades populated template tables without replacing their pointers', async () => {
+    await emptyDatabase(env.DB)
+    await applyD1Migrations(env.DB, [templatesMigration])
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO subscription_templates (id,name,draft,published_id,updated_at) VALUES (?,?,?,?,?)')
+        .bind('template', 'Legacy', 'draft', 'v2', NOW),
+      env.DB.prepare('INSERT INTO subscription_template_versions (id,template_id,yaml,created_at) VALUES (?,?,?,?),(?,?,?,?)')
+        .bind('v2', 'template', 'new version', NOW, 'v1', 'template', 'old version', NOW),
+      env.DB.prepare("UPDATE subscription_template_default SET template_id='template'"),
+      env.DB.prepare("INSERT INTO subscription_template_bindings VALUES ('sub_1','specific','template')"),
+    ])
+    await applyD1Migrations(env.DB, [templateEnhancementsMigration])
+    expect(await env.DB.prepare('SELECT revision,created_at,published_id FROM subscription_templates').first()).toMatchObject({
+      revision: 1, created_at: NOW, published_id: 'v2',
+    })
+    expect((await env.DB.prepare('SELECT id,sequence FROM subscription_template_versions ORDER BY sequence').all()).results)
+      .toEqual([{ id: 'v1', sequence: 1 }, { id: 'v2', sequence: 2 }])
+    expect(await env.DB.prepare('SELECT template_id,revision FROM subscription_template_default').first())
+      .toMatchObject({ template_id: 'template', revision: 1 })
+    expect(await env.DB.prepare('SELECT template_id,revision FROM subscription_template_bindings').first())
+      .toMatchObject({ template_id: 'template', revision: 1 })
+  })
+
   it('applies the full schema on an empty database and skips a second run', async () => {
     await emptyDatabase(env.DB)
     expect(await listTables(env.DB)).toEqual([])
@@ -69,11 +95,12 @@ describe('D1 migrations', () => {
       '0014_subscription_pool.sql',
       '0015_subscription_templates.sql',
       '0016_source_keep_on_failure.sql',
+      '0017_template_enhancements.sql',
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(15)
+    expect(replayed?.count).toBe(16)
 
     await env.DB.prepare(
       `INSERT INTO users (

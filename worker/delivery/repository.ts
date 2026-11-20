@@ -1,3 +1,5 @@
+import { apiError } from '../platform/api-error.js'
+import { bindingWrite, requirePublished, rethrowBindingError, type BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { DELIVERY_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
 import { persistDeliverySnapshot, readDeliveryFromD1 } from './d1-repository.js'
@@ -46,19 +48,30 @@ export async function writeDeliveryKv(
   return next
 }
 
+type BindingMutation = { id: string } & ({ binding: BindingInput } | { deleteBinding: true })
+
 export async function writeDelivery(
   env: DataEnv,
   snapshot: DeliverySnapshot,
   now = new Date().toISOString(),
+  mutation?: BindingMutation,
 ): Promise<DeliverySnapshot> {
-  // One backend only: the import flag selects D1, and its absence keeps KV.
+  const binding = mutation && 'binding' in mutation ? mutation.binding : undefined
+  const cleanup = mutation && 'deleteBinding' in mutation
+    ? env.DB.prepare('DELETE FROM subscription_template_bindings WHERE subscription_id=?').bind(mutation.id)
+    : undefined
   if (await isModuleReady(env.DB, DELIVERY_D1_READY_KEY)) {
     const next = prepareDeliveryWrite(snapshot, now)
     const accounts = await readAccounts(env)
-    await persistDeliverySnapshot(env.DB, next, accounts.users)
+    if (binding?.mode === 'specific') await requirePublished(env.DB, binding.templateId)
+    const statement = binding && mutation ? bindingWrite(env.DB, mutation.id, binding, now, true) : cleanup
+    await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision).catch(rethrowBindingError)
     return next
   }
-  return writeDeliveryKv(env.DATA, snapshot, now)
+  if (binding) throw apiError(409, 'TEMPLATE_STORAGE_NOT_READY', '请先完成订阅 D1 迁移，再随订阅保存附加配置')
+  const next = await writeDeliveryKv(env.DATA, snapshot, now)
+  if (cleanup) await cleanup.run()
+  return next
 }
 
 export const compiledPrefix = (tokenHash: string): string => `compiled:${tokenHash}:`

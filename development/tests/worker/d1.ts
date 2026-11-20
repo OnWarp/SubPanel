@@ -1,4 +1,5 @@
 import sourceKeepOnFailureSql from '../../../migrations/0016_source_keep_on_failure.sql?raw'
+import templateEnhancementsSql from '../../../migrations/0017_template_enhancements.sql?raw'
 import templatesSql from '../../../migrations/0015_subscription_templates.sql?raw'
 import inviteRegistrationSql from '../../../migrations/0012_invite_registration.sql?raw'
 import subscriptionPoolSql from '../../../migrations/0014_subscription_pool.sql?raw'
@@ -191,6 +192,16 @@ export const knowledgeBaseMigration = {
   queries: splitSqlStatements(knowledgeBaseSql),
 }
 
+export const templatesMigration = {
+  name: '0015_subscription_templates.sql',
+  queries: splitSqlStatements(templatesSql),
+}
+
+export const templateEnhancementsMigration = {
+  name: '0017_template_enhancements.sql',
+  queries: splitSqlStatements(templateEnhancementsSql),
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
   await applyD1Migrations(db, [
     initMigration,
@@ -206,8 +217,9 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     knowledgeBaseMigration,
     { name: '0012_invite_registration.sql', queries: splitSqlStatements(inviteRegistrationSql) },
     { name: '0014_subscription_pool.sql', queries: splitSqlStatements(subscriptionPoolSql) },
-    { name: '0015_subscription_templates.sql', queries: splitSqlStatements(templatesSql) },
+    templatesMigration,
     { name: '0016_source_keep_on_failure.sql', queries: splitSqlStatements(sourceKeepOnFailureSql) },
+    templateEnhancementsMigration,
   ])
 }
 

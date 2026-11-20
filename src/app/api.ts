@@ -156,6 +156,145 @@ export type BootstrapResponse = {
   user: UserSummary | null
 }
 
+export type TemplateReference = {
+  isDefault: boolean
+  directBindings: number
+  inheritedCount: number
+}
+
+export type SubscriptionTemplate = {
+  id: string
+  name: string
+  revision: number
+  status: 'draft' | 'published' | 'modified' | 'archived'
+  publishedVersionId: string | null
+  publishedAt: string | null
+  publishedSequence: number | null
+  updatedAt: string
+  createdAt: string
+  references: TemplateReference
+}
+
+export type TemplateVersion = {
+  id: string
+  sequence: number
+  createdAt: string
+  contentHash: string | null
+  validatorVersion: string | null
+  createdBy: string | null
+}
+
+export type TemplateListResponse = {
+  templates: SubscriptionTemplate[]
+  defaultId: string | null
+  defaultRevision: number
+  total: number
+  page: number
+  pageSize: number
+}
+
+export type TemplateDetailResponse = Omit<SubscriptionTemplate, 'publishedAt' | 'publishedSequence'> & {
+  draft: string
+  draftHash: string
+  publishedVersion: TemplateVersion | null
+  sourceUrl: string | null
+  sourceFetchedAt: string | null
+  sourceEtag: string | null
+  sourceLastModified: string | null
+}
+
+export type TemplateValidateResponse = {
+  normalized: TemplateStructure
+  ignored: string[]
+  diagnostics: Diagnostic[]
+  contentHash: string
+  validatorVersion: string
+}
+
+export type TemplatePreviewResponse = {
+  ignored: string[]
+  diagnostics: Diagnostic[]
+  groups: TemplateStructure['proxy-groups']
+  rules: string[]
+  ruleProviders: NonNullable<TemplateStructure['rule-providers']>
+  rendererVersion?: string
+  subscriptionName: string | null
+  outputNodes: number | null
+  effectiveVersionId: string | null
+  zeroNodeReason: string | null
+}
+
+export type TemplateStructure = {
+  'proxy-groups': Array<{
+    name: string
+    type: 'select'
+    proxies: string[]
+  }>
+  rules: string[]
+  'rule-providers'?: Record<string, {
+    type: 'http'
+    behavior: 'domain' | 'ipcidr' | 'classical'
+    url: string
+    path?: string
+    interval?: number
+    format?: 'yaml' | 'text' | 'mrs'
+  }>
+}
+
+export type TemplateSource = {
+  url: string
+  fetchedAt: string
+  etag: string | null
+  lastModified: string | null
+}
+
+export type TemplateImportResponse = { notModified: true; message: string } | {
+  notModified: false
+  candidate: {
+    yaml: string
+    normalized: TemplateStructure
+    ignored: string[]
+    diagnostics: Diagnostic[]
+    contentHash: string
+  }
+  source: TemplateSource
+}
+
+export type TemplatePublishResponse = {
+  versionId: string
+  sequence: number
+  contentHash: string
+  references: TemplateReference
+  revision: number
+}
+
+export type TemplateBinding = {
+  subscriptionId: string
+  mode: 'inherit' | 'specific' | 'base'
+  templateId: string | null
+  revision: number
+  updatedAt: string | null
+  effectiveTemplate: {
+    templateId: string
+    templateName: string
+    versionId: string
+    sequence: number
+  } | null
+}
+
+export type SubscriptionTemplateBinding =
+  | { mode: 'inherit' | 'base'; templateId?: null; expectedRevision: number }
+  | { mode: 'specific'; templateId: string; expectedRevision: number }
+
+export type Diagnostic = {
+  code: string
+  severity: 'error' | 'warning' | 'info'
+  path: string
+  line?: number
+  column?: number
+  message: string
+}
+
 export type InviteStatus = {
   username: string
   expiresAt: string
@@ -211,6 +350,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     )
   }
   return payload as T
+}
+
+export const subscriptionTemplatesPath = '/api/admin/system/subscription-templates'
+
+export async function loadSubscriptionTemplates() {
+  const templates: SubscriptionTemplate[] = []
+  const first = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100`)
+  templates.push(...first.templates)
+  for (let page = 2; templates.length < first.total; page += 1) {
+    const result = await api<TemplateListResponse>(`${subscriptionTemplatesPath}?pageSize=100&page=${page}`)
+    if (!result.templates.length) break
+    templates.push(...result.templates)
+  }
+  return { templates, defaultId: first.defaultId, defaultRevision: first.defaultRevision }
 }
 
 export const jsonBody = (value: unknown): string => JSON.stringify(value)

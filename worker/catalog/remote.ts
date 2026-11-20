@@ -143,12 +143,17 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')
 }
 
-async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
-  try {
-    await reader.cancel()
-  } catch {
-    // The stream is already closed or cleanup failed.
-  }
+function withDeadline<T>(signal: AbortSignal, pending: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    if (signal.aborted) abort()
+    else signal.addEventListener('abort', abort, { once: true })
+    void pending.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  void reader.cancel().catch(() => {})
 }
 
 async function readBoundedBody(response: Response, signal: AbortSignal): Promise<string> {
@@ -161,14 +166,14 @@ async function readBoundedBody(response: Response, signal: AbortSignal): Promise
   try {
     while (true) {
       if (signal.aborted) fail('REMOTE_TIMEOUT')
-      const result = await reader.read()
+      const result = await withDeadline(signal, reader.read())
       if (result.done) {
         done = true
         break
       }
       total += result.value.byteLength
       if (total > MAX_REMOTE_BYTES) {
-        await cancelReader(reader)
+        cancelReader(reader)
         done = true
         fail('REMOTE_BODY_TOO_LARGE')
       }
@@ -179,42 +184,54 @@ async function readBoundedBody(response: Response, signal: AbortSignal): Promise
   } catch (error) {
     if (error instanceof RemoteFetchError) throw error
     if (signal.aborted || isAbortError(error)) fail('REMOTE_TIMEOUT')
-    await cancelReader(reader)
+    cancelReader(reader)
     fail('REMOTE_BODY_INVALID')
   } finally {
-    if (!done) await cancelReader(reader)
+    if (!done) cancelReader(reader)
   }
   return ''
 }
 
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 
-async function cancelBody(response: Response): Promise<void> {
-  try {
-    await response.body?.cancel()
-  } catch {
-    // The response error remains more useful than a stream cleanup failure.
-  }
+function cancelBody(response: Response): void {
+  void response.body?.cancel().catch(() => {})
 }
 
+type RemoteTextResult =
+  | { notModified: true }
+  | { notModified: false; text: string; etag: string | null; lastModified: string | null }
+
 export async function fetchRemoteText(
-  encryptedSafeRequest: { url: string; headers: Record<string, string> },
+  request: { url: string; headers: Record<string, string> },
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
+  const result = await fetchRemoteTextWithMetadata(request, fetcher)
+  if (result.notModified) fail('REMOTE_HTTP_ERROR')
+  return result.text
+}
+
+export async function fetchRemoteTextWithMetadata(
+  encryptedSafeRequest: { url: string; headers: Record<string, string> },
+  fetcher: typeof fetch = fetch,
+  timeoutMs = REMOTE_TIMEOUT_MS,
+): Promise<RemoteTextResult> {
   let current = validateRemoteUrl(encryptedSafeRequest.url)
   let headers = validateRemoteHeaders(encryptedSafeRequest.headers)
-  const signal = AbortSignal.timeout(REMOTE_TIMEOUT_MS)
+  const signal = AbortSignal.timeout(timeoutMs)
 
   for (let redirects = 0; ; redirects += 1) {
     let response: Response
     try {
-      response = await fetcher(current.href, { headers, redirect: 'manual', signal })
+      if (signal.aborted) fail('REMOTE_TIMEOUT')
+      response = await withDeadline(signal, fetcher(current.href, { headers, redirect: 'manual', signal }))
     } catch (error) {
       if (signal.aborted || isAbortError(error)) fail('REMOTE_TIMEOUT')
       fail('REMOTE_FETCH_FAILED')
     }
 
     if (redirectStatuses.has(response.status)) {
+      cancelBody(response)
       if (redirects >= MAX_REDIRECTS) fail('REMOTE_TOO_MANY_REDIRECTS')
       const location = response.headers.get('location')
       if (!location) fail('REMOTE_REDIRECT_INVALID')
@@ -227,13 +244,20 @@ export async function fetchRemoteText(
       const previousOrigin = current.origin
       current = validateRemoteUrl(target)
       if (current.origin !== previousOrigin) headers = {}
-      await cancelBody(response)
       continue
     }
+    if (response.status === 304 && Object.keys(headers).some(name => /^if-(none-match|modified-since)$/iu.test(name))) {
+      return { notModified: true }
+    }
     if (response.status < 200 || response.status >= 300) {
-      await cancelBody(response)
+      cancelBody(response)
       fail('REMOTE_HTTP_ERROR')
     }
-    return readBoundedBody(response, signal)
+    return {
+      notModified: false,
+      text: await readBoundedBody(response, signal),
+      etag: response.headers.get('ETag'),
+      lastModified: response.headers.get('Last-Modified'),
+    }
   }
 }

@@ -530,16 +530,16 @@ function loonLine(node: RenderNode): string | null {
 
 function renderStructured(client: RenderClient, nodes: RenderNode[], template?: Template): string {
   if (client === 'mihomo') {
-    if (template && nodes.length) {
-      const used = new Set([...RESERVED, ...template['proxy-groups'].map(g => g.name)])
-      nodes = nodes.map(node => {
-        let name = node.displayName, suffix = 2
-        while (used.has(name)) name = `${node.displayName} (${suffix++})`
-        used.add(name)
-        return { ...node, displayName: name }
-      })
+    const used = new Set([...RESERVED, '$SUBPANEL_NODES', ...(template?.['proxy-groups'].map(group => group.name) ?? ['Proxy'])])
+    const namesByNode = new Map<RenderNode, string>()
+    for (const node of [...nodes].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)) {
+      const base = node.displayName.replace(/\p{Cc}/gu, ' ').trim() || 'Node'
+      let name = base
+      for (let suffix = 2; used.has(name); suffix++) name = `${base} (${suffix})`
+      used.add(name)
+      namesByNode.set(node, name)
     }
-    const proxies = nodes.map(mihomoProxy)
+    const proxies = nodes.map(node => mihomoProxy({ ...node, displayName: namesByNode.get(node)! }))
     const names = proxies.map((node) => node.name as string)
     if (template && nodes.length) return stringifyYaml({ proxies, ...expandTemplate(template, names) })
     return stringifyYaml({ proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
@@ -719,10 +719,11 @@ function unsupportedNodeFields(client: RenderClient, node: RenderNode): string[]
   return [...new Set(fields)]
 }
 
-export function renderClient(client: RenderClient, input: RenderNode[], template?: Template): RenderResult {
+export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
   const diagnostics: RenderDiagnostic[] = []
   const candidates: RenderNode[] = []
-  const enabledNodes = namedNodes(input.filter((item) => item.enabled).map(normalizeTlsAliases))
+  const enabled = input.filter(item => item.enabled).map(normalizeTlsAliases)
+  const enabledNodes = client === 'mihomo' ? enabled : namedNodes(enabled)
   for (const node of enabledNodes) {
     if (!structuredSupport[client].includes(node.protocol)) {
       diagnostics.push(diagnostic(node, 'UNSUPPORTED_PROTOCOL'))
@@ -765,25 +766,34 @@ export function renderClient(client: RenderClient, input: RenderNode[], template
     candidates.push(node)
   }
 
-  let body: string
-  if (['v2rayn', 'nekobox', 'shadowrocket', 'generic'].includes(client)) {
-    const uris = candidates.map((node) => uriForClient(client, node)).filter((uri): uri is string => uri !== null)
-    let binary = ''
-    for (const byte of new TextEncoder().encode(uris.join('\n'))) binary += String.fromCharCode(byte)
-    body = btoa(binary)
-  } else {
-    body = renderStructured(client, candidates, template)
-  }
-  const metadata = contentMetadata(client)
   return {
-    client,
-    body,
-    ...metadata,
-    diagnostics,
-    inputNodes: input.length,
     outputNodes: candidates.length,
-    skippedNodes: enabledNodes.length - candidates.length,
+    render(template?: Template): RenderResult {
+      let body: string
+      if (['v2rayn', 'nekobox', 'shadowrocket', 'generic'].includes(client)) {
+        const uris = candidates.map((node) => uriForClient(client, node)).filter((uri): uri is string => uri !== null)
+        let binary = ''
+        for (const byte of new TextEncoder().encode(uris.join('\n'))) binary += String.fromCharCode(byte)
+        body = btoa(binary)
+      } else {
+        body = renderStructured(client, candidates, template)
+      }
+      const metadata = contentMetadata(client)
+      return {
+        client,
+        body,
+        ...metadata,
+        diagnostics,
+        inputNodes: input.length,
+        outputNodes: candidates.length,
+        skippedNodes: enabledNodes.length - candidates.length,
+      }
+    },
   }
+}
+
+export function renderClient(client: RenderClient, input: RenderNode[], template?: Template): RenderResult {
+  return prepareClientRender(client, input).render(template)
 }
 
 export const renderMihomo = (nodes: RenderNode[]) => renderClient('mihomo', nodes)

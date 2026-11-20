@@ -1,3 +1,4 @@
+import { apiError } from '../platform/api-error.js'
 import type { User } from '../accounts/schema.js'
 import { batch, type AppDatabase } from '../db/db.js'
 import { userAnchorStatements } from '../db/ensure-users.js'
@@ -5,10 +6,9 @@ import {
   DELIVERY_SETTING_KEYS,
   countRows,
   deleteSettings,
-  readSettingMap,
   upsertSettingStatement,
 } from '../db/module-switch.js'
-import { getSetting } from '../db/settings-repository.js'
+import { decodeSettingJson } from '../db/settings-repository.js'
 import { convertDelivery, type SubscriptionGroupRow, type SubscriptionRow } from '../migration/delivery.js'
 import { deliverySnapshotSchema, emptyDeliverySnapshot, type DeliverySnapshot } from './schema.js'
 
@@ -117,15 +117,19 @@ export async function deliveryCounts(db: AppDatabase): Promise<DeliveryCounts> {
 
 export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnapshot> {
   try {
-    const [subscriptions, groups, settings, storedOrderRaw] = await Promise.all([
-      db.prepare('SELECT * FROM subscriptions').all<SubscriptionSql>(),
-      db.prepare(
-        'SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position',
-      ).all<SubscriptionGroupSql>(),
-      readSettingMap(db, DELIVERY_META_KEYS.filter((key) => key !== DELIVERY_SETTING_KEYS.entityOrder)),
-      getSetting(db, DELIVERY_SETTING_KEYS.entityOrder),
+    const placeholders = DELIVERY_META_KEYS.map(() => '?').join(', ')
+    const [subscriptions, groups, metadata] = await batch(db, [
+      db.prepare('SELECT * FROM subscriptions'),
+      db.prepare('SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position'),
+      db.prepare(`SELECT key, value FROM system_settings WHERE key IN (${placeholders})`).bind(...DELIVERY_META_KEYS),
     ])
-    const subscriptionRows = subscriptions.results
+    const subscriptionRows = subscriptions.results as SubscriptionSql[]
+    const groupRows = groups.results as SubscriptionGroupSql[]
+    const metadataRows = metadata.results as { key: string; value: string }[]
+    const storedOrderRaw = metadataRows.find(row => row.key === DELIVERY_SETTING_KEYS.entityOrder)?.value ?? null
+    const settings = new Map(metadataRows
+      .filter(row => row.key !== DELIVERY_SETTING_KEYS.entityOrder)
+      .map(row => [row.key, decodeSettingJson(row.value)]))
     const revision = settings.get(DELIVERY_SETTING_KEYS.revision)
     if (revision === undefined && subscriptionRows.length === 0) return emptyDeliverySnapshot()
 
@@ -150,7 +154,7 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
         userId: row.user_id,
         name: row.name,
         groupIds: idsByPosition(
-          groups.results
+          groupRows
             .filter((group) => group.subscription_id === row.id)
             .map((group) => ({ position: group.position, id: group.group_id })),
         ),
@@ -219,6 +223,8 @@ export async function persistDeliverySnapshot(
   db: AppDatabase,
   snapshot: DeliverySnapshot,
   users: readonly User[],
+  bindingStatement?: D1PreparedStatement,
+  expectedRevision?: number,
 ): Promise<void> {
   const converted = convertDelivery(snapshot)
   const ids = converted.rows.subscriptions.map((row) => row.id)
@@ -235,5 +241,22 @@ export async function persistDeliverySnapshot(
     upsertSettingStatement(db, DELIVERY_SETTING_KEYS.nextSubscriptionId, snapshot.nextSubscriptionId, snapshot.updatedAt),
     upsertSettingStatement(db, DELIVERY_SETTING_KEYS.entityOrder, ids, snapshot.updatedAt),
   ]
-  await batch(db, statements)
+  if (bindingStatement) statements.push(bindingStatement)
+  if (expectedRevision !== undefined) {
+    // Updating the metadata in this guard would itself overwrite a concurrent
+    // writer. A NULL value instead aborts the batch when the snapshot changed.
+    statements.unshift(db.prepare(`
+      INSERT INTO system_settings (key, value, updated_at)
+      VALUES (?, CASE WHEN COALESCE((SELECT value FROM system_settings WHERE key=?), '0')=? THEN ? ELSE NULL END, ?)
+      ON CONFLICT(key) DO NOTHING
+    `).bind(DELIVERY_SETTING_KEYS.revision, DELIVERY_SETTING_KEYS.revision, String(expectedRevision), String(expectedRevision), snapshot.updatedAt))
+  }
+  try {
+    await batch(db, statements)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
+      throw apiError(409, bindingStatement ? 'TEMPLATE_CONFLICT' : 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
+    }
+    throw error
+  }
 }

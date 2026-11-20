@@ -5,10 +5,9 @@ import { resolveGroupNodes } from '../catalog/groups.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import type { CatalogSnapshot } from '../catalog/schema.js'
-import { compileSubscription, renderEntitledSubscription } from '../delivery/compiler.js'
-import { getUserEntitlement } from '../entitlements/service.js'
-import { compiledKey, readDelivery } from '../delivery/repository.js'
-import { compiledArtifactSchema, clientIdSchema, type ClientId, type CompiledArtifact, type Subscription } from '../delivery/schema.js'
+import { renderEntitledSubscription } from '../delivery/compiler.js'
+import { readDelivery } from '../delivery/repository.js'
+import { clientIdSchema, type ClientId, type Subscription } from '../delivery/schema.js'
 import { assertSubscriptionAvailable } from '../delivery/expiry.js'
 import { decryptSubscriptionToken } from '../delivery/service.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken } from '../platform/crypto.js'
@@ -25,7 +24,6 @@ import {
   readShareSettings,
   removeIndexHash,
   replaceIndexHash,
-  shareCompiledKey,
   subscriptionIndexKey,
   userIndexKey,
   writeShare,
@@ -83,7 +81,6 @@ export type ShareClientExport = {
   fileName: string
   downloadName: string
   etag: string
-  lastModified: string
   profileTitle: string | null
 }
 
@@ -437,53 +434,6 @@ export async function verifyShare(
   return { tokenHash: guarded.share.tokenHash }
 }
 
-function parseArtifact(raw: string, subscription: Subscription, catalogRevision: number): CompiledArtifact | null {
-  try {
-    const parsed = compiledArtifactSchema.safeParse(JSON.parse(raw))
-    if (!parsed.success) return null
-    if (parsed.data.subscriptionRevision !== subscription.revision) return null
-    if (parsed.data.catalogRevision !== catalogRevision) return null
-    return parsed.data
-  } catch {
-    return null
-  }
-}
-
-async function loadShareArtifact(
-  env: DataEnv,
-  share: ShareRecord,
-  subscription: Subscription,
-  client: ClientId,
-): Promise<CompiledArtifact> {
-  const kv = env.DATA
-  const catalog = await readCatalog(env)
-  // Live delivery rechecks rights on every export: a cached artifact compiled
-  // while the owner had no rights must not stay empty after a grant, and a
-  // populated artifact must not survive a revocation.
-  if (!(await getUserEntitlement(env.DB, subscription.userId ?? '')).current) {
-    return renderEntitledSubscription(env, subscription, client)
-  }
-  const cachedRaw = await kv.get(shareCompiledKey(share.tokenHash, client))
-  if (cachedRaw) {
-    const cached = parseArtifact(cachedRaw, subscription, catalog.revision)
-    if (cached?.available) return cached
-  }
-  const subscriptionRaw = await kv.get(compiledKey(subscription.tokenHash, client))
-  if (subscriptionRaw) {
-    const cached = parseArtifact(subscriptionRaw, subscription, catalog.revision)
-    if (cached?.available) {
-      await kv.put(shareCompiledKey(share.tokenHash, client), JSON.stringify(cached))
-      return cached
-    }
-  }
-  // compileSubscription 会按原实现刷新订阅自己的 compiled 缓存。分享产物另外写到 compiled:share:{tokenHash}:{client}。
-  const artifacts = await compileSubscription(env, subscription)
-  await Promise.all(artifacts.map((artifact) => kv.put(shareCompiledKey(share.tokenHash, artifact.client), JSON.stringify(artifact))))
-  const artifact = artifacts.find((item) => item.client === client)
-  if (!artifact) throw notFound()
-  return artifact
-}
-
 export async function exportShare(
   env: DataEnv,
   token: string,
@@ -511,7 +461,7 @@ export async function exportShare(
   const resolved = resolveShareClient(parsed.data.client ?? '')
   if (!resolved) throw notFound()
   assertSubscriptionAvailable(guarded.subscription, now.getTime())
-  const artifact = await loadShareArtifact(env, guarded.share, guarded.subscription, resolved)
+  const artifact = await renderEntitledSubscription(env, guarded.subscription, resolved, nowIso)
   if (!artifact.available) throw shareError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
   if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
   const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
@@ -523,7 +473,6 @@ export async function exportShare(
     fileName: artifact.fileName,
     downloadName: `${base}${extension}`,
     etag: artifact.etag,
-    lastModified: artifact.lastModified,
     profileTitle: guarded.share.showSubscriptionName ? guarded.subscription.name : null,
   }
 }

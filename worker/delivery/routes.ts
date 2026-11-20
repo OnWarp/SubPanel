@@ -1,3 +1,4 @@
+import { bindingSchema } from '../templates/repository.js'
 import { getUserEntitlement } from '../entitlements/service.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -9,7 +10,7 @@ import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { compileAllSubscriptions, compileSubscription } from './compiler.js'
+import { compileAllSubscriptions, compileSubscription, RENDERER_VERSION } from './compiler.js'
 import {
   createSubscription,
   transferSubscription,
@@ -37,6 +38,7 @@ const createSchema = z.object({
   defaultClient: client.optional(),
   startsAt: epochField,
   expiresAt: epochField,
+  templateBinding: bindingSchema.optional(),
 })
 const updateSchema = z.object({
   name: z.string().trim().min(1).max(128).optional(),
@@ -45,6 +47,7 @@ const updateSchema = z.object({
   defaultClient: client.optional(),
   startsAt: epochField,
   expiresAt: epochField,
+  templateBinding: bindingSchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 const emptySchema = z.object({}).default({})
 
@@ -126,6 +129,7 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     if (
       subscription.enabled &&
       artifact.success &&
+      artifact.data.rendererVersion === RENDERER_VERSION &&
       artifact.data.subscriptionRevision === subscription.revision &&
       artifact.data.catalogRevision === currentCatalogRevision
     ) diagnostics[name] = {
@@ -134,6 +138,8 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
       skippedNodes: artifact.data.skippedNodes,
       diagnostics: artifact.data.diagnostics,
       available: artifact.data.available,
+      rendererVersion: artifact.data.rendererVersion,
+      templateVersionId: artifact.data.templateVersionId,
     }
   }
   return {
