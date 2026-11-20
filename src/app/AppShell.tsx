@@ -82,30 +82,30 @@ function AdminAccount({ signOut, onError, placement, layout, onLayoutChange }: {
         <nav aria-label="管理员账号菜单">
           {placement === 'mobile' ? (
             <>
-              <Link to="/delivery/tickets"><span className="account-menu-icon" aria-hidden="true"><Megaphone size={18} /></span>运营管理</Link>
-              <Link to="/system/registration"><span className="account-menu-icon" aria-hidden="true"><SlidersHorizontal size={18} /></span>系统设置</Link>
+              <Link to="/delivery/tickets"><span className="account-menu-icon" aria-hidden="true"><Megaphone size={16} /></span>运营管理</Link>
+              <Link to="/system/registration"><span className="account-menu-icon" aria-hidden="true"><SlidersHorizontal size={16} /></span>系统设置</Link>
             </>
           ) : null}
-          <Link to="/account"><span className="account-menu-icon" aria-hidden="true"><ShieldCheck size={18} /></span>账户安全</Link>
+          <Link to="/account"><span className="account-menu-icon" aria-hidden="true"><ShieldCheck size={16} /></span>账户安全</Link>
           {layout && onLayoutChange && (
             <div className="admin-layout-options" role="group" aria-label="布局">
-              <span className="account-menu-label"><span className="account-menu-icon" aria-hidden="true"><LayoutGrid size={18} /></span>布局</span>
+              <span className="account-menu-label"><span className="account-menu-icon" aria-hidden="true"><LayoutGrid size={16} /></span>布局</span>
               <div className="account-menu-choices">
-              {adminLayoutOptions.map(({ value, label }) => (
-                <button key={value} type="button" aria-pressed={layout === value} onClick={event => {
-                  const details = event.currentTarget.closest('details')
-                  if (details) {
-                    details.open = false
-                    if (layout === value) details.querySelector('summary')?.focus()
-                  }
-                  onLayoutChange(value)
-                }}>{label}</button>
-              ))}
+                {adminLayoutOptions.map(({ value, label }) => (
+                  <button key={value} type="button" aria-pressed={layout === value} onClick={event => {
+                    const details = event.currentTarget.closest('details')
+                    if (details) {
+                      details.open = false
+                      if (layout === value) details.querySelector('summary')?.focus()
+                    }
+                    onLayoutChange(value)
+                  }}>{label}</button>
+                ))}
               </div>
             </div>
           )}
           <ThemeMenu id={placement === 'sidebar' ? 'admin-theme-menu' : placement === 'mobile' ? 'admin-theme-menu-topbar' : 'admin-theme-menu-desktop'} label="外观" />
-          <button type="button" onClick={() => { signOut().catch(() => onError('退出登录失败，请重试')) }}><span className="account-menu-icon" aria-hidden="true"><LogOut size={18} /></span>退出登录</button>
+          <button type="button" onClick={() => { signOut().catch(() => onError('退出登录失败，请重试')) }}><span className="account-menu-icon" aria-hidden="true"><LogOut size={16} /></span>退出登录</button>
         </nav>
       </details>
     </div>
