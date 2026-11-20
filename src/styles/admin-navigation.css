@@ -1,10 +1,10 @@
 @media (min-width: 761px) {
   .app-layout.admin-layout {
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
   }
 
   .app-layout.admin-layout.sidebar-collapsed {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: var(--size-sidebar-collapsed) minmax(0, 1fr);
   }
 }
 
@@ -82,12 +82,12 @@
   gap: var(--space-4);
   margin-bottom: var(--space-4);
   overflow-x: auto;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--size-divider) solid var(--color-border);
 }
 
 .section-tabs a {
   display: inline-flex;
-  min-height: 40px;
+  min-height: var(--size-touch-target);
   align-items: center;
   color: var(--color-text-muted);
   font-size: var(--font-body);
@@ -95,14 +95,14 @@
 }
 
 @media (hover: hover) {
-  .section-tabs a:hover,
-.section-tabs a.active {
+  .section-tabs a:hover {
     color: var(--color-text);
   }
 }
 
 .section-tabs a.active {
-  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+  font-weight: var(--weight-strong);
 }
 
 .section-tabs a:focus-visible {
@@ -206,7 +206,8 @@
     height: auto;
     margin: 0;
     border: 0;
-    border-radius: var(--radius-shell) 0 0 var(--radius-shell);
+    border-radius: var(--radius-page-panel) 0 0 var(--radius-page-panel);
+    box-shadow: none;
   }
 
   .admin-layout .workspace-content {
@@ -217,7 +218,7 @@
 
   .admin-layout .workspace-content > .section-tabs {
     flex-shrink: 0;
-    margin-inline: clamp(24px, 4vw, 64px);
+    margin-inline: var(--space-page-inline);
   }
 
   .admin-layout .workspace-content > .page-stack {
@@ -239,7 +240,7 @@
 
   .admin-layout .workspace-content > .page-stack:not(:has(> :is(.ops-card, .ops-system, .data-section, .usr-card))) {
     align-content: start;
-    padding: 24px clamp(24px, 4vw, 64px) 48px;
+    padding: var(--space-page-module) var(--space-page-inline) var(--space-7);
   }
 
   .app-layout.admin-topbar-layout {
@@ -332,7 +333,7 @@
 
   .admin-topbar-layout .workspace {
     margin-top: var(--space-shell);
-    border-radius: var(--radius-shell) var(--radius-shell) 0 0;
+    border-radius: var(--radius-page-panel) var(--radius-page-panel) 0 0;
   }
 
   .admin-topbar-layout .workspace-content:has(dialog:modal) {

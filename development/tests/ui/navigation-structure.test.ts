@@ -52,7 +52,7 @@ describe('navigation ownership and route compatibility', () => {
     expect(dock).not.toContain('系统设置')
     expect(dock).not.toContain('更多')
     expect(dock).not.toContain('<button')
-    expect(dock).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="page")(?=[^>]*class="admin-mobile-dock-item active")/)
+    expect(dock).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="location")(?=[^>]*class="admin-mobile-dock-item active")/)
     expect(html).not.toContain('更多导航')
     const css = readFileSync(new URL('../../../src/styles/app.css', import.meta.url), 'utf8')
     expect(css).toContain('.dock, .dock-sheet, .dock-backdrop, .admin-mobile-dock { display: none; }')
@@ -74,14 +74,14 @@ describe('navigation ownership and route compatibility', () => {
       const sidebar = nav(html, '主导航')
       const tabs = nav(html, label)
       expect(links(tabs)).toEqual(routes)
-      expect(sidebar.match(/aria-current="page"/g)).toHaveLength(1)
+      expect(sidebar.match(/aria-current="location"/g)).toHaveLength(1)
       expect(tabs.match(/aria-current="page"/g)).toHaveLength(1)
-      expect(sidebar).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
+      expect(sidebar).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="location")`))
       expect(tabs).toMatch(new RegExp(`<a(?=[^>]*href="${path}")(?=[^>]*aria-current="page")`))
       const dock = mobileDock(html)
       if (mobileDockRoutes.includes(owner)) {
-        expect(dock.match(/aria-current="page"/g)).toHaveLength(1)
-        expect(dock).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="page")`))
+        expect(dock.match(/aria-current="location"/g)).toHaveLength(1)
+        expect(dock).toMatch(new RegExp(`<a(?=[^>]*href="${owner}")(?=[^>]*aria-current="location")`))
       } else {
         expect(dock).not.toContain('aria-current')
       }
@@ -90,9 +90,8 @@ describe('navigation ownership and route compatibility', () => {
 
   it('highlights the ticket tab on a ticket detail page', () => {
     const html = render('/delivery/tickets/tkt_1')
-    for (const label of ['主导航', '运营管理导航']) {
-      expect(nav(html, label)).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
-    }
+    expect(nav(html, '主导航')).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="location")/)
+    expect(nav(html, '运营管理导航')).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
     expect(mobileDock(html)).not.toContain('aria-current')
     expect(mobileDock(html)).not.toContain('/delivery/tickets')
   })

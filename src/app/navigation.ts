@@ -29,7 +29,7 @@ export const adminSections: NavSection[] = [
   ] },
 ]
 
-type SectionTab = { to: string; label: string; includeChildren?: boolean }
+export type SectionTab = { to: string; label: string; includeChildren?: boolean }
 type AdminDomain = NavItem & { shortLabel?: string; section?: { label: string; tabs: SectionTab[]; preserveSearch?: boolean } }
 
 export const adminDomains: AdminDomain[] = [
@@ -83,9 +83,13 @@ export const adminDomains: AdminDomain[] = [
 const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users'])
 export const adminMobileDock = adminDomains.filter((domain) => adminMobileDockTargets.has(domain.to))
 
+export function matchesSectionTab(tab: SectionTab, path: string) {
+  return Boolean(matchPath({ path: tab.to, end: !tab.includeChildren }, path))
+}
+
 export function adminDomainForPath(path: string) {
   return adminDomains.find(({ to, section }) => section
-    ? section.tabs.some(tab => matchPath({ path: tab.to, end: !tab.includeChildren }, path))
+    ? section.tabs.some(tab => matchesSectionTab(tab, path))
     : matchPath(to, path))
 }
 

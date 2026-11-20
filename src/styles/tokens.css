@@ -146,3 +146,26 @@
   --shadow-panel: none;
   --shadow-shell: 0 1px 2px rgb(0 0 0 / 0.45);
 }
+
+/* Page and data-view dimensions. Existing component tokens remain available. */
+:root {
+  --font-page-title: var(--font-title);
+  --weight-page-title: var(--weight-strong);
+  --font-page-body: var(--font-body);
+  --font-page-meta: var(--font-sm);
+  --space-page-inline: clamp(var(--space-5), 3vw, var(--space-6));
+  --space-page-module: var(--space-5);
+  --size-table-row: 48px;
+  --size-page-button: var(--size-bar);
+  --size-touch-target: 44px;
+  --size-divider: 1px;
+  --radius-page-panel: var(--radius-sheet);
+}
+
+@media (width < 768px) {
+  :root { --space-page-inline: var(--space-4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-ui: 0ms; }
+}

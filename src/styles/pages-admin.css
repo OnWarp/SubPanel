@@ -1,14 +1,6 @@
 /* Administrator overview -------------------------------------------------- */
 .adm-overview { container-type: inline-size; }
 
-.topbar-page-title:has(.adm-overview-description) {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-}
-
-.topbar-page-title p:has(.adm-overview-description) { display: block; }
-
 .adm-stat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

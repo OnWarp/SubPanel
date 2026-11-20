@@ -1,9 +1,28 @@
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { PageHeaderSlots } from './page-header-slots'
 
-export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
-  const titleTarget = document.getElementById('page-title-slot')
-  const actionsTarget = document.getElementById('page-actions-slot')
-  if (!titleTarget || !actionsTarget) return null
-  return <>{createPortal(<div className="topbar-page-title"><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>, titleTarget)}{actions ? createPortal(actions, actionsTarget) : null}</>
+type PageHeaderProps = {
+  title: string
+  id?: string
+  actions?: ReactNode
+  description?: ReactNode
+  showDescription?: boolean
+  placement?: 'workspace' | 'inline'
+}
+
+export function PageHeader({ title, id, actions, description, showDescription = false, placement = 'workspace' }: PageHeaderProps) {
+  const slots = useContext(PageHeaderSlots)
+  const heading = (
+    <div className="topbar-page-title">
+      <h1 id={id}>{title}</h1>
+      {showDescription && description ? <p>{description}</p> : null}
+    </div>
+  )
+  if (placement === 'inline' || !slots) {
+    return <header className="page-header">{heading}{actions && <div className="page-header-actions">{actions}</div>}</header>
+  }
+
+  if (!slots.title || !slots.actions) return null
+  return <>{createPortal(heading, slots.title)}{actions ? createPortal(actions, slots.actions) : null}</>
 }

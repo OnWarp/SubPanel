@@ -2,6 +2,7 @@ import { ChevronDown, ChevronsLeft, ChevronsRight, LayoutGrid, LogOut, Megaphone
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountProfile } from '../features/accounts/profile'
+import { PageFrame } from '../ui/PageFrame'
 import { SectionTabs } from '../ui/SectionTabs'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { useSession } from './session'
@@ -34,7 +35,7 @@ function AdminNavigation({ activeDomain, layout, collapsed }: {
         const { to, label, shortLabel, icon: Icon } = domain
         const active = domain === activeDomain
         return (
-          <Link key={to} to={to} title={collapsed ? label : undefined} className={active ? 'active' : undefined} aria-current={active ? 'page' : undefined}
+          <Link key={to} to={to} title={collapsed ? label : undefined} className={active ? 'active' : undefined} aria-current={active ? (activeDomain?.section ? 'location' : 'page') : undefined}
             aria-label={layout === 'sidebar' ? label : undefined}>
             {layout === 'sidebar' ? <><Icon aria-hidden="true" size={18} /><span>{label}</span></> : shortLabel ?? label}
           </Link>
@@ -180,20 +181,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           <AdminAccount placement="topbar" layout={adminLayout} onLayoutChange={changeAdminLayout} signOut={signOut} onError={setSignOutError} />
         </header>
       )}
-      <div className="workspace">
-        <header className="workspace-topbar">
-          {!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
-          <div id="page-title-slot" className="topbar-context" />
-          {!isAdmin ? <ThemeMenu /> : null}
-          <div id="page-actions-slot" className="topbar-page-actions" />
-          {isAdmin ? <div className="topbar-account"><AdminAccount placement="mobile" signOut={signOut} onError={setSignOutError} /></div> : null}
-        </header>
-        <main key={location.pathname} className="workspace-content">
-          {signOutError ? <p role="alert">{signOutError}</p> : null}
-          {adminDomain?.section && <SectionTabs {...adminDomain.section} />}
-          {children}
-        </main>
-      </div>
+      <PageFrame
+        path={location.pathname}
+        leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
+        tools={!isAdmin && <ThemeMenu />}
+        account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" signOut={signOut} onError={setSignOutError} /></div>}
+        tabs={adminDomain?.section && <SectionTabs {...adminDomain.section} />}
+      >
+        {signOutError ? <p role="alert">{signOutError}</p> : null}
+        {children}
+      </PageFrame>
       {isAdmin ? (
         <nav className="admin-mobile-dock" aria-label="主导航">
           {adminMobileDock.map((domain) => {
@@ -204,7 +201,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={to}
                 to={to}
                 className={active ? 'admin-mobile-dock-item active' : 'admin-mobile-dock-item'}
-                aria-current={active ? 'page' : undefined}
+                aria-current={active ? (adminDomain?.section ? 'location' : 'page') : undefined}
                 aria-label={label}
               >
                 <Icon aria-hidden="true" size={23} />
