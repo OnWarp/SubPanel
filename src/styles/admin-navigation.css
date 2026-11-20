@@ -256,8 +256,6 @@
     padding-inline: var(--space-4);
     position: relative;
     z-index: var(--z-topbar);
-    border-radius: var(--radius-shell);
-    background: var(--color-surface);
   }
 
   .admin-topbar-layout .admin-topbar-brand {
