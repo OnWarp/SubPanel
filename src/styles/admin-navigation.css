@@ -264,6 +264,10 @@
     gap: var(--space-2);
   }
 
+  .admin-topbar-layout .admin-topbar-brand strong {
+    font-size: var(--font-lg);
+  }
+
   .admin-topbar-layout .admin-top-navigation {
     display: flex;
     align-items: center;
@@ -278,7 +282,7 @@
     padding-inline: var(--space-2);
     border-radius: var(--radius-ctl);
     color: var(--color-text-muted);
-    font-size: var(--font-body);
+    font-size: var(--font-lg);
     white-space: nowrap;
   }
 
