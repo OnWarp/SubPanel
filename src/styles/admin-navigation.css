@@ -173,8 +173,10 @@
     white-space: nowrap;
   }
 
-  .admin-topbar-layout .admin-top-navigation a:hover {
-    background: var(--color-surface-subtle);
+  @media (hover: hover) {
+    .admin-topbar-layout .admin-top-navigation a:hover {
+      background: var(--color-surface-subtle);
+    }
   }
 
   .admin-topbar-layout .admin-top-navigation a.active {
