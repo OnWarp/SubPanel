@@ -5,41 +5,6 @@
  */
 
 /* Dashboard stat cards ---------------------------------------------------- */
-.adm-stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-3);
-}
-.adm-stat {
-  display: grid;
-  padding: var(--space-4);
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  color: var(--color-text);
-  transition: border-color var(--duration-ui) ease;
-}
-@media (hover: hover) {
-  .adm-stat:hover { border-color: var(--color-primary); }
-}
-.adm-stat-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-weight: 590;
-  letter-spacing: .02em;
-}
-.adm-stat-icon { color: var(--color-primary); }
-.adm-stat-value {
-  grid-column: 1 / -1;
-  font-size: var(--font-display);
-  font-weight: 590;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
-}
 
 /* Account form ----------------------------------------------------------- */
 .adm-account-form input {
@@ -51,10 +16,6 @@
   background: var(--color-surface);
   color: var(--color-text);
   font-size: var(--font-md);
-}
-
-@media (max-width: 900px) {
-  .adm-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {

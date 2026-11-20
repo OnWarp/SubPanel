@@ -1,4 +1,3 @@
-import { OperationsHeading } from '../admin/OperationsCard'
 import { AlertTriangle, ArrowRight } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -59,36 +58,23 @@ export function DashboardPage() {
   return (
     <div className="page-stack ops-page">
       <PageHeader title="概览" />
-      <section className="ops-card ops-overview" aria-label="概览">
-        <OperationsHeading title="概览" />
+      <div className="page-stack" aria-label="概览">
         {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
         {loading && !data ? <LoadingState label="正在加载概览" /> : null}
         {data ? (
           <>
-            <section className="ui3-stat-grid" aria-label="用户与订阅统计">
+            <section className="stat-grid" aria-label="用户与订阅统计">
               <StatCard label="总用户" value={data.stats.users} />
               <StatCard label="有效订阅" value={data.stats.activeSubscriptions} />
               <StatCard label="7 日内到期" value={data.stats.expiringSubscriptions} />
               <StatCard label="待处理工单" value={data.stats.pendingTickets} sub="未关闭工单" />
             </section>
-            <section className="adm-stat-grid" aria-label="系统统计">{Object.entries({plans:'计划',groups:'分组',nodes:'节点'}).map(([key,label])=><div className="adm-stat" key={key}><span className="adm-stat-label">{label}</span><strong className="adm-stat-value">{data.stats[key]}</strong></div>)}</section>
-            <section className="adm-stat-grid" aria-label="资源统计">
-              <Link className="adm-stat" to="/catalog/sources">
-                <span className="adm-stat-label">来源</span>
-                <strong className="adm-stat-value">{data.catalog.sources.length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/catalog/nodes">
-                <span className="adm-stat-label">启用节点</span>
-                <strong className="adm-stat-value">{data.catalog.nodes.filter((node) => node.enabled).length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/delivery/subscriptions">
-                <span className="adm-stat-label">订阅总数</span>
-                <strong className="adm-stat-value">{data.subscriptions.length}</strong>
-              </Link>
-              <Link className="adm-stat" to="/users">
-                <span className="adm-stat-label">用户</span>
-                <strong className="adm-stat-value">{data.stats.users}</strong>
-              </Link>
+            <section className="stat-grid" aria-label="系统统计">{Object.entries({plans:'计划',groups:'分组',nodes:'节点'}).map(([key,label])=><StatCard key={key} label={label} value={data.stats[key]} />)}</section>
+            <section className="stat-grid" aria-label="资源统计">
+              <StatCard to="/catalog/sources" label="来源" value={data.catalog.sources.length} />
+              <StatCard to="/catalog/nodes" label="启用节点" value={data.catalog.nodes.filter((node) => node.enabled).length} />
+              <StatCard to="/delivery/subscriptions" label="订阅总数" value={data.subscriptions.length} />
+              <StatCard to="/users" label="用户" value={data.stats.users} />
             </section>
             {issues.length > 0 && (
               <div className="adm-alert" role="alert">
@@ -99,7 +85,7 @@ export function DashboardPage() {
             )}
           </>
         ) : null}
-      </section>
+      </div>
     </div>
   )
 }
