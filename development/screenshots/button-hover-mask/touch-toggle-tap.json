@@ -1,0 +1,15 @@
+{
+  "beforeTap": {
+    "hoverMatches": false,
+    "bg": "rgba(0, 0, 0, 0)"
+  },
+  "afterTap": {
+    "hoverMatches": false,
+    "bg": "rgba(0, 0, 0, 0)",
+    "color": "rgb(110, 110, 115)"
+  },
+  "afterElsewhere": {
+    "hoverMatches": false,
+    "bg": "rgba(0, 0, 0, 0)"
+  }
+}

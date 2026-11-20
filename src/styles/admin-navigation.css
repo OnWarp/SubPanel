@@ -94,9 +94,11 @@
   white-space: nowrap;
 }
 
-.section-tabs a:hover,
+@media (hover: hover) {
+  .section-tabs a:hover,
 .section-tabs a.active {
-  color: var(--color-text);
+    color: var(--color-text);
+  }
 }
 
 .section-tabs a.active {

@@ -48,7 +48,9 @@
   text-decoration: none;
 }
 
-.usr-tab:hover { color: var(--color-text); }
+@media (hover: hover) {
+  .usr-tab:hover { color: var(--color-text); }
+}
 
 .usr-tab.active,
 .usr-tab[aria-current='page'] {
@@ -145,7 +147,9 @@
   text-align: left;
 }
 
-.usr-menu-panel button:hover:not(:disabled) { background: var(--color-surface-subtle); }
+@media (hover: hover) {
+  .usr-menu-panel button:hover:not(:disabled) { background: var(--color-surface-subtle); }
+}
 .usr-menu-panel button.danger { color: var(--color-danger); }
 .usr-menu-panel button:disabled { cursor: not-allowed; opacity: .4; }
 

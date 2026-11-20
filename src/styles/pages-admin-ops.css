@@ -137,24 +137,30 @@
   text-align: start;
 }
 
-.ops-action-popover .button:hover:not(:disabled),
+@media (hover: hover) {
+  .ops-action-popover .button:hover:not(:disabled),
 .ops-action-popover .button.ghost:hover:not(:disabled),
 .ops-action-popover .button.secondary:hover:not(:disabled),
 .ops-action-popover .button.danger:hover:not(:disabled) {
-  border: 0;
-  background: var(--color-surface-subtle);
-  color: var(--color-text);
+    border: 0;
+    background: var(--color-surface-subtle);
+    color: var(--color-text);
+  }
 }
 
-.ops-action-popover .button.danger,
+@media (hover: hover) {
+  .ops-action-popover .button.danger,
 .ops-action-popover .button.danger:hover:not(:disabled) {
-  border: 0;
-  background: transparent;
-  color: var(--color-danger);
+    border: 0;
+    background: transparent;
+    color: var(--color-danger);
+  }
 }
 
-.ops-action-popover .button.danger:hover:not(:disabled) {
-  background: var(--color-surface-subtle);
+@media (hover: hover) {
+  .ops-action-popover .button.danger:hover:not(:disabled) {
+    background: var(--color-surface-subtle);
+  }
 }
 
 .ops-page .ops-group {
@@ -284,8 +290,10 @@
   width: min(100%, 17rem);
 }
 
-.ops-page .ops-system .sys-nav-item:hover {
-  color: var(--color-accent);
+@media (hover: hover) {
+  .ops-page .ops-system .sys-nav-item:hover {
+    color: var(--color-accent);
+  }
 }
 
 .ops-page .ops-system .ops-template {
@@ -308,8 +316,10 @@
   padding-inline: 0;
 }
 
-.ops-page .ops-overview .adm-stat:hover {
-  border-color: transparent;
+@media (hover: hover) {
+  .ops-page .ops-overview .adm-stat:hover {
+    border-color: transparent;
+  }
 }
 
 .ops-page .ops-overview .ui3-stat-grid,

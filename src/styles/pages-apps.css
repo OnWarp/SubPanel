@@ -333,8 +333,10 @@
   background: var(--color-surface);
 }
 
-.appu-card:hover {
-  border-color: var(--color-border-strong);
+@media (hover: hover) {
+  .appu-card:hover {
+    border-color: var(--color-border-strong);
+  }
 }
 
 .appu-card-open {
@@ -581,4 +583,6 @@
   text-decoration: none;
 }
 
-.appu-doc-link:hover { text-decoration: underline; }
+@media (hover: hover) {
+  .appu-doc-link:hover { text-decoration: underline; }
+}

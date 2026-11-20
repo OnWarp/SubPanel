@@ -153,8 +153,10 @@
   background: transparent;
 }
 
-.sh-share-table .sp-table tbody tr:hover td {
-  background: transparent;
+@media (hover: hover) {
+  .sh-share-table .sp-table tbody tr:hover td {
+    background: transparent;
+  }
 }
 
 .sh-share-table .sp-table td {

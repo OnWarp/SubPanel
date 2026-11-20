@@ -56,8 +56,10 @@
   text-decoration: none;
 }
 
-.kb-article-link:hover .kb-article-link-title {
-  color: var(--color-primary);
+@media (hover: hover) {
+  .kb-article-link:hover .kb-article-link-title {
+    color: var(--color-primary);
+  }
 }
 
 .kb-article-link-main {
@@ -140,7 +142,9 @@
   gap: 4px;
 }
 .kb-markdown a { color: var(--color-primary); }
-.kb-markdown a:hover { text-decoration: underline; }
+@media (hover: hover) {
+  .kb-markdown a:hover { text-decoration: underline; }
+}
 .kb-markdown strong { font-weight: var(--weight-strong); }
 .kb-markdown code {
   padding: 1px 5px;
@@ -233,8 +237,10 @@
   cursor: pointer;
 }
 
-.kb-title-button:hover {
-  color: var(--color-primary);
+@media (hover: hover) {
+  .kb-title-button:hover {
+    color: var(--color-primary);
+  }
 }
 
 .kb-category-form,
