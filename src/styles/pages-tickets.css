@@ -319,7 +319,7 @@
 .ntc-full { margin-top: var(--space-3); }
 .ntc-full summary { cursor: pointer; color: var(--color-text-muted); }
 .tk-card-list { display: grid; gap: var(--space-3); }
-.tk-list-card { padding: var(--space-5); }
+.tk-list-card { padding: var(--space-4); }
 .tk-card-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; margin-top: var(--space-3); color: var(--color-text-muted); font-size: var(--font-sm); }
 .ui3-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--space-4); }
 .ui3-plan-wall { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--space-4); }
