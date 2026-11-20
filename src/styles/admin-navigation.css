@@ -113,55 +113,67 @@
   display: none;
 }
 
-.admin-layout .admin-layout-options {
+.admin-account .admin-layout-options {
   display: grid;
-  gap: 4px;
 }
 
-.admin-layout .admin-layout-options .account-menu-label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 40px;
-  padding: var(--space-2) 10px;
-  color: var(--color-text);
-  font-size: var(--font-body);
+.admin-account .account-menu-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  min-height: var(--space-6);
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
 }
 
-.admin-layout .admin-layout-options .account-menu-choices {
-  display: flex;
-  gap: 4px;
-  padding-left: 38px;
-}
-
-.admin-layout .admin-layout-options .account-menu-choices button {
-  flex: 1;
-  padding: 6px 8px;
+.admin-account nav .account-menu-choices button {
+  padding: 0 var(--space-1);
+  border-radius: calc(var(--radius-control) - 2px);
+  color: var(--color-text-muted);
   text-align: center;
+  white-space: nowrap;
+  transition: background-color var(--duration-ui) var(--ease-out),
+    color var(--duration-ui) var(--ease-out),
+    box-shadow var(--duration-ui) var(--ease-out);
 }
 
-/* Admin account menu: every row shares one pattern - a fixed icon slot,
-   one aligned text edge, and vertically centered icons. */
+.admin-account nav .account-menu-choices button[aria-pressed='true'] {
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-shell);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+@media (hover: hover) {
+  .admin-account nav .account-menu-choices button:hover {
+    color: var(--color-text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-account nav .account-menu-choices button {
+    transition: none;
+  }
+}
+
 .admin-layout .admin-account nav > a,
 .admin-layout .admin-account nav > button,
+.admin-layout .admin-account nav .account-menu-label,
 .admin-layout .admin-account nav .theme-control > button {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 40px;
-  padding: var(--space-2) 10px;
+  min-height: var(--space-6);
+  padding: 0 var(--space-2);
+  color: var(--color-text);
+  font-size: var(--font-body);
   text-align: left;
 }
 
 .admin-layout .admin-account nav .theme-control > button {
   height: auto;
-  color: var(--color-text);
-}
-
-.admin-layout .admin-account nav .theme-control > button > svg {
-  flex: 0 0 auto;
-  margin-inline: 1px;
 }
 
 .admin-account .account-menu-icon {
@@ -171,14 +183,21 @@
   justify-content: center;
 }
 
+.admin-account nav .theme-control > button > svg {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin-inline: 2px;
+}
+
+.admin-account nav .account-menu-icon > svg,
+.admin-account nav .theme-control > button > svg {
+  stroke-width: 2;
+}
+
 .admin-account summary > img {
   background: var(--color-surface-subtle);
   object-fit: cover;
-}
-
-.admin-layout .admin-layout-options button[aria-pressed='true'] {
-  background: var(--color-surface-subtle);
-  font-weight: var(--weight-semibold);
 }
 
 @media (width > 760px) {
