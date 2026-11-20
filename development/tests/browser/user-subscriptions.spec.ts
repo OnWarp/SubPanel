@@ -8,7 +8,7 @@ test.describe.serial('Ordinary user subscription workspace', () => {
   async function login(page: Page, username: string, password: string) {
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill(username)
-    await page.getByLabel('密码').fill(password)
+    await page.getByLabel('密码', { exact: true }).fill(password)
     await page.getByRole('button', { name: '登录' }).click()
   }
 

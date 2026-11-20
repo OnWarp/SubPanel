@@ -4,7 +4,7 @@ test.describe.serial('Administrator frontend', () => {
   async function loginAdmin(page: Page) {
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
-    await page.getByLabel('密码').fill('correct horse battery staple')
+    await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
     await page.getByRole('button', { name: '登录' }).click()
   }
 
