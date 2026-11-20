@@ -115,15 +115,65 @@
 
 .admin-layout .admin-layout-options {
   display: grid;
-  gap: var(--space-1);
-  padding-block: var(--space-1);
-  border-block: 1px solid var(--color-border);
+  gap: 4px;
 }
 
-.admin-layout .admin-layout-options > span {
-  padding-inline: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-sm);
+.admin-layout .admin-layout-options .account-menu-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) 10px;
+  color: var(--color-text);
+  font-size: var(--font-body);
+}
+
+.admin-layout .admin-layout-options .account-menu-choices {
+  display: flex;
+  gap: 4px;
+  padding-left: 38px;
+}
+
+.admin-layout .admin-layout-options .account-menu-choices button {
+  flex: 1;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+/* Admin account menu: every row shares one pattern - a fixed icon slot,
+   one aligned text edge, and vertically centered icons. */
+.admin-layout .admin-account nav > a,
+.admin-layout .admin-account nav > button,
+.admin-layout .admin-account nav .theme-control > button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) 10px;
+  text-align: left;
+}
+
+.admin-layout .admin-account nav .theme-control > button {
+  height: auto;
+  color: var(--color-text);
+}
+
+.admin-layout .admin-account nav .theme-control > button > svg {
+  flex: 0 0 auto;
+  margin-inline: 1px;
+}
+
+.admin-account .account-menu-icon {
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-account summary > img {
+  background: var(--color-surface-subtle);
+  object-fit: cover;
 }
 
 .admin-layout .admin-layout-options button[aria-pressed='true'] {
