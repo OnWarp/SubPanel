@@ -30,12 +30,12 @@ export const adminSections: NavSection[] = [
 ]
 
 type SectionTab = { to: string; label: string; includeChildren?: boolean }
-type AdminDomain = NavItem & { section?: { label: string; tabs: SectionTab[]; preserveSearch?: boolean } }
+type AdminDomain = NavItem & { shortLabel?: string; section?: { label: string; tabs: SectionTab[]; preserveSearch?: boolean } }
 
 export const adminDomains: AdminDomain[] = [
   { to: '/dashboard', label: '概览', icon: LayoutDashboard },
   {
-    to: '/catalog/nodes', label: '节点管理', icon: Network,
+    to: '/catalog/nodes', label: '节点管理', shortLabel: '节点', icon: Network,
     section: { label: '节点管理导航', tabs: [
       { to: '/catalog/nodes', label: '节点' },
       { to: '/catalog/sources', label: '来源' },
@@ -43,7 +43,7 @@ export const adminDomains: AdminDomain[] = [
     ] },
   },
   {
-    to: '/delivery/subscriptions', label: '订阅管理', icon: Send,
+    to: '/delivery/subscriptions', label: '订阅管理', shortLabel: '订阅', icon: Send,
     section: { label: '订阅管理导航', tabs: [
       { to: '/delivery/subscriptions', label: '订阅' },
       { to: '/delivery/shares', label: '分享' },
@@ -51,7 +51,7 @@ export const adminDomains: AdminDomain[] = [
     ] },
   },
   {
-    to: '/users', label: '用户管理', icon: Users,
+    to: '/users', label: '用户管理', shortLabel: '用户', icon: Users,
     section: { label: '用户管理子页', preserveSearch: true, tabs: [
       { to: '/users', label: '用户' },
       { to: '/invites', label: '邀请' },
@@ -59,7 +59,7 @@ export const adminDomains: AdminDomain[] = [
     ] },
   },
   {
-    to: '/delivery/tickets', label: '运营管理', icon: Megaphone,
+    to: '/delivery/tickets', label: '运营管理', shortLabel: '运营', icon: Megaphone,
     section: { label: '运营管理导航', tabs: [
       { to: '/delivery/tickets', label: '工单', includeChildren: true },
       { to: '/operations/notices', label: '公告' },
@@ -68,7 +68,7 @@ export const adminDomains: AdminDomain[] = [
     ] },
   },
   {
-    to: '/system/registration', label: '系统设置', icon: SlidersHorizontal,
+    to: '/system/registration', label: '系统设置', shortLabel: '设置', icon: SlidersHorizontal,
     section: { label: '系统设置导航', preserveSearch: true, tabs: [
       { to: '/system/registration', label: '注册设置' },
       { to: '/system/mail', label: '邮件设置' },

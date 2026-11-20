@@ -142,6 +142,7 @@ export function SubscriptionsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const listRequestSeq = useRef(0)
+  const detailsTrigger = useRef<HTMLButtonElement>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
@@ -528,7 +529,11 @@ export function SubscriptionsPage() {
       align: 'right',
       render: (subscription) => (
         <ResourceRowActions actions={[
-          { label: '查看详情', onClick: () => { setDrawerError(''); setDrawer({ kind: 'details', subscription }) } },
+          { label: '查看详情', onClick: (trigger) => {
+            detailsTrigger.current = trigger
+            setDrawerError('')
+            setDrawer({ kind: 'details', subscription })
+          } },
           { label: '编辑', onClick: () => openEdit(subscription) },
           { label: '转移', onClick: () => { setTargetUser(subscription.userId ?? ''); setTransfer(subscription); setDrawerError('') } },
           { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: () => { setSharing(subscription); setShareUrl('') } },
@@ -621,7 +626,7 @@ export function SubscriptionsPage() {
         </form>
       </EditDrawer>
 
-      <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer}>
+      <EditDrawer open={details !== null} title="订阅详情" busy={busy} size="large" onClose={closeDrawer} returnFocusRef={detailsTrigger}>
         {details ? <div className="subscription-details">
           {details.planId ? <dl className="profile-fields">
             <div><dt>订阅计划</dt><dd>{details.planName}</dd></div>
