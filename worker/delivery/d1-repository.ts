@@ -17,22 +17,6 @@ export type DeliveryCounts = {
   subscriptionGroups: number
 }
 
-type SubscriptionSql = {
-  id: string
-  user_id: string | null
-  name: string
-  token_hash: string
-  token_prefix: string
-  encrypted_token: string
-  enabled: number
-  default_client: string
-  revision: number
-  starts_at: number | null
-  expires_at: number | null
-  created_at: string
-  updated_at: string
-}
-
 type SubscriptionGroupSql = {
   subscription_id: string
   group_id: string
@@ -123,19 +107,19 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
       db.prepare('SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position'),
       db.prepare(`SELECT key, value FROM system_settings WHERE key IN (${placeholders})`).bind(...DELIVERY_META_KEYS),
     ])
-    const subscriptionRows = subscriptions.results as SubscriptionSql[]
+    const subscriptionRows = subscriptions.results as SubscriptionRow[]
     const groupRows = groups.results as SubscriptionGroupSql[]
     const metadataRows = metadata.results as { key: string; value: string }[]
     const storedOrderRaw = metadataRows.find(row => row.key === DELIVERY_SETTING_KEYS.entityOrder)?.value ?? null
     const settings = new Map(metadataRows
       .filter(row => row.key !== DELIVERY_SETTING_KEYS.entityOrder)
       .map(row => [row.key, decodeSettingJson(row.value)]))
-    const revision = settings.get(DELIVERY_SETTING_KEYS.revision)
-    if (revision === undefined && subscriptionRows.length === 0) return emptyDeliverySnapshot()
+    const revision = settings.get(DELIVERY_SETTING_KEYS.revision) ?? 0
+    if (!settings.size && subscriptionRows.length === 0) return emptyDeliverySnapshot()
 
-    const schemaVersion = settings.get(DELIVERY_SETTING_KEYS.schemaVersion)
-    const updatedAt = settings.get(DELIVERY_SETTING_KEYS.updatedAt)
-    const nextSubscriptionId = settings.get(DELIVERY_SETTING_KEYS.nextSubscriptionId)
+    const schemaVersion = settings.get(DELIVERY_SETTING_KEYS.schemaVersion) ?? 1
+    const updatedAt = settings.get(DELIVERY_SETTING_KEYS.updatedAt) ?? emptyDeliverySnapshot().updatedAt
+    const nextSubscriptionId = settings.get(DELIVERY_SETTING_KEYS.nextSubscriptionId) ?? 1
     if (
       schemaVersion !== 1 ||
       typeof revision !== 'number' ||
@@ -148,7 +132,7 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
       schemaVersion: 1 as const,
       revision,
       updatedAt,
-      nextSubscriptionId,
+      nextSubscriptionId: subscriptionRows.reduce((next, row) => Math.max(next, Number(row.id.slice(4)) + 1), nextSubscriptionId),
       subscriptions: ordered.map((row) => ({
         id: row.id,
         userId: row.user_id,
@@ -160,7 +144,17 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
         ),
         tokenHash: row.token_hash,
         tokenPrefix: row.token_prefix,
-        encryptedToken: parseJson(row.encrypted_token),
+        encryptedToken: row.encrypted_token === '{}' ? null : parseJson(row.encrypted_token),
+        ...(row.plan_id ? {
+          planId: row.plan_id,
+          trafficGb: row.traffic_gb,
+          speedLimitMbps: row.speed_limit_mbps,
+          deviceLimit: row.device_limit,
+          planSource: row.plan_source,
+          planNote: row.plan_note,
+          planRevoked: row.plan_revoked === 1,
+          lastRemindedAt: row.last_reminded_at,
+        } : {}),
         enabled: row.enabled === 1,
         defaultClient: row.default_client,
         revision: row.revision,
@@ -181,8 +175,9 @@ function subscriptionInsert(db: AppDatabase, row: SubscriptionRow): D1PreparedSt
   return db.prepare(
     `INSERT INTO subscriptions (
       id, user_id, name, token_hash, token_prefix, encrypted_token,
-      enabled, default_client, revision, starts_at, expires_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      enabled, default_client, revision, starts_at, expires_at, created_at, updated_at,
+      plan_id, traffic_gb, speed_limit_mbps, device_limit, plan_source, plan_note, plan_revoked, last_reminded_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id,
       name = excluded.name,
@@ -195,7 +190,16 @@ function subscriptionInsert(db: AppDatabase, row: SubscriptionRow): D1PreparedSt
       starts_at = excluded.starts_at,
       expires_at = excluded.expires_at,
       created_at = excluded.created_at,
-      updated_at = excluded.updated_at`,
+      updated_at = excluded.updated_at,
+      plan_id = excluded.plan_id,
+      traffic_gb = excluded.traffic_gb,
+      speed_limit_mbps = excluded.speed_limit_mbps,
+      device_limit = excluded.device_limit,
+      plan_source = excluded.plan_source,
+      plan_note = excluded.plan_note,
+      plan_revoked = excluded.plan_revoked,
+      last_reminded_at = CASE WHEN subscriptions.expires_at IS excluded.expires_at
+        THEN subscriptions.last_reminded_at ELSE excluded.last_reminded_at END`,
   ).bind(
     row.id,
     row.user_id,
@@ -210,6 +214,14 @@ function subscriptionInsert(db: AppDatabase, row: SubscriptionRow): D1PreparedSt
     row.expires_at,
     row.created_at,
     row.updated_at,
+    row.plan_id,
+    row.traffic_gb,
+    row.speed_limit_mbps,
+    row.device_limit,
+    row.plan_source,
+    row.plan_note,
+    row.plan_revoked,
+    row.last_reminded_at,
   )
 }
 

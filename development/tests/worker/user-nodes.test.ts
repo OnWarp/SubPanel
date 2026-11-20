@@ -1,3 +1,4 @@
+import { createDeliveryFixturePlan } from './helpers'
 import { createFixtureAccount } from './helpers'
 import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -74,9 +75,10 @@ async function createGroup(adminCookie: string, name: string, sourceIds: string[
 }
 
 async function createSubscription(adminCookie: string, userId: string, name: string, groupIds: string[], extra: Record<string, unknown> = {}): Promise<string> {
+  const plan = await createDeliveryFixturePlan(groupIds)
   const created = await exports.default.fetch(
     `${TEST_ORIGIN}/api/admin/subscriptions`,
-    jsonRequest({ userId, name, groupIds, defaultClient: 'mihomo', ...extra }, withCookie(adminCookie)),
+    jsonRequest({ userId, name, planId: plan.id, groupIds, defaultClient: 'mihomo', ...extra }, withCookie(adminCookie)),
   )
   expect(created.status).toBe(201)
   return (await created.json() as { subscription: { id: string } }).subscription.id

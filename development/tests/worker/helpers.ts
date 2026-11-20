@@ -1,7 +1,6 @@
-import { getUserEntitlement, savePlan, operateEntitlement } from '../../../worker/entitlements/service'
+import { savePlan } from '../../../worker/delivery/plans'
 import { hashPassword } from '../../../worker/accounts/password'
 import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
-import { userAnchorStatement } from '../../../worker/db/ensure-users'
 import { env, exports } from 'cloudflare:workers'
 import { clearAppsStorage } from '../../../worker/apps/d1-repository'
 import { clearCatalogStorage } from '../../../worker/catalog/d1-repository'
@@ -81,20 +80,11 @@ export const withCookie = (cookie: string, init: RequestInit = {}): RequestInit 
   headers: { cookie, ...init.headers },
 })
 
-// Delivery fixtures explicitly grant rights; production never infers rights from subscriptions.
-export async function grantDeliveryFixture(userId: string, groupIds: string[], now = new Date().toISOString()): Promise<void> {
+// Delivery fixtures attach a plan to each subscription that can serve nodes.
+export async function createDeliveryFixturePlan(groupIds: string[], now = new Date().toISOString()) {
   await applyMigrations()
   for (const groupId of groupIds) await env.DB.prepare('INSERT OR IGNORE INTO groups(id,name,created_at,updated_at) VALUES(?,?,?,?)').bind(groupId,groupId,now,now).run()
-  const user = (await readAccounts(env)).users.find((u) => u.id === userId)
-  if (!user) throw new Error('Fixture user missing')
-  await userAnchorStatement(env.DB,user).run()
-  const current = await getUserEntitlement(env.DB,userId)
-  if (current.latest?.status === 'active') {
-    await savePlan(env.DB,{ ...current.latest.plan,groupIds: [...new Set([...current.latest.plan.groupIds,...groupIds])] },current.latest.planId)
-  } else {
-    const plan = await savePlan(env.DB,{ name: 'Delivery fixture',groupIds,durationDays: 3650 })
-    await operateEntitlement(env.DB,userId,'grant',plan.id,'',now)
-  }
+  return savePlan(env.DB,{ name: 'Delivery fixture',groupIds,durationDays: 3650 })
 }
 
 // Non-registration suites need an account fixture in either KV or D1 mode.

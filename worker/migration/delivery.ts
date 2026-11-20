@@ -15,6 +15,14 @@ export interface DeliveryConversionResult {
 }
 
 export interface SubscriptionRow {
+  plan_id: string | null
+  traffic_gb: number
+  speed_limit_mbps: number
+  device_limit: number
+  plan_source: "admin" | "trial" | null
+  plan_note: string
+  plan_revoked: number
+  last_reminded_at: number | null
   id: string
   user_id: string | null
   name: string
@@ -42,12 +50,20 @@ export function convertDelivery(kvValue: unknown): DeliveryConversionResult {
 
   // Convert subscriptions
   const subscriptions: SubscriptionRow[] = snapshot.subscriptions.map((sub) => ({
+    plan_id: sub.planId ?? null,
+    traffic_gb: sub.trafficGb ?? 0,
+    speed_limit_mbps: sub.speedLimitMbps ?? 0,
+    device_limit: sub.deviceLimit ?? 0,
+    plan_source: sub.planSource ?? null,
+    plan_note: sub.planNote ?? "",
+    plan_revoked: sub.planRevoked ? 1 : 0,
+    last_reminded_at: sub.lastRemindedAt ?? null,
     id: sub.id,
     user_id: sub.userId,
     name: sub.name,
     token_hash: sub.tokenHash,
     token_prefix: sub.tokenPrefix,
-    encrypted_token: JSON.stringify(sub.encryptedToken),
+    encrypted_token: JSON.stringify(sub.encryptedToken ?? {}),
     enabled: sub.enabled ? 1 : 0,
     default_client: sub.defaultClient,
     revision: sub.revision,

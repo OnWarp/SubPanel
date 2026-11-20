@@ -3,6 +3,7 @@ import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { subscriptionPlanLabels } from './plan-types'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
 import { ShareDrawer } from '../shares/ShareDrawer'
 import { Button } from '../../ui/Button'
@@ -183,7 +184,6 @@ export function MySubscriptionsPage() {
 
       <div className="upd-secondary-actions">
         {downloadsEnabled ? <Link className="button secondary" to="/apps">下载客户端</Link> : null}
-        <Link className="button secondary" to="/entitlements">查看我的权益</Link>
       </div>
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
@@ -203,7 +203,7 @@ export function MySubscriptionsPage() {
             <div className="del-status-head">
               <h2 id="current-subscription-title">{selected.name}</h2>
               <span className="exp-badges">
-                <StatusBadge tone={selected.enabled ? 'success' : 'muted'}>{selected.enabled ? '正常' : '已停用'}</StatusBadge>
+                <StatusBadge tone={selected.planState === 'active' || (selected.planState === undefined && selected.enabled) ? 'success' : 'muted'}>{selected.planState ? subscriptionPlanLabels[selected.planState] : selected.enabled ? '正常' : '已停用'}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
               <button ref={shareButtonRef} className="button primary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button>
@@ -211,6 +211,12 @@ export function MySubscriptionsPage() {
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">
               <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
+              <div><dt>订阅计划</dt><dd>{selected.planName ?? '未分配计划'}</dd></div>
+              {selected.planId ? <>
+                <div><dt>流量额度</dt><dd>{selected.trafficGb ? `${selected.trafficGb} GB` : '不限'}</dd></div>
+                <div><dt>限速</dt><dd>{selected.speedLimitMbps ? `${selected.speedLimitMbps} Mbps` : '不限'}</dd></div>
+                <div><dt>设备数</dt><dd>{selected.deviceLimit || '不限'}</dd></div>
+              </> : null}
               <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
               {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
             </dl>

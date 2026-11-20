@@ -39,7 +39,7 @@ import {
 } from '../../../worker/shares/repository'
 import { DEFAULT_SHARE_SETTINGS, type ShareRecord, type ShareSettings } from '../../../worker/shares/schema'
 import { applyMigrations } from './d1'
-import { grantDeliveryFixture, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { createDeliveryFixturePlan, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const NOW = '2026-07-23T00:00:00.000Z'
 const LATER = '2026-07-23T01:00:00.000Z'
@@ -504,10 +504,17 @@ describe('subscription compile on D1 matches KV', () => {
   it('compiles every client to the same artifact after delivery and catalog move to D1', async () => {
     await setupAdmin()
     await writeCatalog(env, catalogFixture(), NOW)
-    const saved = await writeDelivery(env, deliveryFixture(), NOW)
+    const fixture = deliveryFixture()
+    const plan = await createDeliveryFixturePlan(fixture.subscriptions[0].groupIds, NOW)
+    const saved = await writeDelivery(env, {
+      ...fixture,
+      subscriptions: fixture.subscriptions.map(subscription => subscription.enabled ? {
+        ...subscription, planId: plan.id, trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0,
+        planSource: null, planNote: '', planRevoked: false, lastRemindedAt: null,
+      } : subscription),
+    }, NOW)
     const enabled = saved.subscriptions.find((item) => item.id === 'sub_1')
     expect(enabled?.enabled).toBe(true)
-    await grantDeliveryFixture(USER_ID,enabled!.groupIds,NOW)
     const kvArtifacts = await compileSubscription(env, enabled!, { now: COMPILE_NOW })
     expect(kvArtifacts.map((artifact) => artifact.client)).toEqual([...CLIENT_IDS])
     expect(kvArtifacts.every((artifact) => artifact.outputNodes === 1 && artifact.body.length > 0)).toBe(true)
@@ -516,7 +523,6 @@ describe('subscription compile on D1 matches KV', () => {
     await runModuleImport(env, 'delivery', LATER)
     const fromD1 = (await readDelivery(env)).subscriptions.find((item) => item.id === 'sub_1')
     expect(fromD1).toEqual(enabled)
-    await grantDeliveryFixture(USER_ID,fromD1!.groupIds,NOW)
     const d1Artifacts = await compileSubscription(env, fromD1!, { now: COMPILE_NOW })
     expect(d1Artifacts).toEqual(kvArtifacts)
   })

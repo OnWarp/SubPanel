@@ -56,6 +56,7 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
       case '/api/admin/share-settings': return json({ settings: { enabled: true, createAllowed: true, maxSharesPerSubscription: 10, maxActiveSharesPerUser: 10, maxValidityDays: 30, defaultAllowOriginalLink: false, defaultAccessControl: 'none', requireLoginDefault: false, publicBaseUrl: '' } })
       case '/api/admin/users': return json({ users: [{ id: 'usr_1', username: 'admin' }], total: 1 })
       case '/api/admin/catalog': return json({ sources: [], nodes: [], groups: [] })
+      case '/api/admin/plans': return json({ plans: [] })
       case '/api/admin/subscriptions':
         if (method === 'POST') return json({ subscription, token: 'mock-token', warning: '' }, 201)
         if (searchParams.get('pageSize') !== '100') return json({ subscriptions: [subscription], total: 1 })

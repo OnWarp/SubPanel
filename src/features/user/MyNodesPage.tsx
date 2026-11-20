@@ -1,5 +1,4 @@
 import { GateEmptyState } from '../../ui/GateEmptyState'
-import type { EntitlementState } from '../entitlements/types'
 import { Network } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -27,6 +26,7 @@ export type UserNode = {
 }
 
 type UserNodesResponse = {
+  hasActiveSubscription: boolean
   nodes: UserNode[]
   total: number
   page: number
@@ -118,7 +118,7 @@ export function UserNodesFooter({ total, page, pageCount, onPage }: {
 }
 
 export function MyNodesPage() {
-  const [rights, setRights] = useState<EntitlementState | null>(null)
+  const [hasActiveSubscription, setHasActiveSubscription] = useState(false)
   const [nodes, setNodes] = useState<UserNode[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -142,14 +142,9 @@ export function MyNodesPage() {
     params.set('groupId', activeGroup)
     const seq = ++requestSeq.current
     try {
-      const entitlement = await api<EntitlementState>('/api/account/entitlement')
-      if (seq !== requestSeq.current) return
-      setRights(entitlement)
-      if (entitlement.state !== 'active' || !entitlement.current) {
-        setNodes([]); setTotal(0); setError(''); return
-      }
       const result = await api<UserNodesResponse>(`/api/user/nodes?${params.toString()}`)
       if (seq !== requestSeq.current) return
+      setHasActiveSubscription(result.hasActiveSubscription)
       setNodes(result.nodes)
       setTotal(result.total)
       setSubscriptionOptions(result.subscriptionOptions)
@@ -185,7 +180,7 @@ export function MyNodesPage() {
     setPage(1)
   }
 
-  if (!loading && !error && rights && (rights.state !== 'active' || !rights.current)) return <GateEmptyState icon={<Network size={48} />} message="需要有效权益才能查看节点" />
+  if (!loading && !error && !hasActiveSubscription) return <GateEmptyState icon={<Network size={48} />} message="需要有效订阅才能查看节点" />
 
   return (
     <div className="page-stack node-page upd-page upd-nodes">

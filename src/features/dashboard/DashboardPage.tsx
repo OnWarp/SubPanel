@@ -65,10 +65,10 @@ export function DashboardPage() {
         {loading && !data ? <LoadingState label="正在加载概览" /> : null}
         {data ? (
           <>
-            <section className="ui3-stat-grid" aria-label="用户与权益统计">
+            <section className="ui3-stat-grid" aria-label="用户与订阅统计">
               <StatCard label="总用户" value={data.stats.users} />
-              <StatCard label="有效权益" value={data.stats.activeEntitlements} />
-              <StatCard label="7 日内到期" value={data.stats.expiringEntitlements} />
+              <StatCard label="有效订阅" value={data.stats.activeSubscriptions} />
+              <StatCard label="7 日内到期" value={data.stats.expiringSubscriptions} />
               <StatCard label="待处理工单" value={data.stats.pendingTickets} sub="未关闭工单" />
             </section>
             <section className="adm-stat-grid" aria-label="系统统计">{Object.entries({plans:'计划',groups:'分组',nodes:'节点'}).map(([key,label])=><div className="adm-stat" key={key}><span className="adm-stat-label">{label}</span><strong className="adm-stat-value">{data.stats[key]}</strong></div>)}</section>
@@ -82,8 +82,8 @@ export function DashboardPage() {
                 <strong className="adm-stat-value">{data.catalog.nodes.filter((node) => node.enabled).length}</strong>
               </Link>
               <Link className="adm-stat" to="/delivery/subscriptions">
-                <span className="adm-stat-label">活跃订阅</span>
-                <strong className="adm-stat-value">{data.subscriptions.filter((subscription) => subscription.enabled).length}</strong>
+                <span className="adm-stat-label">订阅总数</span>
+                <strong className="adm-stat-value">{data.subscriptions.length}</strong>
               </Link>
               <Link className="adm-stat" to="/users">
                 <span className="adm-stat-label">用户</span>

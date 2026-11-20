@@ -14,7 +14,7 @@ export const adminSections: NavSection[] = [
   { label: '订阅', items: [
     { to: '/delivery/subscriptions', label: '订阅管理', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
-    { to: '/plans', label: '权益计划', icon: ShieldCheck },
+    { to: '/plans', label: '订阅计划', icon: ShieldCheck },
   ] },
   { label: '用户', items: [{ to: '/users', label: '用户管理', icon: Users }] },
   { label: '运营', items: [
@@ -47,7 +47,7 @@ export const adminDomains: AdminDomain[] = [
     section: { label: '订阅管理导航', tabs: [
       { to: '/delivery/subscriptions', label: '订阅' },
       { to: '/delivery/shares', label: '分享' },
-      { to: '/plans', label: '权益计划' },
+      { to: '/plans', label: '订阅计划' },
     ] },
   },
   {

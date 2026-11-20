@@ -3,6 +3,9 @@ import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
+import { batch } from '../db/db.js'
+import { apiError } from '../platform/api-error.js'
+import { bumpDeliveryRevision, getPlan, requirePlanStorage } from './plans.js'
 import { deleteCompiledArtifacts } from './repository.js'
 import { readDelivery, writeDelivery } from './repository.js'
 import {
@@ -18,6 +21,7 @@ export { toPublicSubscription }
 export type { PublicSubscription }
 
 export type SubscriptionInput = {
+  planId?: string | null
   userId?: string | null
   name: string
   groupIds: string[]
@@ -95,12 +99,23 @@ function assertActor(subscription: Subscription, options: SubscriptionMutationOp
   if (!options.actorUserId || options.actorUserId !== subscription.userId) fail('SUBSCRIPTION_FORBIDDEN')
 }
 
-async function createToken(kv: KVNamespace, token: string): Promise<Pick<Subscription, 'tokenHash' | 'tokenPrefix' | 'encryptedToken'>> {
+export async function createToken(kv: KVNamespace, token: string): Promise<Pick<Subscription, 'tokenHash' | 'tokenPrefix' | 'encryptedToken'>> {
   const material = await getOrCreateCryptoMaterial(kv)
   return {
     tokenHash: await hashToken(token),
     tokenPrefix: token.slice(0, 8),
     encryptedToken: await encryptText(token, material.encryptionKey),
+  }
+}
+
+async function subscriptionPlanFields(env: DataEnv, planId: string | null) {
+  const plan = planId ? await getPlan(env.DB, planId) : null
+  if (plan && !plan.enabled) throw apiError(409, 'PLAN_DISABLED', '计划已停用')
+  if (plan) await requirePlanStorage(env)
+  return {
+    planId, trafficGb: plan?.trafficGb ?? 0, speedLimitMbps: plan?.speedLimitMbps ?? 0,
+    deviceLimit: plan?.deviceLimit ?? 0, planSource: plan ? 'admin' as const : null,
+    planNote: '', planRevoked: false, lastRemindedAt: null,
   }
 }
 
@@ -110,6 +125,7 @@ export async function createSubscription(
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
   await assertReferences(env, input.userId, input.groupIds)
+  const plan = input.planId ? await subscriptionPlanFields(env, input.planId) : {}
   const snapshot = await readDelivery(env)
   const now = options.now ?? new Date().toISOString()
   const token = validToken(options.token ?? randomToken())
@@ -125,6 +141,7 @@ export async function createSubscription(
     name: normalizedName(input.name),
     groupIds: [...input.groupIds] as Subscription['groupIds'],
     ...tokenData,
+    ...plan,
     enabled: input.enabled ?? true,
     defaultClient: clientIdSchema.parse(input.defaultClient ?? 'mihomo'),
     revision: 1,
@@ -142,10 +159,7 @@ export async function createSubscription(
 }
 
 export async function listSubscriptionsForUser(env: DataEnv, userId: string): Promise<PublicSubscription[]> {
-  const snapshot = await readDelivery(env)
-  return snapshot.subscriptions
-    .filter((subscription) => subscription.userId === userId)
-    .map(toPublicSubscription)
+  return (await listAllSubscriptions(env)).filter(subscription => subscription.userId === userId).map(toPublicSubscription)
 }
 
 export async function listAllSubscriptions(env: DataEnv): Promise<Subscription[]> {
@@ -156,7 +170,7 @@ export async function getSubscription(env: DataEnv, id: string): Promise<Subscri
   return findSubscription(await readDelivery(env), id)
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding' | 'planId'>>
 
 export async function updateSubscription(
   env: DataEnv,
@@ -164,9 +178,12 @@ export async function updateSubscription(
   input: UpdateSubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
+  if (input.planId !== undefined && options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
   const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
+  const plan = input.planId === undefined || input.planId === (current.planId ?? null)
+    ? undefined : await subscriptionPlanFields(env, input.planId)
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
   const nextGroups = input.groupIds === undefined ? current.groupIds : [...input.groupIds]
   await assertReferences(env, current.userId, nextGroups)
@@ -176,9 +193,11 @@ export async function updateSubscription(
   const now = options.now ?? new Date().toISOString()
   const updated: Subscription = {
     ...current,
+    ...plan,
     name: nextName,
     groupIds: nextGroups as Subscription['groupIds'],
     enabled: input.enabled ?? current.enabled,
+    ...(current.planRevoked && input.enabled ? { planRevoked: false } : {}),
     defaultClient: input.defaultClient === undefined ? current.defaultClient : clientIdSchema.parse(input.defaultClient),
     startsAt,
     expiresAt,
@@ -260,9 +279,26 @@ export async function deleteSubscription(
   await deleteCompiledArtifacts(env.DATA, current.tokenHash)
 }
 
-export async function decryptSubscriptionToken(kv: KVNamespace, subscription: Subscription): Promise<string> {
-  const material = await readCryptoMaterial(kv)
-  return decryptText(subscription.encryptedToken, material.encryptionKey)
+export async function decryptSubscriptionToken(env: DataEnv, subscription: Subscription): Promise<string> {
+  if (subscription.encryptedToken) {
+    const material = await readCryptoMaterial(env.DATA)
+    return decryptText(subscription.encryptedToken, material.encryptionKey)
+  }
+  const token = randomToken()
+  const data = await createToken(env.DATA, token)
+  const now = new Date().toISOString()
+  const [result] = await batch(env.DB, [
+    env.DB.prepare(`UPDATE subscriptions SET token_hash=?, token_prefix=?, encrypted_token=?, revision=revision+1
+      WHERE id=? AND user_id IS ? AND token_hash=? AND encrypted_token='{}'`)
+      .bind(data.tokenHash, data.tokenPrefix, JSON.stringify(data.encryptedToken), subscription.id, subscription.userId, subscription.tokenHash),
+    bumpDeliveryRevision(env.DB, now, true),
+  ])
+  if (result.meta.changes === 1) return token
+  const current = await getSubscription(env, subscription.id)
+  if (current.userId !== subscription.userId || current.revision !== subscription.revision + 1 || !current.encryptedToken) {
+    throw apiError(409, 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
+  }
+  return decryptSubscriptionToken(env, current)
 }
 
 export async function removeGroupReference(env: DataEnv, groupId: string): Promise<void> {

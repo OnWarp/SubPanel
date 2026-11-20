@@ -1,3 +1,4 @@
+import subscriptionPlansSql from '../../../migrations/0018_subscription_plans.sql?raw'
 import sourceKeepOnFailureSql from '../../../migrations/0016_source_keep_on_failure.sql?raw'
 import templateEnhancementsSql from '../../../migrations/0017_template_enhancements.sql?raw'
 import templatesSql from '../../../migrations/0015_subscription_templates.sql?raw'
@@ -52,6 +53,7 @@ export const D1_TABLES = [
   'sources',
   'subscription_domains',
   'subscription_groups',
+  'subscription_plan_migration',
   'subscription_platform_settings',
   'subscription_template_bindings',
   'subscription_template_default',
@@ -61,7 +63,7 @@ export const D1_TABLES = [
   'system_settings',
   'ticket_replies',
   'tickets',
-  'user_entitlements',
+  'user_entitlements_legacy',
   'users',
 ] as const
 
@@ -220,6 +222,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     templatesMigration,
     { name: '0016_source_keep_on_failure.sql', queries: splitSqlStatements(sourceKeepOnFailureSql) },
     templateEnhancementsMigration,
+    { name: '0018_subscription_plans.sql', queries: splitSqlStatements(subscriptionPlansSql) },
   ])
 }
 

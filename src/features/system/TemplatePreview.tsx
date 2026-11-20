@@ -12,8 +12,8 @@ const reasons: Record<TemplateZeroNodeReason, string> = {
   pending: '订阅尚未生效',
   expired: '订阅已过期',
   ownerUnavailable: '所属用户不可用',
-  noEntitlement: '用户没有有效权益',
-  noGroupIntersection: '订阅与权益的分组没有交集',
+  noPlan: '订阅没有可用计划',
+  noGroupIntersection: '订阅与计划的分组没有交集',
   noEnabledNodes: '授权分组没有启用的节点',
   incompatible: '授权节点与 Mihomo 不兼容',
 }

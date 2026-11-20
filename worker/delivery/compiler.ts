@@ -3,7 +3,7 @@ import { getEffectiveTemplate } from '../templates/repository.js'
 import { validateTemplate, type Template } from '../templates/validation.js'
 import { apiError } from '../platform/api-error.js'
 import { effectiveStartsAt } from './expiry.js'
-import { getUserEntitlement } from '../entitlements/service.js'
+import { listPlans, subscriptionPlanState } from './plans.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
@@ -52,7 +52,7 @@ async function nodesForClient(client: RenderClient, nodes: ReturnType<typeof sel
 }
 
 export const RENDERER_VERSION = '2'
-export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' | 'noEntitlement' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible' | 'ownerUnavailable'
+export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' | 'noPlan' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible' | 'ownerUnavailable'
 
 async function artifactFor(
   env: DataEnv,
@@ -140,7 +140,8 @@ export async function compileSubscriptionById(env: DataEnv, id: string, options:
 export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOptions = {}) => compileAllSubscriptions(env, options)
 
 // Public requests repeat the live decision even when a cached artifact exists:
-// entitlement expiry and plan edits do not change subscription/catalog revisions.
+// subscription availability and plan edits can change independently of cached output.
+
 async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
   const catalog = await readCatalog(env)
   const time = Date.parse(now)
@@ -154,13 +155,13 @@ async function entitledNodes(env: DataEnv, subscription: Subscription, now: stri
 
   const owner = (await readAccounts(env)).users.find(user => user.id === subscription.userId)
   if (!owner || owner.deletedAt || !owner.enabled) return { catalog, nodes: [], speed: 0, zeroNodeReason: 'ownerUnavailable' as const }
-  const { current } = await getUserEntitlement(env.DB, owner.id, now)
-  if (!current) return { catalog, nodes: [], speed: 0, zeroNodeReason: 'noEntitlement' as const }
-  const groupIds = subscription.groupIds.filter(id => current.plan.groupIds.includes(id))
+  const plan = subscription.planId ? (await listPlans(env.DB)).find(p => p.id === subscription.planId) ?? null : null
+  if (!plan || subscriptionPlanState(subscription, plan, time) !== 'active') return { catalog, nodes: [], speed: 0, zeroNodeReason: 'noPlan' as const }
+  const groupIds = subscription.groupIds.filter(id => plan.groupIds.includes(id))
   const nodes = selectedNodes(catalog, { ...subscription, groupIds })
   const zeroNodeReason: ZeroNodeReason | null = !groupIds.length ? 'noGroupIntersection'
     : nodes.some(node => node.enabled) ? null : 'noEnabledNodes'
-  return { catalog, nodes, speed: current.plan.speedLimitMbps ?? 0, zeroNodeReason }
+  return { catalog, nodes, speed: subscription.speedLimitMbps ?? 0, zeroNodeReason }
 }
 
 function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {

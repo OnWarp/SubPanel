@@ -1,4 +1,4 @@
-import { trialGrantStatement } from '../entitlements/service.js'
+import { trialSubscriptionStatements } from '../delivery/plans.js'
 import { batch, queryFirst, type AppDatabase } from '../db/db.js'
 import { ACCOUNTS_SETTING_KEYS, upsertSettingStatement } from '../db/module-switch.js'
 import { getRegistrationMode, type RegistrationMode } from '../db/settings-repository.js'
@@ -220,8 +220,7 @@ export async function registerUser(
         .bind(invite.id, userId, nowIso),
     )
   }
-  const trial = await trialGrantStatement(db, userId, nowIso)
-  if (trial) statements.push(trial)
+  statements.push(...await trialSubscriptionStatements(env, userId, nowIso))
   statements.push(
     upsertSettingStatement(db, ACCOUNTS_SETTING_KEYS.nextUserId, snapshot.nextUserId + 1, nowIso),
     upsertSettingStatement(db, ACCOUNTS_SETTING_KEYS.revision, snapshot.revision + 1, nowIso),

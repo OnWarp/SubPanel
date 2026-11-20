@@ -1,5 +1,5 @@
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { UserEntitlement } from '../entitlements/UserEntitlement'
+import { UserSubscriptionPlan } from '../delivery/UserSubscriptionPlan'
 import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { api, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
@@ -21,7 +21,7 @@ type StatusFilter = 'all' | 'enabled' | 'disabled'
 type UsersView = 'active' | 'trash'
 type ConfirmKind = 'promote' | 'soft-delete' | 'purge'
 type DirectoryPhase = 'loading' | 'error' | 'ready'
-type RowAction = 'edit-email' | 'reset-password' | 'promote' | 'enable' | 'disable' | 'entitlement' | 'soft-delete' | 'restore' | 'purge'
+type RowAction = 'edit-email' | 'reset-password' | 'promote' | 'enable' | 'disable' | 'subscription-plan' | 'soft-delete' | 'restore' | 'purge'
 type MenuItem = { key: RowAction; label: string; danger?: boolean; disabled?: boolean; title?: string }
 
 const PAGE_SIZE = 20
@@ -65,7 +65,7 @@ function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
     ? { key: 'disable', label: '停用', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
     : { key: 'enable', label: '启用', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
   items.push(
-    { key: 'entitlement', label: '管理权益' },
+    { key: 'subscription-plan', label: '管理订阅计划' },
     { key: 'soft-delete', label: '移入回收站', danger: true },
   )
   return items
@@ -293,7 +293,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(1)
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
-  const [entitlementUser, setEntitlementUser] = useState<UserSummary | null>(null)
+  const [subscriptionPlanUser, setSubscriptionPlanUser] = useState<UserSummary | null>(null)
   const toast = useToast()
   const usersRequestSeq = useRef(0)
 
@@ -552,7 +552,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     else if (action === 'promote') setConfirmAction({ kind: 'promote', user })
     else if (action === 'enable') void setEnabled(user, true)
     else if (action === 'disable') void setEnabled(user, false)
-    else if (action === 'entitlement') setEntitlementUser(user)
+    else if (action === 'subscription-plan') setSubscriptionPlanUser(user)
     else if (action === 'soft-delete') setConfirmAction({ kind: 'soft-delete', user })
     else if (action === 'restore') void restoreUser(user)
     else setConfirmAction({ kind: 'purge', user })
@@ -620,14 +620,15 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         onBatch={requestBatch}
         batchProgress={batchProgress}
       />
-      {entitlementUser ? (
-        <UserEntitlement
-          key={entitlementUser.id}
-          userId={entitlementUser.id}
-          username={entitlementUser.username}
+      {subscriptionPlanUser ? (
+        <UserSubscriptionPlan
+          key={subscriptionPlanUser.id}
+          userId={subscriptionPlanUser.id}
+          username={subscriptionPlanUser.username}
           showSummary={false}
           active
-          onActiveChange={(next) => { if (!next) setEntitlementUser(null) }}
+          onSave={() => { void load() }}
+          onActiveChange={(next) => { if (!next) setSubscriptionPlanUser(null) }}
         />
       ) : null}
 

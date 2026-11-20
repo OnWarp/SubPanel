@@ -134,6 +134,12 @@ export type SubscriptionDiagnostic = {
 }
 
 export type AdminSubscription = {
+  planId?: string | null
+  planName?: string | null
+  planState?: 'active' | 'none' | 'expired' | 'revoked' | 'pending' | 'disabled'
+  trafficGb?: number
+  speedLimitMbps?: number
+  deviceLimit?: number
   id: string
   userId: string | null
   name: string
@@ -226,7 +232,7 @@ export type TemplatePreviewResponse = {
 
 export type TemplateZeroNodeReason =
   | 'disabled' | 'unassigned' | 'pending' | 'expired' | 'ownerUnavailable'
-  | 'noEntitlement' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible'
+  | 'noPlan' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible'
 
 export type TemplateDraftWrite = { id: string; revision: number; draftHash: string }
 export type TemplateDraftUpdate = Omit<TemplateDraftWrite, 'id'> & { ok: true }

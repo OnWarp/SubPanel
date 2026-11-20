@@ -6,12 +6,12 @@ import { runCron } from '../../../worker/operations/cron'
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { grantDeliveryFixture, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { createDeliveryFixturePlan, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const ssLine = (name: string, host = 'ss.example.com') =>
   `ss://${btoa('aes-128-gcm:password')}@${host}:8388#${encodeURIComponent(name)}`
 
-async function createCatalogGroup(cookie: string, content = ssLine('Delivery node')): Promise<string> {
+async function createCatalogGroup(cookie: string, content = ssLine('Delivery node')) {
   const sourceResponse = await exports.default.fetch(
     `${TEST_ORIGIN}/api/admin/catalog/sources`,
     jsonRequest({ type: 'manual', name: 'Delivery source', content }, withCookie(cookie)),
@@ -23,8 +23,8 @@ async function createCatalogGroup(cookie: string, content = ssLine('Delivery nod
     jsonRequest({ name: 'Delivery group', sourceIds: [sourceId], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [catalog.nodes[0].id] }, withCookie(cookie)),
   )
   const id = (await groupResponse.json() as { group: { id: string } }).group.id
-  await grantDeliveryFixture('usr_1',[id])
-  return id
+  const plan = await createDeliveryFixturePlan([id])
+  return { groupId: id, planId: plan.id }
 }
 
 async function createUserCookie(_adminCookie: string): Promise<string> {
@@ -41,27 +41,25 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Delivery APIs and public subscriptions', () => {
-  it('allocates from the pool, transfers with token rotation, and recycles without changing subscription data or entitlements', async () => {
+  it('allocates from the pool, transfers with token rotation, and recycles with the same plan and expiry', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     await createUserCookie(admin)
     const listedUsers = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(admin))).json() as { users: Array<{ id: string; username: string }> }
     const target = listedUsers.users.find((user) => user.username === 'delivery-user')
-    await grantDeliveryFixture(target!.id, [groupId])
     const expiresAt = Date.now() + 86400000
-    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ name: 'Pool', groupIds: [groupId], expiresAt }, withCookie(admin)))
+    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ name: 'Pool', planId, groupIds: [groupId], expiresAt }, withCookie(admin)))
     expect(created.status).toBe(201)
     type Result = { subscription: { id: string; userId: string | null; expiresAt: number; groupIds: string[] }; token: string }
     const pool = await created.json() as Result
     expect(pool.subscription.userId).toBeNull()
     const pull = (token: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
     expect((await pull(pool.token)).status).toBe(404)
-    const rights = (await env.DB.prepare('SELECT * FROM user_entitlements ORDER BY id').all()).results
     const transfer = async (userId: string | null) => {
       const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${pool.subscription.id}/transfer`, jsonRequest({ userId }, withCookie(admin)))
       expect(response.status).toBe(200)
       const result = await response.json() as Result
-      expect(result.subscription).toMatchObject({ userId, expiresAt, groupIds: [groupId] })
+      expect(result.subscription).toMatchObject({ userId, expiresAt, planId, groupIds: [groupId] })
       return result
     }
     const assigned = await transfer('usr_1')
@@ -73,7 +71,6 @@ describe('Delivery APIs and public subscriptions', () => {
     const recycled = await transfer(null)
     expect((await pull(moved.token)).status).toBe(404)
     expect((await pull(recycled.token)).status).toBe(404)
-    expect((await env.DB.prepare('SELECT * FROM user_entitlements ORDER BY id').all()).results).toEqual(rights)
     const audits = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action = 'post.subscriptions.transfer'").all<{ detail: string }>()
     expect(audits.results).toHaveLength(3)
     expect(JSON.stringify(audits.results)).not.toContain(moved.token)
@@ -81,8 +78,8 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('creates temporary admin shares through the shared mechanism and rejects them at expiry', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
-    const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Share', groupIds: [groupId] }, withCookie(admin)))
+    const { groupId, planId } = await createCatalogGroup(admin)
+    const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Share', planId, groupIds: [groupId] }, withCookie(admin)))
     const { subscription } = await response.json() as { subscription: { id: string } }
     const now = new Date()
     const expiresAt = new Date(now.getTime() + 3600000).toISOString()
@@ -98,9 +95,9 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('cron disables expired subscriptions without deleting them and admin extension restores delivery', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const now = Date.now()
-    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Retained', groupIds: [groupId], expiresAt: now + 10000 }, withCookie(admin)))
+    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ userId: 'usr_1', name: 'Retained', planId, groupIds: [groupId], expiresAt: now + 10000 }, withCookie(admin)))
     const { subscription, token } = await created.json() as { subscription: { id: string }; token: string }
     await runCron(env, { now: new Date(now + 10001).toISOString() })
     expect(await env.DB.prepare('SELECT enabled FROM subscriptions WHERE id = ?').bind(subscription.id).first()).toEqual({ enabled: 0 })
@@ -114,10 +111,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('creates a subscription, precompiles artifacts, and serves conditional responses', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: '主要订阅', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: '主要订阅', planId, groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
     )
     expect(created.status).toBe(201)
     const body = await created.json() as {
@@ -181,10 +178,10 @@ describe('Delivery APIs and public subscriptions', () => {
   it('converts an imported PEM certificate to a Mihomo certificate fingerprint', async () => {
     const admin = await login()
     const certificate = '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----'
-    const groupId = await createCatalogGroup(admin, `hysteria2://password@hy2.example.com:443?cert=${encodeURIComponent(certificate)}#HY2`)
+    const { groupId, planId } = await createCatalogGroup(admin, `hysteria2://password@hy2.example.com:443?cert=${encodeURIComponent(certificate)}#HY2`)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'HY2', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'HY2', planId, groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
@@ -198,10 +195,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('routes unknown user agents to the generic URI artifact', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Auto', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Auto', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}`, { headers: { 'User-Agent': 'unknown-client/1.0' } })
@@ -212,10 +209,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('recompiles legacy subscription artifacts on first request', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Legacy', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Legacy', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
@@ -231,10 +228,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('rebuilds a corrupt compiled artifact', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Corrupt artifact', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Corrupt artifact', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const artifact = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))
@@ -248,10 +245,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('rejects a compiled artifact when its current subscription is disabled or deleted', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Authoritative state', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Authoritative state', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const body = await created.json() as { subscription: { id: string }; token: string }
     const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
@@ -275,10 +272,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('rebuilds an artifact compiled for an older subscription revision', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Old subscription revision', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Old subscription revision', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const body = await created.json() as { subscription: { id: string }; token: string }
     const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
@@ -303,10 +300,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('rebuilds an artifact compiled for an older Catalog revision', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Old Catalog revision', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Old Catalog revision', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
@@ -326,7 +323,7 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('returns a warning instead of a false failure when initial compilation fails', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const originalPut = env.DATA.put.bind(env.DATA)
     const put = vi.spyOn(env.DATA, 'put').mockImplementation(async (key, value, options) => {
       if (key.startsWith('compiled:')) throw new Error('compile failed')
@@ -335,7 +332,7 @@ describe('Delivery APIs and public subscriptions', () => {
     try {
       const response = await exports.default.fetch(
         `${TEST_ORIGIN}/api/admin/subscriptions`,
-        jsonRequest({ userId: 'usr_1', name: 'Compile warning', groupIds: [groupId] }, withCookie(admin)),
+        jsonRequest({ userId: 'usr_1', name: 'Compile warning', planId, groupIds: [groupId] }, withCookie(admin)),
       )
       expect(response.status).toBe(201)
       expect(await response.json()).toMatchObject({ warning: expect.stringContaining('编译') })
@@ -346,10 +343,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('does not report token reset as failed when stale artifact cleanup fails', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Cleanup warning', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Cleanup warning', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const body = await created.json() as { subscription: { id: string }; token: string }
     const originalDelete = env.DATA.delete.bind(env.DATA)
@@ -374,10 +371,10 @@ describe('Delivery APIs and public subscriptions', () => {
   it('enforces ownership and removes old artifacts on reset or disable', async () => {
     const admin = await login()
     const user = await createUserCookie(admin)
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_2', name: 'User subscription', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_2', name: 'User subscription', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const original = await created.json() as { subscription: { id: string }; token: string }
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(user))).status).toBe(200)
@@ -404,10 +401,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('recompiles an existing subscription after a Catalog node edit', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Refresh me', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Refresh me', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
     const catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(admin))).json() as { nodes: Array<{ id: string }> }
@@ -426,21 +423,20 @@ describe('Delivery APIs and public subscriptions', () => {
     const users = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(admin))).json() as { users: Array<{ id: string; username: string }> }
     const userId = users.users.find((user) => user.username === 'delivery-user')?.id
     expect(userId).toBeTruthy()
-    const groupId = await createCatalogGroup(admin)
-    await grantDeliveryFixture(userId, [groupId])
+    const { groupId, planId } = await createCatalogGroup(admin)
     const now = Date.now()
     const day = 86_400_000
 
     const inverted = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId, name: 'Inverted', groupIds: [groupId], startsAt: now + 10 * day, expiresAt: now + day }, withCookie(admin)),
+      jsonRequest({ userId, name: 'Inverted', planId, groupIds: [groupId], startsAt: now + 10 * day, expiresAt: now + day }, withCookie(admin)),
     )
     expect(inverted.status).toBe(422)
     expect(await inverted.json()).toEqual({ error: { code: 'SUBSCRIPTION_WINDOW_INVALID', message: '到期时间必须晚于生效时间' } })
 
     const pendingResponse = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId, name: 'Pending', groupIds: [groupId], startsAt: now + 2 * day, expiresAt: now + 10 * day }, withCookie(admin)),
+      jsonRequest({ userId, name: 'Pending', planId, groupIds: [groupId], startsAt: now + 2 * day, expiresAt: now + 10 * day }, withCookie(admin)),
     )
     expect(pendingResponse.status).toBe(201)
     const pending = await pendingResponse.json() as { subscription: { id: string; startsAt: number | null; expiresAt: number | null }; token: string }
@@ -451,7 +447,7 @@ describe('Delivery APIs and public subscriptions', () => {
 
     const expiredResponse = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId, name: 'Expired', groupIds: [groupId], expiresAt: now - day }, withCookie(admin)),
+      jsonRequest({ userId, name: 'Expired', planId, groupIds: [groupId], expiresAt: now - day }, withCookie(admin)),
     )
     expect(expiredResponse.status).toBe(201)
     const expired = await expiredResponse.json() as { subscription: { id: string; expiresAt: number | null }; token: string }
@@ -462,7 +458,7 @@ describe('Delivery APIs and public subscriptions', () => {
 
     const foreverResponse = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId, name: 'Forever', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId, name: 'Forever', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     expect(foreverResponse.status).toBe(201)
     const forever = await foreverResponse.json() as { subscription: { id: string; startsAt: number | null; expiresAt: number | null }; token: string }
@@ -503,10 +499,10 @@ describe('Delivery APIs and public subscriptions', () => {
 
   it('removes deleted group references from subscriptions', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: 'Group lifecycle', groupIds: [groupId] }, withCookie(admin)),
+      jsonRequest({ userId: 'usr_1', name: 'Group lifecycle', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const subscriptionId = (await created.json() as { subscription: { id: string } }).subscription.id
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/${groupId}`, jsonRequest({}, { ...withCookie(admin), method: 'DELETE' }))).status).toBe(204)
@@ -522,10 +518,10 @@ type AdminSubscriptionListBody = {
   pageSize?: number
 }
 
-async function createSubscriptionRecord(admin: string, name: string, groupId: string, extra: Record<string, unknown> = {}): Promise<string> {
+async function createSubscriptionRecord(admin: string, name: string, groupId: string, planId: string, extra: Record<string, unknown> = {}): Promise<string> {
   const created = await exports.default.fetch(
     `${TEST_ORIGIN}/api/admin/subscriptions`,
-    jsonRequest({ userId: 'usr_1', name, groupIds: [groupId], defaultClient: 'mihomo', ...extra }, withCookie(admin)),
+    jsonRequest({ userId: 'usr_1', name, planId, groupIds: [groupId], defaultClient: 'mihomo', ...extra }, withCookie(admin)),
   )
   expect(created.status).toBe(201)
   return (await created.json() as { subscription: { id: string } }).subscription.id
@@ -540,9 +536,9 @@ async function listAdminSubscriptions(admin: string, queryString = ''): Promise<
 describe('Admin subscriptions list pagination', () => {
   it('keeps the legacy full-list response when no parameters are passed', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
-    await createSubscriptionRecord(admin, 'Legacy A', groupId)
-    await createSubscriptionRecord(admin, 'Legacy B', groupId)
+    const { groupId, planId } = await createCatalogGroup(admin)
+    await createSubscriptionRecord(admin, 'Legacy A', groupId, planId)
+    await createSubscriptionRecord(admin, 'Legacy B', groupId, planId)
 
     const body = await listAdminSubscriptions(admin)
     expect(body.subscriptions.map((subscription) => subscription.name)).toEqual(['Legacy A', 'Legacy B'])
@@ -553,9 +549,9 @@ describe('Admin subscriptions list pagination', () => {
 
   it('pages through subscriptions and returns an empty page out of range', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     for (const name of ['Page A', 'Page B', 'Page C', 'Page D', 'Page E']) {
-      await createSubscriptionRecord(admin, name, groupId)
+      await createSubscriptionRecord(admin, name, groupId, planId)
     }
     const legacy = await listAdminSubscriptions(admin)
 
@@ -584,13 +580,13 @@ describe('Admin subscriptions list pagination', () => {
 
   it('filters by status, expiry and search text before paging', async () => {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
+    const { groupId, planId } = await createCatalogGroup(admin)
     const now = Date.now()
-    await createSubscriptionRecord(admin, 'Alpha', groupId)
-    await createSubscriptionRecord(admin, 'Beta', groupId, { enabled: false })
-    await createSubscriptionRecord(admin, 'Gamma', groupId, { expiresAt: now - 60_000 })
-    await createSubscriptionRecord(admin, 'Delta', groupId, { expiresAt: now + 20 * 86_400_000 })
-    await createSubscriptionRecord(admin, 'Echo', groupId, { expiresAt: now + 3 * 86_400_000 })
+    await createSubscriptionRecord(admin, 'Alpha', groupId, planId)
+    await createSubscriptionRecord(admin, 'Beta', groupId, planId, { enabled: false })
+    await createSubscriptionRecord(admin, 'Gamma', groupId, planId, { expiresAt: now - 60_000 })
+    await createSubscriptionRecord(admin, 'Delta', groupId, planId, { expiresAt: now + 20 * 86_400_000 })
+    await createSubscriptionRecord(admin, 'Echo', groupId, planId, { expiresAt: now + 3 * 86_400_000 })
 
     const namesOf = (body: AdminSubscriptionListBody) => body.subscriptions.map((subscription) => subscription.name)
 
@@ -639,8 +635,8 @@ rules:
 
   async function fixture() {
     const admin = await login()
-    const groupId = await createCatalogGroup(admin)
-    const created = await mutation('/api/admin/subscriptions', admin, { userId: 'usr_1', name: 'Policy pull', groupIds: [groupId] })
+    const { groupId, planId } = await createCatalogGroup(admin)
+    const created = await mutation('/api/admin/subscriptions', admin, { userId: 'usr_1', name: 'Policy pull', planId, groupIds: [groupId] })
     expect(created.status).toBe(201)
     const { subscription, token } = await created.json() as { subscription: { id: string }; token: string }
     return { admin, subscription, token, groupId }
@@ -720,24 +716,25 @@ rules:
     expect(JSON.parse(audit!.detail)).toMatchObject({ versionId })
   })
 
-  it('rejects a matching cached ETag after entitlement expiry and explains zero nodes', async () => {
+  it('rejects a matching cached ETag after subscription expiry and explains zero nodes', async () => {
     const { admin, subscription, token } = await fixture()
     const url = `${TEST_ORIGIN}/sub/${token}/mihomo`
     const active = await exports.default.fetch(url)
     expect(active.status).toBe(200)
-    const dates = await env.DB.prepare("SELECT id, starts_at, expires_at FROM user_entitlements WHERE user_id='usr_1' AND status='active'")
-      .first<{ id: string; starts_at: string; expires_at: string }>()
+    const dates = await env.DB.prepare('SELECT id, starts_at, expires_at FROM subscriptions WHERE id=?')
+      .bind(subscription.id).first<{ id: string; starts_at: number | null; expires_at: number | null }>()
     expect(dates).not.toBeNull()
-    const setDates = (startsAt: string, expiresAt: string) => env.DB.prepare('UPDATE user_entitlements SET starts_at=?, expires_at=? WHERE id=?')
+    const setDates = (startsAt: number | null, expiresAt: number | null) => env.DB.prepare('UPDATE subscriptions SET starts_at=?, expires_at=?, enabled=1 WHERE id=?')
       .bind(startsAt, expiresAt, dates!.id).run()
-    await setDates('2000-01-01T00:00:00.000Z', '2000-01-02T00:00:00.000Z')
+    await setDates(Date.parse('2000-01-01'), Date.parse('2000-01-02'))
     try {
       const expired = await exports.default.fetch(url, { headers: { 'If-None-Match': active.headers.get('etag')! } })
-      expect(expired.status).toBe(422)
-      expect(await expired.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason: 'noEntitlement' } } })
+      expect(expired.status).toBe(410)
+      expect(await expired.json()).toMatchObject({ error: { code: 'SUB_EXPIRED' } })
       const preview = () => mutation(templateRoot + '/preview', admin, { subscriptionId: subscription.id, yaml })
-      expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'noEntitlement', rules: expect.any(Array) })
+      expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'expired', rules: expect.any(Array) })
 
+      await setDates(dates!.starts_at, dates!.expires_at)
       const path = `/api/admin/subscriptions/${subscription.id}`
       expect((await mutation(path, admin, { enabled: false }, 'PATCH')).status).toBe(200)
       expect(await (await preview()).json()).toMatchObject({ outputNodes: 0, zeroNodeReason: 'disabled' })
