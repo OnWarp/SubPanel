@@ -6,7 +6,7 @@ import { api, peekApi, readData, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
-import { FormField } from '../../ui/FormField'
+import { FormField, FormGroup } from '../../ui/FormField'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
 import { Switch } from '../../ui/Switch'
@@ -316,16 +316,14 @@ export function DomainSettingsSection() {
         <div className="page-stack settings-fields">
           {feedback ? <InlineMessage tone={feedback.tone}>{feedback.text}</InlineMessage> : null}
 
-          <div className="settings-group">
+          <FormGroup id="sys-domain-restriction-title" title="访问限制">
             <FormField label="域名限制">
               <Switch checked={domains.restrictionEnabled} disabled={busyId === 'all'} ariaLabel="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
             </FormField>
             <p className="sys-hint">开启后，面板只接受已启用的面板域名访问，订阅与分享只接受已启用的订阅域名访问；某一类没有已启用的域名时，该类不做限制，不会把任何人锁在门外</p>
-          </div>
+          </FormGroup>
 
-          <div className="settings-group">
-            <h3 className="object-card-title">订阅平台展示</h3>
-            <p className="sys-hint">关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响</p>
+          <FormGroup id="sys-platform-title" title="订阅平台展示" hint="关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响">
             {platforms ? (
               <ul className="dom-platform-list">
                 {platforms.map((entry, index) => (
@@ -340,7 +338,7 @@ export function DomainSettingsSection() {
                 ))}
               </ul>
             ) : null}
-          </div>
+          </FormGroup>
 
           <DomainCard
             kind="panel"

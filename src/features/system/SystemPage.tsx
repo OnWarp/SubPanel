@@ -7,7 +7,7 @@ import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
-import { FormField } from '../../ui/FormField'
+import { FormField, FormGroup } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
@@ -165,9 +165,7 @@ function EmailDomains() {
   }
 
   return (
-    <div className="sys-subsection">
-      <h3 className="sys-subtitle">邮箱域名白名单</h3>
-      <p className="sys-hint">名单内的邮箱域名才可以注册与绑定，白名单为空时不限制域名</p>
+    <FormGroup id="sys-email-domains-title" title="邮箱域名白名单" hint="名单内的邮箱域名才可以注册与绑定，白名单为空时不限制域名">
       {loading ? <LoadingState label="正在加载白名单" /> : null}
       {!loading && notReady ? (
         <div className="sys-not-ready">
@@ -204,7 +202,7 @@ function EmailDomains() {
           </form>
         </>
       ) : null}
-    </div>
+    </FormGroup>
   )
 }
 
@@ -355,8 +353,7 @@ function MailSection() {
             {settings.resendApiKeySet ? '，Resend API Key 已设置' : ''}
             ，留空表示不修改
           </p>
-          <div className="sys-subsection">
-            <h3 className="sys-subtitle">测试邮件</h3>
+          <FormGroup id="sys-mail-test-title" title="测试邮件">
             <div className="sys-test-row">
               <FormField label="收件邮箱" htmlFor="sys-mail-test-to">
                 <Input id="sys-mail-test-to" type="email" placeholder="you@example.com" value={testTo} disabled={testSending} onChange={(event) => setTestTo(event.currentTarget.value)} />
@@ -371,7 +368,7 @@ function MailSection() {
                 <span>测试邮件接口未就绪，邮件服务上线后可在此发送</span>
               </div>
             ) : null}
-          </div>
+          </FormGroup>
         </form>
       ) : null}
     </section>
@@ -392,9 +389,9 @@ function HealthSection() {
   return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>} />
     <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
       <p>服务健康：{health.ok ? '正常' : '异常'} · 版本 {health.version}</p>
-      <h3 className="sys-subtitle">来源刷新定时任务</h3>
-      <p className="sys-hint">每 15 分钟检查需要刷新的来源</p>
-      {health.cron ? <><p>最近结果：{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</p><p>开始于 {formatDate(health.cron.ranAt)} · 完成于 {formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</p></> : <p className="sys-hint">暂无任务运行记录</p>}
+      <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hint="每 15 分钟检查需要刷新的来源">
+        {health.cron ? <dl className="key-value-rows"><div><dt>最近结果</dt><dd>{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</dd></div><div><dt>开始</dt><dd>{formatDate(health.cron.ranAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</dd></div></dl> : <p className="sys-hint">暂无任务运行记录</p>}
+      </FormGroup>
     </>}</div>
   </section>
 }
@@ -448,8 +445,7 @@ function StatusSection() {
               </li>
             ))}
           </ul>
-          <div className="sys-subsection">
-            <h3 className="sys-subtitle">已应用迁移</h3>
+          <FormGroup id="sys-migrations-title" title="已应用迁移">
             {status.migrations.length === 0 ? (
               <p className="sys-hint">暂无迁移记录，各模块结构版本见上方列表</p>
             ) : (
@@ -462,7 +458,7 @@ function StatusSection() {
                 ))}
               </ul>
             )}
-          </div>
+          </FormGroup>
           <p className="sys-hint">存储后端由迁移流程统一切换，此页仅供查看</p>
         </div>
       ) : null}

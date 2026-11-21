@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterChip } from '../../ui/FilterChip'
-import { FormField } from '../../ui/FormField'
+import { FormActions, FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
@@ -198,7 +198,7 @@ export function InviteCodesSection() {
               ) : null}
             </div>
           ) : null}
-          <form className="sys-form sys-invite-form" onSubmit={create}>
+          <form className="sys-form sys-invite-form sp-form-stack" onSubmit={create}>
             <div role="group" aria-label="邀请码类型">
               <FilterChip active={kind === 'multi'} onClick={() => setKind('multi')}>多次使用</FilterChip>
               <FilterChip active={kind === 'batch'} onClick={() => setKind('batch')}>批量单次</FilterChip>
@@ -242,8 +242,10 @@ export function InviteCodesSection() {
                   onChange={(event) => setExpiresAt(event.currentTarget.value)}
                 />
               </FormField>
-              <button className="button primary" type="submit" disabled={busy}>生成邀请码</button>
             </div>
+            <FormActions>
+              <button className="button primary" type="submit" disabled={busy}>生成邀请码</button>
+            </FormActions>
           </form>
         </>
       ) : null}

@@ -1,5 +1,6 @@
 import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
 import { FormSelect } from '../../ui/Controls'
+import { FormField } from '../../ui/FormField'
 import { MessageSquare } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -106,12 +107,14 @@ export function AdminTicketsPage() {
       <PageHeader title="工单" />
       <section className="data-section" aria-label="工单">
         <OperationsHeading title="工单" />
-        <div className="page-toolbar ops-filters">
-          <FormSelect aria-label="工单状态" value={statusFilter} onChange={(event) => changeStatus(event.currentTarget.value as StatusFilter)}>
+        <div className="page-toolbar ops-filters sp-form-stack">
+          <FormField label="工单状态" htmlFor="ticket-status-filter">
+          <FormSelect id="ticket-status-filter" aria-label="工单状态" value={statusFilter} onChange={(event) => changeStatus(event.currentTarget.value as StatusFilter)}>
             <option value="all">全部状态</option>
             <option value="open">处理中</option>
             <option value="closed">已关闭</option>
           </FormSelect>
+          </FormField>
         </div>
         {loading && tickets.length === 0 ? <LoadingState label="正在加载工单队列" /> : null}
         {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}

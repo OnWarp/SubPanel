@@ -806,4 +806,36 @@ rules:
     const audits = await env.DB.prepare('SELECT detail FROM audit_logs').all<{ detail: string }>()
     expect(JSON.stringify(audits.results)).not.toContain('secret=private')
   })
+
+  it('fetches a new template URL once and persists it only on the following create', async () => {
+    const admin = await login()
+    const before = await env.DB.prepare('SELECT COUNT(*) AS count FROM subscription_templates').first<{ count: number }>()
+    const url = 'https://policy.example/once.yaml?secret=one-save'
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(yaml, { headers: { ETag: '"once"' } }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const preview = await mutation(templateRoot + '/import', admin, { url })
+    expect(preview.status, await preview.clone().text()).toBe(200)
+    const result = await preview.json() as { candidate: { yaml: string }; source: { url: string; etag: string | null; fetchedAt: string } }
+    expect(result.candidate.yaml).toBe(yaml)
+    expect(result.source).toMatchObject({ url, etag: '"once"' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    const during = await env.DB.prepare('SELECT COUNT(*) AS count FROM subscription_templates').first<{ count: number }>()
+    expect(during?.count).toBe(before?.count)
+
+    const created = await mutation(templateRoot, admin, { name: 'Imported once', yaml: result.candidate.yaml, source: result.source })
+    expect(created.status, await created.clone().text()).toBe(201)
+    const body = await created.json() as { id: string; revision: number }
+    expect(body.revision).toBe(1)
+    const detail = await exports.default.fetch(TEST_ORIGIN + `${templateRoot}/${body.id}`, withCookie(admin))
+    expect(await detail.json()).toMatchObject({ draft: yaml, revision: 1, sourceUrl: url })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    const calls = fetcher.mock.calls.length
+    const rejected = await mutation(templateRoot + '/import', admin, { url: 'http://policy.example/plain.yaml' })
+    expect(rejected.status).toBe(422)
+    expect(fetcher).toHaveBeenCalledTimes(calls)
+    const audits = await env.DB.prepare('SELECT detail FROM audit_logs').all<{ detail: string }>()
+    expect(JSON.stringify(audits.results)).not.toContain('secret=one-save')
+  })
 })

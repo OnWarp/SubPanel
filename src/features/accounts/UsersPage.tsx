@@ -293,6 +293,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [loadError, setLoadError] = useState('')
   const [editUser, setEditUser] = useState<UserSummary | null>(null)
   const [editEmail, setEditEmail] = useState('')
+  const [passwordDirty, setPasswordDirty] = useState(false)
   const [editError, setEditError] = useState('')
   const [resetUser, setResetUser] = useState<UserSummary | null>(null)
   const [resetError, setResetError] = useState('')
@@ -433,6 +434,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     setResetUser(user)
     setResetError('')
     setTempPassword('')
+    setPasswordDirty(false)
   }
 
   const closePasswordReset = () => {
@@ -440,6 +442,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     setResetUser(null)
     setResetError('')
     setTempPassword('')
+    setPasswordDirty(false)
   }
 
   const resetPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -639,6 +642,8 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
 
       <Dialog
         open={editUser !== null}
+        busy={mutating}
+        dirty={editUser !== null && editEmail !== (editUser.email ?? '')}
         onClose={() => { if (!mutating) setEditUser(null) }}
         title="编辑用户"
         footer={<>
@@ -646,7 +651,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
           <button className="button primary" type="submit" form="edit-user-form" disabled={mutating}>保存</button>
         </>}
       >
-        <form id="edit-user-form" className="form-stack" onSubmit={saveUser}>
+        <form id="edit-user-form" className="form-stack sp-form-stack" onSubmit={saveUser}>
           <p>{editUser?.username}</p>
           <FormField label="邮箱" htmlFor="edit-user-email">
             <Input id="edit-user-email" name="email" type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} disabled={mutating} required />
@@ -658,6 +663,8 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
 
       <Dialog
         open={resetUser !== null}
+        busy={mutating}
+        dirty={passwordDirty && !tempPassword}
         onClose={closePasswordReset}
         title="重置用户密码"
         footer={tempPassword
@@ -683,13 +690,13 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
             </div>
           </div>
         ) : (
-          <form id="reset-password-form" className="form-stack" onSubmit={resetPassword}>
+          <form id="reset-password-form" className="form-stack sp-form-stack" onSubmit={resetPassword}>
             {resetUser ? <p>{resetUser.username}</p> : null}
             <FormField label="新密码" htmlFor="reset-new-password">
-              <Input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+              <Input id="reset-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required onChange={() => setPasswordDirty(true)} />
             </FormField>
             <FormField label="确认新密码" htmlFor="reset-confirm-password">
-              <Input id="reset-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required />
+              <Input id="reset-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} disabled={mutating} required onChange={() => setPasswordDirty(true)} />
             </FormField>
             {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
           </form>

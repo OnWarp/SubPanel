@@ -23,6 +23,7 @@ export function Switch({ label, checked, onChange, disabled = false, ariaLabel }
         onChange={(event) => onChange(event.currentTarget.checked)}
       />
       <span className="sp-switch-track" aria-hidden="true"><span className="sp-switch-thumb" /></span>
+      <span className="sp-switch-state" aria-hidden="true">{checked ? '开' : '关'}</span>
       {label ? <span className="sp-switch-label">{label}</span> : null}
     </label>
   )

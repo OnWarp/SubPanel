@@ -45,6 +45,16 @@
 
 /* FormField -------------------------------------------------------------- */
 .sp-form-field { display: grid; gap: var(--space-2); }
+.sp-form-field-wide { max-width: none; }
+.sp-form-hint { margin: 0; color: var(--color-text-muted); font-size: var(--font-xs); line-height: var(--leading-body); }
+.sp-form-group { display: grid; gap: 12px; min-width: 0; }
+.sp-form-group + .sp-form-group { padding-top: 16px; border-top: 1px solid var(--color-border); }
+.sp-form-group-title { margin: 0; font-size: var(--font-md); font-weight: var(--weight-strong); line-height: 1.3; }
+.sp-form-stack { display: grid; gap: 12px; }
+.sp-form-stack :is(.sp-form-field, .field):not(.sp-form-field-wide) { width: 100%; max-width: 460px; }
+.sp-advanced { min-width: 0; }
+.sp-advanced > summary { padding: 0; cursor: pointer; font-size: var(--font-md); font-weight: var(--weight-strong); line-height: 1.3; list-style-position: inside; }
+.sp-advanced-body { display: grid; gap: 12px; padding-top: 12px; }
 .sp-form-field-label {
   color: var(--color-text-muted);
   font-size: var(--font-sm);
@@ -370,12 +380,14 @@
 .sp-dialog::backdrop { background: var(--color-overlay); }
 .sp-dialog-panel {
   display: grid;
+  max-height: min(80svh, 720px);
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card-lg);
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-float);
 }
+.sp-dialog-panel:has(.sp-dialog-footer) { grid-template-rows: auto minmax(0, 1fr) auto; }
 .sp-dialog-heading {
   display: flex;
   padding: var(--space-5) var(--space-5) var(--space-3);
@@ -400,7 +412,7 @@
 @media (hover: hover) {
   .sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 }
-.sp-dialog-body { padding: 0 var(--space-5) var(--space-5); }
+.sp-dialog-body { min-height: 0; padding: 0 var(--space-5) var(--space-5); overflow-y: auto; }
 .sp-dialog-footer {
   display: flex;
   flex-wrap: wrap;
@@ -587,7 +599,13 @@
 .sp-switch input:checked + .sp-switch-track { background: var(--color-primary); }
 .sp-switch input:checked + .sp-switch-track .sp-switch-thumb { transform: translateX(12px); }
 .sp-switch input:focus-visible + .sp-switch-track { box-shadow: var(--shadow-focus); }
+.sp-switch-state { min-width: 1em; color: var(--color-text-muted); font-size: var(--font-xs); font-weight: var(--weight-semibold); }
+.sp-switch input:checked ~ .sp-switch-state { color: var(--color-text); }
 .sp-switch:has(input:disabled) { cursor: not-allowed; opacity: .4; }
+@media (width < 768px) {
+  .sp-switch { min-height: 44px; }
+  .sp-dialog-close, .edit-drawer .dialog-heading .icon-button { width: 44px; height: 44px; }
+}
 @media (max-width: 760px) {
   .sp-switch-track { width: 32px; height: 20px; }
   .sp-switch-thumb { width: 16px; height: 16px; }

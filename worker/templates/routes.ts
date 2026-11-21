@@ -240,27 +240,23 @@ templateRoutes.post('/preview', async c => {
   })
 })
 
-// Only this administrator action fetches remote template source content.
-templateRoutes.post('/:id/import', async c => {
-  const input = await readJson(c, importSchema)
-  const row = await getTemplate(c.env.DB, c.req.param('id'))
-  if (row.archived || row.revision !== input.expectedRevision) throw templateConflict()
+const previewImportSchema = z.object({
+  url: z.string().max(4096),
+})
 
-  const sameSource = row.source_url === input.url
-  const etag = input.ifNoneMatch ?? (sameSource ? row.source_etag : null)
-  const lastModified = input.ifModifiedSince ?? (sameSource ? row.source_last_modified : null)
+// Shared by the one-shot preview and the saved-template import. Both are
+// administrator clicks; neither schedules another fetch.
+async function loadRemoteCandidate(url: string, conditional: { etag?: string | null; lastModified?: string | null } = {}) {
   const headers: Record<string, string> = {}
-  if (etag) headers['If-None-Match'] = etag
-  if (lastModified) headers['If-Modified-Since'] = lastModified
-
-  const remote = await fetchRemoteTextWithMetadata({ url: input.url, headers }, fetch, 10_000).catch(error => {
+  if (conditional.etag) headers['If-None-Match'] = conditional.etag
+  if (conditional.lastModified) headers['If-Modified-Since'] = conditional.lastModified
+  const remote = await fetchRemoteTextWithMetadata({ url, headers }, fetch, 10_000).catch(error => {
     throw apiError(422, error instanceof RemoteFetchError ? error.code : 'REMOTE_FETCH_FAILED', '导入失败，请手动重试')
   })
-  if (remote.notModified) return c.json({ notModified: true, message: '远程来源未更新' })
-
+  if (remote.notModified) return { notModified: true as const, message: '远程来源未更新' }
   const validation = validateForAdmin(remote.text)
-  return c.json({
-    notModified: false,
+  return {
+    notModified: false as const,
     candidate: {
       yaml: remote.text,
       normalized: validation.normalized,
@@ -269,9 +265,27 @@ templateRoutes.post('/:id/import', async c => {
       contentHash: await computeContentHash(validation.normalized),
     },
     source: {
-      url: input.url, fetchedAt: new Date().toISOString(), etag: remote.etag, lastModified: remote.lastModified,
+      url, fetchedAt: new Date().toISOString(), etag: remote.etag, lastModified: remote.lastModified,
     },
-  })
+  }
+}
+
+// One click while creating a template: fetch once, return a candidate, write nothing.
+templateRoutes.post('/import', async c => {
+  const input = await readJson(c, previewImportSchema)
+  return c.json(await loadRemoteCandidate(input.url))
+})
+
+templateRoutes.post('/:id/import', async c => {
+  const input = await readJson(c, importSchema)
+  const row = await getTemplate(c.env.DB, c.req.param('id'))
+  if (row.archived || row.revision !== input.expectedRevision) throw templateConflict()
+
+  const sameSource = row.source_url === input.url
+  return c.json(await loadRemoteCandidate(input.url, {
+    etag: input.ifNoneMatch ?? (sameSource ? row.source_etag : null),
+    lastModified: input.ifModifiedSince ?? (sameSource ? row.source_last_modified : null),
+  }))
 })
 
 templateRoutes.post('/:id/publish', async c => {

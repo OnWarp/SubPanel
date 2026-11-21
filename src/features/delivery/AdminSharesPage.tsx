@@ -279,8 +279,8 @@ export function AdminSharesPage() {
       <section className="data-section resource-card" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
         <div className="ashr-settings-form">
-          <p className="ashr-settings-hint">分享策略在系统设置的订阅分发中维护</p>
-          <div className="ashr-actions">
+          <p className="ashr-settings-hint sp-form-hint">分享策略在系统设置的订阅分发中维护</p>
+          <div className="ashr-actions form-actions">
             <Link className="button" to="/system/distribution">分享策略</Link>
           </div>
         </div>

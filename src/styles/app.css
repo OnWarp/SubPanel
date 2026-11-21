@@ -308,10 +308,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .user-link-row input { background: var(--color-surface-subtle); font-family: var(--font-mono); font-size: var(--font-xs); }
 .user-link-actions { display: flex; gap: 5px; }
 .user-diagnostic-list { padding: 12px 14px 14px; }
-.subscription-details { display: grid; align-content: start; gap: var(--space-3); }
-.subscription-details section { display: grid; gap: var(--space-3); }
+.subscription-details { display: grid; align-content: start; gap: 12px; }
+.subscription-details > section { display: grid; gap: 12px; }
 .subscription-details h3, .subscription-details p { margin: 0; }
-.subscription-details h3 { font-size: var(--font-body); }
+.drawer-section-title, .subscription-details h3 { font-size: var(--font-md); font-weight: var(--weight-strong); line-height: 1.3; }
+.subscription-details .key-value-rows { gap: 0; }
+.subscription-details .key-value-rows dd { min-width: 0; }
 .diagnostic-list { display: grid; gap: 7px; }
 .subscription-detail-fields { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-inset); }
 .subscription-detail-fields > div { padding: 8px 12px; }
@@ -331,8 +333,11 @@ tbody tr:last-child td { border-bottom: 0; }
 .diagnostic-disclosure { min-width: 0; }
 .diagnostic-disclosure > summary { padding: 10px 12px; cursor: pointer; font-size: var(--font-body); font-weight: var(--weight-strong); list-style-position: inside; }
 .diagnostic-disclosure[open] > summary { margin-bottom: 7px; border-bottom: 1px solid var(--color-border); }
-.subscription-details .diagnostic-disclosure > summary { padding: 0 0 9px; }
-.subscription-details .diagnostic-disclosure[open] > summary { margin-bottom: 7px; }
+.subscription-details .diagnostic-disclosure > summary { padding: 0 0 9px; font-size: var(--font-md); font-weight: var(--weight-strong); }
+.subscription-details .diagnostic-disclosure[open] > summary { margin-bottom: 0; }
+.subscription-details .diagnostic-list { gap: 0; }
+.subscription-details .diagnostic-list article { padding: 10px 12px; border-top: 1px solid var(--color-border); }
+.subscription-details .key-value-note { grid-template-columns: minmax(0, 1fr); }
 .qr-image { display: block; width: min(320px,100%); height: auto; margin: 4px auto 9px; image-rendering: pixelated; }
 .qr-loading { display: grid; min-height: 240px; margin: 0; place-items: center; color: var(--color-text-muted); }
 
@@ -348,10 +353,15 @@ tbody tr:last-child td { border-bottom: 0; }
 .confirm-dialog::backdrop, .edit-drawer::backdrop, .reset-dialog::backdrop { background: var(--color-overlay); }
 .dialog-panel { padding: 20px; background: var(--color-surface-raised); box-shadow: var(--shadow-float); }
 .drawer-panel { display: grid; height: 100%; min-height: 0; padding: 0; grid-template-rows: auto minmax(0,1fr); overflow: hidden; background: var(--color-surface-raised); box-shadow: var(--shadow-float); }
+.drawer-panel:has(> .drawer-footer) { grid-template-rows: auto minmax(0, 1fr) auto; }
 .drawer-panel > .dialog-heading { z-index: 2; margin: 0; padding: 14px 18px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-raised); }
 .drawer-content { min-height: 0; padding: 16px 18px; overflow-y: auto; }
 .drawer-content > .form-stack, .drawer-content > .subscription-details { min-height: 100%; }
 .drawer-content .dialog-actions { margin: auto -18px -16px; padding: 12px 18px; position: sticky; bottom: -16px; z-index: 2; border-top: 1px solid var(--color-border); background: var(--color-surface-raised); }
+.drawer-footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--color-border); background: var(--color-surface-raised); }
+.drawer-footer .dialog-actions, .drawer-footer .form-actions { margin: 0; padding: 0; border: 0; background: transparent; }
+.drawer-discard { display: flex; width: 100%; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.drawer-discard p { margin: 0; margin-right: auto; color: var(--color-text-muted); font-size: var(--font-sm); }
 .dialog-heading, .dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dialog-heading { margin-bottom: 16px; }
 .drawer-heading-title, .drawer-heading-actions { display: flex; align-items: center; gap: 8px; }
