@@ -21,16 +21,18 @@ type HomeDashboardProps = {
   subscriptionSub: string
   groupValue: string
   groupSub: string
+  validity?: string | null
   onOpenNodes: () => void
 }
 
-export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, onOpenNodes }: HomeDashboardProps) {
+export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, validity, onOpenNodes }: HomeDashboardProps) {
   return <>
     {reminder ? <p role="status">{reminder}</p> : null}
     <div className="user-stat-grid upd-stat-grid">
-      <StatCard label="订阅" value={<StatusPill tone={subscriptionTone}>{subscriptionLabel}</StatusPill>} sub={subscriptionSub} footer={<Link to="/subscriptions">打开订阅</Link>} />
+      <StatCard label="订阅" value={<StatusPill tone={subscriptionTone}>{subscriptionLabel}</StatusPill>} sub={subscriptionSub} />
       <StatCard label="分组 / 节点" value={groupValue} sub={groupSub} onClick={onOpenNodes} />
     </div>
+    {validity ? <p className="upd-home-validity">{validity}</p> : null}
   </>
 }
 
@@ -63,20 +65,25 @@ export function HomePage() {
   const expiry = current ? getExpiryState(current) : null
   const valid = active.length > 0
   const subscriptionLabel = valid ? '有效' : expiry?.kind === 'expired' ? '已过期' : expiry?.kind === 'pending' ? '待生效' : current?.planState === 'disabled' || current?.planState === 'revoked' ? '已停用' : '未开通'
+  const validity = nextExpiry !== null && remaining !== null ? `有效期剩余 ${remaining} 天` : null
   return <div className="page-stack nav-home upd-page upd-home">
     <PageHero title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
+    {loading ? <LoadingState label="正在加载首页" /> : error ? <ErrorState message={error} onRetry={() => { void load() }} /> : <>
+      <HomeDashboard
+        reminder={remaining !== null && remaining <= 7 && reminderEnabled(user?.id) ? `订阅将在 ${remaining} 天内到期，请联系管理员续期` : null}
+        subscriptionLabel={subscriptionLabel}
+        subscriptionTone={valid ? 'success' : expiry?.kind === 'expired' ? 'danger' : 'neutral'}
+        subscriptionSub={current?.planName ?? '未分配计划'}
+        groupValue={`${valid ? counts.groupOptions.length : 0} / ${valid ? counts.total : 0}`}
+        groupSub={valid ? '可用分组 / 节点总数' : '需要有效订阅才能查看节点'}
+        validity={validity}
+        onOpenNodes={() => navigate('/nodes')}
+      />
+      {current ? <p className="upd-home-import"><Link to="/subscriptions">导入客户端</Link></p> : null}
+    </>}
     <NoticeCarousel items={notices.map(notice => ({ id: String(notice.id), title: notice.title }))} onSelect={id => navigate(`/notices?notice=${encodeURIComponent(id)}`)} labels={{ previous: '上一条公告', next: '下一条公告', close: '关闭公告' }} />
-    {loading ? <LoadingState label="正在加载首页" /> : error ? <ErrorState message={error} onRetry={() => { void load() }} /> : <HomeDashboard
-      reminder={remaining !== null && remaining <= 7 && reminderEnabled(user?.id) ? `订阅将在 ${remaining} 天内到期，请联系管理员续期` : null}
-      subscriptionLabel={subscriptionLabel}
-      subscriptionTone={valid ? 'success' : expiry?.kind === 'expired' ? 'danger' : 'neutral'}
-      subscriptionSub={current?.planName ?? '未分配计划'}
-      groupValue={`${valid ? counts.groupOptions.length : 0} / ${valid ? counts.total : 0}`}
-      groupSub={valid ? '可用分组 / 节点总数' : '需要有效订阅才能查看节点'}
-      onOpenNodes={() => navigate('/nodes')}
-    />}
     <nav className="user-quick-grid" aria-label="快捷入口">
-      <QuickEntryCard icon={<Network />} title="节点" desc="查看当前可用节点" href="/nodes" />
+      <QuickEntryCard icon={<Network />} title="节点" desc="可用节点" href="/nodes" />
     </nav>
   </div>
 }
