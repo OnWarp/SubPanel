@@ -403,11 +403,7 @@ tbody tr:last-child td { border-bottom: 0; }
   }
   .app-layout[data-mobile-bar="inset"] .workspace {
     height: auto;
-    margin-bottom: 0;
     align-self: stretch;
-    border-bottom: 0;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
   }
   .app-layout[data-mobile-bar="inset"] :is(.dock, .admin-mobile-dock) {
     position: static;

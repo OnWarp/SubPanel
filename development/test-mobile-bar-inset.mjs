@@ -71,17 +71,22 @@ async function verifyDock(style, entries, active, floatingPanel, safeBottom = 0)
     el.parentElement.matches('.app-layout') && el.previousElementSibling.matches('.workspace'),
   ), 'The dock and workspace must be direct siblings in the app shell')
   assert.equal(bar.height, 68 + (style === 'inset' ? safeBottom : 0))
+  assert.deepEqual(await panel.evaluate(panelEdges), floatingPanel)
+  await expect(panel).toHaveCSS('border-bottom-left-radius', floatingPanel.topLeftRadius)
+  await expect(panel).toHaveCSS('border-bottom-right-radius', floatingPanel.topLeftRadius)
   if (style === 'inset') {
     assert.equal(bar.x, workspace.x)
     assert.equal(bar.width, workspace.width)
     assert.equal(bar.y + bar.height, height)
-    assert.equal(bar.y, workspace.y + workspace.height)
-    assert.deepEqual(await panel.evaluate(panelEdges), floatingPanel)
-    await expect(panel).toHaveCSS('margin-bottom', '0px')
-    await expect(panel).toHaveCSS('border-bottom-left-radius', '0px')
-    await expect(panel).toHaveCSS('border-bottom-right-radius', '0px')
+    assert(parseFloat(floatingPanel.topLeftRadius) > 0, 'Inset panel corners must have a positive radius')
+    const gap = bar.y - (workspace.y + workspace.height)
+    assert(gap > 0, 'The inset panel must end above the dock')
+    for (const side of [workspace.x, width - workspace.x - workspace.width]) {
+      assert(Math.abs(gap - side) <= 1, 'The bottom gap must match both side insets')
+    }
+    await expect(panel).toHaveCSS('margin-bottom', floatingPanel.marginLeft)
     const content = await main.boundingBox()
-    assert.equal(content.y + content.height, bar.y)
+    assert.equal(content.y + content.height, workspace.y + workspace.height - 1)
     await expect(dock).toHaveCSS('padding-bottom', `${6 + safeBottom}px`)
     await expect(dock).toHaveCSS('border-top-width', '1px')
     await expect(dock).toHaveCSS('border-left-width', '0px')
@@ -187,8 +192,13 @@ try {
     await main.evaluate(el => { el.scrollTop = el.scrollHeight })
     await expect(footer).toBeInViewport({ ratio: 1 })
     await expect(section.locator('tbody tr').last()).toBeInViewport({ ratio: 1 })
-    const [last, bar] = await Promise.all([footer.boundingBox(), dock.boundingBox()])
-    assert(last.y + last.height <= bar.y, `${style} dock must leave the last line visible at 320px`)
+    const [last, row, workspace, bar] = await Promise.all([
+      footer.boundingBox(), section.locator('tbody tr').last().boundingBox(), panel.boundingBox(), dock.boundingBox(),
+    ])
+    for (const line of [last, row]) {
+      assert(line.y >= workspace.y && line.y + line.height <= workspace.y + workspace.height)
+      assert(line.y + line.height <= bar.y, `${style} dock must leave the last line visible at 320px`)
+    }
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   }
   await page.screenshot({ path: join(output, 'admin-320-inset-light.png'), animations: 'disabled' })
