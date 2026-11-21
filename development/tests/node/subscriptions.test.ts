@@ -23,7 +23,7 @@ beforeEach(() => {
   }
 })
 const app = new Hono().route('/', publicSubscriptionRoutes).onError((error, c) => c.json({ error: error.message }, 'status' in error ? error.status as 400 : 500))
-const pull = (token: string) => app.request(`/sub/${token}/generic`, {}, env)
+const pull = (token: string) => app.request(`/sub/${token}/generic`, {}, env, { waitUntil() {}, passThroughOnException() {}, props: {} })
 
 it('creates an unavailable pool subscription, rotates on each assignment and preserves all other fields', async () => {
   const pool = await createSubscription(env, { name: 'Pool', groupIds: [], expiresAt: Date.now() + 86400000 })

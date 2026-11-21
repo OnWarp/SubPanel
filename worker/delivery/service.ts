@@ -6,6 +6,7 @@ import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCry
 import { batch } from '../db/db.js'
 import { apiError } from '../platform/api-error.js'
 import { bumpDeliveryRevision, getPlan, requirePlanStorage } from './plans.js'
+import { deleteFetchStats } from './fetch-stats.js'
 import { deleteCompiledArtifacts } from './repository.js'
 import { readDelivery, writeDelivery } from './repository.js'
 import {
@@ -158,6 +159,42 @@ export async function createSubscription(
   return { subscription, token }
 }
 
+async function bindingForCopy(env: DataEnv, id: string): Promise<BindingInput | undefined> {
+  try {
+    const row = await env.DB.prepare(
+      'SELECT mode, template_id FROM subscription_template_bindings WHERE subscription_id=?',
+    ).bind(id).first<{ mode: BindingInput['mode']; template_id: string | null }>()
+    if (!row) return undefined
+    if (row.mode === 'specific') {
+      if (!row.template_id) return undefined
+      return { mode: 'specific', templateId: row.template_id, expectedRevision: 1 }
+    }
+    return { mode: row.mode, expectedRevision: 1 }
+  } catch {
+    return undefined
+  }
+}
+
+export async function copySubscription(
+  env: DataEnv,
+  id: string,
+  options: SubscriptionMutationOptions = {},
+): Promise<SubscriptionMutationResult> {
+  const current = await getSubscription(env, id)
+  const templateBinding = await bindingForCopy(env, id)
+  return createSubscription(env, {
+    userId: current.userId,
+    planId: current.planId ?? null,
+    name: `${current.name} 副本`.slice(0, 128),
+    groupIds: [...current.groupIds],
+    enabled: current.enabled,
+    defaultClient: current.defaultClient,
+    startsAt: current.startsAt,
+    expiresAt: current.expiresAt,
+    templateBinding,
+  }, options)
+}
+
 export async function listSubscriptionsForUser(env: DataEnv, userId: string): Promise<PublicSubscription[]> {
   return (await listAllSubscriptions(env)).filter(subscription => subscription.userId === userId).map(toPublicSubscription)
 }
@@ -277,6 +314,7 @@ export async function deleteSubscription(
   assertActor(current, options)
   await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.filter((item) => item.id !== id) }, undefined, { id, deleteBinding: true })
   await deleteCompiledArtifacts(env.DATA, current.tokenHash)
+  await deleteFetchStats(env.DATA, id)
 }
 
 export async function decryptSubscriptionToken(env: DataEnv, subscription: Subscription): Promise<string> {

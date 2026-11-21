@@ -17,8 +17,9 @@ export const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
   try {
     await next()
   } finally {
+    const referrer = new URL(c.req.url).pathname.startsWith('/sub/') ? 'no-referrer' : SECURITY_HEADERS['Referrer-Policy']
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-      if (!c.res.headers.has(name)) c.header(name, value)
+      if (!c.res.headers.has(name)) c.header(name, name === 'Referrer-Policy' ? referrer : value)
     }
   }
 }
