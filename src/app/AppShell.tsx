@@ -220,12 +220,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
           tools={!isAdmin && <ThemeMenu />}
           account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" layout={adminLayout} onLayoutChange={changeAdminLayout} signOut={signOut} onError={setSignOutError} /></div>}
-          footer={mobileDock}
           tabs={adminDomain?.section && <SectionTabs {...adminDomain.section} />}
         >
           {signOutError ? <p role="alert">{signOutError}</p> : null}
           {children}
         </PageFrame>
+        {mobileDock}
       </MobileBarContext>
     </div>
   )

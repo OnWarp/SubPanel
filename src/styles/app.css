@@ -395,15 +395,29 @@ tbody tr:last-child td { border-bottom: 0; }
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.06);
     backdrop-filter: blur(18px);
   }
-  .app-layout[data-mobile-bar="inset"] .workspace { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .app-layout[data-mobile-bar="inset"] {
+    display: grid;
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .app-layout[data-mobile-bar="inset"] .workspace {
+    height: auto;
+    margin-bottom: 0;
+    align-self: stretch;
+    border-bottom: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
   .app-layout[data-mobile-bar="inset"] :is(.dock, .admin-mobile-dock) {
     position: static;
     height: calc(var(--mobile-bar-height) + var(--mobile-bar-safe-bottom));
+    margin-inline: var(--space-2);
     padding: 6px max(14px, env(safe-area-inset-right, 0px)) calc(6px + var(--mobile-bar-safe-bottom)) max(14px, env(safe-area-inset-left, 0px));
     border: 0;
     border-top: 1px solid var(--color-border);
     border-radius: 0 0 var(--radius-sheet) var(--radius-sheet);
-    background: var(--color-surface);
+    background: var(--color-canvas);
     box-shadow: none;
     backdrop-filter: none;
   }

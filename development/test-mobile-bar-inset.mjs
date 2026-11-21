@@ -48,31 +48,58 @@ async function choose(style) {
   assert.equal(await page.evaluate(key => localStorage.getItem(key), key), style)
 }
 
-async function verifyDock(style, entries, active, safeBottom = 0) {
+function panelEdges(el) {
+  const { top, left, right } = el.getBoundingClientRect()
+  const css = getComputedStyle(el)
+  return {
+    top, left, right,
+    marginTop: css.marginTop,
+    marginLeft: css.marginLeft,
+    marginRight: css.marginRight,
+    topLeftRadius: css.borderTopLeftRadius,
+    topRightRadius: css.borderTopRightRadius,
+  }
+}
+
+async function verifyDock(style, entries, active, floatingPanel, safeBottom = 0) {
   await expect(dock.getByRole('link')).toHaveText(entries)
   await expect(dock.locator('[aria-current]')).toHaveText(active)
   await expect(dock.locator('[aria-current]')).toHaveCSS('background-color', 'rgb(94, 106, 210)')
   const [bar, workspace] = await Promise.all([dock.boundingBox(), panel.boundingBox()])
+  const { width, height } = page.viewportSize()
+  assert(await dock.evaluate(el =>
+    el.parentElement.matches('.app-layout') && el.previousElementSibling.matches('.workspace'),
+  ), 'The dock and workspace must be direct siblings in the app shell')
   assert.equal(bar.height, 68 + (style === 'inset' ? safeBottom : 0))
   if (style === 'inset') {
-    assert.equal(bar.x, workspace.x + 1)
-    assert.equal(bar.width, workspace.width - 2)
-    assert.equal(bar.y + bar.height, workspace.y + workspace.height - 1)
+    assert.equal(bar.x, workspace.x)
+    assert.equal(bar.width, workspace.width)
+    assert.equal(bar.y + bar.height, height)
+    assert.equal(bar.y, workspace.y + workspace.height)
+    assert.deepEqual(await panel.evaluate(panelEdges), floatingPanel)
+    await expect(panel).toHaveCSS('margin-bottom', '0px')
+    await expect(panel).toHaveCSS('border-bottom-left-radius', '0px')
+    await expect(panel).toHaveCSS('border-bottom-right-radius', '0px')
     const content = await main.boundingBox()
     assert.equal(content.y + content.height, bar.y)
     await expect(dock).toHaveCSS('padding-bottom', `${6 + safeBottom}px`)
     await expect(dock).toHaveCSS('border-top-width', '1px')
     await expect(dock).toHaveCSS('border-left-width', '0px')
     await expect(dock).toHaveCSS('border-top-left-radius', '0px')
-    await expect(dock).toHaveCSS('border-bottom-left-radius', await panel.evaluate(el => getComputedStyle(el).borderBottomLeftRadius))
-    await expect(dock).toHaveCSS('background-color', await panel.evaluate(el => getComputedStyle(el).backgroundColor))
+    await expect(dock).toHaveCSS('border-top-right-radius', '0px')
+    await expect(dock).toHaveCSS('border-bottom-left-radius', floatingPanel.topLeftRadius)
+    await expect(dock).toHaveCSS('border-bottom-right-radius', floatingPanel.topRightRadius)
+    await expect(dock).toHaveCSS('background-color', await shell.evaluate(el => getComputedStyle(el).backgroundColor))
     await expect(dock).toHaveCSS('box-shadow', 'none')
   } else {
     assert.equal(bar.x, 19)
-    assert.equal(bar.width, await page.evaluate(() => innerWidth - 38))
-    assert.equal(bar.y + bar.height, await page.evaluate(() => innerHeight - 9) - safeBottom)
+    assert.equal(bar.width, width - 38)
+    assert.equal(bar.y + bar.height, height - 9 - safeBottom)
+    assert.deepEqual(workspace, { x: 8, y: 8, width: width - 16, height: height - 16 })
     await expect(dock).toHaveCSS('position', 'fixed')
-    await expect(dock).toHaveCSS('border-top-left-radius', '34px')
+    await expect(dock).toHaveCSS('border-radius', '34px')
+    await expect(dock).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0.12) 0px 8px 24px 0px, rgba(0, 0, 0, 0.06) 0px 2px 6px 0px')
+    await expect(dock).toHaveCSS('backdrop-filter', 'blur(18px)')
   }
 }
 
@@ -86,12 +113,12 @@ try {
   for (const accountRole of ['admin', 'user']) {
     role = accountRole
     const admin = role === 'admin'
-    const path = admin ? '/dashboard' : '/home'
-    const settings = admin ? path : '/me'
+    const settings = admin ? '/dashboard' : '/me'
     const entries = admin ? ['概览', '节点管理', '订阅管理', '用户管理'] : ['首页', '订阅', '节点', '我的']
     await page.goto(settings)
     // The user shell reads the inset choice previously saved in the admin shell.
     await expect(shell).toHaveAttribute('data-mobile-bar', admin ? 'floating' : 'inset')
+    let floatingPanel
     for (const style of ['floating', 'inset']) {
       await page.goto(settings)
       if (admin) {
@@ -102,9 +129,10 @@ try {
       }
       assert.match(await option(style).evaluate(el => getComputedStyle(el).transitionDuration), /^0(m?s)?$/)
       await choose(style)
-      await verifyDock(style, entries, admin ? entries[0] : entries[3])
+      if (style === 'floating') floatingPanel = await panel.evaluate(panelEdges)
+      await verifyDock(style, entries, admin ? entries[0] : entries[3], floatingPanel)
       await shell.evaluate(el => el.style.setProperty('--mobile-bar-safe-bottom', '34px'))
-      await verifyDock(style, entries, admin ? entries[0] : entries[3], 34)
+      await verifyDock(style, entries, admin ? entries[0] : entries[3], floatingPanel, 34)
       await shell.evaluate(el => el.style.removeProperty('--mobile-bar-safe-bottom'))
       if (admin) {
         await page.keyboard.press('Escape')
@@ -123,8 +151,10 @@ try {
         await page.reload()
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
         await expect(page.getByText(admin ? '1284' : '未开通', { exact: true })).toBeVisible()
-        await verifyDock(style, entries, entries[0])
-        await page.screenshot({ path: join(output, `${role}-390-${style}-${theme}.png`), animations: 'disabled' })
+        await verifyDock(style, entries, entries[0], floatingPanel)
+        if (style === 'inset') {
+          await page.screenshot({ path: join(output, `${role}-390-inset-${theme}.png`), animations: 'disabled' })
+        }
       }
     }
 
@@ -147,12 +177,16 @@ try {
   const section = main.locator('section[aria-labelledby="nodes-title"]')
   await expect(section.locator('tbody tr')).toHaveCount(20)
   const footer = section.locator('footer')
+  let floatingPanel
   for (const style of ['floating', 'inset']) {
     await avatar.press('Enter')
     await choose(style)
     await page.keyboard.press('Escape')
+    if (style === 'floating') floatingPanel = await panel.evaluate(panelEdges)
+    await verifyDock(style, ['概览', '节点管理', '订阅管理', '用户管理'], '节点管理', floatingPanel)
     await main.evaluate(el => { el.scrollTop = el.scrollHeight })
     await expect(footer).toBeInViewport({ ratio: 1 })
+    await expect(section.locator('tbody tr').last()).toBeInViewport({ ratio: 1 })
     const [last, bar] = await Promise.all([footer.boundingBox(), dock.boundingBox()])
     assert(last.y + last.height <= bar.y, `${style} dock must leave the last line visible at 320px`)
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))

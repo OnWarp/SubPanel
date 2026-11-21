@@ -1,13 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { PageHeaderSlots } from './page-header-slots'
 
-export function PageFrame({ path, leadingTools, tools, account, tabs, footer, children }: {
+export function PageFrame({ path, leadingTools, tools, account, tabs, children }: {
   path: string
   leadingTools?: ReactNode
   tools?: ReactNode
   account?: ReactNode
   tabs?: ReactNode
-  footer?: ReactNode
   children: ReactNode
 }) {
   const [title, setTitle] = useState<HTMLDivElement | null>(null)
@@ -28,7 +27,6 @@ export function PageFrame({ path, leadingTools, tools, account, tabs, footer, ch
           {tabs}
           {children}
         </main>
-        {footer}
       </div>
     </PageHeaderSlots>
   )
