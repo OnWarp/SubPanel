@@ -1,4 +1,4 @@
-import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { CreateShareForm } from '../shares/ShareDrawer'
 import type { Plan } from './plan-types'
 import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
@@ -659,8 +659,8 @@ export function SubscriptionsPage() {
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
 
-      <section className="data-section resource-card" aria-labelledby="subscriptions-title">
-        <ResourceHeading id="subscriptions-title" title="订阅" action={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button>} />
+      <section className="data-section resource-card" aria-label="订阅列表">
+        <div className="section-heading"><span /><div className="data-header-actions"><button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
         <FilterBar className="resource-card-filters">
           <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="订阅状态" value={activeUnified} onChange={(event) => {
