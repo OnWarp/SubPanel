@@ -89,7 +89,7 @@ export function PlansPage() {
           <FormField label="启用计划"><Switch checked={draft.enabled} ariaLabel="启用计划" onChange={(enabled) => setDraft({ ...draft, enabled })} /></FormField>
         </FormGroup>
         <FormGroup title="额度" id="plan-limits">
-          {([['durationDays','有效天数'],['trafficGb','流量 GB（0 不限，仅展示）'],['speedLimitMbps','限速 Mbps（0 不限）'],['deviceLimit','设备数（0 不限，仅记录）'],['sortOrder','排序']] as const).map(([key,label]) => <FormField key={key} label={label} htmlFor={`plan-${key}`}><Input id={`plan-${key}`} type="number" required step={key === 'trafficGb' ? 'any' : 1} min={key === 'durationDays' ? 1 : key === 'sortOrder' ? -1000000 : 0} value={draft[key]} onChange={(e) => setDraft({ ...draft,[key]: Number(e.target.value) })} /></FormField>)}
+          {([['durationDays','有效天数'],['trafficGb','流量 GB（配额定义／未强制执行）'],['speedLimitMbps','限速 Mbps（0 不限）'],['deviceLimit','设备数（配额定义／未强制执行）'],['sortOrder','排序']] as const).map(([key,label]) => <FormField key={key} label={label} htmlFor={`plan-${key}`}><Input id={`plan-${key}`} type="number" required step={key === 'trafficGb' ? 'any' : 1} min={key === 'durationDays' ? 1 : key === 'sortOrder' ? -1000000 : 0} value={draft[key]} onChange={(e) => setDraft({ ...draft,[key]: Number(e.target.value) })} /></FormField>)}
         </FormGroup>
         <FormGroup title="绑定分组" id="plan-groups">
           <fieldset className="choice-section"><legend>绑定分组</legend>{groups.map((g) => <label key={g.id} className="choice-row"><Checkbox type="checkbox" checked={draft.groupIds.includes(g.id)} onChange={(e) => setDraft({ ...draft,groupIds: e.target.checked ? [...draft.groupIds,g.id] : draft.groupIds.filter((id) => id !== g.id) })} />{g.name}</label>)}</fieldset>

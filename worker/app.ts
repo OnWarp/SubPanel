@@ -129,6 +129,10 @@ app.onError((error, c) => {
       error.status,
     )
   }
-  console.error(JSON.stringify({ event: 'request_error', name: error.name, message: error.message }))
+  console.error(JSON.stringify({
+    event: 'request_error',
+    name: error.name,
+    message: error.message.replace(/[A-Za-z0-9_-]{43}/gu, '[redacted]'),
+  }))
   return c.json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } }, 500)
 })

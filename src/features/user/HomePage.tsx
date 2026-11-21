@@ -60,14 +60,15 @@ export function HomePage() {
   }, [])
   useEffect(() => { void load() }, [load])
   useEffect(() => { void watchApi<{ notices: Notice[] }>('/api/notices', (result) => setNotices(result.notices)).catch(() => setNotices([])) }, [])
-  const active = subscriptions.filter(subscription => subscription.planState === 'active')
+  const active = subscriptions.filter(subscription => subscription.status ? subscription.status === 'active' : subscription.planState === 'active')
   const current = active[0] ?? subscriptions[0]
   const nextExpiry = active.reduce<number | null>((earliest, subscription) => subscription.expiresAt === null
     ? earliest : Math.min(earliest ?? Infinity, subscription.expiresAt), null)
   const remaining = nextExpiry === null ? null : Math.max(0, Math.ceil((nextExpiry - Date.now()) / 86400000))
   const expiry = current ? getExpiryState(current) : null
   const valid = active.length > 0
-  const subscriptionLabel = valid ? '有效' : expiry?.kind === 'expired' ? '已过期' : expiry?.kind === 'pending' ? '待生效' : current?.planState === 'disabled' || current?.planState === 'revoked' ? '已停用' : '未开通'
+  const inferredLabel = valid ? '有效' : expiry?.kind === 'expired' ? '已过期' : expiry?.kind === 'pending' ? '待生效' : current?.planState === 'disabled' || current?.planState === 'revoked' ? '已停用' : '未开通'
+  const subscriptionLabel = current?.status ? (current.statusLabel ?? inferredLabel) : inferredLabel
   const validity = nextExpiry !== null && remaining !== null ? `有效期剩余 ${remaining} 天` : null
   return <div className="page-stack nav-home upd-page upd-home">
     <PageHero title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />

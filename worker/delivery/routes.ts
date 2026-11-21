@@ -1,19 +1,27 @@
 import { readShareSettings } from '../shares/repository.js'
 import { canUseShareFeature } from '../shares/service.js'
-import { bindingSchema } from '../templates/repository.js'
+import { bindingSchema, getEffectiveTemplate } from '../templates/repository.js'
 import { listPlans, subscriptionPlanState } from './plans.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
+import { logAudit } from '../admin/audit.js'
 import { primaryDomainOriginSafe } from '../domains/service.js'
-import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
-import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
-import { apiError } from '../platform/api-error.js'
+import { ApiError, apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { compileAllSubscriptions, compileSubscription, RENDERER_VERSION } from './compiler.js'
+import { compileAllSubscriptions, compileSubscription, previewAuthorizedOutput, RENDERER_VERSION, type AccessSnapshot } from './compiler.js'
+import { readFetchSummary } from './fetch-stats.js'
+import { subscriptionLinks } from './links.js'
 import {
+  classifySubscription,
+  describeSubscriptionFormats,
+  loadAccessSnapshot,
+  presentSubscriptionStatus,
+} from './lifecycle.js'
+import {
+  copySubscription,
   createSubscription,
   transferSubscription,
   disableExpiredSubscriptions,
@@ -25,7 +33,7 @@ import {
   updateSubscription,
   DeliveryError,
 } from './service.js'
-import { compiledKey } from './repository.js'
+import { compiledKey, deleteCompiledArtifacts } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
 import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
 import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
@@ -102,29 +110,50 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
+type ViewOptions = {
+  catalogRevision?: number
+  snapshot?: AccessSnapshot
+  audience?: 'admin' | 'user'
+}
+
+async function view(
+  c: Context<AppEnv>,
+  subscription: Awaited<ReturnType<typeof getSubscription>>,
+  options?: number | ViewOptions,
+) {
+  const viewOptions: ViewOptions = typeof options === 'number' ? { catalogRevision: options } : options ?? {}
+  const audience = viewOptions.audience ?? 'admin'
   const token = await decryptSubscriptionToken(c.env, subscription)
   if (!subscription.encryptedToken) {
     const current = await getSubscription(c.env, subscription.id)
     if (current.userId !== subscription.userId) throw apiError(409, 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
     subscription = current
   }
-  const plan = subscription.planId ? (await listPlans(c.env.DB)).find(plan => plan.id === subscription.planId) ?? null : null
-  const currentCatalogRevision = catalogRevision ?? (await readCatalog(c.env)).revision
+  const plan = subscription.planId
+    ? (viewOptions.snapshot?.plans ?? await listPlans(c.env.DB)).find(item => item.id === subscription.planId) ?? null
+    : null
+  const currentCatalogRevision = viewOptions.catalogRevision ?? viewOptions.snapshot?.catalog.revision ?? (await readCatalog(c.env)).revision
   // Subscription links are always generated on the primary subscription
   // domain (plan section 7.1). When no usable primary is configured the
   // links stay empty and linkError tells the UI to prompt for domain
   // configuration instead of silently falling back to the request Host.
   const origin = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   const linkError = origin === null ? 'SUBSCRIPTION_DOMAIN_NOT_CONFIGURED' : null
-  const links = origin === null
-    ? {}
-    : Object.fromEntries(
-        SUBSCRIPTION_LINK_PLATFORMS.map(({ platform }) => [
-          platform,
-          `${origin}/sub/${token}${platform === 'auto' ? '' : `/${platform}`}`,
-        ]),
-      )
+  const links = origin === null ? {} : subscriptionLinks(origin, token)
+  const access = await classifySubscription(c.env, subscription, subscription.defaultClient, new Date().toISOString(), viewOptions.snapshot)
+  const presented = presentSubscriptionStatus(access.status, audience)
+  let configVersion: number | null = null
+  let conversionMode: string | null = null
+  let conversionTemplate: string | null = null
+  try {
+    const effective = await getEffectiveTemplate(c.env.DB, subscription.id)
+    configVersion = effective.sequence
+    conversionMode = effective.mode
+    conversionTemplate = effective.template_name
+  } catch {
+    configVersion = null
+  }
+  const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
   const diagnostics: Record<string, unknown> = {}
   for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
     const raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
@@ -174,11 +203,23 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     links,
     linkError,
     diagnostics,
+    ...presented,
+    authorizedNodeCount: access.authorizedNodeCount,
+    authorizedGroupIds: access.authorizedGroupIds,
+    formats: describeSubscriptionFormats(access.nodes),
+    fetch: fetchSummary,
+    configVersion,
+    conversion: {
+      mode: conversionMode,
+      templateName: conversionTemplate,
+      versionId: configVersion,
+      note: '转换诊断只标注现行渲染能力，不执行远程规则转换',
+    },
   }
 }
 
-async function userSubscriptionView(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
-  const body = await view(c, subscription, catalogRevision)
+async function userSubscriptionView(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number, snapshot?: AccessSnapshot) {
+  const body = await view(c, subscription, { catalogRevision, snapshot, audience: 'user' })
   return attachTrafficUsage(body, body.trafficGb, measuredTrafficForSubscription(body.id))
 }
 
@@ -256,31 +297,111 @@ export const adminDeliveryRoutes = new Hono<AppEnv>()
 
 adminDeliveryRoutes.get('/', async (c) => {
   await disableExpiredSubscriptions(c.env)
-  const [subscriptions, catalog] = await Promise.all([listAllSubscriptions(c.env), readCatalog(c.env)])
+  const [subscriptions, snapshot] = await Promise.all([listAllSubscriptions(c.env), loadAccessSnapshot(c.env)])
   const query = c.req.query()
+  const viewOptions = { catalogRevision: snapshot.catalog.revision, snapshot, audience: 'admin' as const }
   if (!hasAdminSubscriptionParams(query)) {
-    return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, catalog.revision))) })
+    return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, viewOptions))) })
   }
   const { page, pageSize } = parsePagination(query)
   const filters = parseAdminSubscriptionFilters(query)
-  const accounts = await readAccounts(c.env)
-  const userNames = new Map(accounts.users.map((user) => [user.id, user.username]))
-  const groupNames = new Map(catalog.groups.map((group) => [group.id, group.name]))
+  const userNames = new Map(snapshot.users.map((user) => [user.id, user.username]))
+  const groupNames = new Map(snapshot.catalog.groups.map((group) => [group.id, group.name]))
   const now = Date.now()
   const filtered = subscriptions.filter((subscription) =>
     matchesAdminSubscriptionFilters(subscription, filters, userNames, groupNames, now))
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize)
   return c.json({
-    subscriptions: await Promise.all(pageItems.map((subscription) => view(c, subscription, catalog.revision))),
+    subscriptions: await Promise.all(pageItems.map((subscription) => view(c, subscription, viewOptions))),
     total: filtered.length,
     page,
     pageSize,
   })
 })
 
+const batchBindingSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('specific'), templateId: z.string().min(1) }),
+  z.object({ mode: z.enum(['inherit', 'base']) }),
+])
+const batchSchema = z.object({
+  ids: z.array(z.string().regex(/^sub_[1-9]\d*$/u)).min(1).max(100),
+  action: z.enum(['enable', 'disable', 'plan', 'binding']),
+  planId: z.string().min(1).optional(),
+  templateBinding: batchBindingSchema.optional(),
+})
+
+async function bindingRevision(db: D1Database, id: string): Promise<number> {
+  try {
+    const row = await db.prepare('SELECT revision FROM subscription_template_bindings WHERE subscription_id=?').bind(id).first<{ revision: number }>()
+    return row?.revision ?? 1
+  } catch {
+    return 1
+  }
+}
+
+adminDeliveryRoutes.post('/batch', async (c) => {
+  const input = await readJson(c, batchSchema)
+  if (input.action === 'plan' && !input.planId) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
+  if (input.action === 'binding' && !input.templateBinding) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
+  const ok: string[] = []
+  const failed: Array<{ id: string; code: string; message: string }> = []
+  for (const id of input.ids) {
+    try {
+      const revision = input.action === 'binding' ? await bindingRevision(c.env.DB, id) : 1
+      const binding = input.templateBinding
+      const patch = input.action === 'enable' || input.action === 'disable'
+        ? { enabled: input.action === 'enable' }
+        : input.action === 'plan'
+          ? { planId: input.planId }
+          : {
+              templateBinding: binding?.mode === 'specific'
+                ? { mode: 'specific' as const, templateId: binding.templateId, expectedRevision: revision }
+                : { mode: binding?.mode === 'base' ? 'base' as const : 'inherit' as const, expectedRevision: revision },
+            }
+      const updated = await run(() => updateSubscription(c.env, id, patch, { actorRole: 'admin' }))
+      try {
+        if (updated.enabled) await compileSubscription(c.env, updated)
+        else await deleteCompiledArtifacts(c.env.DATA, updated.tokenHash)
+      } catch {
+        // The subscription row is already saved. Compilation retries on a later change.
+      }
+      ok.push(id)
+    } catch (error) {
+      const api = error instanceof ApiError ? error : apiError(422, 'SUBSCRIPTION_INVALID', '订阅输入无效')
+      failed.push({ id, code: api.code, message: api.message })
+    }
+  }
+  return c.json({ ok, failed })
+})
+
+adminDeliveryRoutes.post('/output-preview', async (c) => {
+  const input = await readJson(c, z.object({
+    planId: z.string().min(1).nullable().optional(),
+    groupIds: z.array(z.string()),
+    defaultClient: client.optional(),
+  }))
+  const plans = await listPlans(c.env.DB)
+  const plan = input.planId ? plans.find((item) => item.id === input.planId) ?? null : null
+  const catalog = await readCatalog(c.env)
+  const preview = previewAuthorizedOutput(catalog, plan?.groupIds ?? [], input.groupIds, input.defaultClient ?? 'mihomo')
+  return c.json({
+    planGroupIds: plan?.groupIds ?? [],
+    selectedGroupIds: input.groupIds,
+    authorizedGroupIds: preview.authorizedGroupIds,
+    outputNodes: preview.outputNodes,
+  })
+})
+
 adminDeliveryRoutes.post('/', async (c) => {
   const input = await readJson(c, createSchema)
   const result = await run(() => createSubscription(c.env, input, { actorRole: 'admin' }))
+  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
+})
+
+adminDeliveryRoutes.post('/:id/copy', async (c) => {
+  await readJson(c, emptySchema)
+  const result = await run(() => copySubscription(c.env, c.req.param('id'), { actorRole: 'admin' }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
 })
@@ -329,14 +450,14 @@ export const userDeliveryRoutes = new Hono<AppEnv>()
 
 userDeliveryRoutes.get('/', async (c) => {
   await disableExpiredSubscriptions(c.env)
-  const [subscriptions, catalog, shareSettings] = await Promise.all([
+  const [subscriptions, snapshot, shareSettings] = await Promise.all([
     listAllSubscriptions(c.env),
-    readCatalog(c.env),
+    loadAccessSnapshot(c.env),
     readShareSettings(c.env),
   ])
   const { id: userId, role } = c.get('principal')
   const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
-    .map(subscription => userSubscriptionView(c, subscription, catalog.revision)))
+    .map(subscription => userSubscriptionView(c, subscription, snapshot.catalog.revision, snapshot)))
   return c.json({ subscriptions: views, shareEnabled: canUseShareFeature(role, shareSettings) })
 })
 
@@ -346,6 +467,11 @@ userDeliveryRoutes.post('/:id/token/reset', async (c) => {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))
+  try {
+    await logAudit(c.env.DB, c.get('principal').id, 'post.subscriptions.token.reset', 'subscriptions', result.subscription.id, { status: 200 })
+  } catch {
+    // Audit is best-effort and must not include the new token.
+  }
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
 })
@@ -356,6 +482,11 @@ userDeliveryRoutes.post('/:id/reset-token', async (c) => {
     actorUserId: c.get('principal').id,
     actorRole: 'user',
   }))
+  try {
+    await logAudit(c.env.DB, c.get('principal').id, 'post.subscriptions.token.reset', 'subscriptions', result.subscription.id, { status: 200 })
+  } catch {
+    // Audit is best-effort and must not include the new token.
+  }
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
 })

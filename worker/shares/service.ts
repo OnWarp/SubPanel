@@ -2,11 +2,10 @@ import type { Principal } from '../app-env.js'
 import type { User } from '../accounts/schema.js'
 import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
-import { resolveGroupNodes } from '../catalog/groups.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
-import type { CatalogSnapshot } from '../catalog/schema.js'
-import { renderEntitledSubscription } from '../delivery/compiler.js'
+import { entitledNodes, renderEntitledSubscription } from '../delivery/compiler.js'
+import { subscriptionLink } from '../delivery/links.js'
 import { readDelivery } from '../delivery/repository.js'
 import { clientIdSchema, type ClientId, type Subscription } from '../delivery/schema.js'
 import { assertSubscriptionAvailable } from '../delivery/expiry.js'
@@ -382,32 +381,19 @@ export async function revealOriginalLink(
   const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
   if (!subscription?.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
   const settings = await readShareSettings(env)
-  const link = `${await publicOrigin(env, settings, requestUrl)}/sub/${await decryptSubscriptionToken(env, subscription)}`
+  const link = subscriptionLink(await publicOrigin(env, settings, requestUrl), await decryptSubscriptionToken(env, subscription), 'auto')
   const nowIso = now.toISOString()
   // lastOriginalRevealAt 是审计占位：项目暂无审计表，这个字段不能当成完整审计日志。
   await writeShare(env, { ...current, lastOriginalRevealAt: nowIso, updatedAt: nowIso })
   return { link }
 }
 
-// 预览只取节点 displayName。不要把 server、port 或凭据放进公开响应。
-function previewNodes(catalog: CatalogSnapshot, subscription: Subscription): { count: number, names: string[] } {
-  const namesById = new Map<string, string>()
-  for (const groupId of subscription.groupIds) {
-    if (!catalog.groups.some((group) => group.id === groupId)) continue
-    for (const node of resolveGroupNodes(catalog, groupId)) {
-      if (!namesById.has(node.id)) namesById.set(node.id, node.displayName)
-    }
-  }
-  return { count: namesById.size, names: [...namesById.values()] }
-}
-
-function groupNames(catalog: CatalogSnapshot, subscription: Subscription): string[] {
-  const names: string[] = []
-  for (const groupId of subscription.groupIds) {
-    const group = catalog.groups.find((item) => item.id === groupId)
-    if (group) names.push(group.name)
-  }
-  return names
+// 预览只取计划授权范围内已启用节点的 displayName。不要把 server、port 或凭据放进公开响应。
+async function previewAccess(env: DataEnv, subscription: Subscription, now: string) {
+  const access = await entitledNodes(env, subscription, now)
+  if (access.zeroNodeReason) return { count: 0, names: [] as string[], groupIds: [] as string[] }
+  const enabled = access.nodes.filter((node) => node.enabled)
+  return { count: enabled.length, names: enabled.map((node) => node.displayName), groupIds: access.authorizedGroupIds }
 }
 
 export async function readShareMeta(
@@ -419,11 +405,18 @@ export async function readShareMeta(
 ): Promise<ShareMeta> {
   const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
   const catalog = await readCatalog(env)
-  const preview = previewNodes(catalog, subscription)
+  const preview = await previewAccess(env, subscription, now.toISOString())
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
   const meta: ShareMeta = { nodeCount: preview.count }
   if (share.showSubscriptionName) meta.subscriptionName = subscription.name
-  if (share.showGroups) meta.groupNames = groupNames(catalog, subscription)
+  if (share.showGroups) {
+    const allowed = new Set(preview.groupIds)
+    meta.groupNames = subscription.groupIds.flatMap((groupId) => {
+      if (!allowed.has(groupId)) return []
+      const group = catalog.groups.find((item) => item.id === groupId)
+      return group ? [group.name] : []
+    })
+  }
   if (share.showExpiry) meta.expiresAt = share.expiresAt
   if (share.showNodeNames) meta.nodeNames = preview.names
   return meta
@@ -464,7 +457,7 @@ export async function exportShare(
   if (parsed.data.type === 'link') {
     if (!guarded.share.allowOriginalLink) throw notFound()
     assertSubscriptionAvailable(guarded.subscription, now.getTime())
-    const link = `${await publicOrigin(env, guarded.settings, requestUrl)}/sub/${await decryptSubscriptionToken(env, guarded.subscription)}`
+    const link = subscriptionLink(await publicOrigin(env, guarded.settings, requestUrl), await decryptSubscriptionToken(env, guarded.subscription), 'auto')
     if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
     return { kind: 'link', link }
   }

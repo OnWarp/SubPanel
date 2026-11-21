@@ -14,13 +14,35 @@ import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
 
 export type CompileOptions = { now?: string }
 
-function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: Subscription) {
+function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: { groupIds: readonly string[] }) {
   const byId = new Map<string, (typeof catalog.nodes)[number]>()
   for (const groupId of subscription.groupIds) {
     if (!catalog.groups.some((group) => group.id === groupId)) continue
     for (const node of resolveGroupNodes(catalog, groupId)) if (!byId.has(node.id)) byId.set(node.id, node)
   }
   return [...byId.values()]
+}
+
+export type AccessSnapshot = {
+  catalog: Awaited<ReturnType<typeof readCatalog>>
+  users: Awaited<ReturnType<typeof readAccounts>>['users']
+  plans: Awaited<ReturnType<typeof listPlans>>
+}
+
+export function previewAuthorizedOutput(
+  catalog: Awaited<ReturnType<typeof readCatalog>>,
+  planGroupIds: readonly string[],
+  groupIds: readonly string[],
+  client: RenderClient,
+) {
+  const allowed = new Set(planGroupIds)
+  const authorizedGroupIds = groupIds.filter((id) => allowed.has(id))
+  const nodes = selectedNodes(catalog, { groupIds: authorizedGroupIds })
+  return {
+    authorizedGroupIds,
+    outputNodes: prepareClientRender(client, nodes).outputNodes,
+    authorizedNodeCount: nodes.filter((node) => node.enabled).length,
+  }
 }
 
 async function certificateFingerprint(value: unknown): Promise<string | undefined> {
@@ -142,8 +164,17 @@ export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOption
 // Public requests repeat the live decision even when a cached artifact exists:
 // subscription availability and plan edits can change independently of cached output.
 
-async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
-  const catalog = await readCatalog(env)
+type CatalogNode = ReturnType<typeof selectedNodes>[number]
+
+function blockedAccess(
+  catalog: Awaited<ReturnType<typeof readCatalog>>,
+  zeroNodeReason: ZeroNodeReason,
+) {
+  return { catalog, nodes: [] as CatalogNode[], speed: 0, zeroNodeReason, authorizedGroupIds: [] as string[] }
+}
+
+export async function entitledNodes(env: DataEnv, subscription: Subscription, now: string, snapshot?: AccessSnapshot) {
+  const catalog = snapshot?.catalog ?? await readCatalog(env)
   const time = Date.parse(now)
   const blocked: ZeroNodeReason | null =
     subscription.expiresAt !== null && subscription.expiresAt <= time ? 'expired'
@@ -151,17 +182,19 @@ async function entitledNodes(env: DataEnv, subscription: Subscription, now: stri
     : !subscription.userId ? 'unassigned'
     : time < effectiveStartsAt(subscription) ? 'pending'
     : null
-  if (blocked) return { catalog, nodes: [], speed: 0, zeroNodeReason: blocked }
+  if (blocked) return blockedAccess(catalog, blocked)
 
-  const owner = (await readAccounts(env)).users.find(user => user.id === subscription.userId)
-  if (!owner || owner.deletedAt || !owner.enabled) return { catalog, nodes: [], speed: 0, zeroNodeReason: 'ownerUnavailable' as const }
-  const plan = subscription.planId ? (await listPlans(env.DB)).find(p => p.id === subscription.planId) ?? null : null
-  if (!plan || subscriptionPlanState(subscription, plan, time) !== 'active') return { catalog, nodes: [], speed: 0, zeroNodeReason: 'noPlan' as const }
+  const users = snapshot?.users ?? (await readAccounts(env)).users
+  const owner = users.find(user => user.id === subscription.userId)
+  if (!owner || owner.deletedAt || !owner.enabled) return blockedAccess(catalog, 'ownerUnavailable')
+  const plans = snapshot?.plans ?? await listPlans(env.DB)
+  const plan = subscription.planId ? plans.find(p => p.id === subscription.planId) ?? null : null
+  if (!plan || subscriptionPlanState(subscription, plan, time) !== 'active') return blockedAccess(catalog, 'noPlan')
   const groupIds = subscription.groupIds.filter(id => plan.groupIds.includes(id))
-  const nodes = selectedNodes(catalog, { ...subscription, groupIds })
+  const nodes = selectedNodes(catalog, { groupIds })
   const zeroNodeReason: ZeroNodeReason | null = !groupIds.length ? 'noGroupIntersection'
     : nodes.some(node => node.enabled) ? null : 'noEnabledNodes'
-  return { catalog, nodes, speed: subscription.speedLimitMbps ?? 0, zeroNodeReason }
+  return { catalog, nodes, speed: subscription.speedLimitMbps ?? 0, zeroNodeReason, authorizedGroupIds: groupIds }
 }
 
 function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {
