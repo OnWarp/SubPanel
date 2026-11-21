@@ -12,6 +12,7 @@ import { StatusPill } from '../../ui/StatusPill'
 import { QuickEntryCard } from '../../ui/QuickEntryCard'
 import { getExpiryState } from '../delivery/expiry'
 import type { Notice } from '../notices/types'
+import { homeTrafficLine } from './home-traffic'
 import { reminderEnabled } from './reminder'
 
 type HomeDashboardProps = {
@@ -22,17 +23,19 @@ type HomeDashboardProps = {
   groupValue: string
   groupSub: string
   validity?: string | null
+  trafficLine?: string | null
   onOpenNodes: () => void
 }
 
-export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, validity, onOpenNodes }: HomeDashboardProps) {
+export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, validity, trafficLine, onOpenNodes }: HomeDashboardProps) {
+  const statusLine = [validity, trafficLine].filter((part): part is string => Boolean(part)).join(' · ')
   return <>
     {reminder ? <p role="status">{reminder}</p> : null}
     <div className="user-stat-grid upd-stat-grid">
       <StatCard label="订阅" value={<StatusPill tone={subscriptionTone}>{subscriptionLabel}</StatusPill>} sub={subscriptionSub} />
       <StatCard label="分组 / 节点" value={groupValue} sub={groupSub} onClick={onOpenNodes} />
     </div>
-    {validity ? <p className="upd-home-validity">{validity}</p> : null}
+    {statusLine ? <p className="upd-home-validity">{statusLine}</p> : null}
   </>
 }
 
@@ -77,6 +80,7 @@ export function HomePage() {
         groupValue={`${valid ? counts.groupOptions.length : 0} / ${valid ? counts.total : 0}`}
         groupSub={valid ? '可用分组 / 节点总数' : '需要有效订阅才能查看节点'}
         validity={validity}
+        trafficLine={homeTrafficLine(current)}
         onOpenNodes={() => navigate('/nodes')}
       />
       {current ? <p className="upd-home-import"><Link to="/subscriptions">导入客户端</Link></p> : null}

@@ -28,6 +28,7 @@ import {
 import { compiledKey } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
 import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
+import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
@@ -174,6 +175,11 @@ async function view(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof 
     linkError,
     diagnostics,
   }
+}
+
+async function userSubscriptionView(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number) {
+  const body = await view(c, subscription, catalogRevision)
+  return attachTrafficUsage(body, body.trafficGb, measuredTrafficForSubscription(body.id))
 }
 
 
@@ -330,7 +336,7 @@ userDeliveryRoutes.get('/', async (c) => {
   ])
   const { id: userId, role } = c.get('principal')
   const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
-    .map(subscription => view(c, subscription, catalog.revision)))
+    .map(subscription => userSubscriptionView(c, subscription, catalog.revision)))
   return c.json({ subscriptions: views, shareEnabled: canUseShareFeature(role, shareSettings) })
 })
 
@@ -341,7 +347,7 @@ userDeliveryRoutes.post('/:id/token/reset', async (c) => {
     actorRole: 'user',
   }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
 })
 
 userDeliveryRoutes.post('/:id/reset-token', async (c) => {
@@ -351,5 +357,5 @@ userDeliveryRoutes.post('/:id/reset-token', async (c) => {
     actorRole: 'user',
   }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
 })

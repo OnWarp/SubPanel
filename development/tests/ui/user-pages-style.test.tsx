@@ -12,6 +12,7 @@ import { userSidebar } from '../../../src/app/navigation'
 import { LoginPage } from '../../../src/features/accounts/LoginPage'
 import { RegisterPage } from '../../../src/features/accounts/RegisterPage'
 import { MySubscriptionsPage } from '../../../src/features/delivery/MySubscriptionsPage'
+import { formatTrafficGb, homeTrafficLine } from '../../../src/features/user/home-traffic'
 import { HomeDashboard, HomePage } from '../../../src/features/user/HomePage'
 import { MinePage } from '../../../src/features/user/MinePage'
 import { UserNodesFilters, UserNodesFooter, UserNodesTable, type UserNode } from '../../../src/features/user/MyNodesPage'
@@ -59,6 +60,50 @@ describe('user page presentation', () => {
     expect(cards).toContain('2 个分组 · 8 个节点')
     expect(cards).not.toContain('流量')
     expect(cards).not.toContain('配额')
+    expect(cards).not.toContain('已用')
+  })
+
+  it('shows used and remaining traffic in the existing status line only when the api sends both', () => {
+    expect(formatTrafficGb(12.5)).toBe('12.5')
+    expect(formatTrafficGb(0.1 + 0.2)).toBe('0.3')
+    expect(homeTrafficLine(undefined)).toBeNull()
+    expect(homeTrafficLine({})).toBeNull()
+    expect(homeTrafficLine({ usedGb: 12.5 })).toBeNull()
+    expect(homeTrafficLine({ usedGb: -1, remainingGb: 1 })).toBeNull()
+    expect(homeTrafficLine({ usedGb: 0, remainingGb: 100 })).toBe('已用 0 GB · 剩余 100 GB')
+    expect(homeTrafficLine({ usedGb: 12.5, remainingGb: 87.5 })).toBe('已用 12.5 GB · 剩余 87.5 GB')
+    expect(homeTrafficLine({ usedGb: 3, remainingGb: null })).toBe('已用 3 GB · 剩余不限')
+
+    const shown = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(HomeDashboard, {
+      reminder: null,
+      subscriptionLabel: '有效',
+      subscriptionTone: 'success',
+      subscriptionSub: '标准计划',
+      groupValue: '1 / 2',
+      groupSub: '可用分组 / 节点总数',
+      validity: '有效期剩余 12 天',
+      trafficLine: homeTrafficLine({ usedGb: 42.5, remainingGb: 157.5 }),
+      onOpenNodes: () => undefined,
+    })))
+    expect([...shown.matchAll(/class="sp-stat-label"[^>]*>([^<]+)/g)].map((match) => match[1])).toEqual(['订阅', '分组 / 节点'])
+    expect(shown.match(/object-card/g)).toHaveLength(2)
+    expect(shown).toContain('有效期剩余 12 天 · 已用 42.5 GB · 剩余 157.5 GB')
+    expect(shown).not.toContain('流量配额')
+
+    const hidden = renderToStaticMarkup(createElement(MemoryRouter, null, createElement(HomeDashboard, {
+      reminder: null,
+      subscriptionLabel: '有效',
+      subscriptionTone: 'success',
+      subscriptionSub: '标准计划',
+      groupValue: '1 / 2',
+      groupSub: '可用分组 / 节点总数',
+      validity: '有效期剩余 12 天',
+      trafficLine: homeTrafficLine({}),
+      onOpenNodes: () => undefined,
+    })))
+    expect(hidden).toContain('有效期剩余 12 天')
+    expect(hidden).not.toContain('已用')
+    expect(hidden).not.toContain('剩余不限')
   })
 
   it('renders node filters, two-line rows, a status dot and the count footer', () => {

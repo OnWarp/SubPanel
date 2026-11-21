@@ -10,6 +10,7 @@ import { batch } from '../db/db.js'
 import { upsertSettingStatement } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
 import { deletePlan, getPlan, getSubscriptionPlanSummary, listPlans, listPublicPlans, operateSubscriptionPlan, planSchema, readTrialSettings, savePlan, trialSchema } from './plans.js'
+import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
 
 async function refreshDelivery(env: DataEnv): Promise<{ warning?: string }> {
   try { await compileAllSubscriptions(env); return {} }
@@ -57,6 +58,11 @@ for (const path of ['/users/:id/subscription-plan', '/users/:id/entitlement'] as
   })
 }
 export const userPlanRoutes = new Hono<AppEnv>()
-userPlanRoutes.get('/entitlement', async (c) => c.json(await getSubscriptionPlanSummary(c.env.DB,c.get('principal').id)))
+userPlanRoutes.get('/entitlement', async (c) => {
+  const summary = await getSubscriptionPlanSummary(c.env.DB, c.get('principal').id)
+  const subscriptionId = summary.current?.id ?? summary.latest?.id ?? null
+  const trafficGb = summary.current?.plan.trafficGb ?? summary.latest?.plan.trafficGb ?? 0
+  return c.json(attachTrafficUsage(summary, trafficGb, measuredTrafficForSubscription(subscriptionId)))
+})
 
 userPlanRoutes.get('/plans', async (c) => c.json({ plans: await listPublicPlans(c.env.DB) }))

@@ -140,6 +140,8 @@ export type AdminSubscription = {
   planName?: string | null
   planState?: 'active' | 'none' | 'expired' | 'revoked' | 'pending' | 'disabled'
   trafficGb?: number
+  usedGb?: number
+  remainingGb?: number | null
   speedLimitMbps?: number
   deviceLimit?: number
   id: string
