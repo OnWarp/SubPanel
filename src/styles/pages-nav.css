@@ -272,7 +272,7 @@
   .node-table .sp-table td { overflow-wrap: anywhere; }
 }
 
-@media (max-width: 760px) {
+@media (width < 768px) {
   .nav-dock .dock-item {
     min-width: 0;
     height: 54px;

@@ -133,7 +133,7 @@ try {
       await page.goto(settings)
       if (admin) {
         await avatar.press('Enter')
-        await expect(page.getByRole('group', { name: '布局' })).toBeVisible()
+        await expect(page.getByRole('group', { name: '布局', includeHidden: true })).toHaveCount(0)
         await expect(page.getByRole('link', { name: '运营管理' })).toHaveAttribute('href', '/delivery/tickets')
         await expect(page.getByRole('link', { name: '系统设置' })).toHaveAttribute('href', '/system/registration')
       }

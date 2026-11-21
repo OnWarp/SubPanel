@@ -347,8 +347,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .data-header-filters .filter-field > span { display: none; }
 }
 
-/* Keep the 760px breakpoint in sync with MOBILE_MEDIA_QUERY in src/app/layout.ts */
-@media (max-width: 760px) {
+/* Keep the 768px breakpoint in sync with MOBILE_MEDIA_QUERY in src/app/layout.ts */
+@media (width < 768px) {
   .app-layout { display: block; }
   .sidebar { display: none; }
   .workspace { height: calc(100svh - 2 * var(--space-2)); margin: var(--space-2); border-radius: var(--radius-sheet); }
