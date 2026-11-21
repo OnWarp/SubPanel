@@ -89,3 +89,5 @@
 ## 交付与回滚
 
 交付文件为 `/data/tmp/home-traffic.bundle`，包含 `refs/heads/task/home-traffic`，前置提交为 `c1ea30ea`。回滚时撤销本线提交即可，无需数据库或配置迁移。
+
+GROK_HOME_TRAFFIC_DONE
