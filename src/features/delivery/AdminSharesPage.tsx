@@ -11,6 +11,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
@@ -236,6 +237,7 @@ export function AdminSharesPage() {
 
   return (
     <div className="page-stack resource-pages">
+      <PageHeader title="分享管理" />
       <section className="data-section resource-card" aria-labelledby="ashr-shares-title">
         <ResourceHeading id="ashr-shares-title" title="分享管理" />
         <FilterBar className="resource-card-filters">

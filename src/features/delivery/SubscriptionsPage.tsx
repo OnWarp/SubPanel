@@ -19,6 +19,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { Switch } from '../../ui/Switch'
 import { StatusBadge } from '../../ui/StatusBadge'
@@ -652,6 +653,7 @@ export function SubscriptionsPage() {
 
   return (
     <div className="page-stack resource-pages del-admin-page">
+      <PageHeader title="订阅" />
 
       {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}

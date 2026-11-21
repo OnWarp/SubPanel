@@ -235,6 +235,14 @@
     margin-inline: var(--space-page-inline);
   }
 
+  /* The collapse control sits in the topbar's existing page inset, so the title starts on the same line as the section tabs. */
+  .admin-layout:not(.admin-topbar-layout) .workspace-topbar > .sidebar-toggle {
+    position: absolute;
+    inset-inline-start: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
   .admin-layout .workspace-content > .page-stack {
     flex: 1 0 auto;
   }
@@ -255,6 +263,13 @@
   .admin-layout .workspace-content > .page-stack:not(:has(> :is(.ops-card, .ops-system, .data-section, .usr-card))) {
     align-content: start;
     padding: var(--space-page-module) var(--space-page-inline) var(--space-7);
+  }
+
+  .admin-layout .workspace-content > .page-stack > .data-section > .section-heading,
+  .admin-layout .workspace-content > .page-stack > .profile-layout,
+  .admin-layout .workspace-content > .page-stack > .security-section > .profile-hint,
+  .admin-layout .workspace-content > .page-stack > .security-section > .security-form {
+    padding-inline: var(--space-page-inline);
   }
 
   .app-layout.admin-topbar-layout {
@@ -360,6 +375,17 @@
 }
 
 @media (width < 768px) {
+  .admin-layout .workspace-content > .page-stack > .data-section {
+    border-inline: 0;
+  }
+
+  .admin-layout .workspace-content > .page-stack > .data-section > .section-heading,
+  .admin-layout .workspace-content > .page-stack > .profile-layout,
+  .admin-layout .workspace-content > .page-stack > .security-section > .profile-hint,
+  .admin-layout .workspace-content > .page-stack > .security-section > .security-form {
+    padding-inline: 0;
+  }
+
   .admin-layout .admin-account nav > a,
   .admin-layout .admin-account nav > button,
   .admin-layout .admin-account nav .account-menu-label,

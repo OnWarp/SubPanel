@@ -1,5 +1,7 @@
 import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
+import { FilterBar } from '../../ui/FilterBar'
+import { SearchInput } from '../../ui/SearchInput'
 import { AppDownloadsSection } from './AppDownloadsSection'
 import { Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -337,21 +339,26 @@ export function AppsPage() {
       <PageHeader title="客户端下载" description={description} />
       <section className="data-section app-data" aria-label="APP 列表">
         <OperationsHeading title="客户端下载" action={
-          <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>
+          <>
+            <Link className="button secondary" to="/apps">查看用户端</Link>
+            <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>
+          </>
         } />
-        <div><Link className="button secondary" to="/apps">查看用户端</Link></div>
         {loading ? <LoadingState label="正在加载 APP" /> : null}
         {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !error ? (
           <>
-            <div className="page-toolbar ops-filters">
-              <Input type="search" aria-label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
-              <FormSelect aria-label="按启用筛选" value={enabledFilter} onChange={(event) => setEnabledFilter(event.currentTarget.value as EnabledFilter)}>
-                <option value="all">全部状态</option>
-                <option value="yes">启用</option>
-                <option value="no">停用</option>
-              </FormSelect>
-            </div>
+            <FilterBar className="app-filters">
+              <SearchInput className="app-search" label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={setQuery} />
+              <label className="filter-field">
+                <span>状态</span>
+                <FormSelect aria-label="按启用筛选" value={enabledFilter} onChange={(event) => setEnabledFilter(event.currentTarget.value as EnabledFilter)}>
+                  <option value="all">全部状态</option>
+                  <option value="yes">启用</option>
+                  <option value="no">停用</option>
+                </FormSelect>
+              </label>
+            </FilterBar>
             <DataTable
               columns={columns}
               rows={visible}

@@ -150,8 +150,9 @@ describe('navigation ownership and route compatibility', () => {
   })
   it('keeps the filter controls and total in the audit card', () => {
     const html = render('/audit-logs')
+    expect(html).toContain('<div class="sp-filter-bar audit-filters" role="group" aria-label="筛选">')
     for (const field of ['操作', '管理员 ID', '开始时间', '结束时间']) {
-      expect(html).toContain(`<label>${field}<input`)
+      expect(html).toContain(`<label class="filter-field"><span>${field}</span><input`)
     }
     expect(html).toContain('共 0 条')
     expect(html).toContain('1 / 1 页')

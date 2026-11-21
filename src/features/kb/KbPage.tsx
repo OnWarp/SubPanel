@@ -5,7 +5,7 @@ import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { SearchInput } from '../../ui/SearchInput'
 import { formatKbTime, type KbArticleSummary, type UserKbCategory } from './types'
 
@@ -92,7 +92,7 @@ export function KbPage() {
 
   return (
     <div className="page-stack kb-page">
-      <PageHeader title="知识库" description="客户端教程与常见问题" />
+      <PageHero title="知识库" />
 
       <div className="kb-search">
         <SearchInput

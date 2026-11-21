@@ -155,9 +155,11 @@ export function NoticesSection() {
   return (
     <section className="data-section" aria-label="公告">
       <OperationsHeading title="公告" action={
-        <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); noticeForm.current?.querySelector<HTMLInputElement>('#ntc-title')?.focus() }}>新建公告</button>
+        <>
+          <button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>
+          <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); noticeForm.current?.querySelector<HTMLInputElement>('#ntc-title')?.focus() }}>新建公告</button>
+        </>
       } />
-      <div><button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button></div>
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError ? (

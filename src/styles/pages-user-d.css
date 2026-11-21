@@ -3,24 +3,6 @@
  * Shared stylesheets stay untouched; these rules only restyle the user pages.
  */
 
-.upd-page .sp-page-hero {
-  padding: 0 0 var(--space-2);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.upd-page .sp-page-hero h1 {
-  font-size: var(--font-page-title);
-  font-weight: var(--weight-page-title);
-  letter-spacing: 0;
-}
-
-.upd-page .sp-page-hero p {
-  font-size: var(--font-page-meta);
-}
-
 .upd-home .sp-notice-carousel,
 .upd-home .sp-quick-entry,
 .upd-home .object-card,
@@ -280,7 +262,10 @@
   width: 100%;
 }
 
-.upd-nodes .upd-filters .sp-select-trigger {
+.upd-nodes .upd-filters :is(.sp-search, .sp-select-trigger, .button),
+.upd-nodes .upd-more-filters > summary {
+  box-sizing: border-box;
+  height: 40px;
   min-height: 40px;
   border-radius: var(--radius-ctl);
 }
@@ -460,6 +445,12 @@
 
   .upd-nodes .upd-filters .sp-search,
   .upd-nodes .upd-filters .sp-form-select { max-width: none; }
+
+  .upd-nodes .upd-filters :is(.sp-search, .sp-select-trigger, .button),
+  .upd-nodes .upd-more-filters > summary {
+    height: var(--size-touch-target);
+    min-height: var(--size-touch-target);
+  }
 
   .upd-nodes .sp-table td { padding: var(--space-2) 0; }
 

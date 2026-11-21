@@ -7,6 +7,8 @@
 }
 
 .catalog-data-section > .resource-card-footer { border-top: 0; padding: 0; }
+.catalog-data-section .sp-table-flat .sp-table :is(th, td):first-child { padding-inline-start: 0; }
+.catalog-data-section .sp-table-flat .sp-table :is(th, td):last-child { padding-inline-end: 0; }
 
 .catalog-filters .sp-search {
   flex: 1 1 180px;
@@ -15,6 +17,8 @@
 }
 
 .catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+  box-sizing: border-box;
+  height: var(--size-page-button);
   min-height: var(--size-page-button);
 }
 
@@ -52,6 +56,7 @@
 
 @media (width < 768px) {
   .catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+    height: var(--size-touch-target);
     min-height: var(--size-touch-target);
   }
   .sources-toolbar.sp-filter-bar {

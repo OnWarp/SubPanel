@@ -431,6 +431,24 @@
 }
 
 .settings-fields { padding: var(--space-4); }
+
+@media (width >= 768px) {
+  .admin-layout .page-stack > .data-section > .settings-fields {
+    padding-inline: var(--space-page-inline);
+  }
+}
+
+@media (width < 768px) {
+  .admin-layout .page-stack > .data-section > .settings-fields { padding-inline: 0; }
+}
+
+.admin-layout .settings-fields .sys-invite-form { padding-inline: 0; }
+
+.admin-layout .settings-sections .settings-fields,
+.admin-layout .settings-sections .ops-footer,
+.admin-layout .settings-sections .sys-domain-row {
+  padding-inline: 0;
+}
 .settings-group { display: grid; gap: var(--space-3); }
 .settings-sections :is(.sp-form-field, .field, .compact-field) { width: 100%; max-width: 460px; }
 .settings-sections .sp-form-field-wide { max-width: none; }

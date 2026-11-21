@@ -20,6 +20,10 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.app-filters :is(.sp-search, .sp-select-trigger, .button) {
+  min-height: var(--size-page-button);
+}
+
 .app-search {
   flex: 1 1 180px;
   width: auto;
@@ -251,6 +255,10 @@
     padding-right: 0;
     padding-left: 0;
     border-bottom: 0;
+  }
+
+  .app-filters :is(.sp-search, .sp-select-trigger, .button) {
+    min-height: var(--size-touch-target);
   }
 
   .app-data .sp-table-wrap {
