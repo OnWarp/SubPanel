@@ -238,7 +238,7 @@
   /* The collapse control sits in the topbar's existing page inset, so the title starts on the same line as the section tabs. */
   .admin-layout:not(.admin-topbar-layout) .workspace-topbar > .sidebar-toggle {
     position: absolute;
-    inset-inline-start: calc(-1 * var(--space-page-inline));
+    inset-inline-start: 0;
     top: 50%;
     transform: translateY(-50%);
   }
@@ -375,6 +375,10 @@
 }
 
 @media (width < 768px) {
+  .admin-layout .workspace-content > .page-stack > .data-section {
+    border-inline: 0;
+  }
+
   .admin-layout .workspace-content > .page-stack > .data-section > .section-heading,
   .admin-layout .workspace-content > .page-stack > .profile-layout,
   .admin-layout .workspace-content > .page-stack > .security-section > .profile-hint,

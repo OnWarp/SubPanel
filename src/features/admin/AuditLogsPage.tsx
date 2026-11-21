@@ -54,7 +54,7 @@ export function AuditLogsPage() {
       <PageHeader title="审计日志" />
       <section className="data-section" aria-label="审计日志">
         <OperationsHeading title="审计日志" />
-        <FilterBar>
+        <FilterBar className="audit-filters">
           <label className="filter-field"><span>操作</span><Input value={action} onChange={(event) => { setAction(event.target.value); setPage(1) }} /></label>
           <label className="filter-field"><span>管理员 ID</span><Input value={actor} onChange={(event) => { setActor(event.target.value); setPage(1) }} /></label>
           <label className="filter-field"><span>开始时间</span><DateTimeInput value={from} onChange={(event) => { setFrom(event.target.value); setPage(1) }} /></label>

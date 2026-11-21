@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHeader } from '../../ui/PageHeader'
+import { PageHero } from '../../ui/PageHero'
 import { renderMarkdown } from './markdown'
 import { formatKbTime, type KbArticle } from './types'
 
@@ -37,7 +37,7 @@ export function KbArticlePage() {
 
   return (
     <div className="page-stack kb-page kb-article-page">
-      <PageHeader
+      <PageHero
         title={article?.title ?? '文章'}
         actions={<Link className="button ghost" to="/kb"><ArrowLeft aria-hidden="true" size={16} />返回知识库</Link>}
       />

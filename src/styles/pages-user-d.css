@@ -3,24 +3,6 @@
  * Shared stylesheets stay untouched; these rules only restyle the user pages.
  */
 
-.upd-page .sp-page-hero {
-  padding: 0 0 var(--space-2);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.upd-page .sp-page-hero h1 {
-  font-size: var(--font-page-title);
-  font-weight: var(--weight-page-title);
-  letter-spacing: 0;
-}
-
-.upd-page .sp-page-hero p {
-  font-size: var(--font-page-meta);
-}
-
 .upd-home .sp-notice-carousel,
 .upd-home .sp-quick-entry,
 .upd-home .object-card,

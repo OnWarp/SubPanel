@@ -19,15 +19,22 @@
     padding-inline: var(--space-page-inline);
   }
 
-  .admin-layout .workspace-content > .page-stack.ops-page > .data-section .sp-table :is(th, td) {
-    padding-inline: var(--space-page-inline);
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section .sp-table :is(th, td):first-child {
+    padding-inline-start: var(--space-page-inline);
   }
 
-  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .data-section > .section-heading,
-  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .sys-form,
-  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .sys-body {
-    padding-inline: 0;
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section .sp-table :is(th, td):last-child {
+    padding-inline-end: var(--space-page-inline);
   }
+}
+
+.admin-layout .settings-sections .data-section {
+  border-inline: 0;
+}
+
+.admin-layout .settings-sections .data-section > .section-heading,
+.admin-layout .settings-sections :is(.sys-form, .sys-body) {
+  padding-inline: 0;
 }
 
 .ops-page .data-section > .sp-filter-bar .filter-field {
@@ -36,28 +43,6 @@
 
 .ops-page .data-section > .sp-filter-bar .sp-input {
   width: min(200px, 34vw);
-}
-
-.ops-page .ops-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: .75rem;
-}
-
-.ops-page .ops-filters > label {
-  display: grid;
-  gap: .35rem;
-  flex: 1 1 10rem;
-  min-width: 0;
-  color: var(--color-text-muted);
-  font-size: .8125rem;
-}
-
-.ops-page .ops-filters input {
-  min-width: 0;
-  border-color: var(--color-border);
-  border-radius: var(--radius-inset);
 }
 
 
@@ -193,7 +178,7 @@
   margin-inline: 0;
 }
 
-@media (max-width: 760px) {
+@media (width < 768px) {
   .ops-page .data-section > .section-heading,
   .ops-page .data-section > .sp-filter-bar,
   .ops-page .ops-footer {
@@ -208,6 +193,29 @@
   .ops-page .data-section > .sp-filter-bar .sp-input,
   .ops-page .data-section > .sp-filter-bar .sp-select-trigger {
     width: min(200px, 100%);
+  }
+
+  .ops-page .sp-table td {
+    overflow-wrap: anywhere;
+  }
+
+  .ops-page .sp-table td > .sp-badge { justify-self: start; }
+  .ops-page .sp-table td > .ops-overflow { justify-self: end; }
+
+  .ops-page .data-section > .audit-filters {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .audit-filters .filter-field {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
+  .ops-page .data-section > .audit-filters .sp-input {
+    width: 100%;
+    min-width: 0;
   }
 
   .ops-action-popover .button,

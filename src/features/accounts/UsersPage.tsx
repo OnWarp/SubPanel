@@ -13,6 +13,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
+import { FilterBar } from '../../ui/FilterBar'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
 
@@ -214,14 +215,17 @@ export function UsersDirectory({
 
   return (
     <div className="usr-directory">
-      <div className="usr-filter">
-        <FormSelect aria-label="用户状态" value={statusFilter} onChange={(event) => onStatusFilter(event.target.value)}>
-          <option value="all">全部状态</option>
-          <option value="enabled">正常</option>
-          <option value="disabled">已停用</option>
-        </FormSelect>
+      <FilterBar className="usr-filter">
         <SearchInput label="搜索用户" placeholder="搜索用户名或邮箱" value={query} onChange={onQuery} />
-      </div>
+        <label className="filter-field">
+          <span>状态</span>
+          <FormSelect aria-label="用户状态" value={statusFilter} onChange={(event) => onStatusFilter(event.target.value)}>
+            <option value="all">全部状态</option>
+            <option value="enabled">正常</option>
+            <option value="disabled">已停用</option>
+          </FormSelect>
+        </label>
+      </FilterBar>
       {phase === 'loading' ? <LoadingState label="正在加载用户" /> : null}
       {phase === 'error' ? <ErrorState message={loadError} onRetry={onRetry} /> : null}
       {phase === 'ready' ? (

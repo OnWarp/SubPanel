@@ -38,15 +38,11 @@
 }
 
 .usr-filter {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
 }
 
-.usr-filter .sp-form-select { width: min(220px, 100%); }
 .usr-filter .sp-search { width: min(280px, 100%); }
+.usr-filter :is(.sp-search, .sp-select-trigger) { min-height: var(--size-page-button); }
 
 .usr-batch { padding: 0 var(--space-5) var(--space-3); }
 .usr-batch .batch-toolbar { overflow: visible; height: auto; flex-wrap: wrap; }
@@ -146,14 +142,22 @@
   .admin-layout .usr-tabs,
   .admin-layout .usr-filter,
   .admin-layout .usr-batch,
-  .admin-layout .usr-directory .section-footer,
-  .admin-layout .usr-directory .usr-table .sp-table :is(th, td) {
+  .admin-layout .usr-directory .section-footer {
     padding-inline: var(--space-page-inline);
+  }
+
+  .admin-layout .usr-directory .usr-table .sp-table :is(th, td):first-child {
+    padding-inline-start: var(--space-page-inline);
+  }
+
+  .admin-layout .usr-directory .usr-table .sp-table :is(th, td):last-child {
+    padding-inline-end: var(--space-page-inline);
   }
 }
 .usr-card-body { padding: var(--space-4) var(--space-5) var(--space-5); }
 
-@media (max-width: 760px) {
+@media (width < 768px) {
+  .usr-filter :is(.sp-search, .sp-select-trigger) { min-height: var(--size-touch-target); }
   .data-section:has(> .usr-directory) > .section-heading,
   .data-section:has(> .settings-fields) > .section-heading,
   .usr-tabs,

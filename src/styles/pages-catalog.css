@@ -7,6 +7,8 @@
 }
 
 .catalog-data-section > .resource-card-footer { border-top: 0; padding: 0; }
+.catalog-data-section .sp-table-flat .sp-table :is(th, td):first-child { padding-inline-start: 0; }
+.catalog-data-section .sp-table-flat .sp-table :is(th, td):last-child { padding-inline-end: 0; }
 
 .catalog-filters .sp-search {
   flex: 1 1 180px;
