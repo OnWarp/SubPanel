@@ -5,8 +5,9 @@ import type { Context } from 'hono'
 import type { AppEnv } from './app-env.js'
 import { apiError, ApiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
-import { assertSubscriptionAvailable } from './delivery/expiry.js'
-import { compiledArtifactSchema } from './delivery/schema.js'
+import { noteSubscriptionFetch, stageSubscriptionFetch } from './delivery/fetch-stats.js'
+import { subscriptionRowStatus } from './delivery/lifecycle.js'
+import { compiledArtifactSchema, type Subscription } from './delivery/schema.js'
 import { renderEntitledSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
 
@@ -36,68 +37,120 @@ function clientFromUserAgent(userAgent: string): string {
   return 'generic'
 }
 
+const BLOCKED_PUBLIC = new Set(['revoked', 'disabled', 'owner_unavailable'])
+
 async function serve(c: Context<AppEnv>, clientParam?: string) {
+  const started = Date.now()
   const token = c.req.param('token') ?? ''
   if (!tokenPattern.test(token)) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-  const requestedClient = clientParam ?? clientFromUserAgent(c.req.header('User-Agent') ?? '')
-  const client = clientAliases[requestedClient.toLowerCase()] ?? requestedClient.toLowerCase()
+  const explicit = clientParam !== undefined
+  const requestedRaw = explicit ? clientParam : clientFromUserAgent(c.req.header('User-Agent') ?? '')
+  const requested = requestedRaw.toLowerCase()
+  const client = clientAliases[requested] ?? requested
   if (!clients.has(client)) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+  const detect = explicit ? 'path' : requested === 'generic' ? 'fallback' : 'user-agent'
 
   const tokenHash = await hashToken(token)
-  let delivery: Awaited<ReturnType<typeof readDelivery>>
+  let subscription: Subscription | undefined
+  let statusCode = 500
+  let ok = false
   try {
-    delivery = await readDelivery(c.env)
-  } catch {
-    console.error(JSON.stringify({ event: 'subscription_storage_failed' }))
-    throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
-  }
+    let delivery: Awaited<ReturnType<typeof readDelivery>>
+    try {
+      delivery = await readDelivery(c.env)
+    } catch {
+      console.error(JSON.stringify({ event: 'subscription_storage_failed' }))
+      statusCode = 500
+      throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
+    }
 
-  const subscription = delivery.subscriptions.find((candidate) => candidate.encryptedToken && candidate.tokenHash === tokenHash)
-  if (subscription && subscription.expiresAt !== null && subscription.expiresAt <= Date.now()) {
-    await disableExpiredSubscriptions(c.env)
-    throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
-  }
-  if (!subscription?.userId || !subscription.enabled) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    subscription = delivery.subscriptions.find((candidate) => candidate.encryptedToken && candidate.tokenHash === tokenHash)
+    if (!subscription) {
+      statusCode = 404
+      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    }
 
-  assertSubscriptionAvailable(subscription)
+    const now = new Date().toISOString()
+    const status = subscriptionRowStatus(subscription, Date.parse(now))
+    if (status === 'expired') {
+      await disableExpiredSubscriptions(c.env)
+      statusCode = 410
+      throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
+    }
+    if (status === 'pending') {
+      statusCode = 403
+      throw apiError(403, 'SUB_NOT_STARTED', '订阅尚未生效')
+    }
+    if (status && BLOCKED_PUBLIC.has(status)) {
+      statusCode = 404
+      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    }
 
-  let artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>
-  try {
-    artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient)
+    let artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>
+    try {
+      artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient, now)
+    } catch (error) {
+      console.error(JSON.stringify({
+        event: 'subscription_render_failed', subscriptionId: subscription.id,
+        code: error instanceof ApiError ? error.code : 'SUBSCRIPTION_RENDER_FAILED',
+      }))
+      if (error instanceof ApiError) throw error
+      statusCode = 500
+      throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
+    }
+
+    if (artifact.zeroNodeReason === 'ownerUnavailable') {
+      statusCode = 404
+      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    }
+    if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
+      statusCode = 422
+      throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: artifact.zeroNodeReason })
+    }
+
+    // Compare the live result against KV only to decide whether the derived
+    // artifact needs refreshing. Authorization and response bytes come from D1
+    // and the current catalog, even if an older request races with this write.
+    if (artifact.available) {
+      const key = compiledKey(tokenHash, client)
+      c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, key, artifact))
+    }
+
+    c.header('Cache-Control', 'no-store')
+    c.header('ETag', artifact.etag)
+    c.header('Content-Type', artifact.contentType)
+    const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
+    c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"; filename*=UTF-8''${encodeURIComponent(`${subscription.name}${extension}`)}`)
+    c.header('profile-title', encodeURIComponent(subscription.name))
+    c.header('x-subscription-client', client)
+    c.header('x-subscription-detect', detect)
+    if (detect === 'fallback') c.header('x-subscription-notice', 'generic-import-differs')
+
+    const ifNoneMatch = c.req.header('If-None-Match')
+    if (artifact.available && ifNoneMatch?.split(',').some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) {
+      statusCode = 304
+      ok = true
+      return c.body(null, 304)
+    }
+    statusCode = 200
+    ok = true
+    return c.body(artifact.body)
   } catch (error) {
-    console.error(JSON.stringify({
-      event: 'subscription_render_failed', subscriptionId: subscription.id,
-      code: error instanceof ApiError ? error.code : 'SUBSCRIPTION_RENDER_FAILED',
-    }))
-    if (error instanceof ApiError) throw error
-    throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
+    if (error instanceof ApiError) statusCode = error.status
+    throw error
+  } finally {
+    if (subscription) {
+      const sample = {
+        at: new Date().toISOString(),
+        platform: client,
+        ok,
+        status: statusCode,
+        durationMs: Math.max(0, Date.now() - started),
+      }
+      stageSubscriptionFetch(subscription.id, sample)
+      c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, subscription.id, sample))
+    }
   }
-
-  if (artifact.zeroNodeReason === 'ownerUnavailable') throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-  if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
-    throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: artifact.zeroNodeReason })
-  }
-
-  // Compare the live result against KV only to decide whether the derived
-  // artifact needs refreshing. Authorization and response bytes come from D1
-  // and the current catalog, even if an older request races with this write.
-  if (artifact.available) {
-    const key = compiledKey(tokenHash, client)
-    c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, key, artifact))
-  }
-
-  c.header('Cache-Control', 'no-store')
-  c.header('ETag', artifact.etag)
-  c.header('Content-Type', artifact.contentType)
-  const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
-  c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"; filename*=UTF-8''${encodeURIComponent(`${subscription.name}${extension}`)}`)
-  c.header('profile-title', encodeURIComponent(subscription.name))
-
-  const ifNoneMatch = c.req.header('If-None-Match')
-  if (artifact.available && ifNoneMatch?.split(',').some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) {
-    return c.body(null, 304)
-  }
-  return c.body(artifact.body)
 }
 
 async function refreshArtifact(kv: KVNamespace, key: string, artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>) {

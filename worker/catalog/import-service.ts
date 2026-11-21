@@ -1,20 +1,23 @@
 import {
   type CatalogSnapshot,
+  type EncryptedValue,
   type ImportFormat,
+  type formatOverrideSchema,
   type Source,
   type SourceId,
+  type NodeId,
   type SourceWarning,
 } from './schema.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { MAX_NODES, readCatalog, writeCatalog } from './repository.js'
-import { fetchRemoteText, RemoteFetchError, validateRemoteHeaders, validateRemoteUrl } from './remote.js'
+import { fetchRemoteTextWithMetadata, RemoteFetchError, validateRemoteHeaders, validateRemoteUrl } from './remote.js'
 import {
   decryptText,
   encryptText,
   getOrCreateCryptoMaterial,
   readCryptoMaterial,
 } from '../platform/crypto.js'
-import { detectImport } from '../import/detect.js'
+import { importWithFormat } from '../import/detect.js'
 import { fingerprintNode } from '../import/fingerprint.js'
 import type { ImportResult, ParsedNode } from '../import/model.js'
 import { recompileAfterCatalogChange } from '../delivery/compiler.js'
@@ -26,14 +29,19 @@ export type CreateSourceInput =
     name: string
     url: string
     headers?: Record<string, string>
+    formatOverride?: FormatOverride
+    deferSync?: boolean
     refreshIntervalMinutes: number
     enabled?: boolean
     keepOnFailure?: boolean
   }
 
+type FormatOverride = (typeof formatOverrideSchema.options)[number]
+
 export type ImportServiceOptions = {
   now?: string
   fetcher?: typeof fetch
+  previewId?: string
 }
 
 export type SourceSummary = {
@@ -44,6 +52,7 @@ export type SourceSummary = {
   keepOnFailure: boolean
   refreshIntervalMinutes?: number
   detectedFormat?: ImportFormat
+  sync?: Source['sync']
   warnings: SourceWarning[]
   lastAttemptAt?: string
   lastSuccessAt?: string
@@ -67,6 +76,7 @@ export type UpdateSourceInput = {
   url?: string
   headers?: Record<string, string>
   refreshIntervalMinutes?: number
+  formatOverride?: FormatOverride | null
 }
 
 type ImportErrorCode =
@@ -77,9 +87,12 @@ type ImportErrorCode =
   | 'IMPORT_ZERO_NODES'
   | 'UNSUPPORTED_IMPORT_FORMAT'
   | 'IMPORT_FAILED'
+  | 'CATALOG_SYNC_BUSY'
+  | 'CATALOG_PREVIEW_STALE'
 
 export class CatalogImportError extends Error {
   readonly code: ImportErrorCode
+  httpStatus?: number
 
   constructor(code: ImportErrorCode) {
     super(code)
@@ -104,10 +117,10 @@ export async function recompileDelivery(env: DataEnv): Promise<string | undefine
   }
 }
 
-function safeImportResult(content: string): ImportResult {
+function safeImportResult(content: string, format?: ImportFormat): ImportResult {
   let result: ImportResult
   try {
-    result = detectImport(content)
+    result = importWithFormat(content, format)
   } catch (error) {
     if (error instanceof Error && error.message === 'UNSUPPORTED_IMPORT_FORMAT') fail('UNSUPPORTED_IMPORT_FORMAT')
     fail('IMPORT_FAILED')
@@ -150,6 +163,7 @@ export function summarizeSource(source: Source, remoteUrl?: string): SourceSumma
     keepOnFailure: source.keepOnFailure,
     refreshIntervalMinutes: source.refreshIntervalMinutes,
     detectedFormat: source.detectedFormat,
+    sync: source.sync,
     warnings: source.warnings,
     lastAttemptAt: source.lastAttemptAt,
     lastSuccessAt: source.lastSuccessAt,
@@ -180,23 +194,31 @@ export async function summarizeSources(env: DataEnv, sources: Source[]): Promise
   }))
 }
 
+async function groupParsedVariants(nodes: ParsedNode[]) {
+  const entries = await Promise.all(nodes.map(async (node) => ({ node, fingerprint: await fingerprintNode(node) })))
+  const groups = new Map<string, ParsedNode[]>()
+  for (const { node, fingerprint } of entries) {
+    const variants = groups.get(fingerprint) ?? []
+    if (!variants.some(({ format, raw }) => format === node.format && raw === node.raw)) variants.push(node)
+    groups.set(fingerprint, variants)
+  }
+  return groups
+}
+
 async function applyImport(
   snapshot: CatalogSnapshot,
   sourceId: SourceId,
   nodes: ParsedNode[],
   now: string,
+  variants?: Map<string, ParsedNode[]>,
 ): Promise<CatalogSnapshot> {
   const next = structuredClone(snapshot)
-  const fingerprinted = await Promise.all(nodes.map(async (node) => ({ node, fingerprint: await fingerprintNode(node) })))
-  const variantsByFingerprint = new Map<string, ParsedNode[]>()
-  for (const item of fingerprinted) {
-    const variants = variantsByFingerprint.get(item.fingerprint) ?? []
-    if (!variants.some(({ format, raw }) => format === item.node.format && raw === item.node.raw)) variants.push(item.node)
-    variantsByFingerprint.set(item.fingerprint, variants)
-  }
-
+  const variantsByFingerprint = variants ?? await groupParsedVariants(nodes)
   const seen = new Set(variantsByFingerprint.keys())
-  const byFingerprint = new Map(next.nodes.map((node) => [node.fingerprint, node]))
+  const byFingerprint = new Map(next.nodes
+    .filter((node) => node.sourceIds.includes(sourceId) || node.fingerprint.startsWith(`${sourceId}:`))
+    .map((node) => [node.sourceFingerprint ?? node.fingerprint, node]))
+  const remote = sourceById(snapshot, sourceId).type === 'remote'
   let maxOrder = next.nodes.reduce((maximum, node) => Math.max(maximum, node.order), 0)
   for (const [fingerprint, parsedVariants] of variantsByFingerprint) {
     const parsed = parsedVariants[0]
@@ -206,9 +228,22 @@ async function applyImport(
       raw: variant.raw,
       extensions: variant.extensions,
     }))
-    const existing = byFingerprint.get(fingerprint)
+    let existing = byFingerprint.get(fingerprint)
+    let originNodeId: NodeId | undefined
+    if (existing && existing.sourceIds.length > 1) {
+      originNodeId = existing.id
+      existing.sourceIds = existing.sourceIds.filter((id) => id !== sourceId)
+      existing.rawVariants = existing.rawVariants.filter((variant) => variant.sourceId !== sourceId)
+      existing = undefined
+    }
     if (existing) {
+      if (!existing.sourceFingerprint && existing.updatedAt !== existing.createdAt) existing.displayNameOverride ??= existing.displayName
+      existing.sourceFingerprint = fingerprint
+      existing.originNodeId ??= existing.id
+      existing.displayName = existing.displayNameOverride ?? parsed.displayName
       if (!existing.sourceIds.includes(sourceId)) existing.sourceIds.push(sourceId)
+      existing.lastSeenAt = now
+      existing.missingSince = undefined
       existing.rawVariants = [
         ...existing.rawVariants.filter((variant) => variant.sourceId !== sourceId),
         ...rawVariants,
@@ -229,7 +264,10 @@ async function applyImport(
       transport: parsed.transport,
       plugin: parsed.plugin,
       extensions: parsed.extensions,
-      fingerprint,
+      fingerprint: `${sourceId}:${fingerprint}`,
+      sourceFingerprint: fingerprint,
+      originNodeId: originNodeId ?? `node_${next.nextNodeId}` as const,
+      lastSeenAt: now,
       sourceIds: [sourceId],
       rawVariants,
       enabled: true,
@@ -238,6 +276,24 @@ async function applyImport(
       createdAt: now,
       updatedAt: now,
     }
+    if (originNodeId) {
+      const original = next.nodes.find(({ id }) => id === originNodeId)!
+      Object.assign(node, {
+        order: original.order,
+        enabled: original.enabled,
+        retained: original.retained,
+        displayName: original.displayNameOverride ?? original.displayName,
+        displayNameOverride: original.displayNameOverride,
+        tags: original.tags,
+        region: original.region,
+      })
+      for (const group of next.groups) {
+        for (const list of [group.includedNodeIds, group.excludedNodeIds, group.nodeOrder]) {
+          const position = list.indexOf(originNodeId)
+          if (position >= 0) list.splice(position + 1, 0, node.id)
+        }
+      }
+    }
     next.nextNodeId += 1
     next.nodes.push(node)
     byFingerprint.set(fingerprint, node)
@@ -245,8 +301,13 @@ async function applyImport(
 
   const deletedIds = new Set<string>()
   next.nodes = next.nodes.filter((node) => {
-    if (seen.has(node.fingerprint) || !node.sourceIds.includes(sourceId)) return true
+    if (seen.has(node.sourceFingerprint ?? node.fingerprint) || !node.sourceIds.includes(sourceId)) return true
+    if (remote && node.sourceIds.length === 1) {
+      node.missingSince ??= now
+      if (Date.parse(now) - Date.parse(node.missingSince) < 24 * 60 * 60_000) return true
+    }
     node.sourceIds = node.sourceIds.filter((id) => id !== sourceId)
+    node.missingSince = undefined
     node.rawVariants = node.rawVariants.filter((variant) => variant.sourceId !== sourceId)
     node.updatedAt = now
     if (node.sourceIds.length > 0 || node.retained) return true
@@ -327,6 +388,7 @@ export async function createSource(
     type: 'remote',
     enabled: input.enabled ?? true,
     keepOnFailure: input.keepOnFailure ?? true,
+    sync: input.formatOverride ? { formatOverride: input.formatOverride } : undefined,
     encryptedUrl: await encryptText(safeUrl, material.encryptionKey),
     encryptedHeaders: await encryptText(JSON.stringify(safeHeaders), material.encryptionKey),
     refreshIntervalMinutes: input.refreshIntervalMinutes,
@@ -336,10 +398,23 @@ export async function createSource(
     updatedAt: now,
   }
   let next: CatalogSnapshot = { ...snapshot, nextSourceId: snapshot.nextSourceId + 1, sources: [...snapshot.sources, source] }
+  if (input.deferSync) {
+    delete source.lastAttemptAt
+    const saved = await writeCatalog(env, next, now)
+    const warning = await recompileDelivery(env)
+    return { success: true, source: summarizeSource(sourceById(saved, id), safeUrl), ...(warning ? { warning } : {}) }
+  }
   let success = false
+  const started = Date.now()
   try {
-    const content = await fetchRemoteText({ url: safeUrl, headers: safeHeaders }, options.fetcher)
-    const parsed = safeImportResult(content)
+    const result = await boundedSourceSync(env, id, async (signal, checkCancelled) => {
+      const response = await fetchRemoteTextWithMetadata({ url: safeUrl, headers: safeHeaders }, options.fetcher, undefined, signal)
+      await checkCancelled()
+      return response
+    })
+    if (result.notModified) fail('IMPORT_FAILED')
+    const { text: content } = result
+    const parsed = safeImportResult(content, input.formatOverride)
     source = {
       ...source,
       encryptedContent: await encryptText(content, material.encryptionKey),
@@ -347,14 +422,24 @@ export async function createSource(
       warnings: parsed.warnings,
       lastSuccessAt: now,
       lastErrorCode: undefined,
+      sync: { ...source.sync, consecutiveFailures: 0, httpStatus: result.status,
+        etag: result.etag?.slice(0, 1024), durationMs: Date.now() - started },
     }
     next = await applyImport(replaceSource(next, source), id, parsed.nodes, now)
     success = true
   } catch (error) {
-    source = { ...source, lastErrorCode: safeErrorCode(error) }
+    if (error instanceof CatalogImportError && error.code === 'CATALOG_SYNC_BUSY') throw error
+    source = { ...source, lastErrorCode: safeErrorCode(error), sync: {
+      ...source.sync, firstFailureAt: now, consecutiveFailures: 1, durationMs: Date.now() - started,
+      httpStatus: (error instanceof RemoteFetchError || error instanceof CatalogImportError) ? error.httpStatus : undefined,
+    } }
     next = replaceSource(next, source)
   }
   const saved = await writeCatalog(env, next, now)
+  await recordRun(env, id, now, success ? 'success' : 'failed', {
+    ...source.sync, format: source.detectedFormat, errorCode: source.lastErrorCode,
+    added: next.nodes.filter((node) => node.sourceIds.includes(id)).length,
+  })
   const warning = await recompileDelivery(env)
   return { success, source: summarizeSource(sourceById(saved, id), safeUrl), ...(warning ? { warning } : {}) }
 }
@@ -407,6 +492,10 @@ export async function updateSource(
 
   if (current.type === 'remote') {
     if (input.content !== undefined) fail('CATALOG_SOURCE_TYPE_INVALID')
+    if (input.formatOverride !== undefined) source.sync = { ...source.sync, formatOverride: input.formatOverride ?? undefined }
+    if (source.sync && (input.url || input.headers || input.formatOverride !== undefined || (!current.enabled && input.enabled === true))) {
+      source.sync = { formatOverride: source.sync.formatOverride }
+    }
     if (input.refreshIntervalMinutes !== undefined && (!Number.isInteger(input.refreshIntervalMinutes) || input.refreshIntervalMinutes <= 0 || input.refreshIntervalMinutes % 15 !== 0)) {
       fail('CATALOG_SOURCE_INVALID')
     }
@@ -473,50 +562,243 @@ function parsedHeaders(value: string): Record<string, string> {
   return validateRemoteHeaders(result)
 }
 
+const activeSyncs = new Map<string, AbortController>()
+type SyncDiff = { added: number; updated: number; missing: number; duplicates: number; skipped: number; parseFailed: number }
+type PreparedSync = {
+  revision: number
+  sourceId: SourceId
+  content: EncryptedValue
+  diff: SyncDiff
+  format: ImportFormat
+  httpStatus: number
+  etag?: string
+  startedAt: string
+  durationMs: number
+}
+
+async function boundedSourceSync<T>(
+  env: DataEnv,
+  id: string,
+  operation: (signal: AbortSignal, checkCancelled: () => Promise<void>) => Promise<T>,
+): Promise<T> {
+  const operationId = crypto.randomUUID()
+  const now = Date.now()
+  const [, inserted] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM catalog_sync_leases WHERE expires_at <= ?').bind(now),
+    env.DB.prepare(`INSERT OR IGNORE INTO catalog_sync_leases (slot, source_id, operation_id, expires_at)
+      SELECT slot, ?, ?, ? FROM (SELECT 1 AS slot UNION ALL SELECT 2)
+      WHERE slot NOT IN (SELECT slot FROM catalog_sync_leases)
+      ORDER BY slot LIMIT 1`).bind(id, operationId, now + 120_000),
+  ])
+  if (!inserted.meta.changes) fail('CATALOG_SYNC_BUSY')
+  const controller = new AbortController()
+  activeSyncs.set(id, controller)
+  const checkCancelled = async () => {
+    const lease = await env.DB.prepare(
+      'SELECT cancelled FROM catalog_sync_leases WHERE operation_id = ?',
+    ).bind(operationId).first<{ cancelled: number }>()
+    if (controller.signal.aborted || lease?.cancelled !== 0) throw new RemoteFetchError('REMOTE_CANCELLED')
+  }
+  try {
+    return await operation(controller.signal, checkCancelled)
+  } finally {
+    if (activeSyncs.get(id) === controller) activeSyncs.delete(id)
+    await env.DB.prepare('DELETE FROM catalog_sync_leases WHERE operation_id = ?').bind(operationId).run()
+  }
+}
+
+export async function cancelSourceSync(env: DataEnv, id: string, previewId?: string): Promise<boolean> {
+  if (previewId) {
+    return boundedSourceSync(env, id, async () => {
+      const pending = await env.DATA.get<PreparedSync>(previewKey(previewId), 'json')
+      if (!pending || pending.sourceId !== id) return false
+      await env.DATA.delete(previewKey(previewId))
+      await recordRun(env, id, pending.startedAt, 'cancelled', { errorCode: 'REMOTE_CANCELLED', durationMs: pending.durationMs })
+      return true
+    })
+  }
+  const result = await env.DB.prepare('UPDATE catalog_sync_leases SET cancelled = 1 WHERE source_id = ? AND expires_at > ?')
+    .bind(id, Date.now()).run()
+  activeSyncs.get(id)?.abort()
+  return Boolean(result.meta.changes)
+}
+
+const previewKey = (id: string) => `catalog:sync-preview:${id}`
+
+export async function previewImportDiff(
+  parsed: ImportResult,
+  snapshot: CatalogSnapshot,
+  sourceId?: SourceId,
+  now = new Date().toISOString(),
+  variants?: Map<string, ParsedNode[]>,
+): Promise<SyncDiff> {
+  const groups = variants ?? await groupParsedVariants(parsed.nodes)
+  const existing = new Map(snapshot.nodes.filter((node) => sourceId && node.sourceIds.includes(sourceId))
+    .map((node) => [node.sourceFingerprint ?? node.fingerprint, node]))
+  const diff: SyncDiff = { added: 0, updated: 0, missing: 0, duplicates: parsed.nodes.length - groups.size, skipped: 0, parseFailed: 0 }
+  for (const [fingerprint, imported] of groups) {
+    const previous = existing.get(fingerprint)
+    const raw = previous?.rawVariants.filter((variant) => variant.sourceId === sourceId)
+    if (!previous) diff.added++
+    else if (previous.missingSince || previous.sourceIds.length > 1 || (!previous.displayNameOverride && previous.displayName !== imported[0].displayName)
+      || raw?.length !== imported.length || raw.some((variant, index) => variant.raw !== imported[index].raw || variant.format !== imported[index].format)) diff.updated++
+    else diff.skipped++
+  }
+  diff.missing = [...existing.keys()].filter((key) => !groups.has(key)).length
+  for (const warning of parsed.warnings) {
+    if (/INVALID|FAILED|ERROR|MALFORMED|UNSUPPORTED_IMPORT_BLOCK/u.test(warning.code)) diff.parseFailed++
+    else diff.skipped++
+  }
+  // Run the same reconciliation as commit to catch limits before issuing the preview.
+  if (sourceId) await applyImport(snapshot, sourceId, parsed.nodes, now, groups)
+  else if (snapshot.nodes.length + groups.size > MAX_NODES) fail('CATALOG_NODE_LIMIT')
+  return diff
+}
+
+async function prepareSync(env: DataEnv, snapshot: CatalogSnapshot, source: Source, signal: AbortSignal, options: ImportServiceOptions) {
+  const started = Date.now()
+  const material = await readCryptoMaterial(env.DATA)
+  const url = await decryptText(source.encryptedUrl!, material.encryptionKey)
+  const headers = parsedHeaders(await decryptText(source.encryptedHeaders!, material.encryptionKey))
+  const result = await fetchRemoteTextWithMetadata({ url, headers }, options.fetcher, undefined, signal)
+  if (result.notModified) fail('IMPORT_FAILED')
+  let parsed: ImportResult
+  let diff: SyncDiff
+  try {
+    parsed = safeImportResult(result.text, source.sync?.formatOverride)
+    diff = await previewImportDiff(parsed, snapshot, source.id, options.now ?? new Date(started).toISOString())
+  } catch (error) {
+    if (error instanceof CatalogImportError) error.httpStatus = result.status
+    throw error
+  }
+  const prepared: PreparedSync = {
+    revision: snapshot.revision,
+    sourceId: source.id,
+    content: await encryptText(result.text, material.encryptionKey),
+    diff,
+    format: parsed.format,
+    httpStatus: result.status,
+    etag: result.etag?.slice(0, 1024),
+    startedAt: options.now ?? new Date(started).toISOString(),
+    durationMs: Date.now() - started,
+  }
+  if (signal.aborted) throw new RemoteFetchError('REMOTE_CANCELLED')
+  return { prepared, parsed, url }
+}
+
+function failureMetadata(source: Source, error: unknown, now: string, started: number): NonNullable<Source['sync']> {
+  return {
+    ...source.sync,
+    consecutiveFailures: (source.sync?.consecutiveFailures ?? 0) + 1,
+    firstFailureAt: source.sync?.firstFailureAt ?? now,
+    durationMs: Math.max(0, Date.now() - started),
+    httpStatus: (error instanceof RemoteFetchError || error instanceof CatalogImportError) ? error.httpStatus : undefined,
+  }
+}
+
+async function recordRun(env: DataEnv, sourceId: string, startedAt: string, status: string, details: object) {
+  await env.DB.prepare(
+    'INSERT INTO catalog_sync_runs (id, source_id, started_at, finished_at, status, details) VALUES (?, ?, ?, ?, ?, ?)',
+  ).bind(crypto.randomUUID(), sourceId, startedAt, new Date().toISOString(), status, JSON.stringify(details)).run()
+  await env.DB.prepare(`DELETE FROM catalog_sync_runs WHERE source_id = ? AND id NOT IN
+    (SELECT id FROM catalog_sync_runs WHERE source_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 20)`)
+    .bind(sourceId, sourceId).run()
+}
+
+export async function previewSourceSync(env: DataEnv, sourceId: string, options: ImportServiceOptions = {}) {
+  return boundedSourceSync(env, sourceId, async (signal, checkCancelled) => {
+    const snapshot = await readCatalog(env)
+    const source = sourceById(snapshot, sourceId)
+    if (source.type !== 'remote') fail('CATALOG_SOURCE_TYPE_INVALID')
+    const startedAt = options.now ?? new Date().toISOString()
+    try {
+      const { prepared } = await prepareSync(env, snapshot, source, signal, options)
+      await checkCancelled()
+      const id = crypto.randomUUID()
+      await env.DATA.put(previewKey(id), JSON.stringify(prepared), { expirationTtl: 600 })
+      return { id, diff: prepared.diff, format: prepared.format, durationMs: prepared.durationMs, httpStatus: prepared.httpStatus }
+    } catch (error) {
+      const code = signal.aborted ? 'REMOTE_CANCELLED' : safeErrorCode(error)
+      const finishedAt = new Date().toISOString()
+      const sync = failureMetadata(source, error, startedAt, Date.parse(startedAt))
+      if (code !== 'REMOTE_CANCELLED' && (await readCatalog(env)).revision === snapshot.revision) {
+        await writeCatalog(env, replaceSource(snapshot, { ...source, sync, lastAttemptAt: startedAt,
+          lastErrorCode: code, updatedAt: finishedAt }), finishedAt)
+      }
+      await recordRun(env, sourceId, startedAt, code === 'REMOTE_CANCELLED' ? 'cancelled' : 'failed', { ...sync, errorCode: code })
+      throw error
+    }
+  })
+}
+
 export async function refreshSource(
   env: DataEnv,
   sourceId: string,
   options: ImportServiceOptions = {},
 ): Promise<SourceOperationResult> {
-  const now = options.now ?? new Date().toISOString()
-  const snapshot = await readCatalog(env)
-  const current = sourceById(snapshot, sourceId)
-  if (current.type !== 'remote' || !current.encryptedUrl || !current.encryptedHeaders) fail('CATALOG_SOURCE_TYPE_INVALID')
-
-  let remoteUrl: string | undefined
-  try {
-    const material = await readCryptoMaterial(env.DATA)
-    remoteUrl = await decryptText(current.encryptedUrl, material.encryptionKey)
-    const headers = parsedHeaders(await decryptText(current.encryptedHeaders, material.encryptionKey))
-    const content = await fetchRemoteText({ url: remoteUrl, headers }, options.fetcher)
-    const parsed = safeImportResult(content)
+  return boundedSourceSync(env, sourceId, async (signal, checkCancelled) => {
+    const now = options.now ?? new Date().toISOString()
+    const started = Date.now()
+    const snapshot = await readCatalog(env)
+    const current = sourceById(snapshot, sourceId)
+    if (current.type !== 'remote') fail('CATALOG_SOURCE_TYPE_INVALID')
+    let prepared: PreparedSync
+    let parsed: ImportResult
+    let url: string | undefined
+    if (options.previewId) {
+      const pending = await env.DATA.get<PreparedSync>(previewKey(options.previewId), 'json')
+      if (!pending || pending.sourceId !== current.id || pending.revision !== snapshot.revision) fail('CATALOG_PREVIEW_STALE')
+      prepared = pending
+      const material = await readCryptoMaterial(env.DATA)
+      parsed = safeImportResult(await decryptText(prepared.content, material.encryptionKey), current.sync?.formatOverride)
+    } else {
+      try {
+        ({ prepared, parsed, url } = await prepareSync(env, snapshot, current, signal, options))
+      } catch (error) {
+        const code = signal.aborted ? 'REMOTE_CANCELLED' : safeErrorCode(error)
+        if (code === 'REMOTE_CANCELLED') {
+          await recordRun(env, sourceId, now, 'cancelled', { errorCode: code })
+          return { success: false, source: summarizeSource(current) }
+        }
+        const source: Source = {
+          ...current,
+          lastAttemptAt: now,
+          lastErrorCode: code,
+          updatedAt: now,
+          sync: failureMetadata(current, error, now, started),
+        }
+        if ((await readCatalog(env)).revision !== snapshot.revision) fail('CATALOG_PREVIEW_STALE')
+        await writeCatalog(env, replaceSource(snapshot, source), now)
+        await recordRun(env, sourceId, now, 'failed', { ...source.sync, errorCode: code })
+        return { success: false, source: summarizeSource(source, url) }
+      }
+    }
     const source: Source = {
       ...current,
-      encryptedContent: await encryptText(content, material.encryptionKey),
+      encryptedContent: prepared.content,
       detectedFormat: parsed.format,
       warnings: parsed.warnings,
       lastAttemptAt: now,
       lastSuccessAt: now,
       lastErrorCode: undefined,
       updatedAt: now,
+      sync: {
+        formatOverride: current.sync?.formatOverride,
+        consecutiveFailures: 0,
+        httpStatus: prepared.httpStatus,
+        etag: prepared.etag,
+        durationMs: prepared.durationMs,
+      },
     }
-    const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now), now)
-    const warning = await recompileDelivery(env)
-    return { success: true, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
-  } catch (error) {
-    const source: Source = {
-      ...current,
-      lastAttemptAt: now,
-      lastErrorCode: safeErrorCode(error),
-      updatedAt: now,
-    }
-    const failed = replaceSource(snapshot, source)
-    // Reconcile the failed source without treating an empty import as a success.
-    const next = current.keepOnFailure ? failed : await applyImport(failed, current.id, [], now)
+    const next = await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now)
+    await checkCancelled()
+    if ((await readCatalog(env)).revision !== snapshot.revision) fail('CATALOG_PREVIEW_STALE')
     const saved = await writeCatalog(env, next, now)
+    if (options.previewId) await env.DATA.delete(previewKey(options.previewId))
+    await recordRun(env, sourceId, prepared.startedAt, 'success', { ...prepared.diff, format: prepared.format, ...source.sync })
     const warning = await recompileDelivery(env)
-    return { success: false, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
-  }
+    return { success: true, source: summarizeSource(sourceById(saved, current.id), url), ...(warning ? { warning } : {}) }
+  })
 }
 
 export async function deleteSource(
@@ -532,6 +814,7 @@ export async function deleteSource(
   snapshot.nodes = snapshot.nodes.filter((node) => {
     if (!node.sourceIds.includes(source.id)) return true
     node.sourceIds = node.sourceIds.filter((id) => id !== source.id)
+    node.missingSince = undefined
     node.rawVariants = node.rawVariants.filter((variant) => variant.sourceId !== source.id)
     node.updatedAt = now
     if (node.sourceIds.length > 0 || node.retained) return true

@@ -55,9 +55,9 @@ export function UserSubscriptionPlan({ userId, username, showSummary = true, act
         {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
         {rights?.latest ? <p>{rights.latest.plan.name} · {(rights.latest.expiresAt ? new Date(rights.latest.expiresAt).toLocaleString() : '永久有效')} · {subscriptionPlanLabels[rights.state]}</p> : null}
         {rights?.latest ? <dl className="key-value-rows">
-          <div><dt>流量额度</dt><dd>{rights.latest.plan.trafficGb ? `${rights.latest.plan.trafficGb} GB` : '不限'}</dd></div>
+          <div><dt>流量额度</dt><dd>{rights.latest.plan.trafficGb ? `${rights.latest.plan.trafficGb} GB` : '不限'} · 配额定义／未强制执行</dd></div>
           <div><dt>限速</dt><dd>{rights.latest.plan.speedLimitMbps ? `${rights.latest.plan.speedLimitMbps} Mbps` : '不限'}</dd></div>
-          <div><dt>设备数</dt><dd>{rights.latest.plan.deviceLimit || '不限'}</dd></div>
+          <div><dt>设备数</dt><dd>{rights.latest.plan.deviceLimit || '不限'} · 配额定义／未强制执行</dd></div>
         </dl> : null}
         <FormField label="操作" htmlFor={`action-${userId}`}><FormSelect id={`action-${userId}`} value={action} onChange={(e) => setAction(e.target.value)}>{rights?.latest?.status === 'active' ? <><option value="renew">续期</option><option value="switch">换计划</option><option value="revoke">收回</option></> : <option value="grant">开通</option>}</FormSelect></FormField>
         {action === 'grant' || action === 'switch' ? <FormField label="计划" htmlFor={`plan-${userId}`}><FormSelect required id={`plan-${userId}`} value={planId} onChange={(e) => setPlanId(e.target.value)}><option value="">选择计划</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.durationDays} 天</option>)}</FormSelect></FormField> : null}

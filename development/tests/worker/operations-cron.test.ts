@@ -45,6 +45,19 @@ describe('Cron due-source selection', () => {
     expect(selectDueSource(sources, '2026-07-25T00:16:00.000Z')?.id).toBe('src_2')
   })
 
+  it('backs off and staggers failed feeds, then stops automatic attempts', () => {
+    const sources = [
+      source({ id: 'src_1', sync: { consecutiveFailures: 1 } }),
+      source({ id: 'src_2', sync: { consecutiveFailures: 1 } }),
+      source({ id: 'src_3', sync: { consecutiveFailures: 8 } }),
+    ]
+    expect(selectDueSource(sources, '2026-07-25T00:30:00.000Z')).toBeUndefined()
+    expect(selectDueSource(sources, '2026-07-25T00:30:01.000Z')?.id).toBe('src_1')
+    expect(selectDueSource(sources.slice(1), '2026-07-25T00:30:01.000Z')).toBeUndefined()
+    expect(selectDueSource(sources.slice(1), '2026-07-25T00:30:02.000Z')?.id).toBe('src_2')
+    expect(selectDueSource(sources.slice(2), '2026-08-01T00:00:00.000Z')).toBeUndefined()
+  })
+
   it('refreshes one due source from the scheduled Worker handler', async () => {
     const line = `ss://${btoa('aes-128-gcm:password')}@cron.example.com:8388#Cron`
     const fetcher = vi.fn(async () => new Response(line))

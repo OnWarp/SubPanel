@@ -11,16 +11,20 @@ export type RemoteErrorCode =
   | 'REMOTE_HTTP_ERROR'
   | 'REMOTE_BODY_TOO_LARGE'
   | 'REMOTE_TIMEOUT'
+  | 'REMOTE_CANCELLED'
   | 'REMOTE_BODY_INVALID'
   | 'REMOTE_FETCH_FAILED'
 
 export class RemoteFetchError extends Error {
   readonly code: RemoteErrorCode
 
-  constructor(code: RemoteErrorCode) {
+  readonly httpStatus?: number
+
+  constructor(code: RemoteErrorCode, httpStatus?: number) {
     super(code)
     this.name = 'RemoteFetchError'
     this.code = code
+    this.httpStatus = httpStatus
   }
 }
 
@@ -200,7 +204,7 @@ function cancelBody(response: Response): void {
 
 type RemoteTextResult =
   | { notModified: true }
-  | { notModified: false; text: string; etag: string | null; lastModified: string | null }
+  | { notModified: false; text: string; status: number; etag: string | null; lastModified: string | null }
 
 export async function fetchRemoteText(
   request: { url: string; headers: Record<string, string> },
@@ -215,10 +219,12 @@ export async function fetchRemoteTextWithMetadata(
   encryptedSafeRequest: { url: string; headers: Record<string, string> },
   fetcher: typeof fetch = fetch,
   timeoutMs = REMOTE_TIMEOUT_MS,
+  cancellation?: AbortSignal,
 ): Promise<RemoteTextResult> {
   let current = validateRemoteUrl(encryptedSafeRequest.url)
   let headers = validateRemoteHeaders(encryptedSafeRequest.headers)
-  const signal = AbortSignal.timeout(timeoutMs)
+  const deadline = AbortSignal.timeout(timeoutMs)
+  const signal = cancellation ? AbortSignal.any([deadline, cancellation]) : deadline
 
   for (let redirects = 0; ; redirects += 1) {
     let response: Response
@@ -226,6 +232,7 @@ export async function fetchRemoteTextWithMetadata(
       if (signal.aborted) fail('REMOTE_TIMEOUT')
       response = await withDeadline(signal, fetcher(current.href, { headers, redirect: 'manual', signal }))
     } catch (error) {
+      if (cancellation?.aborted) fail('REMOTE_CANCELLED')
       if (signal.aborted || isAbortError(error)) fail('REMOTE_TIMEOUT')
       fail('REMOTE_FETCH_FAILED')
     }
@@ -251,10 +258,11 @@ export async function fetchRemoteTextWithMetadata(
     }
     if (response.status < 200 || response.status >= 300) {
       cancelBody(response)
-      fail('REMOTE_HTTP_ERROR')
+      throw new RemoteFetchError('REMOTE_HTTP_ERROR', response.status)
     }
     return {
       notModified: false,
+      status: response.status,
       text: await readBoundedBody(response, signal),
       etag: response.headers.get('ETag'),
       lastModified: response.headers.get('Last-Modified'),

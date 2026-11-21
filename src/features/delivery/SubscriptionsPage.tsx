@@ -49,6 +49,7 @@ type SubscriptionForm = {
 }
 
 type ExpiryFilter = 'all' | ExpiryKind | '7' | '15' | '30'
+type OutputPreview = { planGroupIds: string[]; authorizedGroupIds: string[]; outputNodes: number }
 type FieldErrors = { startsAt?: string; expiresAt?: string }
 
 type DrawerState = 'create' | { kind: 'edit' | 'details'; subscription: AdminSubscription }
@@ -164,6 +165,22 @@ export function SubscriptionsPage() {
   const [bindingAttempt, setBindingAttempt] = useState(0)
   const editing = drawer === 'create' || (drawer !== null && drawer.kind === 'edit')
 
+  const [outputPreview, setOutputPreview] = useState<OutputPreview | null>(null)
+  useEffect(() => {
+    setOutputPreview(null)
+    if (!editing) return
+    const abort = new AbortController()
+    const handle = window.setTimeout(() => {
+      void api<OutputPreview>('/api/admin/subscriptions/output-preview', {
+        method: 'POST',
+        signal: abort.signal,
+        body: jsonBody({ planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient }),
+      }).then((preview) => { if (!abort.signal.aborted) setOutputPreview(preview) })
+        .catch(() => { if (!abort.signal.aborted) setOutputPreview(null) })
+    }, 200)
+    return () => { window.clearTimeout(handle); abort.abort() }
+  }, [editing, form.defaultClient, form.groupIds, form.planId])
+
   useEffect(() => {
     if (drawer === null || (drawer !== 'create' && drawer.kind !== 'edit')) return
     const abort = new AbortController()
@@ -191,6 +208,23 @@ export function SubscriptionsPage() {
     return () => abort.abort()
   }, [drawer, bindingAttempt])
 
+  const [resetTarget, setResetTarget] = useState<AdminSubscription | null>(null)
+  const [batchPlanOpen, setBatchPlanOpen] = useState(false)
+  const [batchPlanId, setBatchPlanId] = useState('')
+  const [batchBindingOpen, setBatchBindingOpen] = useState(false)
+  const [batchBindingValue, setBatchBindingValue] = useState('inherit')
+  const [batchTemplates, setBatchTemplates] = useState<SubscriptionTemplate[]>([])
+  const [batchBindingError, setBatchBindingError] = useState('')
+
+  const openBatchBinding = () => {
+    setBatchBindingValue('inherit')
+    setBatchBindingError('')
+    setBatchTemplates([])
+    setBatchBindingOpen(true)
+    void loadSubscriptionTemplates(false).then(({ templates }) => {
+      setBatchTemplates(templates.filter((template) => template.publishedVersionId))
+    }).catch((cause) => setBatchBindingError(errorMessage(cause, '加载附加配置失败')))
+  }
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [progress, setProgress] = useState('')
   const [transfer, setTransfer] = useState<AdminSubscription | null>(null)
@@ -398,6 +432,22 @@ export function SubscriptionsPage() {
     }
   }
 
+  const copySubscription = useCallback(async (subscription: AdminSubscription) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>(`/api/admin/subscriptions/${subscription.id}/copy`, { method: 'POST', body: '{}' })
+      setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
+      setMessage('订阅已复制')
+      await load()
+    } catch (cause) {
+      setError(errorMessage(cause, '复制订阅失败'))
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, load])
+
   const resetToken = async (subscription: AdminSubscription) => {
     if (busy) return
     setBusy(true)
@@ -447,9 +497,32 @@ export function SubscriptionsPage() {
     }
   }
 
+  const runServerBatch = async (body: Record<string, unknown>, success: string) => {
+    const ids = [...selected]
+    if (!ids.length) return
+    setBatchPlanOpen(false)
+    setBatchBindingOpen(false)
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await api<{ ok: string[]; failed: Array<{ id: string; message: string }> }>('/api/admin/subscriptions/batch', { method: 'POST', body: jsonBody({ ids, ...body }) })
+      await load()
+      setSelected(new Set(result.failed.map((item) => item.id)))
+      if (result.failed.length) setError(`${result.failed.length} 项未完成：${result.failed[0]?.message ?? '请求失败'}`)
+      else setMessage(success)
+    } catch (cause) {
+      setError(errorMessage(cause, '批量操作失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const actions: BatchAction[] = [
     { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
     { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setConfirmAction('disable') },
+    { key: 'plan', label: '更换计划', onClick: () => { setBatchPlanId(''); setBatchPlanOpen(true) } },
+    { key: 'binding', label: '更换配置', onClick: openBatchBinding },
     { key: 'delete', label: '删除', icon: Trash2, tone: 'danger', onClick: () => setConfirmAction('delete') },
   ]
 
@@ -501,8 +574,8 @@ export function SubscriptionsPage() {
       header: '状态',
       width: 108,
       render: (subscription) => (
-        <StatusBadge tone={subscription.enabled ? 'success' : 'muted'} size="sm">
-          {subscription.enabled ? '正常' : '已停用'}
+        <StatusBadge tone={(subscription.status ? subscription.status === 'active' : subscription.enabled) ? 'success' : 'muted'} size="sm">
+          {subscription.statusLabel ?? (subscription.enabled ? '正常' : '已停用')}
         </StatusBadge>
       ),
     },
@@ -552,12 +625,13 @@ export function SubscriptionsPage() {
             setDrawer({ kind: 'details', subscription })
           } },
           { label: '编辑', onClick: () => openEdit(subscription) },
+          { label: '复制订阅', disabled: busy, onClick: () => { void copySubscription(subscription) } },
           { label: '转移', onClick: () => { setTargetUser(subscription.userId ?? ''); setTransfer(subscription); setDrawerError('') } },
           { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: () => { setSharing(subscription); setShareUrl('') } },
         ]} />
       ),
     },
-  ], [busy, groupNames, selected, subscriptions, userNames])
+  ], [busy, copySubscription, groupNames, selected, subscriptions, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
   const detailsId = details?.id
@@ -608,39 +682,53 @@ export function SubscriptionsPage() {
         <button className="button primary" type="submit" form="subscription-edit-form" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button>
       </>}>
         <form id="subscription-edit-form" className="form-stack sp-form-stack" onSubmit={saveSubscription}>
+          {drawer === 'create' ? <nav className="sub-wizard" aria-label="创建步骤">
+            {([
+              ['subscription-wizard-user', '用户'],
+              ['subscription-wizard-plan', '计划'],
+              ['subscription-wizard-groups', '分组'],
+              ['subscription-wizard-window', '生效与到期'],
+              ['subscription-wizard-client', '客户端'],
+              ['subscription-wizard-binding', '配置'],
+              ['subscription-wizard-confirm', '确认'],
+            ] as const).map(([id, label]) => (
+              <button key={id} className="button secondary" type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: 'start' })}>{label}</button>
+            ))}
+          </nav> : null}
           <FormGroup title="基本信息" id="subscription-edit-basic">
-            {editing && <TemplateBinding value={form.templateBinding ?? bindingData?.initial ?? INHERITED_TEMPLATE_BINDING}
-              onChange={(templateBinding) => setForm((current) => ({ ...current, templateBinding }))}
-              options={bindingData?.options ?? []} effective={bindingData?.effective ?? null} busy={busy || bindingLoading}
-              error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
             <FormField label="订阅名称" htmlFor="subscription-name">
               <Input id="subscription-name" aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required />
             </FormField>
-            <FormField label="所属用户" htmlFor="subscription-user">
-              <FormSelect id="subscription-user" aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
-            </FormField>
-            <FormField label="订阅计划" htmlFor="subscription-plan">
-              <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
-                const plan = plans.find(item => item.id === event.currentTarget.value)
-                setForm(current => ({
-                  ...current, planId: plan?.id ?? '',
-                  groupIds: plan ? [...plan.groupIds] : current.groupIds,
-                  expiresAt: plan && drawer === 'create'
-                    ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
-                    : current.expiresAt,
-                }))
-              }}>
-                <option value="">未分配计划</option>
-                {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
-              </FormSelect>
-            </FormField>
-            <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
-            <FormField label="默认客户端" htmlFor="subscription-client">
-              <FormSelect id="subscription-client" aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect>
-            </FormField>
-            <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
+            <div id="subscription-wizard-user">
+              <FormField label="所属用户" htmlFor="subscription-user">
+                <FormSelect id="subscription-user" aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
+              </FormField>
+            </div>
+            <div id="subscription-wizard-plan">
+              <FormField label="订阅计划" htmlFor="subscription-plan">
+                <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
+                  const plan = plans.find(item => item.id === event.currentTarget.value)
+                  setForm(current => ({
+                    ...current, planId: plan?.id ?? '',
+                    groupIds: plan ? [...plan.groupIds] : current.groupIds,
+                    expiresAt: plan && drawer === 'create'
+                      ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
+                      : current.expiresAt,
+                  }))
+                }}>
+                  <option value="">未分配计划</option>
+                  {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+                </FormSelect>
+              </FormField>
+            </div>
+            <fieldset id="subscription-wizard-groups" className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
+            <div className="sub-preview" aria-live="polite">
+              <span>计划允许的组 {outputPreview ? (outputPreview.planGroupIds.map((id) => groupNames.get(id) ?? id).join('、') || '无') : '—'}</span>
+              <span>实际选中的组 {form.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '无'}</span>
+              <span>预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
+            </div>
           </FormGroup>
-          <FormGroup title="有效期" id="subscription-edit-expiry">
+          <FormGroup title="有效期" id="subscription-wizard-window">
             <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
               <DateTimeInput id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
                 const startsAt = event.currentTarget.value
@@ -665,6 +753,28 @@ export function SubscriptionsPage() {
               </div>
             </FormField>
           </FormGroup>
+          <FormGroup title="客户端与配置" id="subscription-wizard-client">
+            <FormField label="默认客户端" htmlFor="subscription-client">
+              <FormSelect id="subscription-client" aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect>
+            </FormField>
+            <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
+            <div id="subscription-wizard-binding">
+              {editing && <TemplateBinding value={form.templateBinding ?? bindingData?.initial ?? INHERITED_TEMPLATE_BINDING}
+                onChange={(templateBinding) => setForm((current) => ({ ...current, templateBinding }))}
+                options={bindingData?.options ?? []} effective={bindingData?.effective ?? null} busy={busy || bindingLoading}
+                error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
+            </div>
+          </FormGroup>
+          {drawer === 'create' ? <section id="subscription-wizard-confirm" className="sub-preview" aria-label="确认">
+            <strong>确认</strong>
+            <span>{form.name.trim() || '未命名'}</span>
+            <span>{users.find((user) => user.id === form.userId)?.username ?? '未分配'}</span>
+            <span>{plans.find((plan) => plan.id === form.planId)?.name ?? '未分配计划'}</span>
+            <span>{form.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</span>
+            <span>{form.startsAt || '立即生效'} → {form.expiresAt || '永久有效'}</span>
+            <span>{CLIENT_LABELS[form.defaultClient]} · {BINDING_MODE_LABELS[form.templateBinding?.mode ?? 'inherit']}</span>
+            <span>预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
+          </section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </form>
       </EditDrawer>
@@ -672,9 +782,9 @@ export function SubscriptionsPage() {
       <EditDrawer
         open={details !== null}
         title={details?.name ?? '订阅详情'}
-        headerStatus={details && <StatusBadge tone={details.enabled ? 'success' : 'muted'} size="sm">{details.enabled ? '正常' : '已停用'}</StatusBadge>}
+        headerStatus={details && <StatusBadge tone={(details.status ? details.status === 'active' : details.enabled) ? 'success' : 'muted'} size="sm">{details.statusLabel ?? (details.enabled ? '正常' : '已停用')}</StatusBadge>}
         headerActions={details && <ResourceRowActions actions={[
-          { label: '重置令牌', disabled: busy, onClick: () => resetToken(details) },
+          { label: '重置令牌', disabled: busy, onClick: () => setResetTarget(details) },
         ]} />}
         busy={busy}
         size="wide"
@@ -711,6 +821,14 @@ export function SubscriptionsPage() {
               summary: `输入 ${diagnostic.inputNodes} · 输出 ${diagnostic.outputNodes} · 跳过 ${diagnostic.skippedNodes}`,
               items: diagnostic.diagnostics,
             }))}
+            lifecycle={details.statusLabel ? { label: details.statusLabel, reason: details.statusReason, fix: details.statusFix } : undefined}
+            onFix={() => openEdit(details)}
+            expiry={details.expiresAt === null ? '永久有效' : formatExpiryTime(details.expiresAt)}
+            authorizedNodeCount={details.authorizedNodeCount}
+            capabilityLabel={details.formats?.find((item) => item.platform === client)?.capabilityLabel ?? null}
+            formatNote={details.formats?.find((item) => item.platform === client)?.note ?? null}
+            fetchSummary={details.fetch ?? null}
+            configVersion={details.configVersion ? `v${details.configVersion}` : null}
           />
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </> : null}
@@ -745,6 +863,21 @@ export function SubscriptionsPage() {
       </ConfirmDialog>
 
       <ConfirmDialog open={confirmAction !== null} title={confirmAction === 'delete' ? '删除订阅' : '停用订阅'} description={confirmAction === 'delete' ? `将删除选中的 ${selected.size} 个订阅及其已编译内容` : `将停用选中的 ${selected.size} 个订阅，现有链接将停止提供内容`} confirmLabel={confirmAction === 'delete' ? '确认删除' : '确认停用'} danger busy={busy} onClose={() => setConfirmAction(null)} onConfirm={() => executeBatch(confirmAction ?? 'disable')} />
+      <ConfirmDialog open={resetTarget !== null} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} onClose={() => setResetTarget(null)} onConfirm={() => { const target = resetTarget; setResetTarget(null); if (target) void resetToken(target) }} />
+      <ConfirmDialog open={batchPlanOpen} title="更换计划" description="选中的订阅将改用同一计划" confirmLabel="确认更换" busy={busy} onClose={() => setBatchPlanOpen(false)} onConfirm={() => { if (!batchPlanId) { setError('请选择计划'); return } void runServerBatch({ action: 'plan', planId: batchPlanId }, '计划已更换') }}>
+        <FormSelect aria-label="目标计划" value={batchPlanId} onChange={(event) => setBatchPlanId(event.currentTarget.value)}>
+          <option value="">选择计划</option>
+          {plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+        </FormSelect>
+      </ConfirmDialog>
+      <ConfirmDialog open={batchBindingOpen} title="更换配置" description="选中的订阅将改用同一转换配置绑定" confirmLabel="确认更换" busy={busy} onClose={() => setBatchBindingOpen(false)} onConfirm={() => { void runServerBatch({ action: 'binding', templateBinding: batchBindingValue === 'inherit' || batchBindingValue === 'base' ? { mode: batchBindingValue } : { mode: 'specific', templateId: batchBindingValue } }, '配置绑定已更换') }}>
+        <FormSelect aria-label="配置绑定" value={batchBindingValue} onChange={(event) => setBatchBindingValue(event.currentTarget.value)}>
+          <option value="inherit">继承默认</option>
+          <option value="base">基础配置</option>
+          {batchTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+        </FormSelect>
+        {batchBindingError ? <StatusMessage tone="error">{batchBindingError}</StatusMessage> : null}
+      </ConfirmDialog>
     </div>
   )
 }

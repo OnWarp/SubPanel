@@ -1,4 +1,5 @@
 import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { apiError } from '../platform/api-error.js'
 import { persistCatalogSnapshot, readCatalogFromD1 } from './d1-repository.js'
 import {
   catalogSnapshotSchema,
@@ -61,7 +62,24 @@ export async function writeCatalog(
 ): Promise<CatalogSnapshot> {
   const next = prepareCatalogWrite(snapshot, now)
   // One backend only: the import flag selects D1, and its absence keeps KV.
-  if (await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) await persistCatalogSnapshot(env.DB, next)
-  else await writeCatalogKv(env.DATA, JSON.stringify(next))
+  if (await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) {
+    try {
+      await persistCatalogSnapshot(env.DB, next, snapshot.revision)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
+        throw apiError(409, 'CATALOG_WRITE_CONFLICT', '目录已更新，请重新加载后再试')
+      }
+      if (error instanceof Error && error.message.includes('CHECK constraint failed: length(key) > 0')) {
+        throw apiError(409, 'GROUP_IN_USE', '请先在计划和订阅中更换或移除此分组')
+      }
+      throw error
+    }
+  } else {
+    const current = await readCatalogKv(env.DATA)
+    if (current.revision !== 0 && current.revision !== snapshot.revision) {
+      throw apiError(409, 'CATALOG_WRITE_CONFLICT', '目录已更新，请重新加载后再试')
+    }
+    await writeCatalogKv(env.DATA, JSON.stringify(next))
+  }
   return next
 }

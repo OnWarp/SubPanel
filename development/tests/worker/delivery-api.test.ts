@@ -2,6 +2,8 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import worker from '../../../worker/index'
 import { createFixtureAccount } from './helpers'
 import { createShare, exportShare } from '../../../worker/shares/service'
+import { compiledKey } from '../../../worker/delivery/repository'
+import { hashToken } from '../../../worker/platform/crypto'
 import { runCron } from '../../../worker/operations/cron'
 import { env, exports } from 'cloudflare:workers'
 import { parse as parseYaml } from 'yaml'
@@ -497,7 +499,36 @@ describe('Delivery APIs and public subscriptions', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${forever.token}/mihomo`)).status).toBe(200)
   }, 30_000)
 
-  it('removes deleted group references from subscriptions', async () => {
+  it('previews the plan intersection and invalidates only subscriptions whose ordered selection changes', async () => {
+    const admin = await login()
+    const affected = await createCatalogGroup(admin, ssLine('Changed', 'changed.example.com'))
+    const unaffected = await createCatalogGroup(admin, ssLine('Unchanged', 'unchanged.example.com'))
+    async function create(name: string, { planId, groupId }: typeof affected) {
+      const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`,
+        jsonRequest({ userId: 'usr_1', name, planId, groupIds: [groupId] }, withCookie(admin)))
+      expect(response.status).toBe(201)
+      return response.json<{ subscription: { id: string }; token: string }>()
+    }
+    const changed = await create('Changed', affected)
+    const untouched = await create('Untouched', unaffected)
+    const changeKey = compiledKey(await hashToken(changed.token), 'mihomo')
+    const untouchedKey = compiledKey(await hashToken(untouched.token), 'mihomo')
+    const cached = await env.DATA.get(untouchedKey)
+    expect(await env.DATA.get(changeKey)).not.toBeNull()
+    expect(cached).not.toBeNull()
+
+    const input = { name: 'Changed', sourceIds: [], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [] }
+    const preview = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/preview`,
+      jsonRequest({ input, groupId: affected.groupId, subscriptionId: changed.subscription.id, client: 'mihomo' }, withCookie(admin)))
+    expect(await preview.json()).toMatchObject({ affectedSubscriptions: 1, entitlement: { authorizedNodeIds: [], outputNodes: 0 } })
+    const saved = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/${affected.groupId}`,
+      jsonRequest(input, { ...withCookie(admin), method: 'PUT' }))
+    expect(saved.status).toBe(200)
+    expect(await env.DATA.get(changeKey)).toBeNull()
+    expect(await env.DATA.get(untouchedKey)).toBe(cached)
+  })
+
+  it('protects groups used by an enabled plan and subscription', async () => {
     const admin = await login()
     const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
@@ -505,9 +536,9 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Group lifecycle', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const subscriptionId = (await created.json() as { subscription: { id: string } }).subscription.id
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/${groupId}`, jsonRequest({}, { ...withCookie(admin), method: 'DELETE' }))).status).toBe(204)
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/${groupId}`, jsonRequest({}, { ...withCookie(admin), method: 'DELETE' }))).status).toBe(409)
     const listed = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, withCookie(admin))).json() as { subscriptions: Array<{ id: string; groupIds: string[] }> }
-    expect(listed.subscriptions.find((item) => item.id === subscriptionId)?.groupIds).toEqual([])
+    expect(listed.subscriptions.find((item) => item.id === subscriptionId)?.groupIds).toEqual([groupId])
   })
 })
 

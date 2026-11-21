@@ -2,7 +2,9 @@ import { env } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { readCatalog, writeCatalog } from '../../../worker/catalog/repository'
 import {
+  cancelSourceSync,
   createSource,
+  previewSourceSync,
   refreshSource,
   replaceSourceContent,
   summarizeSources,
@@ -103,13 +105,14 @@ describe('catalog import service', () => {
       .resolves.toMatchObject({ success: true, source: { enabled: false, remoteHost: undefined } })
   })
 
-  it('merges identical identities from two sources while retaining both raw variants', async () => {
+  it('isolates identical identities and raw variants by source', async () => {
     await createSource(env, { type: 'manual', name: 'One', content: ssLine('One') }, { now: NOW })
     await createSource(env, { type: 'file', name: 'Two', content: ssLine('Two') }, { now: NOW })
     const catalog = await readCatalog(env)
-    expect(catalog.nodes).toHaveLength(1)
-    expect(catalog.nodes[0].sourceIds).toEqual(['src_1', 'src_2'])
-    expect(catalog.nodes[0].rawVariants.map(({ sourceId }) => sourceId)).toEqual(['src_1', 'src_2'])
+    expect(catalog.nodes).toHaveLength(2)
+    expect(catalog.nodes.map(({ sourceIds }) => sourceIds)).toEqual([['src_1'], ['src_2']])
+    expect(catalog.nodes[0].sourceFingerprint).toBe(catalog.nodes[1].sourceFingerprint)
+    expect(catalog.nodes.map(({ rawVariants }) => rawVariants.map(({ sourceId }) => sourceId))).toEqual([['src_1'], ['src_2']])
   })
 
   it('keeps separate nodes when authentication or transport differs', async () => {
@@ -134,8 +137,8 @@ describe('catalog import service', () => {
 
     await replaceSourceContent(env, first.source.id, shared, { now: '2026-07-23T01:00:00.000Z' })
     const catalog = await readCatalog(env)
-    expect(catalog.nodes).toHaveLength(2)
-    expect(catalog.nodes.find(({ server }) => server === 'ss.example.com')?.sourceIds).toEqual(['src_1', 'src_2'])
+    expect(catalog.nodes).toHaveLength(3)
+    expect(catalog.nodes.filter(({ server }) => server === 'ss.example.com').map(({ sourceIds }) => sourceIds)).toEqual([['src_1'], ['src_2']])
     expect(catalog.nodes.find(({ server }) => server === 'retained.example.com')).toMatchObject({ sourceIds: [], rawVariants: [] })
   })
 
@@ -213,7 +216,7 @@ describe('catalog import service', () => {
     expect((await readCatalog(env)).nodes).toEqual(before.nodes)
   })
 
-  it('clears source nodes when a remote refresh fails with keepOnFailure disabled', async () => {
+  it('keeps last-good nodes even if the legacy keepOnFailure setting was disabled', async () => {
     const { source } = await createRemoteSource(true)
     await updateSource(env, source.id, { keepOnFailure: false })
     await updateSource(env, source.id, { name: 'Renamed source' })
@@ -227,7 +230,7 @@ describe('catalog import service', () => {
     })
     const after = await readCatalog(env)
     expect(after.sources[0].lastErrorCode).toBe('IMPORT_ZERO_NODES')
-    expect(after.nodes).toEqual([])
+    expect(after.nodes).toHaveLength(1)
   })
 
   it('keeps retained nodes after a failed refresh with keepOnFailure disabled', async () => {
@@ -238,29 +241,71 @@ describe('catalog import service', () => {
     await writeCatalog(env, before, NOW)
 
     expect((await failRemoteRefresh(source.id)).success).toBe(false)
-    expect((await readCatalog(env)).nodes).toEqual([
-      { ...node, sourceIds: [], rawVariants: [], updatedAt: REFRESH_AT },
-    ])
+    expect((await readCatalog(env)).nodes).toEqual([node])
   })
 
-  it('preserves other sources when a failed refresh clears the remote source', async () => {
+  it('preserves both independently imported sources after a network error', async () => {
     const shared = ssLine('Shared node')
     const { source } = await createRemoteSource(false, shared)
-    const other = await createSource(env, {
+    await createSource(env, {
       type: 'manual',
       name: 'Other source',
       content: `${shared}\n${ssLine('Other node', 'other', 'other.example.com')}`,
     }, { now: NOW })
     const before = await readCatalog(env)
-    const [sharedNode, otherNode] = before.nodes
-
+    expect(before.nodes.filter(({ server }) => server === 'ss.example.com')).toHaveLength(2)
     expect((await failRemoteRefresh(source.id)).success).toBe(false)
-    expect((await readCatalog(env)).nodes).toEqual([{
-      ...sharedNode,
-      sourceIds: [other.source.id],
-      rawVariants: sharedNode.rawVariants.filter(({ sourceId }) => sourceId === other.source.id),
-      updatedAt: REFRESH_AT,
-    }, otherNode])
+    expect((await readCatalog(env)).nodes).toEqual(before.nodes)
+  })
+
+  it('keeps manual naming and order through remote disappearance and recovery', async () => {
+    const first = ssLine('Source name')
+    const other = ssLine('Second', 'other', 'other.example.com')
+    const { source } = await createRemoteSource(true, `${first}\n${other}`)
+    const catalog = await readCatalog(env)
+    Object.assign(catalog.nodes[0], { displayName: 'Administrator name', displayNameOverride: 'Administrator name', order: 9 })
+    await writeCatalog(env, catalog, NOW)
+    const sync = (now: string, content: string) => refreshSource(env, source.id, { now, fetcher: async () => new Response(content) })
+
+    await sync(REFRESH_AT, other)
+    expect((await readCatalog(env)).nodes[0]).toMatchObject({ id: 'node_1', order: 9, missingSince: REFRESH_AT, lastSeenAt: NOW })
+    const restoredAt = '2026-07-23T02:00:00.000Z'
+    await sync(restoredAt, `${other}\n${ssLine('Source rename')}`)
+    const restored = (await readCatalog(env)).nodes[0]
+    expect(restored).toMatchObject({ id: 'node_1', displayName: 'Administrator name', order: 9, lastSeenAt: restoredAt })
+    expect(restored.missingSince).toBeUndefined()
+
+    await sync('2026-07-23T03:00:00.000Z', other)
+    await sync('2026-07-24T03:00:00.000Z', other)
+    expect((await readCatalog(env)).nodes.map(({ id }) => id)).toEqual(['node_2'])
+  })
+
+  it('limits one operation per source and records cancellation without changing catalog data', async () => {
+    const { source } = await createRemoteSource(true)
+    const original = await readCatalog(env)
+    let started!: () => void
+    const ready = new Promise<void>((resolve) => { started = resolve })
+    const pending = previewSourceSync(env, source.id, { fetcher: async (_url, init) => {
+      started()
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      })
+    } })
+    const cancelled = expect(pending).rejects.toThrow('REMOTE_CANCELLED')
+    await ready
+    await expect(previewSourceSync(env, source.id)).rejects.toThrow('CATALOG_SYNC_BUSY')
+    expect(await cancelSourceSync(env, source.id)).toBe(true)
+    await cancelled
+    expect(await readCatalog(env)).toEqual(original)
+    expect(await env.DB.prepare("SELECT status FROM catalog_sync_runs WHERE status = 'cancelled'").first()).toEqual({ status: 'cancelled' })
+  })
+
+  it('rejects an update based on an older D1 catalog revision', async () => {
+    const { source } = await createRemoteSource(true)
+    const stale = await readCatalog(env)
+    await updateSource(env, source.id, { name: 'Saved first' })
+    await expect(writeCatalog(env, stale)).rejects.toMatchObject({ status: 409 })
+    expect((await readCatalog(env)).sources[0].name).toBe('Saved first')
   })
 
   it('rejects an import that would exceed 100 nodes', async () => {

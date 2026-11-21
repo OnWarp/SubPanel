@@ -70,6 +70,9 @@ test.describe.serial('Administrator frontend', () => {
   test('keeps an edit drawer open when Escape is pressed during save', async ({ page }) => {
     await loginAdmin(page)
     await openNodeSection(page, '来源')
+    await page.route('**/api/admin/catalog/sources/*/preview-diff', (route) => route.fulfill({
+      status: 422, json: { error: { code: 'REMOTE_FETCH_FAILED', message: '远程来源请求失败' } },
+    }))
     let finishSave!: () => void
     const saveGate = new Promise<void>((resolve) => { finishSave = resolve })
     await page.route('**/api/admin/catalog/sources', async (route) => {
@@ -82,7 +85,7 @@ test.describe.serial('Administrator frontend', () => {
     const drawer = page.getByRole('dialog', { name: '添加来源' })
     await drawer.getByLabel('来源名称').fill('Slow source')
     await drawer.getByLabel('来源类型').click()
-    await drawer.getByRole('option', { name: '远程', exact: true }).click()
+    await drawer.getByRole('option', { name: '远程订阅', exact: true }).click()
     await drawer.getByLabel('远程 URL').fill('https://slow.example.com/subscription')
     await drawer.getByRole('button', { name: '保存来源' }).click()
     await expect(drawer.getByRole('button', { name: '保存中' })).toBeVisible()
@@ -99,7 +102,7 @@ test.describe.serial('Administrator frontend', () => {
     const drawer = page.getByRole('dialog', { name: '添加来源' })
     await drawer.getByLabel('来源名称').fill('File source')
     await drawer.getByLabel('来源类型').click()
-    await drawer.getByRole('option', { name: '文件', exact: true }).click()
+    await drawer.getByRole('option', { name: '文件导入', exact: true }).click()
     const content = 'ss://YWVzLTEyOC1nY206cGFzc3dvcmQ@file.example.com:8388#File'
     await drawer.locator('input[type="file"]').setInputFiles({ name: 'nodes.txt', mimeType: 'text/plain', buffer: Buffer.from(content) })
     await expect(drawer.getByLabel('来源内容')).toHaveValue(content)
@@ -148,40 +151,29 @@ test.describe.serial('Administrator frontend', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 
-  test('reports a failed result from a batch source refresh', async ({ page }) => {
+  test('reports a failed batch refresh preview without confirming it', async ({ page }) => {
     await loginAdmin(page)
     const now = new Date().toISOString()
     let finishRefresh!: () => void
     const refreshGate = new Promise<void>((resolve) => { finishRefresh = resolve })
-    await page.route('**/api/admin/catalog/sources/src_1/refresh', async (route) => {
+    await page.route('**/api/admin/catalog/sources/src_1/preview-diff', async (route) => {
       await refreshGate
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: false, source: { id: 'src_1', name: 'Remote source', type: 'remote', enabled: true, warnings: [], updatedAt: now, createdAt: now } }),
-      })
+      await route.fulfill({ status: 422, json: { error: { code: 'REMOTE_HTTP_ERROR', message: '来源返回 HTTP 错误' } } })
     })
-    await page.route('**/api/admin/catalog', (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        schemaVersion: 2,
-        revision: 1,
-        updatedAt: now,
-        sources: [{ id: 'src_1', name: 'Remote source', type: 'remote', enabled: true, refreshIntervalMinutes: 60, warnings: [], updatedAt: now, createdAt: now }],
-        nodes: [],
-        groups: [],
-      }),
-    }))
+    await page.route('**/api/admin/catalog', (route) => route.fulfill({ json: {
+      schemaVersion: 2, revision: 1, updatedAt: now,
+      sources: [{ id: 'src_1', name: 'Remote source', type: 'remote', enabled: true, refreshIntervalMinutes: 60, warnings: [], updatedAt: now, createdAt: now }],
+      nodes: [], groups: [],
+    } }))
     await page.goto('/catalog/sources')
     const section = page.locator('section[aria-labelledby="sources-title"]')
-    const checkbox = section.getByRole('row').nth(1).getByRole('checkbox', { name: /选择来源/ })
-    await checkbox.check()
+    await section.getByRole('checkbox', { name: '选择来源 Remote source' }).check()
     await section.getByRole('toolbar', { name: '批量操作' }).getByRole('button', { name: '刷新' }).click()
-    await expect(checkbox).toBeDisabled()
+    const drawer = page.getByRole('dialog', { name: '同步差异预览' })
+    await expect(drawer.getByRole('button', { name: '确认同步' })).toBeDisabled()
     finishRefresh()
-    await expect(page.getByRole('alert')).toContainText('1 项未完成')
-    await expect(page.getByText('批量操作已完成', { exact: true })).toHaveCount(0)
+    await expect(drawer.getByRole('alert')).toContainText('来源返回 HTTP 错误')
+    await expect(drawer.getByRole('button', { name: '确认同步' })).toBeDisabled()
   })
 
   test('allows safe edits to remote source settings without exposing stored secrets', async ({ page }) => {
@@ -189,81 +181,62 @@ test.describe.serial('Administrator frontend', () => {
     const now = new Date().toISOString()
     const source = { id: 'src_42', name: 'Remote source', type: 'remote', enabled: true, keepOnFailure: true, refreshIntervalMinutes: 60, remoteHost: 'remote.example.com', warnings: [], updatedAt: now, createdAt: now }
     let updateBody: Record<string, unknown> | null = null
-    await page.route('**/api/admin/catalog', (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ schemaVersion: 2, revision: 1, updatedAt: now, sources: [source], nodes: [], groups: [] }),
-    }))
+    await page.route('**/api/admin/catalog', (route) => route.fulfill({ json: { schemaVersion: 2, revision: 1, updatedAt: now, sources: [source], nodes: [], groups: [] } }))
     await page.route('**/api/admin/catalog/sources/src_42', async (route) => {
       if (route.request().method() === 'PUT') {
-        updateBody = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
-        if (typeof updateBody.keepOnFailure === 'boolean') source.keepOnFailure = updateBody.keepOnFailure
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, source }) })
+        updateBody = route.request().postDataJSON() as Record<string, unknown>
+        await route.fulfill({ json: { success: true, source } })
       } else await route.continue()
     })
     await page.goto('/catalog/sources')
     const drawer = page.getByRole('dialog', { name: '编辑来源' })
     const row = page.getByRole('row', { name: /Remote source/ })
-    const more = row.getByRole('button', { name: '更多操作' })
-    await more.click()
-    const toggle = row.getByRole('button', { name: '拉取失败时保留节点' })
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-    await toggle.click()
-    await expect.poll(() => updateBody).toEqual({ keepOnFailure: false })
-    await more.click()
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await row.getByRole('button', { name: '更多操作' }).click()
     await row.getByRole('button', { name: '编辑' }).click()
     await drawer.getByText('高级设置', { exact: true }).click()
-    const keepOnFailure = drawer.getByRole('switch', { name: '拉取失败时保留节点' })
-    await expect(keepOnFailure).not.toBeChecked()
-    await drawer.getByText('拉取失败时保留节点', { exact: true }).click()
-    await expect(keepOnFailure).toBeChecked()
-    await expect(drawer.getByLabel('远程 URL')).toBeEnabled()
-    await expect(drawer.getByLabel('请求 Headers')).toBeEnabled()
+    await expect(drawer.getByText('同步失败时保留上次成功导入的节点')).toBeVisible()
+    await expect(drawer.getByLabel('远程 URL')).toHaveValue('')
+    await expect(drawer.getByLabel('请求 Headers')).toHaveValue('')
     await drawer.getByLabel('远程 URL').fill('https://new.example.com/source')
     await drawer.getByLabel('请求 Headers').fill('{}')
     await drawer.getByLabel('刷新周期').fill('120')
+    await drawer.getByLabel('导入格式').click()
+    await drawer.getByRole('option', { name: 'Mihomo' }).click()
     await drawer.getByRole('button', { name: '保存修改' }).click()
     await expect.poll(() => updateBody).toEqual({
-      name: 'Remote source',
-      enabled: true,
-      keepOnFailure: true,
-      url: 'https://new.example.com/source',
-      headers: {},
-      refreshIntervalMinutes: 120,
+      name: 'Remote source', enabled: true, url: 'https://new.example.com/source', headers: {},
+      refreshIntervalMinutes: 120, formatOverride: 'mihomo',
     })
   })
 
-  test('warns when a remote source is saved but its first fetch fails', async ({ page }) => {
+  test('keeps the remote source settings after the first preview fails', async ({ page }) => {
     await loginAdmin(page)
     const now = new Date().toISOString()
-    const source = { id: 'src_43', name: 'Failing remote', type: 'remote', enabled: true, refreshIntervalMinutes: 60, remoteHost: 'remote.example.com', lastErrorCode: 'REMOTE_FETCH_FAILED', warnings: [], updatedAt: now, createdAt: now }
+    const source = { id: 'src_43', name: 'Failing remote', type: 'remote', enabled: true, refreshIntervalMinutes: 60, warnings: [], updatedAt: now, createdAt: now }
     let created = false
     await page.route('**/api/admin/catalog/sources', async (route) => {
-      if (route.request().method() === 'POST') {
-        created = true
-        await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ success: false, source }) })
-      } else await route.continue()
+      created = true
+      await route.fulfill({ status: 201, json: { success: true, source } })
     })
-    await page.route('**/api/admin/catalog', (route) => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ schemaVersion: 2, revision: 1, updatedAt: now, sources: created ? [source] : [], nodes: [], groups: [] }),
+    await page.route('**/api/admin/catalog/sources/src_43/preview-diff', (route) => route.fulfill({
+      status: 422, json: { error: { code: 'REMOTE_FETCH_FAILED', message: '远程来源请求失败' } },
     }))
+    await page.route('**/api/admin/catalog', (route) => route.fulfill({ json: {
+      schemaVersion: 2, revision: 1, updatedAt: now, sources: created ? [source] : [], nodes: [], groups: [],
+    } }))
     await page.goto('/catalog/sources')
     await page.getByRole('button', { name: '添加来源' }).click()
     const drawer = page.getByRole('dialog', { name: '添加来源' })
     await drawer.getByLabel('来源名称').fill('Failing remote')
     await drawer.getByLabel('来源类型').click()
-    await drawer.getByRole('option', { name: '远程', exact: true }).click()
+    await drawer.getByRole('option', { name: '远程订阅', exact: true }).click()
     await drawer.getByLabel('远程 URL').fill('https://remote.example.com/source')
     await drawer.getByRole('button', { name: '保存来源' }).click()
-    const warning = page.getByRole('status')
-    await expect(warning).toContainText('来源已保存，但首次抓取失败，已保留来源')
-    await expect(warning).toHaveClass(/warning/)
-    await expect(warning).not.toHaveClass(/success/)
-    await expect(page.getByText('来源已添加', { exact: true })).toHaveCount(0)
-    await expect(page.getByRole('alert')).toHaveCount(0)
+    const preview = page.getByRole('dialog', { name: '同步差异预览' })
+    await expect(preview.getByRole('alert')).toContainText('远程来源请求失败')
+    await expect(preview.getByRole('button', { name: '确认同步' })).toBeDisabled()
+    await preview.getByRole('button', { name: '取消' }).click()
+    await expect(page.getByRole('row', { name: /Failing remote/ })).toBeVisible()
   })
 
   test('filters nodes and batch disables a selected node', async ({ page }) => {

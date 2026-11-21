@@ -74,6 +74,7 @@ export type CatalogSource = {
   keepOnFailure: boolean
   refreshIntervalMinutes?: number
   detectedFormat?: string
+  sync?: { formatOverride?: string; consecutiveFailures?: number; firstFailureAt?: string; durationMs?: number; httpStatus?: number; etag?: string }
   warnings: Array<{ code: string; message: string; line?: number }>
   lastAttemptAt?: string
   lastSuccessAt?: string
@@ -94,6 +95,11 @@ export type CatalogNode = {
   sourceIds: string[]
   enabled: boolean
   retained: boolean
+  lastSeenAt?: string
+  missingSince?: string
+  duplicateAcrossSources?: boolean
+  tags?: string[]
+  region?: string
   order: number
   createdAt: string
   updatedAt: string
@@ -106,6 +112,8 @@ export type CatalogGroup = {
   includedNodeIds: string[]
   excludedNodeIds: string[]
   nodeOrder: string[]
+  resolvedNodeIds?: string[]
+  rules?: { tags?: string[]; protocols?: string[]; region?: string; namePattern?: string }
   createdAt: string
   updatedAt: string
 }
@@ -135,6 +143,28 @@ export type SubscriptionDiagnostic = {
   available: boolean
 }
 
+export type SubscriptionLifecycleStatus = 'pending' | 'active' | 'disabled' | 'expired' | 'revoked' | 'owner_unavailable' | 'no_plan' | 'no_groups' | 'no_nodes' | 'incompatible'
+
+export type SubscriptionFormat = {
+  platform: string
+  displayName: string
+  capability: 'full' | 'nodes'
+  capabilityLabel: string
+  compatible: boolean
+  outputNodes: number
+  note: string | null
+}
+
+export type SubscriptionFetchSummary = {
+  lastFetchAt: string | null
+  lastPlatform: string | null
+  lastOk: boolean | null
+  lastStatus: number | null
+  success: number
+  failure: number
+  durationMs: { min: number; max: number; avg: number } | null
+}
+
 export type AdminSubscription = {
   planId?: string | null
   planName?: string | null
@@ -159,6 +189,14 @@ export type AdminSubscription = {
   links: Record<string, string>
   linkError?: string | null
   diagnostics: Record<string, SubscriptionDiagnostic>
+  status?: SubscriptionLifecycleStatus
+  statusLabel?: string
+  statusReason?: string | null
+  statusFix?: { label: string; href?: string } | null
+  authorizedNodeCount?: number
+  formats?: SubscriptionFormat[]
+  fetch?: SubscriptionFetchSummary
+  configVersion?: number | null
 }
 
 export type BootstrapResponse = {

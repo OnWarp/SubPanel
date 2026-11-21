@@ -1,9 +1,9 @@
-import type { CatalogSource } from '../../app/api'
+import { ApiClientError, type CatalogSource } from '../../app/api'
 
 export const sourceTypeLabel = (type: CatalogSource['type']): string => ({
-  manual: '手工',
-  file: '文件',
-  remote: '远程',
+  manual: '手动文本',
+  file: '文件导入',
+  remote: '远程订阅',
 }[type])
 
 export const sourceStatus = (source: CatalogSource): '需处理' | '正常' | '已停用' =>
@@ -25,3 +25,18 @@ export const formatLabel = (format: string | undefined): string => {
 
 export const formatDate = (value: string | undefined): string =>
   value ? new Date(value).toLocaleString('zh-CN') : '-'
+
+// These administrator POSTs calculate previews or return sensitive fields without mutating catalog data.
+export async function catalogPreview<T>(path: string, body: object): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+    credentials: 'same-origin',
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new ApiClientError(response.status, payload.error?.code ?? 'PREVIEW_FAILED',
+    payload.error?.message ?? '预览失败，请检查输入后重试')
+  return payload as T
+}

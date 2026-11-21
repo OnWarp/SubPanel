@@ -22,7 +22,8 @@
     }
   ],
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "logs": { "invocation_logs": false }
   },
   "routes": [{ "pattern": "sub.warp.dpdns.org", "custom_domain": true }],
   "triggers": {

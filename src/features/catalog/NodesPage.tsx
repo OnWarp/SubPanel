@@ -1,6 +1,6 @@
 import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
-import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { CheckCircle2, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
+import { Checkbox, FormSelect, Input, Textarea } from '../../ui/Controls'
+import { CheckCircle2, Plus, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -17,9 +17,25 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { Link } from 'react-router-dom'
 import { useToast } from '../../ui/Toast'
-import { formatDate, matchesText } from './catalog-utils'
+import { groupNodeIds } from './catalog-counts'
+import { catalogPreview, formatDate, matchesText } from './catalog-utils'
 
+const protocolsSupported = ['shadowsocks', 'ss2022', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria', 'hysteria2',
+  'tuic', 'wireguard', 'anytls', 'naive', 'snell', 'shadowtls', 'http', 'https', 'socks5']
+const credentialKeys: Record<string, string[]> = {
+  shadowsocks: ['method', 'password'], ss2022: ['method', 'password'], ssr: ['method', 'password', 'protocol', 'obfs'],
+  vmess: ['uuid'], vless: ['uuid'], trojan: ['password'], hysteria: ['auth'], hysteria2: ['password'], anytls: ['password'],
+  tuic: ['uuid', 'password'], wireguard: ['privateKey', 'publicKey'],
+  naive: ['username', 'password'], snell: ['psk', 'version'], shadowtls: ['password'],
+  http: ['username', 'password'], https: ['username', 'password'], socks5: ['username', 'password'],
+}
+type NodeDetails = { credentials: Record<string, unknown>; tls?: unknown; transport?: unknown; plugin?: unknown; extensions: unknown; rawVariants: unknown[] }
 type NodeForm = {
+  protocol: string
+  server: string
+  port: string
+  tags: string
+  region: string
   displayName: string
   enabled: boolean
   retained: boolean
@@ -44,7 +60,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 function nodeStatus(node: CatalogNode): string {
-  return node.enabled ? '正常' : '已停用'
+  return node.enabled ? node.missingSince ? '待失效' : '正常' : '已停用'
 }
 
 export function NodesPage() {
@@ -63,7 +79,13 @@ export function NodesPage() {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<CatalogNode | null>(null)
-  const [nodeForm, setNodeForm] = useState<NodeForm>({ displayName: '', enabled: true, retained: false })
+  const [nodeForm, setNodeForm] = useState<NodeForm>({ displayName: '', enabled: true, retained: false, protocol: '', server: '', port: '', tags: '', region: '' })
+  const [adding, setAdding] = useState(false)
+  const [connection, setConnection] = useState<NodeDetails | null>(null)
+  const [invalidFields, setInvalidFields] = useState<string[]>([])
+  const [connectionDirty, setConnectionDirty] = useState(false)
+  const [testClient, setTestClient] = useState('mihomo')
+  const [testResult, setTestResult] = useState<{ outputNodes: number; body: string; diagnostics: Array<{ code: string; message: string }> } | null>(null)
   const [drawerError, setDrawerError] = useState('')
   const [pending, setPending] = useState<BatchMutation | null>(null)
   const [progress, setProgress] = useState('')
@@ -116,20 +138,49 @@ export function NodesPage() {
   const openEdit = (node: CatalogNode, trigger: HTMLButtonElement | null) => {
     drawerTrigger.current = trigger
     setEditing(node)
-    setNodeForm({ displayName: node.displayName, enabled: node.enabled, retained: node.retained })
+    setAdding(false)
+    setTestResult(null)
+    setConnection(null)
+    setConnectionDirty(false)
+    setInvalidFields([])
+    setNodeForm({ displayName: node.displayName, enabled: node.enabled, retained: node.retained,
+      protocol: node.protocol, server: node.server, port: String(node.port), tags: node.tags?.join(', ') ?? '', region: node.region ?? '' })
     setDrawerError('')
+  }
+
+  useEffect(() => {
+    if (!editing) return
+    let active = true
+    void catalogPreview<NodeDetails>(`/api/admin/catalog/nodes/${editing.id}/details`, {})
+      .then((details) => { if (active) setConnection(details) }).catch(() => undefined)
+    return () => { active = false }
+  }, [editing])
+
+  function openCreate(trigger: HTMLButtonElement) {
+    drawerTrigger.current = trigger
+    setEditing(null)
+    setAdding(true)
+    setDrawerError('')
+    setTestResult(null)
+    setConnectionDirty(true)
+    setInvalidFields([])
+    setConnection({ credentials: {}, extensions: {}, rawVariants: [] })
+    setNodeForm({ displayName: '', enabled: true, retained: true, protocol: '', server: '', port: '', tags: '', region: '' })
   }
 
   const closeEdit = () => {
     if (!busy) {
       setEditing(null)
+      setAdding(false)
+      setConnection(null)
+      setTestResult(null)
       setDrawerError('')
     }
   }
 
   const saveNode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editing) return
+    if (!editing && !adding) return
     setDrawerError('')
     if (!nodeForm.displayName.trim()) {
       setDrawerError('请输入节点名称')
@@ -137,17 +188,62 @@ export function NodesPage() {
     }
     setBusy(true)
     try {
-      await api(`/api/admin/catalog/nodes/${editing.id}`, {
-        method: 'PATCH',
-        body: jsonBody({ displayName: nodeForm.displayName, enabled: nodeForm.enabled, retained: nodeForm.retained }),
+      const { displayName, enabled, retained, protocol, server, port, tags, region } = nodeForm
+      await api(editing ? `/api/admin/catalog/nodes/${editing.id}` : '/api/admin/catalog/nodes', {
+        method: editing ? 'PATCH' : 'POST',
+        body: jsonBody({ displayName, enabled, retained, tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean), region,
+          ...(connectionDirty ? { protocol, server, port: Number(port), credentials: connection?.credentials,
+            tls: connection?.tls, transport: connection?.transport, plugin: connection?.plugin, extensions: connection?.extensions } : {}) }),
       })
       setEditing(null)
+      setAdding(false)
+      setConnection(null)
+      setTestResult(null)
       await load()
       toast.notify('节点已更新')
     } catch (cause) {
       setDrawerError(errorMessage(cause, '保存节点失败'))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function copyNode() {
+    if (!editing) return
+    setBusy(true)
+    try {
+      await api('/api/admin/catalog/nodes', { method: 'POST', body: jsonBody({ originNodeId: editing.id, displayName: `${editing.displayName} 副本` }) })
+      setEditing(null)
+      setConnection(null)
+      setTestResult(null)
+      await load()
+      toast.notify('节点副本已添加')
+    } catch (cause) {
+      setDrawerError(errorMessage(cause, '复制节点失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function testOutput() {
+    if (!editing) return
+    setDrawerError('')
+    try {
+      setTestResult(await catalogPreview(`/api/admin/catalog/nodes/${editing.id}/test-output`, { client: testClient }))
+    } catch (cause) {
+      setDrawerError(errorMessage(cause, '转换测试失败'))
+    }
+  }
+
+  function updateJsonField(key: 'tls' | 'transport' | 'extensions' | 'plugin', input: HTMLTextAreaElement) {
+    try {
+      const value: unknown = JSON.parse(input.value || '{}')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_JSON_OBJECT')
+      setConnection((current) => current && { ...current, [key]: value })
+      setInvalidFields((current) => current.filter((field) => field !== key))
+      setConnectionDirty(true)
+    } catch {
+      setInvalidFields((current) => current.includes(key) ? current : [...current, key])
     }
   }
 
@@ -204,12 +300,12 @@ export function NodesPage() {
       render: (node) => <Checkbox type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} />,
     },
     { key: 'sequence', hideBelow: 'tablet', header: '序号', width: 60, render: (node) => node.sequence },
-    { key: 'name', header: '名称', render: (node) => <span className="resource-card-name"><strong>{node.displayName}</strong><span className="cell-note">{node.server} · {node.port}</span></span> },
+    { key: 'name', header: '名称', render: (node) => <span className="resource-card-name"><strong>{node.displayName}</strong><span className="cell-note">{node.server} · {node.port}{node.duplicateAcrossSources ? ' · 跨来源疑似重复' : ''}</span></span> },
     { key: 'protocol', width: '15%', header: '协议', render: (node) => <StatusBadge tone="info" size="xs">{node.protocol}</StatusBadge> },
     { key: 'sources', hideBelow: 'tablet', header: '来源', render: (node) => node.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
     { key: 'status', width: '17%', header: '状态', render: (node) => <StatusBadge tone={node.enabled ? 'success' : 'muted'} size="sm">{nodeStatus(node)}</StatusBadge> },
-    { key: 'retained', hideBelow: 'desktop', header: '保留', render: (node) => node.retained ? '是' : '否' },
-    { key: 'updated', hideBelow: 'desktop', header: '更新时间', render: (node) => formatDate(node.updatedAt) },
+    { key: 'groups', hideBelow: 'tablet', header: '分组', render: (node) => catalog?.groups.filter((group) => groupNodeIds(group, sources, nodes).has(node.id)).map((group) => group.name).join('、') || '—' },
+    { key: 'updated', hideBelow: 'desktop', header: '最后同步', render: (node) => formatDate(node.lastSeenAt) },
     {
       key: 'actions',
       width: 52,
@@ -245,6 +341,7 @@ export function NodesPage() {
           </>}>
           <SearchInput inputRef={searchRef} label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as NodeStatusFilter)}>{NODE_STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
+          <button type="button" className="button primary" onClick={(event) => openCreate(event.currentTarget)}><Plus aria-hidden="true" size={16} />添加节点</button>
         </FilterBar>
         {error && <ErrorState message={error} onRetry={() => load()} />}
         {batchError && <ErrorState message={batchError} />}
@@ -260,16 +357,66 @@ export function NodesPage() {
         </ResourceFooter>
       </section>
 
-      <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit} returnFocusRef={drawerTrigger}>
-        <form className="form-stack" onSubmit={saveNode}>
-          <label className="field"><span>节点名称</span><Input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
-          {editing && <p className="drawer-note">来源：{editing.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留'}</p>}
-          <p className="drawer-note">服务器、协议和认证字段由来源内容决定</p>
-          <Switch label="启用节点" checked={nodeForm.enabled} onChange={(enabled) => setNodeForm((current) => ({ ...current, enabled }))} />
-          <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />
+      <EditDrawer open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="compact" onClose={closeEdit} returnFocusRef={drawerTrigger}>
+        {(editing || adding) && <form className="form-stack" onSubmit={saveNode}>
+          <fieldset className="choice-section catalog-node-fields"><legend>基础信息</legend>
+            <label className="field"><span>节点名称</span><Input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
+            <label className="field"><span>标签（逗号分隔）</span><Input value={nodeForm.tags} onChange={(event) => setNodeForm({ ...nodeForm, tags: event.currentTarget.value })} /></label>
+            <label className="field"><span>地区</span><Input maxLength={64} value={nodeForm.region} onChange={(event) => setNodeForm({ ...nodeForm, region: event.currentTarget.value })} /></label>
+            <Switch label="启用节点" checked={nodeForm.enabled} onChange={(enabled) => setNodeForm((current) => ({ ...current, enabled }))} />
+            <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />
+          </fieldset>
+          <fieldset className="choice-section catalog-node-fields"><legend>连接参数</legend>
+            <label className="field"><span>协议</span><FormSelect value={nodeForm.protocol} onChange={(event) => {
+              setNodeForm({ ...nodeForm, protocol: event.currentTarget.value })
+              setConnection((current) => current && { ...current, credentials: {} })
+              setConnectionDirty(true)
+            }} required disabled={!connection}><option value="">请选择协议</option>{protocolsSupported.map((item) => <option key={item}>{item}</option>)}</FormSelect></label>
+            {nodeForm.protocol && <>
+              <label className="field"><span>服务器</span><Input value={nodeForm.server} onChange={(event) => {
+                setNodeForm({ ...nodeForm, server: event.currentTarget.value }); setConnectionDirty(true)
+              }} required disabled={!connection} /></label>
+              <label className="field"><span>端口</span><Input type="number" min={1} max={65535} value={nodeForm.port} onChange={(event) => {
+                setNodeForm({ ...nodeForm, port: event.currentTarget.value }); setConnectionDirty(true)
+              }} required disabled={!connection} /></label>
+              {connection && credentialKeys[nodeForm.protocol]?.map((key) => <label key={key} className="field"><span>{key}</span>
+                <Input type={/password|privateKey|psk|auth/u.test(key) ? 'password' : 'text'} value={String(connection.credentials[key] ?? '')}
+                  required={!['http', 'https', 'socks5'].includes(nodeForm.protocol)} onChange={(event) => {
+                    setConnection({ ...connection, credentials: { ...connection.credentials, [key]: event.currentTarget.value } })
+                    setConnectionDirty(true)
+                  }} /></label>)}
+            </>}
+          </fieldset>
+          {connection && nodeForm.protocol && <details><summary>TLS / 传输</summary>
+            {(['tls', 'transport'] as const).map((key) => <label key={key} className="field"><span>{key}（JSON）</span>
+              <Textarea aria-invalid={invalidFields.includes(key)} defaultValue={JSON.stringify(connection[key] ?? {}, null, 2)}
+                onChange={(event) => updateJsonField(key, event.currentTarget)} />
+              {invalidFields.includes(key) && <span>请输入有效的 JSON 对象</span>}
+            </label>)}
+          </details>}
+          <details><summary>高级原始字段</summary>
+            {connection && (['extensions', 'plugin'] as const).map((key) => <label key={key} className="field"><span>{key}（JSON）</span>
+              <Textarea aria-invalid={invalidFields.includes(key)} defaultValue={JSON.stringify(connection[key] ?? {}, null, 2)}
+                onChange={(event) => updateJsonField(key, event.currentTarget)} />
+              {invalidFields.includes(key) && <span>请输入有效的 JSON 对象</span>}
+            </label>)}
+            {connection?.rawVariants.length ? <pre className="source-preview catalog-node-raw">{JSON.stringify(connection.rawVariants, null, 2)}</pre> : <p>暂无原始导入记录</p>}
+          </details>
+          {editing && <div className="form-stack">
+            <button className="button secondary" type="button" disabled={busy} onClick={copyNode}>以此节点复制</button>
+            <label className="field"><span>转换目标</span><FormSelect value={testClient} onChange={(event) => { setTestClient(event.currentTarget.value); setTestResult(null) }}>
+              {['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'].map((client) => <option key={client}>{client}</option>)}
+            </FormSelect></label>
+            <button className="button secondary" type="button" onClick={testOutput}>测试转换输出</button>
+            {connectionDirty && <p className="drawer-note">转换测试使用已保存的连接参数</p>}
+            {testResult && <section className="source-preview"><p>可输出 {testResult.outputNodes} 个节点</p>
+              {testResult.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.message}</p>)}
+              {testResult.outputNodes > 0 && <Textarea aria-label="转换结果" readOnly value={testResult.body} />}
+            </section>}
+          </div>}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeEdit} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : '保存修改'}</button></div>
-        </form>
+          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeEdit} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy || invalidFields.length > 0}>{busy ? '保存中' : adding ? '保存节点' : '保存修改'}</button></div>
+        </form>}
       </EditDrawer>
 
       <ConfirmDialog open={pending !== null} title={pending === 'retain' ? '保留节点' : '停用节点'} description={pending === 'retain' ? `将保留选中的 ${selected.size} 个节点，即使来源后续移除它们` : `将停用选中的 ${selected.size} 个节点，它们不会出现在后续订阅中`} confirmLabel={pending === 'retain' ? '确认保留' : '确认停用'} danger={pending === 'disable'} busy={busy} onClose={() => setPending(null)} onConfirm={() => executeBatch(pending ?? 'disable')} />

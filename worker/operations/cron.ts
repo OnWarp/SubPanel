@@ -23,14 +23,18 @@ export type CronRunOptions = { now?: string; fetcher?: typeof fetch }
 function dueAt(source: Source): number {
   const base = Date.parse(source.lastAttemptAt ?? source.createdAt)
   if (!Number.isFinite(base) || !source.refreshIntervalMinutes) return Number.NEGATIVE_INFINITY
-  return base + source.refreshIntervalMinutes * 60_000
+  const failures = source.sync?.consecutiveFailures ?? 0
+  const interval = source.refreshIntervalMinutes * 60_000
+  const backoff = Math.min(interval * (2 ** Math.min(failures, 6) - 1), 24 * 60 * 60_000)
+  const jitter = failures > 0 ? (Number(source.id.slice(4)) % 59) * 1_000 : 0
+  return base + interval + backoff + jitter
 }
 
 export function selectDueSource(sources: Source[], now: string): Source | undefined {
   const current = Date.parse(now)
   return sources
     .map((source, index) => ({ source, index, due: dueAt(source) }))
-    .filter(({ source, due }) => source.type === 'remote' && source.enabled && due <= current)
+    .filter(({ source, due }) => source.type === 'remote' && source.enabled && (source.sync?.consecutiveFailures ?? 0) < 8 && due <= current)
     .sort((left, right) => left.due - right.due || left.index - right.index || left.source.id.localeCompare(right.source.id))
     .at(0)?.source
 }
