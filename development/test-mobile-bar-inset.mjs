@@ -196,7 +196,8 @@ try {
     await page.evaluate(key => localStorage.setItem(key, 'floating'), key)
     await page.reload()
     await expect(shell).toHaveAttribute('data-mobile-bar', 'floating')
-    await expect(dock).toBeHidden()
+    // Breakpoint unified to <768px mobile: at 767 the floating dock is visible.
+    await expect(dock).toBeVisible()
 
     for (const width of [768, 1440]) {
       await page.setViewportSize({ width, height: 844 })
