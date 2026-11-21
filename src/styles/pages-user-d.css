@@ -280,7 +280,10 @@
   width: 100%;
 }
 
-.upd-nodes .upd-filters .sp-select-trigger {
+.upd-nodes .upd-filters :is(.sp-search, .sp-select-trigger, .button),
+.upd-nodes .upd-more-filters > summary {
+  box-sizing: border-box;
+  height: 40px;
   min-height: 40px;
   border-radius: var(--radius-ctl);
 }
@@ -460,6 +463,12 @@
 
   .upd-nodes .upd-filters .sp-search,
   .upd-nodes .upd-filters .sp-form-select { max-width: none; }
+
+  .upd-nodes .upd-filters :is(.sp-search, .sp-select-trigger, .button),
+  .upd-nodes .upd-more-filters > summary {
+    height: var(--size-touch-target);
+    min-height: var(--size-touch-target);
+  }
 
   .upd-nodes .sp-table td { padding: var(--space-2) 0; }
 

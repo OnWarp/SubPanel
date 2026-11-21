@@ -140,13 +140,27 @@
 }
 
 .usr-directory .empty-state { border: 0; border-radius: 0; background: transparent; }
+
+@media (width >= 768px) {
+  .admin-layout .data-section:has(> .usr-directory) > .section-heading,
+  .admin-layout .usr-tabs,
+  .admin-layout .usr-filter,
+  .admin-layout .usr-batch,
+  .admin-layout .usr-directory .section-footer,
+  .admin-layout .usr-directory .usr-table .sp-table :is(th, td) {
+    padding-inline: var(--space-page-inline);
+  }
+}
 .usr-card-body { padding: var(--space-4) var(--space-5) var(--space-5); }
 
 @media (max-width: 760px) {
+  .data-section:has(> .usr-directory) > .section-heading,
+  .data-section:has(> .settings-fields) > .section-heading,
+  .usr-tabs,
   .usr-filter,
   .usr-batch,
-  .section-footer { padding-right: var(--space-4); padding-left: var(--space-4); }
-  .usr-tabs { gap: var(--space-4); padding: 0 var(--space-4); overflow-x: auto; }
+  .usr-directory .section-footer { padding-right: 0; padding-left: 0; }
+  .usr-tabs { gap: var(--space-4); overflow-x: auto; }
   .section-footer { align-items: flex-start; flex-wrap: wrap; }
   .usr-select-all-narrow {
     display: flex;

@@ -154,7 +154,7 @@ body:has(.app-layout) { height: 100svh; overflow: hidden; }
 .section-heading { display: grid; min-height: 46px; padding: 5px 12px; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-border); }
 .data-header-main { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .section-heading h2 { min-width: 0; margin: 0; overflow: hidden; font-size: var(--font-md); font-weight: var(--weight-strong); line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.data-header-actions { display: flex; min-width: 0; justify-content: flex-end; }
+.data-header-actions { display: flex; min-width: 0; justify-content: flex-end; align-items: center; gap: var(--space-2); }
 .data-header-actions:empty { display: none; }
 .data-header-filters { display: flex; min-width: 0; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: thin; }
 .data-header-filters .search-field { width: 210px; min-width: 130px; min-height: 32px; }

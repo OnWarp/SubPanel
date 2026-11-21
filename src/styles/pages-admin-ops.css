@@ -2,6 +2,42 @@
 
 
 
+.ops-page .data-section > .sp-filter-bar {
+  padding-block: var(--space-3);
+}
+
+.ops-page .data-section > .sp-filter-bar :is(.sp-input, .sp-select-trigger, .sp-search, .button) {
+  box-sizing: border-box;
+  height: var(--size-page-button);
+  min-height: var(--size-page-button);
+}
+
+@media (width >= 768px) {
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .section-heading,
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .ops-footer,
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .sp-filter-bar {
+    padding-inline: var(--space-page-inline);
+  }
+
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section .sp-table :is(th, td) {
+    padding-inline: var(--space-page-inline);
+  }
+
+  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .data-section > .section-heading,
+  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .sys-form,
+  .admin-layout .workspace-content > .page-stack.ops-page:not(:has(> .data-section)) .sys-body {
+    padding-inline: 0;
+  }
+}
+
+.ops-page .data-section > .sp-filter-bar .filter-field {
+  max-width: 100%;
+}
+
+.ops-page .data-section > .sp-filter-bar .sp-input {
+  width: min(200px, 34vw);
+}
+
 .ops-page .ops-filters {
   display: flex;
   flex-wrap: wrap;
@@ -158,6 +194,21 @@
 }
 
 @media (max-width: 760px) {
+  .ops-page .data-section > .section-heading,
+  .ops-page .data-section > .sp-filter-bar,
+  .ops-page .ops-footer {
+    padding-inline: 0;
+  }
+
+  .ops-page .data-section > .sp-filter-bar :is(.sp-input, .sp-select-trigger, .sp-search, .button) {
+    height: var(--size-touch-target);
+    min-height: var(--size-touch-target);
+  }
+
+  .ops-page .data-section > .sp-filter-bar .sp-input,
+  .ops-page .data-section > .sp-filter-bar .sp-select-trigger {
+    width: min(200px, 100%);
+  }
 
   .ops-action-popover .button,
   .ops-action-popover .button.ghost,

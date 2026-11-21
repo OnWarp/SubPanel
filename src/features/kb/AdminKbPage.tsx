@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
+import { FilterBar } from '../../ui/FilterBar'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
@@ -322,16 +323,22 @@ export function AdminKbPage() {
         <OperationsHeading title="知识库管理" action={
           <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>新建文章</button>
         } />
-        <div className="page-toolbar ops-filters">
-          <FormSelect aria-label="按分类筛选" value={categoryFilter} onChange={(event) => changeCategoryFilter(event.currentTarget.value)}>
-            {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </FormSelect>
-          <FormSelect aria-label="发布状态" value={publishedFilter} onChange={(event) => changePublishedFilter(event.currentTarget.value as PublishedFilter)}>
-            <option value="all">全部状态</option>
-            <option value="true">已发布</option>
-            <option value="false">草稿</option>
-          </FormSelect>
-        </div>
+        <FilterBar>
+          <label className="filter-field">
+            <span>分类</span>
+            <FormSelect aria-label="按分类筛选" value={categoryFilter} onChange={(event) => changeCategoryFilter(event.currentTarget.value)}>
+              {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FormSelect>
+          </label>
+          <label className="filter-field">
+            <span>状态</span>
+            <FormSelect aria-label="发布状态" value={publishedFilter} onChange={(event) => changePublishedFilter(event.currentTarget.value as PublishedFilter)}>
+              <option value="all">全部状态</option>
+              <option value="true">已发布</option>
+              <option value="false">草稿</option>
+            </FormSelect>
+          </label>
+        </FilterBar>
         {articlesLoading && articles.length === 0 ? <LoadingState label="正在加载文章" /> : null}
         {!articlesLoading && articlesError ? <ErrorState message={articlesError} onRetry={() => { loadArticles().catch(() => undefined) }} /> : null}
         {!articlesLoading && !articlesError && total === 0 ? (
