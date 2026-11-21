@@ -23,7 +23,7 @@
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-ctl);
@@ -55,6 +55,9 @@
 .password-input input { width: 100%; padding-right: 44px; }
 .password-input button { position: absolute; right: 6px; }
 @media (max-width: 767px) {
+  .user-center nav > a,
+  .user-center nav > button,
+  .user-center nav .theme-control > button { min-height: var(--size-touch-target); }
   .user-stat-grid, .user-account-grid { grid-template-columns: 1fr; }
   .user-subscription-content { flex-direction: column; align-items: stretch; }
   .user-qr { flex-basis: auto; align-self: center; }

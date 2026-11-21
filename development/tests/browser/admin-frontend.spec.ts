@@ -473,7 +473,10 @@ test.describe.serial('Administrator frontend', () => {
     const topbarAccount = page.locator('.admin-desktop-topbar .admin-account summary')
     await expect(topbarAccount).toBeFocused()
     await expect(sidebar(page).getByRole('link')).toHaveText(['概览', '节点', '订阅', '用户', '运营', '设置'])
-    await expect(sidebar(page).getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'page')
+    // Subscriptions sit in a domain that has section tabs. The domain link marks
+    // the location; the section tab marks the page.
+    await expect(sidebar(page).getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'location')
+    await expect(page.getByRole('navigation', { name: '订阅管理导航' }).getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'page')
     await expect(page).toHaveURL(url)
     expect(await page.evaluate(() => history.length)).toBe(history)
     expect(await workspace?.evaluate(element => element === document.querySelector('.workspace-content'))).toBe(true)
@@ -547,36 +550,42 @@ test.describe.serial('Administrator frontend', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 
-  test('adds invite batch controls while keeping the administrator unselectable', async ({ page }) => {
+  test('adds invite-code batch controls while keeping the administrator from being disabled', async ({ page }) => {
     await loginAdmin(page)
     await sidebar(page).getByRole('link', { name: '用户管理', exact: true }).click()
     await expect(page).toHaveURL(/\/users$/)
     const topbar = page.locator('.workspace-topbar')
-    await expect(topbar.getByRole('button', { name: '创建邀请' })).toBeVisible()
-    await expect(topbar.getByLabel('邀请用户名')).toHaveCount(0)
-    await expect(page.locator('section[aria-labelledby="users-title"] .section-heading').getByLabel('邀请用户名')).toBeVisible()
-    await expect(page.locator('section[aria-labelledby="invites-title"] .section-heading').getByLabel('邀请用户名')).toHaveCount(0)
-    expect(await topbar.evaluate((element) => getComputedStyle(element).height)).toBe('56px')
-    expect(await topbar.getByRole('heading', { name: '用户与邀请' }).evaluate((element) => getComputedStyle(element).fontSize)).toBe('15px')
-
-    for (const username of ['batch-one', 'batch-two']) {
-      await page.getByLabel('邀请用户名').fill(username)
-      await page.getByRole('button', { name: '创建邀请' }).click()
-      await expect(page.getByRole('row', { name: new RegExp(username) })).toBeVisible()
-    }
+    await expect(topbar.getByRole('heading', { name: '用户管理' })).toBeVisible()
+    await expect(topbar.getByRole('button', { name: '创建邀请' })).toHaveCount(0)
+    await expect(page.getByLabel('邀请用户名')).toHaveCount(0)
+    expect(await topbar.evaluate((element) => getComputedStyle(element).height)).toBe('48px')
+    expect(await topbar.getByRole('heading', { name: '用户管理' }).evaluate((element) => getComputedStyle(element).fontSize)).toBe('20px')
 
     const adminRow = page.getByRole('row', { name: /admin/ })
-    await expect(adminRow.getByRole('checkbox', { name: /启用 admin/ })).toBeDisabled()
-    await page.getByRole('row', { name: /batch-one/ }).getByRole('checkbox', { name: /选择邀请/ }).check()
-    await page.getByRole('row', { name: /batch-two/ }).getByRole('checkbox', { name: /选择邀请/ }).check()
+    await adminRow.getByLabel('admin 的操作').click()
+    await expect(adminRow.getByRole('menuitem', { name: '停用' })).toBeDisabled()
+    await page.keyboard.press('Escape')
+
+    const section = page.locator('section[aria-labelledby="users-card-title"]')
+    await section.getByRole('button', { name: '邀请用户' }).click()
+    await expect(page).toHaveURL(/\/invites$/)
+    await expect(page.getByRole('heading', { name: '注册邀请码' })).toBeVisible()
+    await expect(page.getByLabel('邀请用户名')).toHaveCount(0)
+    await page.getByRole('button', { name: '批量单次' }).click()
+    await page.getByLabel('生成数量').fill('2')
+    await page.getByRole('button', { name: '生成邀请码' }).click()
+    const codes = page.getByRole('checkbox', { name: /选择邀请码/ })
+    await expect(codes).toHaveCount(2)
+    await codes.nth(0).check()
+    await codes.nth(1).check()
     const toolbar = page.getByRole('toolbar', { name: '批量操作' })
     await expect(toolbar).toContainText('已选择 2 项')
     await page.setViewportSize({ width: 390, height: 844 })
     const more = toolbar.getByRole('button', { name: '更多批量操作' })
     await expect(more).toBeVisible()
     await more.click()
-    await toolbar.locator('.batch-more-menu').getByRole('button', { name: '撤销' }).click()
-    const confirm = page.getByRole('dialog', { name: '撤销邀请' })
+    await toolbar.locator('.batch-more-menu').getByRole('button', { name: '停用' }).click()
+    const confirm = page.getByRole('dialog', { name: '停用邀请码' })
     await confirm.dispatchEvent('pointerdown')
     await expect(confirm).toBeVisible()
     await confirm.getByRole('button', { name: '取消' }).click()
@@ -584,24 +593,41 @@ test.describe.serial('Administrator frontend', () => {
 
   test('keeps the password reset dialog open while its request is running', async ({ page }) => {
     await loginAdmin(page)
-    await page.goto('/users')
-    await page.getByLabel('邀请用户名').fill('reset-target')
-    await page.getByRole('button', { name: '创建邀请' }).click()
-    const inviteToken = new URL(await page.getByRole('textbox', { name: '邀请链接' }).inputValue()).pathname.split('/').at(-1)
-    const redeemed = await page.request.post(`/api/invites/${inviteToken}`, {
-      headers: { Origin: 'http://127.0.0.1:4173' },
-      data: { password: 'reset target password' },
+    await expect(page).toHaveURL(/\/dashboard$/)
+    const api = async (method: 'PUT' | 'POST', path: string, data: Record<string, unknown>) => {
+      const result = await page.evaluate(async ({ method, path, data }) => {
+        const response = await fetch(path, {
+          method,
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        return { ok: response.ok, status: response.status, body: await response.text() }
+      }, { method, path, data })
+      expect(result.ok, `${method} ${path} returned ${result.status} ${result.body}`).toBe(true)
+      return (result.body ? JSON.parse(result.body) : {}) as Record<string, any>
+    }
+    await api('PUT', '/api/admin/system/registration', { mode: 'invite' })
+    const invite = await api('POST', '/api/admin/invites', {})
+    const redeemed = await api('POST', '/api/register', {
+      username: 'reset-target',
+      password: 'reset target password',
+      email: 'reset-target@example.com',
+      inviteCode: String(invite.invite.code),
     })
-    expect(redeemed.status()).toBe(201)
-    await page.reload()
+    expect(redeemed.user?.id).toBeTruthy()
+    await api('POST', '/api/login', { username: 'admin', password: 'correct horse battery staple' })
+    await page.goto('/users')
 
     let finishReset!: () => void
     const resetGate = new Promise<void>((resolve) => { finishReset = resolve })
-    await page.route('**/api/admin/users/*/password', async (route) => {
+    await page.route('**/api/admin/users/*/reset-password', async (route) => {
       await resetGate
       await route.continue()
     })
-    await page.getByRole('row', { name: /reset-target/ }).getByRole('button', { name: /重置 reset-target 的密码/ }).click()
+    const row = page.getByRole('row', { name: /reset-target/ })
+    await row.getByLabel('reset-target 的操作').click()
+    await row.getByRole('menuitem', { name: '重置密码' }).click()
     const dialog = page.getByRole('dialog', { name: '重置用户密码' })
     await dialog.getByLabel('新密码', { exact: true }).fill('new reset target password')
     await dialog.getByLabel('确认新密码').fill('new reset target password')

@@ -107,7 +107,7 @@ async function verifyDock(style, entries, active, floatingPanel, safeBottom = 0)
     assert.equal(bar.y + bar.height, height - 9 - safeBottom)
     assert.deepEqual(workspace, { x: 8, y: 8, width: width - 16, height: height - 16 })
     await expect(dock).toHaveCSS('position', 'fixed')
-    await expect(dock).toHaveCSS('border-radius', '34px')
+    await expect(dock).toHaveCSS('border-radius', '999px')
     await expect(dock).toHaveCSS('box-shadow', 'rgba(0, 0, 0, 0.12) 0px 8px 24px 0px, rgba(0, 0, 0, 0.06) 0px 2px 6px 0px')
     await expect(dock).toHaveCSS('backdrop-filter', 'blur(18px)')
   }

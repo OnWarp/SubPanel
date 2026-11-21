@@ -19,7 +19,15 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(process.env.CHROMIUM_PATH ? {
+          launchOptions: {
+            executablePath: process.env.CHROMIUM_PATH,
+            args: ['--no-sandbox', '--disable-dev-shm-usage'],
+          },
+        } : {}),
+      },
     },
   ],
   webServer: externalServer ? undefined : {

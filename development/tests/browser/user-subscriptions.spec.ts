@@ -12,16 +12,21 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await page.getByRole('button', { name: '登录' }).click()
   }
 
-  async function post(page: Page, path: string, data: Record<string, unknown>) {
-    const response = await page.request.post(path, {
-      data,
-      headers: { Origin: 'http://127.0.0.1:4173' },
-    })
-    expect(response.ok(), `${path} returned ${response.status()}`).toBe(true)
-    return response.json() as Promise<Record<string, any>>
+  async function post(page: Page, path: string, data: Record<string, unknown>, method: 'POST' | 'PUT' = 'POST') {
+    const result = await page.evaluate(async ({ method, path, data }) => {
+      const response = await fetch(path, {
+        method,
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      return { ok: response.ok, status: response.status, body: await response.text() }
+    }, { method, path, data })
+    expect(result.ok, `${method} ${path} returned ${result.status} ${result.body}`).toBe(true)
+    return (result.body ? JSON.parse(result.body) : {}) as Record<string, any>
   }
 
-  test('switches subscriptions, copies links, shows QR and resets a token', async ({ page, context }) => {
+  test('switches subscriptions, copies the link, shows a QR code and resets a token', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: 'http://127.0.0.1:4173' })
     await page.goto('/')
     await page.getByLabel('管理员用户名').fill('Admin')
@@ -31,12 +36,18 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await login(page, 'admin', adminPassword)
     await expect(page).toHaveURL(/\/dashboard$/)
 
-    const inviteResult = await post(page, '/api/admin/invites', { username: 'alice' })
-    const inviteLink = String(inviteResult.invite.link)
-    const inviteToken = new URL(inviteLink).pathname.split('/').pop()
-    expect(inviteToken).toBeTruthy()
-    const redeemed = await post(page, `/api/invites/${inviteToken}`, { password: userPassword })
+    await post(page, '/api/admin/system/registration', { mode: 'invite' }, 'PUT')
+    const inviteResult = await post(page, '/api/admin/invites', {})
+    const inviteCode = String(inviteResult.invite.code)
+    expect(inviteCode).toBeTruthy()
+    const redeemed = await post(page, '/api/register', {
+      username: 'alice',
+      password: userPassword,
+      email: 'alice@example.com',
+      inviteCode,
+    })
     const userId = String(redeemed.user.id)
+    await post(page, '/api/login', { username: 'admin', password: adminPassword })
 
     const sourceResult = await post(page, '/api/admin/catalog/sources', {
       type: 'manual',
@@ -68,39 +79,43 @@ test.describe.serial('Ordinary user subscription workspace', () => {
       enabled: true,
     })
 
-    await page.getByRole('button', { name: '退出登录' }).click()
+    await page.locator('.sidebar .admin-account summary').click()
+    await page.getByRole('navigation', { name: '管理员账号菜单' }).getByRole('button', { name: '退出登录' }).click()
+    await expect(page).toHaveURL(/\/login$/)
     await login(page, 'alice', userPassword)
     await expect(page).toHaveURL(/\/home$/)
     await page.getByRole('link', { name: '订阅', exact: true }).click()
     await expect(page).toHaveURL(/\/subscriptions$/)
     await expect(page.getByRole('heading', { name: '我的订阅' })).toBeVisible()
     await expect(page.getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('link', { name: '用户与邀请' })).toHaveCount(0)
-    const automaticLink = page.getByRole('textbox', { name: '自动订阅链接' })
-    const originalLink = await automaticLink.inputValue()
+    await expect(page.getByRole('link', { name: '用户管理' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: '我的', exact: true })).toBeVisible()
+    const link = page.locator('.del-link-text')
+    const originalLink = (await link.textContent())?.trim() ?? ''
+    expect(originalLink.startsWith('https://')).toBe(true)
     const overview = page.locator('.user-subscription-overview')
     const beforeCopy = await overview.boundingBox()
-    await page.getByRole('button', { name: '复制自动订阅链接' }).click()
-    await expect(page.getByRole('status')).toContainText('链接已复制')
+    await page.getByRole('button', { name: '复制', exact: true }).click()
+    await expect(page.getByRole('button', { name: '已复制', exact: true })).toBeVisible()
     const afterCopy = await overview.boundingBox()
     expect(afterCopy?.y).toBe(beforeCopy?.y)
+    await expect(page.getByRole('img', { name: '订阅二维码' })).toBeVisible()
+    await expect(page.getByRole('group', { name: '客户端平台' }).getByRole('button', { name: '自动识别', exact: true })).toHaveAttribute('aria-pressed', 'true')
 
     const diagnostics = page.locator('details').filter({ hasText: '兼容诊断' })
     await expect(diagnostics).not.toHaveAttribute('open', '')
     await diagnostics.getByText('兼容诊断', { exact: true }).click()
     await expect(diagnostics).toHaveAttribute('open', '')
-    await expect(page.getByText('输入 1 · 输出 1 · 跳过 0').first()).toBeVisible()
+    await expect(page.getByText('已跳过表示该节点未输出；节点仍会输出表示仅列出的字段未能映射，相关能力可能失效')).toBeVisible()
+    await expect(page.getByText('输入 0 · 输出 0 · 跳过 0').first()).toBeVisible()
 
-    await page.getByLabel('选择订阅').selectOption({ label: '备用订阅' })
+    await page.getByRole('combobox', { name: '选择订阅' }).click()
+    await page.getByRole('option', { name: '备用订阅', exact: true }).click()
     await expect(page.getByRole('heading', { name: '备用订阅' })).toBeVisible()
-    await expect(page.getByLabel('客户端链接').getByText('sing-box')).toBeVisible()
-    await page.getByRole('button', { name: '显示 sing-box 二维码' }).click()
-    const qrDialog = page.getByRole('dialog', { name: 'sing-box 二维码' })
-    await expect(qrDialog).toBeVisible()
-    await expect(qrDialog.getByRole('img', { name: 'sing-box 订阅二维码' })).toBeVisible()
-    await qrDialog.dispatchEvent('pointerdown')
-    await expect(qrDialog).toBeVisible()
-    await qrDialog.getByRole('button', { name: '关闭' }).click()
+    await expect(page.getByRole('group', { name: '客户端平台' }).getByRole('button', { name: '自动识别', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    const beforeReset = (await link.textContent())?.trim() ?? ''
+    expect(beforeReset.startsWith('https://')).toBe(true)
+    expect(beforeReset).not.toBe(originalLink)
 
     await page.getByRole('button', { name: '重置订阅令牌' }).click()
     const resetDialog = page.getByRole('dialog', { name: '重置订阅令牌' })
@@ -108,9 +123,9 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await resetDialog.dispatchEvent('pointerdown')
     await expect(resetDialog).toBeVisible()
     await resetDialog.getByRole('button', { name: '确认重置' }).click()
-    await expect(page.getByRole('status')).toContainText('订阅令牌已重置')
+    await expect(page.getByRole('status').filter({ hasText: '订阅令牌已重置' })).toBeVisible()
     await expect(page.getByRole('textbox', { name: '新订阅令牌' })).toBeVisible()
-    await expect(automaticLink.inputValue()).not.toBe(originalLink)
+    await expect(link).not.toHaveText(beforeReset)
 
     await page.setViewportSize({ width: 390, height: 844 })
     await page.reload()

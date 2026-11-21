@@ -424,7 +424,10 @@
   .upd-pager button,
   .upd-more-filters > summary,
   .upd-subs .upd-import-actions .button,
-  .upd-subs .ui3-platform-row .button { min-height: var(--size-touch-target); }
+  .upd-subs .ui3-platform-row .button,
+  .upd-nodes .upd-filters .sp-search,
+  .upd-nodes .upd-filters .sp-select-trigger { min-height: var(--size-touch-target); }
+  .upd-subs .sp-segmented button { min-height: 0; height: auto; }
   .upd-home .user-stat-grid { grid-template-columns: 1fr; }
   .upd-home .object-card + .object-card { border-left: 0; border-top: var(--size-divider) solid var(--color-border); }
   .upd-home .object-card + .object-card .sp-stat-body,

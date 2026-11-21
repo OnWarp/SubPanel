@@ -113,7 +113,7 @@
 }
 .sp-chip {
   display: inline-flex;
-  height: 30px;
+  height: 32px;
   padding: 0 var(--space-4);
   align-items: center;
   gap: var(--space-2);
@@ -409,6 +409,7 @@
   color: var(--color-text-muted);
   cursor: pointer;
 }
+.sp-dialog-close:disabled { cursor: not-allowed; opacity: .4; }
 @media (hover: hover) {
   .sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 }
@@ -545,7 +546,7 @@
   background: var(--color-surface-subtle);
 }
 .sp-segmented button {
-  height: 26px;
+  height: 28px;
   padding: 0 var(--space-3);
   border: 0;
   border-radius: var(--radius-pill);
@@ -605,6 +606,10 @@
 @media (width < 768px) {
   .sp-switch { min-height: 44px; }
   .sp-dialog-close, .edit-drawer .dialog-heading .icon-button { width: 44px; height: 44px; }
+  .sp-chip { height: auto; min-height: var(--size-touch-target); }
+  .sp-segmented button { height: auto; min-height: var(--size-touch-target); }
+  .sp-search, .sp-select-trigger { min-height: var(--size-touch-target); }
+  .menu button { min-height: var(--size-touch-target); }
 }
 @media (max-width: 760px) {
   .sp-switch-track { width: 32px; height: 20px; }
