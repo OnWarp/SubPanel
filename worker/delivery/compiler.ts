@@ -14,7 +14,7 @@ import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
 
 export type CompileOptions = { now?: string }
 
-function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: Subscription) {
+export function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: Subscription) {
   const byId = new Map<string, (typeof catalog.nodes)[number]>()
   for (const groupId of subscription.groupIds) {
     if (!catalog.groups.some((group) => group.id === groupId)) continue
@@ -142,8 +142,8 @@ export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOption
 // Public requests repeat the live decision even when a cached artifact exists:
 // subscription availability and plan edits can change independently of cached output.
 
-async function entitledNodes(env: DataEnv, subscription: Subscription, now: string) {
-  const catalog = await readCatalog(env)
+async function entitledNodes(env: DataEnv, subscription: Subscription, now: string, catalogOverride?: Awaited<ReturnType<typeof readCatalog>>) {
+  const catalog = catalogOverride ?? await readCatalog(env)
   const time = Date.parse(now)
   const blocked: ZeroNodeReason | null =
     subscription.expiresAt !== null && subscription.expiresAt <= time ? 'expired'
@@ -180,4 +180,22 @@ export async function renderEntitledSubscription(
   previewTemplate?: Template,
 ) {
   return artifactFor(env, subscription, client, await entitledNodes(env, subscription, now), now, previewTemplate)
+}
+
+export async function previewCatalogEntitlement(
+  env: DataEnv,
+  subscription: Subscription,
+  client: RenderClient,
+  catalog: Awaited<ReturnType<typeof readCatalog>>,
+) {
+  const now = new Date().toISOString()
+  const context = await entitledNodes(env, subscription, now, catalog)
+  const artifact = await artifactFor(env, subscription, client, context, now)
+  return {
+    authorizedNodeIds: context.nodes.map(({ id }) => id),
+    outputNodes: artifact.outputNodes,
+    skippedNodes: artifact.skippedNodes,
+    diagnostics: artifact.diagnostics,
+    reason: artifact.zeroNodeReason,
+  }
 }

@@ -74,6 +74,7 @@ export type CatalogSource = {
   keepOnFailure: boolean
   refreshIntervalMinutes?: number
   detectedFormat?: string
+  sync?: { formatOverride?: string; consecutiveFailures?: number; firstFailureAt?: string; durationMs?: number; httpStatus?: number; etag?: string }
   warnings: Array<{ code: string; message: string; line?: number }>
   lastAttemptAt?: string
   lastSuccessAt?: string
@@ -94,6 +95,11 @@ export type CatalogNode = {
   sourceIds: string[]
   enabled: boolean
   retained: boolean
+  lastSeenAt?: string
+  missingSince?: string
+  duplicateAcrossSources?: boolean
+  tags?: string[]
+  region?: string
   order: number
   createdAt: string
   updatedAt: string
@@ -106,6 +112,8 @@ export type CatalogGroup = {
   includedNodeIds: string[]
   excludedNodeIds: string[]
   nodeOrder: string[]
+  resolvedNodeIds?: string[]
+  rules?: { tags?: string[]; protocols?: string[]; region?: string; namePattern?: string }
   createdAt: string
   updatedAt: string
 }

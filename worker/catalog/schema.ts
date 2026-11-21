@@ -71,6 +71,29 @@ const uniqueStringArray = <T extends z.ZodType<string>>(item: T) => z.array(item
   'Duplicate identifiers are not allowed',
 )
 
+export const formatOverrideSchema = z.enum([
+  'uri-list', 'base64-uri-list', 'mihomo', 'sing-box', 'sip008', 'loon', 'surge', 'quantumultx',
+])
+export const syncMetadataSchema = z.object({
+  formatOverride: formatOverrideSchema.optional(),
+  consecutiveFailures: z.number().int().nonnegative().optional(),
+  firstFailureAt: z.iso.datetime().optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  httpStatus: z.number().int().optional(),
+  etag: z.string().max(1024).optional(),
+})
+
+export const tagsSchema = z.array(z.string().trim().min(1).max(64)).max(32)
+export const groupRulesSchema = z.object({
+  tags: tagsSchema.optional(),
+  protocols: z.array(protocolSchema).max(protocolSchema.options.length).optional(),
+  region: z.string().trim().max(64).optional(),
+  namePattern: z.string().max(128).refine((pattern) => {
+    // Allow anchors, character classes and top-level alternation with no backtracking groups.
+    if (/[*+?{}()\\]/u.test(pattern)) return false
+    try { new RegExp(pattern, 'iu'); return true } catch { return false }
+  }).optional(),
+})
 const sourceBaseSchema = z.object({
   id: sourceIdSchema,
   name: z.string().trim().min(1).max(128),
@@ -82,6 +105,7 @@ const sourceBaseSchema = z.object({
   keepOnFailure: z.boolean().default(true),
   refreshIntervalMinutes: z.number().int().positive().optional(),
   detectedFormat: importFormatSchema.optional(),
+  sync: syncMetadataSchema.optional(),
   warnings: z.array(sourceWarningSchema),
   lastAttemptAt: z.iso.datetime().optional(),
   lastSuccessAt: z.iso.datetime().optional(),
@@ -127,6 +151,13 @@ export const nodeSchema = z.object({
   plugin: jsonRecordSchema.optional(),
   extensions: jsonRecordSchema,
   fingerprint: z.string().min(1),
+  sourceFingerprint: z.string().optional(),
+  originNodeId: nodeIdSchema.optional(),
+  displayNameOverride: z.string().optional(),
+  tags: tagsSchema.optional(),
+  region: z.string().max(64).optional(),
+  lastSeenAt: z.iso.datetime().optional(),
+  missingSince: z.iso.datetime().optional(),
   sourceIds: uniqueStringArray(sourceIdSchema),
   rawVariants: z.array(rawVariantSchema),
   enabled: z.boolean(),
@@ -143,6 +174,7 @@ export const groupSchema = z.object({
   includedNodeIds: uniqueStringArray(nodeIdSchema),
   excludedNodeIds: uniqueStringArray(nodeIdSchema),
   nodeOrder: uniqueStringArray(nodeIdSchema),
+  rules: groupRulesSchema.optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 }).superRefine((group, ctx) => {

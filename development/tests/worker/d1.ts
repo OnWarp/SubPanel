@@ -1,3 +1,4 @@
+import catalogSyncSql from '../../../migrations/0019_catalog_sync.sql?raw'
 import subscriptionPlansSql from '../../../migrations/0018_subscription_plans.sql?raw'
 import sourceKeepOnFailureSql from '../../../migrations/0016_source_keep_on_failure.sql?raw'
 import templateEnhancementsSql from '../../../migrations/0017_template_enhancements.sql?raw'
@@ -26,6 +27,8 @@ export const D1_TABLES = [
   'app_platforms',
   'apps',
   'audit_logs',
+  'catalog_sync_leases',
+  'catalog_sync_runs',
   'cron_runs',
   'email_change_requests',
   'email_verifications',
@@ -223,6 +226,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0016_source_keep_on_failure.sql', queries: splitSqlStatements(sourceKeepOnFailureSql) },
     templateEnhancementsMigration,
     { name: '0018_subscription_plans.sql', queries: splitSqlStatements(subscriptionPlansSql) },
+    { name: '0019_catalog_sync.sql', queries: splitSqlStatements(catalogSyncSql) },
   ])
 }
 

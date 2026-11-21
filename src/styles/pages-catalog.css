@@ -65,3 +65,25 @@
   .sources-toolbar .sources-create { padding-inline: var(--space-1); }
   .sources-toolbar .sources-create svg { display: none; }
 }
+
+.catalog-sync-diff {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+.catalog-sync-diff dt { color: var(--color-text-muted); }
+.catalog-sync-diff dd { margin: 0; font-weight: var(--weight-strong); }
+.catalog-node-fields {
+  display: grid;
+  gap: var(--space-2);
+}
+.catalog-node-raw {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.catalog-sync-form { align-content: start; }
+.catalog-sync-form .dialog-actions { margin-top: var(--space-3); }

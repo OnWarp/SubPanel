@@ -1,6 +1,7 @@
 import type { AdminSubscription, CatalogGroup, CatalogNode, CatalogSource } from '../../app/api'
 
 export function groupNodeIds(group: CatalogGroup, sources: CatalogSource[], nodes: CatalogNode[]): Set<string> {
+  if (group.resolvedNodeIds) return new Set(group.resolvedNodeIds)
   const enabledSources = new Set(sources.filter((source) => source.enabled && group.sourceIds.includes(source.id)).map((source) => source.id))
   const candidates = new Set(nodes.filter((node) => node.sourceIds.some((id) => enabledSources.has(id))).map((node) => node.id))
   for (const id of group.includedNodeIds) candidates.add(id)

@@ -2,6 +2,7 @@ import { parseDocument } from 'yaml'
 import { containsRecognizedUri, decodeSubscriptionBase64 } from './base64.js'
 import { isLoonContent, parseLoon } from './loon.js'
 import { isMihomoProxyEntry, parseMihomo } from './mihomo.js'
+import type { ImportFormat } from '../catalog/schema.js'
 import type { ImportResult } from './model.js'
 import { isQuantumultXContent, parseQuantumultX } from './quantumultx.js'
 import { parseSingBox } from './singbox.js'
@@ -52,7 +53,6 @@ export function detectImport(content: string): ImportResult {
   if (blocks.length > 1) {
     const nodes: ImportResult['nodes'] = []
     const warnings: ImportResult['warnings'] = []
-    const seen = new Set<string>()
     for (const block of blocks) {
       let result: ImportResult
       try {
@@ -62,14 +62,27 @@ export function detectImport(content: string): ImportResult {
         continue
       }
       warnings.push(...result.warnings)
-      for (const node of result.nodes) {
-        const key = `${node.protocol}\u0000${node.server}\u0000${node.port}\u0000${node.displayName}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        nodes.push(node)
-      }
+      nodes.push(...result.nodes)
     }
     if (nodes.length > 0) return { format: 'mixed', nodes, warnings }
   }
   return detectSingle(trimmed)
+}
+
+export function importWithFormat(content: string, format?: ImportFormat): ImportResult {
+  switch (format) {
+    case 'mihomo': return parseMihomo(content)
+    case 'sing-box': return parseSingBox(content)
+    case 'sip008': return parseSip008(content)
+    case 'loon': return parseLoon(content)
+    case 'surge': return parseSurge(content)
+    case 'quantumultx': return parseQuantumultX(content)
+    case 'uri-list': return parseUriList(content)
+    case 'base64-uri-list': {
+      const decoded = decodeSubscriptionBase64(content.trim())
+      if (!decoded) throw new Error('UNSUPPORTED_IMPORT_FORMAT')
+      return { ...parseUriList(decoded), format }
+    }
+    default: return detectImport(content)
+  }
 }

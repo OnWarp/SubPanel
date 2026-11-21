@@ -46,9 +46,9 @@ describe('catalog raw variant aggregation', () => {
     }, { now: NOW })
 
     let catalog = await readCatalog(env)
-    expect(catalog.nodes).toHaveLength(2)
-    expect(new Set(catalog.nodes.map(({ fingerprint }) => fingerprint)).size).toBe(2)
-    expect(catalog.nodes.find(({ tls }) => tls?.certificate === 'CERT-A')?.sourceIds).toEqual(['src_1', 'src_2'])
+    expect(catalog.nodes).toHaveLength(3)
+    expect(new Set(catalog.nodes.map(({ fingerprint }) => fingerprint)).size).toBe(3)
+    expect(catalog.nodes.filter(({ tls }) => tls?.certificate === 'CERT-A').map(({ sourceIds }) => sourceIds)).toEqual([['src_1'], ['src_2']])
 
     await replaceSourceContent(env, first.source.id, vless('Only B', 'CERT-B'), { now: '2026-07-25T01:00:00.000Z' })
     catalog = await readCatalog(env)

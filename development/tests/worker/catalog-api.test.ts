@@ -38,6 +38,14 @@ describe('administrator Catalog APIs', () => {
       ['PUT', '/api/admin/catalog/sources/src_1'],
       ['DELETE', '/api/admin/catalog/sources/src_1'],
       ['POST', '/api/admin/catalog/sources/src_1/refresh'],
+      ['POST', '/api/admin/catalog/sources/src_1/preview-diff'],
+      ['POST', '/api/admin/catalog/sources/src_1/confirm-sync'],
+      ['POST', '/api/admin/catalog/sources/src_1/cancel-sync'],
+      ['GET', '/api/admin/catalog/sources/src_1/sync-runs'],
+      ['POST', '/api/admin/catalog/nodes'],
+      ['POST', '/api/admin/catalog/nodes/node_1/details'],
+      ['POST', '/api/admin/catalog/nodes/node_1/test-output'],
+      ['POST', '/api/admin/catalog/groups/preview'],
       ['PATCH', '/api/admin/catalog/nodes/node_1'],
       ['POST', '/api/admin/catalog/groups'],
       ['PUT', '/api/admin/catalog/groups/grp_1'],
@@ -160,8 +168,7 @@ describe('administrator Catalog APIs', () => {
     )
     expect(replaced.status).toBe(200)
     let catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { nodes: Array<{ sourceIds: string[] }> }
-    expect(catalog.nodes).toHaveLength(1)
-    expect(catalog.nodes[0].sourceIds).toEqual([firstId, secondId])
+    expect(catalog.nodes.map(({ sourceIds }) => sourceIds)).toEqual([[firstId], [secondId]])
 
     expect((await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources/${firstId}`,
@@ -262,9 +269,14 @@ describe('administrator Catalog APIs', () => {
     )
     const remoteBody = await remote.json() as { source: { id: string }; warning?: string }
     expect(remoteBody.warning).toContain('订阅')
-    const refreshed = await exports.default.fetch(
+    const preview = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources/${remoteBody.source.id}/refresh`,
       jsonRequest({}, withCookie(cookie)),
+    )
+    const { id: previewId } = await preview.json() as { id: string }
+    const refreshed = await exports.default.fetch(
+      `${TEST_ORIGIN}/api/admin/catalog/sources/${remoteBody.source.id}/confirm-sync`,
+      jsonRequest({ previewId }, withCookie(cookie)),
     )
     expect((await refreshed.json() as { warning?: string }).warning).toContain('订阅')
   })
@@ -331,6 +343,51 @@ describe('administrator Catalog APIs', () => {
     expect(response.status).toBe(500)
     const latest = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { groups: Array<{ id: string }> }
     expect(latest.groups.map(({ id }) => id)).toContain(groupId)
+  })
+
+  it('previews without applying, confirms the captured response once, and rejects stale previews', async () => {
+    const cookie = await login()
+    const node = ssLine('Newest')
+    const fetcher = vi.fn(async () => new Response(`${node}\n${node}\nss://invalid`, { headers: { ETag: '"test-feed"' } }))
+    vi.stubGlobal('fetch', fetcher)
+    const request = (path: string, body: object = {}, method = 'POST') =>
+      exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog${path}`, jsonRequest(body, { ...withCookie(cookie), method }))
+    const created = await request('/sources', { type: 'remote', name: 'Remote', url: 'https://feed.example.com/config', refreshIntervalMinutes: 15, formatOverride: 'uri-list' })
+    expect(created.status).toBe(201)
+    expect(fetcher).not.toHaveBeenCalled()
+    const before = await readCatalog(env)
+    const first = await (await request('/sources/src_1/preview-diff')).json<{ id: string; diff: object }>()
+    expect(first.diff).toMatchObject({ added: 1, updated: 0, missing: 0, duplicates: 1, parseFailed: 1 })
+    expect(await readCatalog(env)).toEqual(before)
+
+    expect((await request('/sources/src_1', { name: 'Changed' }, 'PUT')).status).toBe(200)
+    expect((await request('/sources/src_1/confirm-sync', { previewId: first.id })).status).toBe(409)
+    const fresh = await (await request('/sources/src_1/preview-diff')).json<{ id: string }>()
+    expect((await request('/sources/src_1/confirm-sync', { previewId: fresh.id })).status).toBe(200)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    const catalog = await readCatalog(env)
+    expect(catalog.nodes[0]).toMatchObject({ displayName: 'Newest', sourceIds: ['src_1'] })
+    expect(catalog.sources[0].sync).toMatchObject({ httpStatus: 200, etag: '"test-feed"', consecutiveFailures: 0 })
+    expect((await request('/sources/src_1/confirm-sync', { previewId: fresh.id })).status).toBe(409)
+    const runs = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/sources/src_1/sync-runs`, withCookie(cookie))
+    expect(await runs.json()).toMatchObject({ runs: [{ status: 'success', details: { added: 1, duplicates: 1 } }] })
+  })
+
+  it('previews dynamic membership, disabled nodes and client compatibility', async () => {
+    const cookie = await login()
+    const request = (path: string, body: object, method = 'POST') =>
+      exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog${path}`, jsonRequest(body, { ...withCookie(cookie), method }))
+    await request('/sources', { type: 'manual', name: 'Source', content: `${ssLine('One')}\n${ssLine('Two', 'two')}\n${ssLine('Exclude', 'exclude')}` })
+    for (const id of ['node_1', 'node_2', 'node_3']) {
+      expect((await request(`/nodes/${id}`, { tags: ['edge'], region: 'JP', enabled: id !== 'node_2' }, 'PATCH')).status).toBe(200)
+    }
+    const input = { name: 'Dynamic', sourceIds: [], includedNodeIds: [], excludedNodeIds: ['node_3'], nodeOrder: [],
+      rules: { region: 'jp', tags: ['edge'], protocols: ['shadowsocks'] } }
+    const response = await request('/groups/preview', { input, client: 'mihomo' })
+    expect(await response.json()).toMatchObject({ matched: 2, disabled: 1, incompatible: 0, outputNodes: 1,
+      nodes: [{ id: 'node_1', displayName: 'One' }], affectedSubscriptions: 0 })
+    expect((await request('/groups', input)).status).toBe(201)
+    expect((await readCatalog(env)).groups[0].rules).toEqual(input.rules)
   })
 
   it('returns stable validation and remote error envelopes', async () => {

@@ -49,6 +49,7 @@ type SourceSql = {
   name: string
   type: 'manual' | 'file' | 'remote'
   enabled: number
+  sync_metadata: string | null
   keep_on_failure?: number
   encrypted_content: string | null
   encrypted_url: string | null
@@ -74,6 +75,7 @@ type NodeSql = {
   transport: string | null
   plugin: string | null
   extensions: string
+  source_metadata: string | null
   fingerprint: string
   source_ids: string
   enabled: number
@@ -93,6 +95,7 @@ type VariantSql = {
 }
 
 type GroupSql = {
+  match_rules: string | null
   id: string
   name: string
   created_at: string
@@ -263,6 +266,7 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
         assignOptional(source, 'encryptedUrl', optionalJson(row.encrypted_url))
         assignOptional(source, 'encryptedHeaders', optionalJson(row.encrypted_headers))
         assignOptional(source, 'refreshIntervalMinutes', row.refresh_interval_minutes)
+        assignOptional(source, 'sync', optionalJson(row.sync_metadata ?? null))
         assignOptional(source, 'detectedFormat', row.detected_format)
         assignOptional(source, 'lastAttemptAt', row.last_attempt_at)
         assignOptional(source, 'lastSuccessAt', row.last_success_at)
@@ -271,6 +275,7 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
       }),
       nodes: orderedNodes.map((row) => {
         const node: Record<string, unknown> = {
+          ...JSON.parse(row.source_metadata ?? '{}'),
           id: row.id,
           protocol: row.protocol,
           displayName: row.display_name,
@@ -300,6 +305,7 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
       groups: orderedGroups.map((row) => ({
         id: row.id,
         name: row.name,
+        rules: optionalJson(row.match_rules ?? null),
         sourceIds: idsByPosition(groupSources.results.filter((item) => item.group_id === row.id).map((item) => ({ position: item.position, id: item.source_id }))),
         includedNodeIds: idsByPosition(groupNodes.results.filter((item) => item.group_id === row.id && item.relation === 'included').map((item) => ({ position: item.position, id: item.node_id }))),
         excludedNodeIds: idsByPosition(groupNodes.results.filter((item) => item.group_id === row.id && item.relation === 'excluded').map((item) => ({ position: item.position, id: item.node_id }))),
@@ -425,10 +431,15 @@ function groupOrderInsert(db: AppDatabase, row: GroupNodeOrderRow): D1PreparedSt
   ).bind(row.group_id, row.node_id, row.position)
 }
 
-export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogSnapshot): Promise<void> {
+export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogSnapshot, expectedRevision?: number): Promise<void> {
   const converted = convertCatalog(snapshot)
   const meta = metaFromSnapshot(snapshot)
   const statements: D1PreparedStatement[] = [
+    // A stale revision violates the NOT NULL constraint and rolls back the whole batch.
+    ...(expectedRevision === undefined ? [] : [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+      SELECT 'catalog_write_conflict', NULL, ?
+      WHERE COALESCE((SELECT json_extract(value, '$') FROM system_settings WHERE key = ?), 0) != ?`)
+      .bind(meta.updatedAt, CATALOG_SETTING_KEYS.revision, expectedRevision)]),
     db.prepare('DELETE FROM group_node_order'),
     db.prepare('DELETE FROM group_nodes'),
     db.prepare('DELETE FROM group_sources'),
@@ -439,6 +450,27 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
     ...converted.rows.nodes.map((row) => nodeInsert(db, row)),
     ...converted.rows.node_raw_variants.map((row) => variantInsert(db, row)),
     ...converted.rows.groups.map((row) => groupInsert(db, row)),
+    ...snapshot.sources.filter((row) => row.sync).map((row) =>
+      db.prepare('UPDATE sources SET sync_metadata = ? WHERE id = ?').bind(JSON.stringify(row.sync), row.id)),
+    ...snapshot.nodes.filter((row) => row.sourceFingerprint || row.displayNameOverride || row.tags || row.region || row.lastSeenAt || row.missingSince || row.originNodeId).map((row) => {
+      const { sourceFingerprint, originNodeId, displayNameOverride, tags, region, lastSeenAt, missingSince } = row
+      return db.prepare('UPDATE nodes SET source_metadata = ? WHERE id = ?').bind(
+        JSON.stringify({ sourceFingerprint, originNodeId, displayNameOverride, tags, region, lastSeenAt, missingSince }), row.id)
+    }),
+    ...snapshot.groups.filter((row) => row.rules).map((row) => db.prepare('UPDATE groups SET match_rules = ? WHERE id = ?')
+      .bind(row.rules ? JSON.stringify(row.rules) : null, row.id)),
+    // Guard group removal within the same transaction as the snapshot write.
+    ...(expectedRevision === undefined ? [] : [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+      SELECT '', 'null', ?
+      WHERE EXISTS (
+        SELECT id FROM groups WHERE id NOT IN (SELECT value FROM json_each(?))
+        AND id IN (
+          SELECT pg.group_id FROM plan_groups pg JOIN plans p ON p.id = pg.plan_id WHERE p.enabled = 1
+          UNION ALL
+          SELECT sg.group_id FROM subscription_groups sg JOIN subscriptions s ON s.id = sg.subscription_id
+            WHERE s.enabled = 1 AND s.plan_revoked = 0 AND (s.expires_at IS NULL OR s.expires_at > ?)
+        )
+      )`).bind(meta.updatedAt, JSON.stringify(snapshot.groups.map(({ id }) => id)), Date.now())]),
     deleteMissing(db, 'groups', converted.rows.groups.map((row) => row.id)),
     ...converted.rows.group_sources.map((row) => groupSourceInsert(db, row)),
     ...converted.rows.group_nodes.map((row) => groupNodeInsert(db, row)),

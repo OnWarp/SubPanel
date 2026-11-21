@@ -97,11 +97,12 @@ describe('D1 migrations', () => {
       '0016_source_keep_on_failure.sql',
       '0017_template_enhancements.sql',
       '0018_subscription_plans.sql',
+      '0019_catalog_sync.sql',
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(17)
+    expect(replayed?.count).toBe(18)
 
     await env.DB.prepare(
       `INSERT INTO users (
