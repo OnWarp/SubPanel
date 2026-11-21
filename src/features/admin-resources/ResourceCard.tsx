@@ -22,12 +22,10 @@ export function ResourceFooter({ count, unit, pagination, children }: {
   return (
     <footer className="resource-card-footer">
       <span>共 {count} {unit}</span>
-      <div className="resource-card-footer-controls">
+      {(pagination || children) && <div className="resource-card-footer-controls">
         {children}
-        {pagination
-          ? <Pagination {...pagination} compact />
-          : <span>1 / 1 页</span>}
-      </div>
+        {pagination && <Pagination {...pagination} compact />}
+      </div>}
     </footer>
   )
 }
@@ -69,9 +67,11 @@ export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
   const popup = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
 
+  const unavailable = actions.every((action) => action.disabled)
+
   return (
     <>
-      <button ref={trigger} className="icon-button resource-card-more" type="button" aria-label="更多操作" popoverTarget={id} disabled={actions.every((action) => action.disabled)}>
+      <button ref={trigger} className="icon-button resource-card-more" type="button" aria-label="更多操作" popoverTarget={unavailable ? undefined : id} aria-disabled={unavailable || undefined}>
         <Ellipsis aria-hidden="true" size={18} />
       </button>
       <div className="resource-card-actions" id={id} ref={popup} popover="auto" role="group" aria-label="行操作">
@@ -85,6 +85,7 @@ export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
             disabled={disabled}
             onClick={() => {
               popup.current?.hidePopover()
+              trigger.current?.focus()
               onClick(trigger.current)
             }}
           >{label}{checked !== undefined && <span aria-hidden="true">{checked ? ' ✓' : ''}</span>}</button>

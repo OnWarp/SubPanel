@@ -1,20 +1,21 @@
-import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { CheckCircle2, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
+import { PageHeader } from '../../ui/PageHeader'
 import { FilterBar } from '../../ui/FilterBar'
-import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { EditDrawer } from '../../ui/EditDrawer'
+import { Link } from 'react-router-dom'
 import { useToast } from '../../ui/Toast'
 import { formatDate, matchesText } from './catalog-utils'
 
@@ -51,6 +52,9 @@ export function NodesPage() {
   const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [batchError, setBatchError] = useState('')
+  const drawerTrigger = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [protocol, setProtocol] = useState('all')
   const [sourceId, setSourceId] = useState('all')
@@ -109,7 +113,8 @@ export function NodesPage() {
     setSelected((current) => new Set([...current].filter((id) => visible.has(id))))
   }, [filteredNodes])
 
-  const openEdit = (node: CatalogNode) => {
+  const openEdit = (node: CatalogNode, trigger: HTMLButtonElement | null) => {
+    drawerTrigger.current = trigger
     setEditing(node)
     setNodeForm({ displayName: node.displayName, enabled: node.enabled, retained: node.retained })
     setDrawerError('')
@@ -151,6 +156,7 @@ export function NodesPage() {
     if (!ids.length) return
     setPending(null)
     setBusy(true)
+    setBatchError('')
     const failed = new Set<string>()
     let firstFailure = ''
     try {
@@ -172,10 +178,10 @@ export function NodesPage() {
       }
       await load()
       setSelected(failed)
-      if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
+      if (firstFailure) setBatchError(`${failed.size} 项未完成：${firstFailure}`)
       else toast.notify('批量操作已完成')
     } catch (cause) {
-      toast.notifyError(errorMessage(cause, '批量操作失败'))
+      setBatchError(errorMessage(cause, '批量操作失败'))
     } finally {
       setBusy(false)
       setProgress('')
@@ -197,18 +203,19 @@ export function NodesPage() {
       width: 40,
       render: (node) => <Checkbox type="checkbox" aria-label={`选择节点 ${node.displayName}`} checked={selected.has(node.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(node.id)) next.delete(node.id); else next.add(node.id); return next })} />,
     },
-    { key: 'sequence', header: '序号', width: 60, render: (node) => node.sequence },
+    { key: 'sequence', hideBelow: 'tablet', header: '序号', width: 60, render: (node) => node.sequence },
     { key: 'name', header: '名称', render: (node) => <span className="resource-card-name"><strong>{node.displayName}</strong><span className="cell-note">{node.server} · {node.port}</span></span> },
-    { key: 'protocol', header: '协议', render: (node) => <StatusBadge tone="info" size="xs">{node.protocol}</StatusBadge> },
-    { key: 'sources', header: '来源', render: (node) => node.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
-    { key: 'status', header: '状态', render: (node) => <StatusBadge tone={node.enabled ? 'success' : 'muted'} size="sm">{nodeStatus(node)}</StatusBadge> },
-    { key: 'retained', header: '保留', render: (node) => node.retained ? '是' : '否' },
-    { key: 'updated', header: '更新时间', render: (node) => formatDate(node.updatedAt) },
+    { key: 'protocol', width: '15%', header: '协议', render: (node) => <StatusBadge tone="info" size="xs">{node.protocol}</StatusBadge> },
+    { key: 'sources', hideBelow: 'tablet', header: '来源', render: (node) => node.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
+    { key: 'status', width: '17%', header: '状态', render: (node) => <StatusBadge tone={node.enabled ? 'success' : 'muted'} size="sm">{nodeStatus(node)}</StatusBadge> },
+    { key: 'retained', hideBelow: 'desktop', header: '保留', render: (node) => node.retained ? '是' : '否' },
+    { key: 'updated', hideBelow: 'desktop', header: '更新时间', render: (node) => formatDate(node.updatedAt) },
     {
       key: 'actions',
+      width: 52,
       header: '操作',
       align: 'right',
-      render: (node) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: () => openEdit(node) }]} />,
+      render: (node) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: (trigger) => openEdit(node, trigger) }]} />,
     },
   ]
 
@@ -225,33 +232,38 @@ export function NodesPage() {
 
   return (
     <div className="page-stack resource-pages">
-
-      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
-      <section className="data-section resource-card" aria-labelledby="nodes-title">
-        <ResourceHeading id="nodes-title" title="节点" />
-        <FilterBar className="resource-card-filters">
-          <SearchInput className="cat-filter-search" label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
-          <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
-          <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
+      <section className="catalog-data-section" aria-labelledby="nodes-title">
+        <PageHeader id="nodes-title" title="节点" />
+        <FilterBar className="catalog-filters" searchRef={searchRef}
+          onReset={query || protocol !== 'all' || sourceId !== 'all' || status !== 'all'
+            ? () => { setQuery(''); setProtocol('all'); setSourceId('all'); setStatus('all') }
+            : undefined}
+          moreActive={protocol !== 'all' || sourceId !== 'all'}
+          more={<>
+            <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
+            <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
+          </>}>
+          <SearchInput inputRef={searchRef} label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as NodeStatusFilter)}>{NODE_STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
         </FilterBar>
-        <BatchToolbar selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
-        {loading && !catalog ? (
-          <LoadingState label="正在加载节点" />
-        ) : nodes.length === 0 ? (
-          <EmptyState title="暂无节点" description="来源导入节点后会在这里显示" />
+        {error && <ErrorState message={error} onRetry={() => load()} />}
+        {batchError && <ErrorState message={batchError} />}
+        <BatchToolbar compact selectedCount={selected.size} totalCount={filteredNodes.length} onSelectAll={() => setSelected(new Set(filteredNodes.map((node) => node.id)))} onClear={() => { setSelected(new Set()); searchRef.current?.focus() }} actions={actions} busy={busy} progress={progress} />
+        {!catalog && error ? null : !loading && nodes.length === 0 ? (
+          <EmptyState title="暂无节点"><Link className="button secondary" to="/catalog/sources">管理来源</Link></EmptyState>
         ) : (
-          <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={visibleRows} rowKey={(node) => node.id} empty="暂无匹配节点" />
+          <DataTable flat columns={columns} rows={visibleRows} loadingLabel={loading && !catalog ? '正在加载节点' : undefined} rowKey={(node) => node.id} empty="暂无匹配节点" />
         )}
         <ResourceFooter count={filteredNodes.length} unit="个节点" pagination={{ page, pageCount, onPageChange: setPage }}>
-          <span>{nodes.length} 个节点 · {nodes.filter((node) => node.enabled).length} 个启用</span>
+          <span>{filteredNodes.length !== nodes.length && `全部 ${nodes.length} 个节点 · `}{nodes.filter((node) => node.enabled).length} 个启用</span>
           <label className="resource-card-page-size"><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</FormSelect></label>
         </ResourceFooter>
       </section>
 
-      <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit}>
+      <EditDrawer open={editing !== null} title="编辑节点" busy={busy} size="compact" onClose={closeEdit} returnFocusRef={drawerTrigger}>
         <form className="form-stack" onSubmit={saveNode}>
           <label className="field"><span>节点名称</span><Input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
+          {editing && <p className="drawer-note">来源：{editing.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留'}</p>}
           <p className="drawer-note">服务器、协议和认证字段由来源内容决定</p>
           <Switch label="启用节点" checked={nodeForm.enabled} onChange={(enabled) => setNodeForm((current) => ({ ...current, enabled }))} />
           <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />

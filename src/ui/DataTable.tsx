@@ -9,6 +9,8 @@ export type DataTableColumn<T> = {
   headerContent?: ReactNode
   /** Narrow-screen row label. Falls back to a string header. */
   label?: string
+  hideBelow?: 'desktop' | 'tablet'
+  sortDirection?: 'ascending' | 'descending' | 'none'
   width?: number | string
   align?: DataTableAlign
   render?: (row: T) => ReactNode
@@ -19,7 +21,9 @@ type DataTableProps<T> = {
   rows: T[]
   rowKey: (row: T) => string | number
   empty?: ReactNode
+  loadingLabel?: string
   pagination?: PaginationProps
+  flat?: boolean
   className?: string
 }
 
@@ -27,6 +31,10 @@ function alignClass(align?: DataTableAlign) {
   if (align === 'right') return ' sp-align-right'
   if (align === 'center') return ' sp-align-center'
   return ''
+}
+
+function columnClass(column: Pick<DataTableColumn<unknown>, 'align' | 'hideBelow'>) {
+  return [alignClass(column.align).trim(), column.hideBelow && `sp-column-${column.hideBelow}`].filter(Boolean).join(' ') || undefined
 }
 
 function widthStyle(width?: number | string) {
@@ -39,21 +47,28 @@ function columnLabel(column: { header: ReactNode; label?: string }) {
   return typeof column.header === 'string' ? column.header : ''
 }
 
-export function DataTable<T>({ columns, rows, rowKey, empty, pagination, className }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagination, flat = false, className }: DataTableProps<T>) {
   return (
-    <div className={`sp-table-wrap${className ? ` ${className}` : ''}`}>
-      <table className="sp-table">
+    <div className={`sp-table-wrap${flat ? ' sp-table-flat' : ''}${className ? ` ${className}` : ''}`}>
+      {loadingLabel && <span className="sp-table-loading-label" role="status">{loadingLabel}</span>}
+      <table className="sp-table" aria-busy={loadingLabel ? true : undefined}>
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} scope="col" style={widthStyle(column.width)} className={alignClass(column.align).trim() || undefined}>
+              <th key={column.key} scope="col" style={widthStyle(column.width)} aria-sort={column.sortDirection} className={columnClass(column)}>
                 {column.headerContent ?? column.header}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
+          {loadingLabel ? [0, 1, 2].map((index) => (
+            <tr key={index} aria-hidden="true">
+              {columns.map((column) => (
+                <td key={column.key} className={columnClass(column)}><span className="sp-table-placeholder" /></td>
+              ))}
+            </tr>
+          )) : rows.length === 0 ? (
             <tr>
               <td colSpan={columns.length} className="empty-row">{empty ?? '暂无数据'}</td>
             </tr>
@@ -64,8 +79,8 @@ export function DataTable<T>({ columns, rows, rowKey, empty, pagination, classNa
                   ? column.render(row)
                   : (row as Record<string, unknown>)[column.key] as ReactNode
                 return (
-                  <td key={column.key} data-label={columnLabel(column)} className={alignClass(column.align).trim() || undefined}>
-                    {content}
+                  <td key={column.key} data-label={columnLabel(column)} className={columnClass(column)}>
+                    {content == null || content === '' ? '—' : content}
                   </td>
                 )
               })}

@@ -1,14 +1,14 @@
-import { ResourceFooter, ResourceHeading, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
+import { PageHeader } from '../../ui/PageHeader'
 import { FilterBar } from '../../ui/FilterBar'
-import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
@@ -44,12 +44,15 @@ export function GroupsPage() {
   const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [batchError, setBatchError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<'create' | CatalogGroup | null>(null)
   const [form, setForm] = useState<GroupForm>(emptyForm)
   const [drawerError, setDrawerError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [progress, setProgress] = useState('')
+  const drawerTrigger = useRef<HTMLButtonElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const toast = useToast()
 
@@ -91,13 +94,20 @@ export function GroupsPage() {
     return groups.filter((group) => group.name.toLowerCase().includes(needle))
   }, [groups, query])
 
-  const openCreate = () => {
+  useEffect(() => {
+    const visible = new Set(filteredGroups.map((group) => group.id))
+    setSelected((current) => new Set([...current].filter((id) => visible.has(id))))
+  }, [filteredGroups])
+
+  const openCreate = (event: React.MouseEvent<HTMLButtonElement>) => {
+    drawerTrigger.current = event.currentTarget
     setForm({ ...emptyForm(), nodeOrder: nodes.map((node) => node.id) })
     setDrawerError('')
     setEditing('create')
   }
 
-  const openEdit = (group: CatalogGroup) => {
+  const openEdit = (group: CatalogGroup, trigger: HTMLButtonElement | null) => {
+    drawerTrigger.current = trigger
     setForm({
       name: group.name,
       sourceIds: [...group.sourceIds],
@@ -174,6 +184,7 @@ export function GroupsPage() {
     if (!ids.length) return
     setConfirmDelete(false)
     setBusy(true)
+    setBatchError('')
     const failed = new Set<string>()
     let firstFailure = ''
     try {
@@ -188,10 +199,10 @@ export function GroupsPage() {
       }
       await load()
       setSelected(failed)
-      if (firstFailure) toast.notifyError(`${failed.size} 项未完成：${firstFailure}`)
+      if (firstFailure) setBatchError(`${failed.size} 项未完成：${firstFailure}`)
       else toast.notify('分组已删除')
     } catch (cause) {
-      toast.notifyError(errorMessage(cause, '批量删除失败'))
+      setBatchError(errorMessage(cause, '批量删除失败'))
     } finally {
       setBusy(false)
       setProgress('')
@@ -209,42 +220,39 @@ export function GroupsPage() {
       render: (group) => <Checkbox type="checkbox" aria-label={`选择分组 ${group.name}`} checked={selected.has(group.id)} disabled={busy} onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next })} />,
     },
     { key: 'name', header: '名称', render: (group) => <span className="resource-card-name"><strong>{group.name}</strong><span className="cell-note">{group.id}</span></span> },
-    { key: 'sources', header: '来源数', render: (group) => group.sourceIds.length },
-    { key: 'nodes', header: '节点数', render: (group) => groupNodeCounts.get(group.id) ?? 0 },
-    { key: 'included', header: '单独包含', render: (group) => group.includedNodeIds.length },
-    { key: 'excluded', header: '排除', render: (group) => group.excludedNodeIds.length },
-    { key: 'updated', header: '更新时间', render: (group) => formatDate(group.updatedAt) },
+    { key: 'sources', width: '17%', header: '来源数', render: (group) => group.sourceIds.length },
+    { key: 'nodes', width: '17%', header: '节点数', render: (group) => groupNodeCounts.get(group.id) ?? 0 },
+    { key: 'included', hideBelow: 'desktop', header: '单独包含', render: (group) => group.includedNodeIds.length },
+    { key: 'excluded', hideBelow: 'desktop', header: '排除', render: (group) => group.excludedNodeIds.length },
+    { key: 'updated', hideBelow: 'tablet', header: '更新时间', render: (group) => formatDate(group.updatedAt) },
     {
       key: 'actions',
+      width: 52,
       header: '操作',
       align: 'right',
-      render: (group) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: () => openEdit(group) }]} />,
+      render: (group) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: (trigger) => openEdit(group, trigger) }]} />,
     },
   ]
 
   return (
     <div className="page-stack resource-pages">
-
-      {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
-
-
-      <section className="data-section resource-card" aria-labelledby="groups-title">
-        <ResourceHeading id="groups-title" title="分组" action={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
-        <FilterBar className="resource-card-filters">
-          <SearchInput label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
+      <section className="catalog-data-section" aria-labelledby="groups-title">
+        <PageHeader id="groups-title" title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+        <FilterBar className="catalog-filters" searchRef={searchRef} onReset={query ? () => setQuery('') : undefined}>
+          <SearchInput inputRef={searchRef} label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
         </FilterBar>
-        <BatchToolbar selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
-        {loading && !catalog ? (
-          <LoadingState label="正在加载分组" />
-        ) : filteredGroups.length === 0 ? (
-          <EmptyState title="暂无分组" description={query ? '换个关键词试试' : '创建分组后即可组合来源与节点'} />
+        {error && <ErrorState message={error} onRetry={() => load()} />}
+        {batchError && <ErrorState message={batchError} />}
+        <BatchToolbar compact selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => { setSelected(new Set()); searchRef.current?.focus() }} actions={actions} busy={busy} progress={progress} />
+        {!catalog && error ? null : !loading && groups.length === 0 ? (
+          <EmptyState title="暂无分组"><button className="button secondary" type="button" onClick={openCreate} aria-label="创建首个分组">添加分组</button></EmptyState>
         ) : (
-          <DataTable className="resource-card-table resource-card-selectable" columns={columns} rows={filteredGroups} rowKey={(group) => group.id} empty="暂无匹配分组" />
+          <DataTable flat columns={columns} rows={filteredGroups} loadingLabel={loading && !catalog ? '正在加载分组' : undefined} rowKey={(group) => group.id} empty="暂无匹配分组" />
         )}
         <ResourceFooter count={filteredGroups.length} unit="个分组" />
       </section>
 
-      <EditDrawer open={editing !== null} title={editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} size="wide" onClose={closeEdit}>
+      <EditDrawer open={editing !== null} title={editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} size="wide" onClose={closeEdit} returnFocusRef={drawerTrigger}>
         <form className="form-stack group-form" onSubmit={saveGroup}>
           <label className="field"><span>分组名称</span><Input aria-label="分组名称" value={form.name} maxLength={128} onChange={(event) => { const name = event.currentTarget.value; setForm((current) => ({ ...current, name })) }} required /></label>
 

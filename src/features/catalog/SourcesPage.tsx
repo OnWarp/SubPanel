@@ -1,6 +1,6 @@
-import { ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, Input, FormSelect, Textarea, FileInput } from '../../ui/Controls'
-import { CheckCircle2, FileUp, Plus, RefreshCw, Rss, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, FileUp, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -10,7 +10,6 @@ import { Switch } from '../../ui/Switch'
 import { ErrorState } from '../../ui/ErrorState'
 import { PageHeader } from '../../ui/PageHeader'
 import { FilterBar } from '../../ui/FilterBar'
-import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -88,7 +87,9 @@ export function SourcesPage() {
   const [loading, setLoading] = useState(() => catalog === null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [batchError, setBatchError] = useState('')
   const [warning, setWarning] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<SourceStatusFilter>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -151,8 +152,8 @@ export function SourcesPage() {
     setDrawerError('')
   }
 
-  const openCreate = () => {
-    drawerTrigger.current = createButton.current
+  const openCreate = (event: React.MouseEvent<HTMLButtonElement>) => {
+    drawerTrigger.current = event.currentTarget
     setForm(emptyForm())
     setPreview(null)
     setDrawerError('')
@@ -296,6 +297,7 @@ export function SourcesPage() {
     if (!ids.length) return
     setPendingBatch(null)
     setBusy(true)
+    setBatchError('')
     setWarning('')
     const failed = new Set<string>()
     const failures: string[] = []
@@ -318,10 +320,10 @@ export function SourcesPage() {
       }
       await load()
       setSelected(failed)
-      if (failures.length) toast.notifyError(`${failures.length} 项未完成：${failures[0]}`)
+      if (failures.length) setBatchError(`${failures.length} 项未完成：${failures[0]}`)
       else toast.notify(action === 'delete' ? '来源已删除' : '批量操作已完成')
     } catch (cause) {
-      toast.notifyError(errorMessage(cause, '批量操作失败'))
+      setBatchError(errorMessage(cause, '批量操作失败'))
     } finally {
       setBusy(false)
       setBatchProgress('')
@@ -349,13 +351,14 @@ export function SourcesPage() {
       header: '名称',
       render: (source) => <span className="resource-card-name"><strong>{source.name}</strong><span className="cell-note">{source.remoteHost || source.id}</span></span>,
     },
-    { key: 'type', header: '类型', render: (source) => sourceTypeLabel(source.type) },
-    { key: 'format', header: '格式', render: (source) => formatLabel(source.detectedFormat) },
-    { key: 'nodes', header: '节点', render: (source) => sourceNodeCounts.get(source.id) ?? 0 },
-    { key: 'status', header: '状态', render: (source) => <StatusBadge tone={statusTone(source)} size="sm">{sourceStatus(source)}</StatusBadge> },
-    { key: 'lastSync', header: '最近同步', render: (source) => formatDate(source.lastSuccessAt) },
+    { key: 'type', hideBelow: 'tablet', header: '类型', render: (source) => sourceTypeLabel(source.type) },
+    { key: 'format', hideBelow: 'desktop', header: '格式', render: (source) => formatLabel(source.detectedFormat) },
+    { key: 'nodes', width: '12%', header: '节点', render: (source) => sourceNodeCounts.get(source.id) ?? 0 },
+    { key: 'status', width: '19%', header: '状态', render: (source) => <StatusBadge tone={statusTone(source)} size="sm">{sourceStatus(source)}</StatusBadge> },
+    { key: 'lastSync', hideBelow: 'desktop', header: '最近同步', render: (source) => source.lastSuccessAt ? formatDate(source.lastSuccessAt) : null },
     {
       key: 'actions',
+      width: 52,
       header: '操作',
       align: 'right',
       render: (source) => (
@@ -373,28 +376,26 @@ export function SourcesPage() {
 
   return (
     <div className="page-stack resource-pages sources-page">
-      <section className="sources-section" aria-labelledby="sources-title">
+      <section className="catalog-data-section" aria-labelledby="sources-title">
         <PageHeader id="sources-title" title="来源" />
-        <FilterBar className="sources-toolbar">
-          <SearchInput label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
+        <FilterBar className="catalog-filters sources-toolbar" searchRef={searchRef}
+          onReset={query || statusFilter !== 'all' ? () => { setQuery(''); setStatusFilter('all') } : undefined}>
+          <SearchInput inputRef={searchRef} label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
           <label className="filter-field"><span className="sources-filter-label">状态</span><FormSelect aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as SourceStatusFilter)}>{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
           <button ref={createButton} className="button primary sources-create" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>
-          {query || statusFilter !== 'all' ? <button className="button ghost" type="button" onClick={() => { setQuery(''); setStatusFilter('all') }}>重置筛选</button> : null}
         </FilterBar>
         {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
         {warning ? <StatusMessage tone="warning">{warning}</StatusMessage> : null}
-        <BatchToolbar selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => setSelected(new Set())} actions={batchActions} busy={busy} progress={batchProgress} />
-        {loading && !catalog ? (
-          <LoadingState label="正在加载来源" />
-        ) : sources.length === 0 ? (
-          <EmptyState icon={Rss} title="暂无来源" />
+        {batchError && <ErrorState message={batchError} />}
+        <BatchToolbar compact selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => { setSelected(new Set()); searchRef.current?.focus() }} actions={batchActions} busy={busy} progress={batchProgress} />
+        {!catalog && error ? null : !loading && sources.length === 0 ? (
+          <EmptyState title="暂无来源"><button className="button secondary" type="button" onClick={openCreate} aria-label="创建首个来源">添加来源</button></EmptyState>
         ) : (
-          <DataTable className="sources-table" columns={columns} rows={filteredSources} rowKey={(source) => source.id} empty="暂无匹配来源" />
+          <DataTable flat columns={columns} rows={filteredSources} loadingLabel={loading && !catalog ? '正在加载来源' : undefined} rowKey={(source) => source.id} empty="暂无匹配来源" />
         )}
-        <footer className="sources-footer">
-          <span>共 {filteredSources.length} 个来源</span>
-          {filteredSources.length !== sources.length ? <span>全部 {sources.length} 个来源</span> : null}
-        </footer>
+        <ResourceFooter count={filteredSources.length} unit="个来源">
+          {filteredSources.length !== sources.length && <span>全部 {sources.length} 个来源</span>}
+        </ResourceFooter>
       </section>
 
       <EditDrawer open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={drawerTrigger}>

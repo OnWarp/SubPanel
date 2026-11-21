@@ -1,88 +1,4 @@
-/*
- * Phase 4 page styles: catalog sources / nodes / groups (catalog group).
- * Every class is cat- prefixed and page-local; shared primitives live in
- * components.css and are never overridden here.
- */
-
-/* Shared data surface ---------------------------------------------------- */
-.cat-data-section .sp-table-wrap {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  overflow-x: auto;
-}
-
-/* Filter bar ------------------------------------------------------------- */
-.cat-filter-search {
-  flex: 0 0 auto;
-  width: 210px;
-}
-.cat-chip-group {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-2);
-}
-.cat-select-all {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-weight: 590;
-  white-space: nowrap;
-}
-.cat-select-all input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-primary);
-}
-
-/* Table tools (select all, page size + range) --------------------------- */
-.cat-table-tools {
-  display: flex;
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-4);
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  font-variant-numeric: tabular-nums;
-}
-.cat-page-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-}
-.cat-page-meta label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.cat-page-meta select {
-  min-height: 32px;
-  padding: 4px 26px 4px var(--space-3);
-}
-
-/* Responsive ------------------------------------------------------------- */
-@media (max-width: 900px) {
-  .cat-filter-search { width: 170px; }
-}
-
-@media (max-width: 760px) {
-  .cat-filter-search { width: 160px; }
-  .cat-table-tools {
-    padding: var(--space-2) 0;
-    border-bottom: 0;
-  }
-}
-
-/* Sources uses a single flat table at every width. */
-.sources-section {
+.catalog-data-section {
   display: grid;
   min-width: 0;
   gap: var(--space-3);
@@ -90,106 +6,28 @@
   font-size: var(--font-page-body);
 }
 
+.catalog-data-section > .resource-card-footer { border-top: 0; padding: 0; }
+
+.catalog-filters .sp-search {
+  flex: 1 1 180px;
+  width: auto;
+  max-width: 320px;
+}
+
+.catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+  min-height: var(--size-page-button);
+}
+
+.catalog-filters .filter-field { min-width: 0; max-width: 100%; }
+
 .sources-toolbar.sp-filter-bar {
   display: grid;
   grid-template-columns: minmax(0, 320px) auto 1fr;
-  align-items: center;
   gap: var(--space-2);
 }
-
-.sources-toolbar .sp-search {
-  width: 100%;
-  min-width: 0;
-}
-
-.sources-toolbar .filter-field {
-  min-width: 0;
-}
-
-.sources-toolbar .sources-create {
-  justify-self: end;
-  white-space: nowrap;
-}
-
-.sources-toolbar :is(.sp-search, .sp-select-trigger, .button) {
-  min-height: var(--size-page-button);
-  border-radius: var(--radius-control);
-}
-
-.sources-toolbar > .ghost {
-  grid-column: 1 / -1;
-  justify-self: start;
-}
-
-.sources-section > .batch-toolbar {
-  width: auto;
-  height: auto;
-  min-height: var(--size-touch-target);
-  margin: 0;
-  flex-wrap: wrap;
-}
-
-.sources-table.sp-table-wrap {
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-}
-
-.sources-table .sp-table {
-  table-layout: fixed;
-}
-
-.sources-table .sp-table :is(th, td) {
-  height: var(--size-table-row);
-  padding: 0 var(--space-2);
-  border-bottom: var(--size-divider) solid var(--color-border);
-}
-
-.sources-table .sp-table th {
-  height: var(--size-touch-target);
-  border-top: var(--size-divider) solid var(--color-border);
-  background: var(--color-surface);
-  font-size: var(--font-page-meta);
-  letter-spacing: normal;
-}
-
-.sources-table .sp-table th:nth-child(2) { width: 32%; }
-.sources-table .sp-table th:nth-child(7) { width: 22%; }
-.sources-table .sp-table th:last-child { width: var(--size-table-row); }
-
-.sources-table .resource-card-select-all > span { display: none; }
-
-.sources-table .sp-table .sp-align-right {
-  text-align: right;
-}
-
-.sources-table .resource-card-name {
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.sources-table .cell-note {
-  color: var(--color-text-muted);
-  font-size: var(--font-page-meta);
-}
-
-.sources-table .sp-badge {
-  padding-inline: 0;
-  border: 0;
-  background: transparent;
-}
-
-.sources-table .sp-table .empty-row {
-  text-align: center;
-}
-
-.sources-footer {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--font-page-meta);
-}
+.sources-toolbar .sp-search { width: 100%; min-width: 0; }
+.sources-toolbar .sources-create { justify-self: end; white-space: nowrap; }
+.sources-toolbar .sp-filter-reset { grid-column: 1 / -1; justify-self: start; }
 
 .sources-advanced, .sources-page .source-preview {
   padding: var(--space-3);
@@ -212,43 +50,18 @@
   margin-top: var(--space-3);
 }
 
-@media (width < 1200px) {
-  .sources-table .sp-table :is(th, td):nth-child(4),
-  .sources-table .sp-table :is(th, td):nth-child(7) { display: none; }
-  .sources-table .sp-table th:nth-child(2) { width: auto; }
-  .sources-table .sp-table th:nth-child(3) { width: 14%; }
-  .sources-table .sp-table th:nth-child(5) { width: 14%; }
-  .sources-table .sp-table th:nth-child(6) { width: 20%; }
-}
-
 @media (width < 768px) {
+  .catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+    min-height: var(--size-touch-target);
+  }
   .sources-toolbar.sp-filter-bar {
     grid-template-columns: minmax(0, 1fr) auto auto;
     gap: var(--space-1);
   }
-
   .sources-toolbar .sp-search { gap: var(--space-1); padding-inline: var(--space-1); }
   .sources-toolbar .sp-search input { min-width: 0; padding-inline: 0; }
   .sources-toolbar .sp-select-trigger { min-width: 0; padding-inline: var(--space-2); }
   .sources-toolbar .sources-filter-label { display: none; }
   .sources-toolbar .sources-create { padding-inline: var(--space-1); }
   .sources-toolbar .sources-create svg { display: none; }
-
-  .sources-toolbar :is(.sp-search, .sp-select-trigger, .button),
-  .sources-table .sp-table .resource-card-more {
-    min-height: var(--size-touch-target);
-  }
-
-  .sources-table .sp-table { display: table; width: 100%; }
-  .sources-table .sp-table thead { display: table-header-group; }
-  .sources-table .sp-table tbody { display: table-row-group; }
-  .sources-table .sp-table tr { display: table-row; }
-  .sources-table .sp-table td { display: table-cell; }
-  .sources-table .sp-table td::before { content: none; }
-  .sources-table .sp-table :is(th, td) { padding-inline: var(--space-1); }
-  .sources-table .sp-table :is(th, td):nth-child(3) { display: none; }
-  .sources-table .sp-table th:nth-child(5) { width: 12%; }
-  .sources-table .sp-table th:nth-child(6) { width: 22%; }
-  .sources-table .sp-table .resource-card-more { width: var(--size-touch-target); }
-  .sources-table .sp-table td.empty-row { display: table-cell; }
 }

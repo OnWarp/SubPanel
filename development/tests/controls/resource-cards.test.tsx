@@ -16,21 +16,23 @@ const noop = () => undefined
 
 describe('admin resource list cards', () => {
   it.each([
-    { Page: GroupsPage, id: 'groups-title', title: '分组', search: '搜索名称', action: '添加分组', unit: '个分组', paged: false },
-    { Page: NodesPage, id: 'nodes-title', title: '节点', search: '搜索节点', paged: true, unit: '个节点' },
+    { Page: GroupsPage, id: 'groups-title', title: '分组', search: '搜索名称', action: '添加分组', unit: '个分组', paged: false, flat: true },
+    { Page: NodesPage, id: 'nodes-title', title: '节点', search: '搜索节点', paged: true, flat: true, unit: '个节点' },
     { Page: SubscriptionsPage, id: 'subscriptions-title', title: '订阅', search: '搜索订阅', action: '添加订阅', unit: '个订阅', paged: true },
     { Page: AdminSharesPage, id: 'ashr-shares-title', title: '分享管理', search: '搜索分享', unit: '个分享', paged: true },
-  ])('renders the title, search and total inside the $title card', ({ Page, id, title, search, action, unit, paged }) => {
+  ])('renders the title, search and total for $title', ({ Page, id, title, search, action, unit, paged, flat }) => {
     const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><Page /></ToastProvider></MemoryRouter>)
     const card = html.split(`aria-labelledby="${id}">`)[1].split('</section>')[0]
     const heading = card.split('</header>')[0]
 
-    expect(heading).toContain(`<h2 id="${id}">${title}</h2>`)
+    const level = flat ? 'h1' : 'h2'
+    expect(heading).toContain(`<${level} id="${id}">${title}</${level}>`)
+    if (flat) expect(html.match(/<h1\b/g)).toHaveLength(1)
     if (action) expect(heading).toContain(action)
     else expect(heading).not.toContain('<button')
     expect(card).toContain(`aria-label="${search}"`)
     expect(card).toContain(`共 0 ${unit}`)
-    expect(card).toContain('1 / 1 页')
+    expect(card.includes('1 / 1 页')).toBe(paged)
     expect(card.includes('aria-label="下一页"')).toBe(paged)
   })
 
@@ -38,7 +40,7 @@ describe('admin resource list cards', () => {
     const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><SourcesPage /></ToastProvider></MemoryRouter>)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
     expect(html).toContain('<h1 id="sources-title">来源</h1>')
-    expect(html).toMatch(/<\/header><div class="sp-filter-bar sources-toolbar">.*aria-label="搜索来源".*aria-label="来源状态".*添加来源/)
+    expect(html).toMatch(/<\/header><div class="sp-filter-bar catalog-filters sources-toolbar" role="group" aria-label="筛选">.*aria-label="搜索来源".*aria-label="来源状态".*添加来源/)
     expect(html).toContain('共 0 个来源')
     expect(html).not.toContain('1 / 1 页')
     expect(html).not.toContain('batch-toolbar')
@@ -59,6 +61,18 @@ describe('admin resource list cards', () => {
     }]} rows={['a']} rowKey={(row) => row} />)
     expect(html).toMatch(/<th[^>]*>.*aria-label="选择当前页".*checked=""/)
     expect(html).toContain('<td data-label="选择">a</td>')
+  })
+
+  it('marks responsive and sorted columns and uses a dash only for missing values', () => {
+    const html = renderToStaticMarkup(<DataTable flat columns={[
+      { key: 'name', header: '名称', sortDirection: 'ascending' },
+      { key: 'note', header: '备注', hideBelow: 'desktop' },
+      { key: 'count', header: '数量', align: 'right' },
+    ]} rows={[{ name: 'a', note: null, count: 0 }]} rowKey={(row) => row.name} />)
+    expect(html).toContain('sp-table-flat')
+    expect(html).toContain('aria-sort="ascending"')
+    expect(html).toContain('data-label="备注" class="sp-column-desktop">—</td>')
+    expect(html).toContain('data-label="数量" class="sp-align-right">0</td>')
   })
 
   it('connects a row trigger to all actions and preserves disabled states', () => {
