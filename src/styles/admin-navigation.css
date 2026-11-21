@@ -1,4 +1,4 @@
-@media (min-width: 761px) {
+@media (width >= 768px) {
   .app-layout.admin-layout {
     grid-template-columns: var(--size-sidebar) minmax(0, 1fr);
   }
@@ -212,7 +212,7 @@
   object-fit: cover;
 }
 
-@media (width > 760px) {
+@media (width >= 768px) {
   .user-account-card.mobile-bar-settings { display: none; }
 
   .admin-layout .workspace {
