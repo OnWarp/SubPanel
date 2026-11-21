@@ -22,6 +22,7 @@ import { DiagnosticList } from './DiagnosticList'
 import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from './platforms'
 import { DIAGNOSTIC_HELP } from './diagnostics'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from './expiry'
+import { clientImportLink } from '../user/client-import'
 
 const EMPTY_SUBSCRIPTIONS: AdminSubscription[] = []
 
@@ -51,6 +52,7 @@ export function MySubscriptionsPage() {
   const [client, setClient] = useState('')
   const [linkQr, setLinkQr] = useState<{ dataUrl: string; loading: boolean } | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
+  const resetButtonRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -123,6 +125,9 @@ export function MySubscriptionsPage() {
     ? client
     : primaryClient || linkEntries[0]?.[0] || ''
   const activeLink = linkEntries.find(([entryClient]) => entryClient === activeClient)?.[1] ?? ''
+  const importHref = activeLink
+    ? clientImportLink(activeClient, activeLink) ?? linkEntries.reduce<string | null>((found, [entryClient, link]) => found ?? clientImportLink(entryClient, link), null)
+    : null
   const expiry = selected ? getExpiryState(selected) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
@@ -171,7 +176,7 @@ export function MySubscriptionsPage() {
 
   return (
     <div className="page-stack del-user-page upd-page upd-subs">
-      <PageHero subtitle="订阅详情" title="我的订阅" actions={<Select
+      <PageHero title="我的订阅" actions={<Select
           label="选择订阅"
           value={selectedId}
           options={subscriptions.map((subscription) => ({ value: subscription.id, label: subscription.name }))}
@@ -201,64 +206,72 @@ export function MySubscriptionsPage() {
         {selected && expiry && expiryBadge ? <>
           {expiry.kind === 'expired' ? <div className="exp-alert"><InlineMessage tone="warning">订阅已过期，请联系管理员续期</InlineMessage></div> : null}
           {expiry.kind === 'pending' ? <div className="exp-alert"><InlineMessage tone="warning">{`将于 ${formatExpiryTime(expiry.startsAt)} 生效`}</InlineMessage></div> : null}
-          <section className="object-card user-subscription-overview" aria-labelledby="current-subscription-title">
+          <section className="upd-sub-primary" aria-labelledby="current-subscription-title">
             <div className="del-status-head">
               <h2 id="current-subscription-title">{selected.name}</h2>
               <span className="exp-badges">
                 <StatusBadge tone={selected.planState === 'active' || (selected.planState === undefined && selected.enabled) ? 'success' : 'muted'}>{selected.planState ? subscriptionPlanLabels[selected.planState] : selected.enabled ? '正常' : '已停用'}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
-              {shareEnabled ? <button ref={shareButtonRef} className="button primary" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button> : null}
+              {shareEnabled ? <button ref={shareButtonRef} className="button ghost" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button> : null}
             </div>
+            <dl className="exp-status-meta">
+              <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
+              {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
+              <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
+            </dl>
+            {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
+            <div className="subscription-link-section">
+              <h2 id="subscription-link-title">订阅链接</h2>
+              {linkEntries.length ? (
+                <>
+                  <div className="del-link-line">
+                    <p className="del-link-text">{activeLink}</p>
+                    <div className="upd-import-actions">
+                      <CopyButton className="upd-copy-primary" value={activeLink} />
+                      {importHref ? <a className="button secondary" href={importHref}>导入到客户端</a> : null}
+                    </div>
+                  </div>
+                  <div className="del-seg-scroll">
+                    <SegmentedControl
+                      label="客户端平台"
+                      value={activeClient}
+                      options={linkEntries.map(([entryClient]) => ({ value: entryClient, label: platforms.names[entryClient] ?? CLIENT_LABELS[entryClient] ?? entryClient }))}
+                      onChange={setClient}
+                    />
+                  </div>
+                  <div className="del-qr-slot">
+                    {linkQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
+                    {linkQr?.dataUrl ? <img className="del-qr" src={linkQr.dataUrl} alt="订阅二维码" /> : null}
+                  </div>
+                </>
+              ) : platforms.status === 'ready' && !selected.linkError ? (
+                <EmptyState title="当前暂无可用的订阅入口" />
+              ) : (
+                <p className="del-link-missing">暂无订阅链接</p>
+              )}
+            </div>
+          </section>
+
+          <section className="ui3-platform-list" aria-label="各平台订阅链接">
+            <h2>各平台链接</h2>
+            {linkEntries.map(([platform, link]) => {
+              const name = platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform
+              return <article key={platform} className="ui3-platform-row"><div className="upd-twoline"><h3>{name}</h3><code>{link}</code></div><CopyButton value={link} label={`复制 ${name} 链接`} /></article>
+            })}
+          </section>
+
+          <section className="user-subscription-overview" aria-label="订阅计划">
+            <h2>订阅计划</h2>
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">
-              <div><dt>生效时间</dt><dd>{formatExpiryTime(expiry.startsAt)}</dd></div>
               <div><dt>订阅计划</dt><dd>{selected.planName ?? '未分配计划'}</dd></div>
               {selected.planId ? <>
                 <div><dt>流量额度</dt><dd>{selected.trafficGb ? `${selected.trafficGb} GB` : '不限'}</dd></div>
                 <div><dt>限速</dt><dd>{selected.speedLimitMbps ? `${selected.speedLimitMbps} Mbps` : '不限'}</dd></div>
                 <div><dt>设备数</dt><dd>{selected.deviceLimit || '不限'}</dd></div>
               </> : null}
-              <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>
-              {expiry.expiresAt !== null ? <div><dt>剩余天数</dt><dd>{formatRemaining(expiry.remainingDays ?? 0)}</dd></div> : null}
             </dl>
-            {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
-          </section>
-
-          <section className="data-section subscription-link-section" aria-labelledby="subscription-link-title">
-            <h2 id="subscription-link-title">订阅链接</h2>
-            {linkEntries.length ? (
-              <>
-                <div className="del-seg-scroll">
-                  <SegmentedControl
-                    label="客户端平台"
-                    value={activeClient}
-                    options={linkEntries.map(([entryClient]) => ({ value: entryClient, label: platforms.names[entryClient] ?? CLIENT_LABELS[entryClient] ?? entryClient }))}
-                    onChange={setClient}
-                  />
-                </div>
-                <div className="del-link-line">
-                  <p className="del-link-text">{activeLink}</p>
-                  <CopyButton value={activeLink} />
-                </div>
-                <div className="del-qr-slot">
-                  {linkQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
-                  {linkQr?.dataUrl ? <img className="del-qr" src={linkQr.dataUrl} alt="订阅二维码" /> : null}
-                </div>
-              </>
-            ) : platforms.status === 'ready' && !selected.linkError ? (
-              <EmptyState title="当前暂无可用的订阅入口" />
-            ) : (
-              <p className="del-link-missing">暂无订阅链接</p>
-            )}
-          </section>
-
-          <section className="data-section ui3-platform-list" aria-label="各平台订阅链接">
-            <h2>各平台链接</h2>
-            {linkEntries.map(([platform, link]) => {
-              const name = platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform
-              return <article key={platform} className="ui3-platform-row"><div className="upd-twoline"><h3>{name}</h3><code>{link}</code></div><CopyButton value={link} variant="full-width" label={`复制 ${name} 链接`} /></article>
-            })}
           </section>
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
@@ -269,12 +282,12 @@ export function MySubscriptionsPage() {
           <section className="data-section del-reset" aria-labelledby="reset-token-title">
             <h2 id="reset-token-title">重置订阅</h2>
             <p>重置后旧链接立即失效，请重新添加到客户端</p>
-            <Button variant="danger" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</Button>
+            <button ref={resetButtonRef} className="button danger" type="button" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</button>
           </section>
         </> : null}
       </div>
 
-      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
+      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} returnFocusRef={resetButtonRef} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
       <ShareDrawer
         subscription={subscriptions.find((subscription) => subscription.id === shareParam) ?? null}
         onClose={closeShare}

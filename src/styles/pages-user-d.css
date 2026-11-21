@@ -4,45 +4,89 @@
  */
 
 .upd-page .sp-page-hero {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  padding: 0 0 var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .upd-page .sp-page-hero h1 {
-  font-weight: var(--weight-semibold);
-  letter-spacing: -0.02em;
+  font-size: var(--font-page-title);
+  font-weight: var(--weight-page-title);
+  letter-spacing: 0;
 }
 
 .upd-page .sp-page-hero p {
-  font-size: var(--font-sm);
+  font-size: var(--font-page-meta);
 }
 
 .upd-home .sp-notice-carousel,
 .upd-home .sp-quick-entry,
+.upd-home .object-card,
 .upd-subs .data-section,
+.upd-subs .object-card,
+.upd-subs .user-subscription-overview,
+.upd-subs .subscription-link-section,
+.upd-subs .del-reset,
+.upd-subs .ui3-platform-list,
 .upd-mine .user-account-card,
+.upd-mine .data-section,
+.upd-nodes .node-list,
 .upd-auth .auth-panel {
-  border-radius: var(--radius-card);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
-}
-
-:root[data-theme='dark'] .upd-page .sp-page-hero,
-:root[data-theme='dark'] .upd-home .sp-notice-carousel,
-:root[data-theme='dark'] .upd-home .sp-quick-entry,
-:root[data-theme='dark'] .upd-subs .data-section,
-:root[data-theme='dark'] .upd-mine .user-account-card,
-:root[data-theme='dark'] .upd-auth .auth-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
 }
 
-/* Home: same three cards, quieter labels, roomier figures. */
-.upd-home .user-stat-grid { gap: var(--space-4); }
+.upd-auth .auth-panel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-page-panel);
+  background: var(--color-surface);
+}
+
+/* Home: status first, then import, then notices and secondary entries. */
+.upd-home .user-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border-top: var(--size-divider) solid var(--color-border);
+  border-bottom: var(--size-divider) solid var(--color-border);
+}
+
+.upd-home .object-card + .object-card { border-left: var(--size-divider) solid var(--color-border); }
 
 .upd-home .sp-stat-body {
-  gap: var(--space-3);
-  padding: var(--space-6) var(--space-5);
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-4) var(--space-4) 0;
+}
+
+.upd-home .object-card + .object-card .sp-stat-body { padding-left: var(--space-4); }
+
+.upd-home .sp-stat-value { font-size: var(--font-title); }
+
+.upd-home-validity {
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-bottom: var(--size-divider) solid var(--color-border);
+  color: var(--color-text);
+  font-size: var(--font-page-body);
+}
+
+.upd-home-import { margin: 0; }
+
+.upd-home-import a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--color-accent-text);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-home .sp-notice-carousel,
+.upd-home .sp-quick-entry {
+  padding-inline: 0;
+  border-top: var(--size-divider) solid var(--color-border);
 }
 
 .upd-home .sp-stat-label {
@@ -52,22 +96,20 @@
 
 .upd-home .sp-stat-sub { font-size: var(--font-sm); }
 
-.upd-home .sp-notice-carousel,
-.upd-home .sp-quick-entry { border-radius: var(--radius-card); }
-
-/* Mine: card shell and grouped whitespace. */
+/* Mine: hairline groups. The page title stays the only 20px heading. */
 .upd-mine .user-account-grid { gap: var(--space-5); }
 
-.upd-mine .page-stack { gap: var(--space-4); }
+.upd-mine .page-stack { gap: 0; }
 
 .upd-mine .user-account-card {
-  padding: var(--space-6);
+  padding: var(--space-4) 0;
+  border-top: var(--size-divider) solid var(--color-border);
 }
 
 .upd-mine .user-account-card > h2,
 .upd-mine > .user-account-grid > section > h2 {
-  margin: 0 0 var(--space-4);
-  font-size: var(--font-title);
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-md);
   font-weight: var(--weight-semibold);
 }
 
@@ -78,10 +120,12 @@
 }
 
 .upd-mine .section-heading h2 {
-  font-size: var(--font-title);
+  font-size: var(--font-md);
   font-weight: var(--weight-semibold);
   white-space: normal;
 }
+
+.upd-mine .sp-switch { min-height: var(--size-touch-target); }
 
 .upd-link-row {
   display: flex;
@@ -96,12 +140,41 @@
   gap: var(--space-2);
 }
 
+.upd-subs.page-stack { width: min(100%, 720px); }
+
+.upd-subs .upd-sub-primary,
 .upd-subs .user-subscription-overview,
-.upd-subs .subscription-link-section,
-.upd-subs .del-reset,
-.upd-subs .ui3-platform-list {
-  padding: var(--space-4);
+.upd-subs .ui3-platform-list,
+.upd-subs .del-diagnostics,
+.upd-subs .del-reset {
+  padding: var(--space-4) 0;
+  border-top: var(--size-divider) solid var(--color-border);
 }
+
+.upd-subs .subscription-link-section { padding: 0; }
+
+.upd-subs .upd-copy-primary {
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+@media (hover: hover) {
+  .upd-subs .upd-copy-primary:hover:not(:disabled) {
+    background: var(--color-primary-hover);
+    color: var(--color-primary-contrast);
+  }
+}
+
+.upd-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.upd-subs .del-link-line { align-items: center; }
 
 .upd-subs .user-subscription-overview h2,
 .upd-subs .subscription-link-section h2,
@@ -184,7 +257,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -193,7 +266,7 @@
   width: auto;
   max-width: 360px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: var(--radius-ctl);
 }
 
 .upd-nodes .upd-filters .sp-form-select {
@@ -209,7 +282,37 @@
 
 .upd-nodes .upd-filters .sp-select-trigger {
   min-height: 40px;
-  border-radius: 12px;
+  border-radius: var(--radius-ctl);
+}
+
+.upd-more-filters > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ctl);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.upd-more-filters > summary::-webkit-details-marker { display: none; }
+
+.upd-more-filters[open] { display: grid; gap: var(--space-2); }
+
+.upd-subs h2,
+.upd-subs .ui3-platform-row h3 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-strong);
+}
+
+.upd-subs .del-status-head h2 { font-size: var(--font-lg); }
+
+@media (width < 1200px) {
+  .upd-nodes .sp-table :is(th, td):nth-child(5) { display: none; }
 }
 
 .upd-nodes .sp-table th {
@@ -271,7 +374,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
+  padding: var(--space-3) 0;
   border-top: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-size: var(--font-xs);
@@ -313,14 +416,27 @@
   letter-spacing: -0.02em;
 }
 
-@media (max-width: 767px) {
-  .upd-mine .user-account-card { padding: var(--space-5); }
-  .upd-subs .user-subscription-overview,
-  .upd-subs .subscription-link-section,
-  .upd-subs .del-reset,
-  .upd-subs .ui3-platform-list { padding: var(--space-4); }
-  .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr); }
-  .upd-subs .ui3-platform-row .button { width: 100%; }
+@media (width < 768px) {
+  .upd-page .sp-page-hero-actions { width: 100%; }
+  .upd-page .sp-page-hero-actions .button,
+  .upd-home-import a,
+  .upd-mine .upd-link-row .button,
+  .upd-pager button,
+  .upd-more-filters > summary,
+  .upd-subs .upd-import-actions .button,
+  .upd-subs .ui3-platform-row .button { min-height: var(--size-touch-target); }
+  .upd-home .user-stat-grid { grid-template-columns: 1fr; }
+  .upd-home .object-card + .object-card { border-left: 0; border-top: var(--size-divider) solid var(--color-border); }
+  .upd-home .object-card + .object-card .sp-stat-body,
+  .upd-home .sp-stat-body { padding-left: 0; }
+  .upd-mine .user-account-card { padding: var(--space-4) 0; }
+  .upd-mine .upd-link-row { display: grid; }
+  .upd-mine .upd-link-row .button { justify-content: flex-start; }
+  .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .upd-subs .ui3-platform-row .button,
+  .upd-subs .del-link-line .button { width: auto; }
+  .upd-subs .del-qr { width: min(160px, 100%); }
+  .upd-nodes .upd-twoline span { display: none; }
   .upd-auth .auth-panel { padding: 28px 20px 24px; }
 }
 
@@ -350,4 +466,21 @@
   }
 
   .upd-pager { flex-wrap: wrap; }
+}
+
+.upd-page summary:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+.upd-page :is(.inline-alert, .token-strip, .link-strip) {
+  border-radius: var(--radius-page-panel);
+}
+
+.app-layout:not(.admin-layout) :is(dialog.confirm-dialog, dialog.edit-drawer, dialog.reset-dialog),
+.app-layout:not(.admin-layout) .sp-dialog-panel {
+  border-radius: var(--radius-page-panel);
+}
+
+@media (width < 768px) {
+  .app-layout:not(.admin-layout) dialog.edit-drawer {
+    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  }
 }

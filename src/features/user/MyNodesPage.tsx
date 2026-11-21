@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { FormSelect } from '../../ui/Controls'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
@@ -46,7 +45,7 @@ function joinedNames(items: NodeRef[]): string {
   return items.map((item) => item.name).join('、') || '—'
 }
 
-export function UserNodesFilters({ query, subscriptionId, groupId, subscriptionOptions, groupOptions, onQuery, onSubscription, onGroup }: {
+export function UserNodesFilters({ query, subscriptionId, groupId, subscriptionOptions, groupOptions, onQuery, onSubscription, onGroup, onReset }: {
   query: string
   subscriptionId: string
   groupId: string
@@ -55,6 +54,7 @@ export function UserNodesFilters({ query, subscriptionId, groupId, subscriptionO
   onQuery: (value: string) => void
   onSubscription: (value: string) => void
   onGroup: (value: string) => void
+  onReset?: () => void
 }) {
   return (
     <div className="node-toolbar upd-filters">
@@ -63,10 +63,14 @@ export function UserNodesFilters({ query, subscriptionId, groupId, subscriptionO
         <option value="all">全部</option>
         {subscriptionOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
       </FormSelect>
-      <FormSelect aria-label="按分组筛选" value={groupId} onChange={(event) => onGroup(event.target.value)}>
-        <option value="all">全部</option>
-        {groupOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </FormSelect>
+      <details className="upd-more-filters" {...(groupId !== 'all' ? { open: true } : {})}>
+        <summary>更多筛选</summary>
+        <FormSelect aria-label="按分组筛选" value={groupId} onChange={(event) => onGroup(event.target.value)}>
+          <option value="all">全部</option>
+          {groupOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </FormSelect>
+      </details>
+      {onReset ? <button className="button ghost" type="button" onClick={onReset}>重置筛选</button> : null}
     </div>
   )
 }
@@ -184,11 +188,25 @@ export function MyNodesPage() {
     setPage(1)
   }
 
-  if (!loading && !error && !hasActiveSubscription) return <GateEmptyState icon={<Network size={48} />} message="需要有效订阅才能查看节点" />
+  const resetFilters = () => {
+    setQuery('')
+    setSubscriptionId('all')
+    setGroupId('all')
+    setPage(1)
+  }
+
+  if (!loading && !error && !hasActiveSubscription) {
+    return (
+      <div className="page-stack node-page upd-page upd-nodes">
+        <PageHero title="我的节点" />
+        <GateEmptyState icon={<Network size={48} />} message="需要有效订阅才能查看节点" action={<Link className="button primary" to="/subscriptions">去订阅</Link>} />
+      </div>
+    )
+  }
 
   return (
     <div className="page-stack node-page upd-page upd-nodes">
-      <PageHero subtitle="查看当前可用节点" title="我的节点" />
+      <PageHero title="我的节点" />
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && total === 0 && !filtersActive ? (
@@ -197,8 +215,7 @@ export function MyNodesPage() {
         </EmptyState>
       ) : null}
       {!loading && !error && (total > 0 || filtersActive) ? (
-        <section className="data-section node-list" aria-labelledby="node-list-title">
-          <DataHeader id="node-list-title" title="节点列表" />
+        <section className="data-section node-list" aria-label="节点列表">
           <UserNodesFilters
             query={query}
             subscriptionId={activeSubscription}
@@ -208,6 +225,7 @@ export function MyNodesPage() {
             onQuery={changeQuery}
             onSubscription={changeSubscription}
             onGroup={changeGroup}
+            onReset={filtersActive ? resetFilters : undefined}
           />
           <UserNodesTable nodes={nodes} />
           <UserNodesFooter total={total} page={page} pageCount={pageCount} onPage={setPage} />

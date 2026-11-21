@@ -22,7 +22,7 @@ export function MinePage() {
     catch { setPreferenceError('浏览器无法保存提醒设置') }
   }
   return <div className="page-stack upd-page upd-mine">
-    <PageHero title="个人中心" subtitle={profile?.user.email ?? user?.username} actions={<Link className="button primary" to="/subscriptions">管理订阅</Link>} />
+    <PageHero title="个人中心" actions={<Link className="button primary" to="/subscriptions">管理订阅</Link>} />
     <div className="user-account-grid">
       <div className="page-stack">
         <section className="data-section user-account-card" aria-label="账户信息"><h2>账户信息</h2>
