@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 
 test.use({ viewport: { width: 390, height: 844 }, colorScheme: 'light', contextOptions: { reducedMotion: 'reduce' } })
 
@@ -74,8 +75,8 @@ async function expectFloatingDock(dock: Locator) {
 
 async function expectActivePill(dock: Locator, label: string, admin = false) {
   const active = dockLink(dock, label)
-  await expect(active).toHaveAttribute('aria-current', 'page')
-  await expect(dock.getByRole('link').and(dock.locator('[aria-current="page"]'))).toHaveCount(1)
+  await expect(active).toHaveAttribute('aria-current', admin ? 'location' : 'page')
+  await expect(dock.getByRole('link').and(dock.locator('[aria-current]'))).toHaveCount(1)
   const fill = await active.evaluate((element) => {
     const color = getComputedStyle(element).backgroundColor
     const context = document.createElement('canvas').getContext('2d')!
@@ -85,7 +86,7 @@ async function expectActivePill(dock: Locator, label: string, admin = false) {
   })
   expect.soft(fill.alpha, 'selected background is opaque').toBe(255)
   const inactive = await dock.getByRole('link').evaluateAll((links) =>
-    links.filter((link) => link.getAttribute('aria-current') !== 'page')
+    links.filter((link) => !link.hasAttribute('aria-current'))
       .map((link) => getComputedStyle(link).backgroundColor))
   expect.soft(inactive, 'unselected links have a different background').not.toContain(fill.color)
   if (admin) {
@@ -120,7 +121,7 @@ test.describe('Administrator mobile navigation', () => {
       const dock = adminDock(page)
       await dockLink(dock, label).click()
       await expect(page).toHaveURL((url) => url.pathname === path && !url.search && !url.hash)
-      await expect(dockLink(dock, label)).toHaveAttribute('aria-current', 'page')
+      await expect(dockLink(dock, label)).toHaveAttribute('aria-current', path === '/dashboard' ? 'page' : 'location')
     })
   }
 
@@ -135,9 +136,9 @@ test.describe('Administrator mobile navigation', () => {
     await expectActivePill(dock, '节点管理', true)
   })
 
-  test('shows exactly five entries in the topbar avatar menu', async ({ page }) => {
+  test('keeps the five navigation and account actions in the topbar avatar menu', async ({ page }) => {
     const menu = await openAdminMenu(page)
-    const entries = menu.getByRole('link').or(menu.getByRole('button'))
+    const entries = menu.locator(':scope > a, :scope > button, :scope > .theme-control > button')
     await expect.soft(entries).toHaveCount(5)
     for (const name of ['运营管理', '系统设置', '账户安全', '外观', '退出登录']) {
       await expect.soft(menu.getByRole('link', { name, exact: true })
@@ -208,14 +209,15 @@ test('ordinary user has four floating links and a solid selected pill', async ({
   const inviteCode = (await invitations.json()).invitations[0].code as string
   expect(inviteCode).toBeTruthy()
 
+  const username = `mobile-nav-${randomUUID().slice(0, 8)}`
   const userPage = await browser.newPage({ baseURL, viewport: { width: 390, height: 844 }, colorScheme: 'light', reducedMotion: 'reduce' })
   try {
     const registered = await userPage.request.post('/api/register', {
       headers,
       data: {
-        username: 'mobile-nav-user',
+        username,
         password: userPassword,
-        email: 'mobile-nav-user@example.com',
+        email: `${username}@example.com`,
         inviteCode,
       },
     })
@@ -223,7 +225,7 @@ test('ordinary user has four floating links and a solid selected pill', async ({
     // Registration signs the new user in immediately; drop that session so
     // the explicit UI login below starts signed out, as the old flow did.
     await userPage.context().clearCookies()
-    await login(userPage, 'mobile-nav-user', userPassword)
+    await login(userPage, username, userPassword)
     await expect(userPage).toHaveURL(/\/home$/)
     const dock = userPage.getByRole('navigation', { name: '快捷导航', exact: true })
     await expect.soft(dock.getByRole('link')).toHaveText(['首页', '订阅', '节点', '我的'])

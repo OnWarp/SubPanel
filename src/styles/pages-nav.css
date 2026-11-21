@@ -273,16 +273,6 @@
 }
 
 @media (max-width: 760px) {
-  .nav-dock {
-    right: calc(19px + env(safe-area-inset-right, 0px));
-    bottom: calc(9px + env(safe-area-inset-bottom, 0px));
-    left: calc(19px + env(safe-area-inset-left, 0px));
-    height: 68px;
-    padding: 6px 14px;
-    gap: 0;
-    border-radius: 34px;
-  }
-
   .nav-dock .dock-item {
     min-width: 0;
     height: 54px;
@@ -290,10 +280,6 @@
     overflow: visible;
     gap: 5px;
     border-radius: 999px;
-  }
-
-  .app-layout:has(.nav-dock) .workspace-content {
-    padding-bottom: calc(9px + 68px + 16px + env(safe-area-inset-bottom, 0px));
   }
 }
 

@@ -6,6 +6,8 @@ import { PageFrame } from '../ui/PageFrame'
 import { SectionTabs } from '../ui/SectionTabs'
 import { ThemeMenu } from '../theme/ThemeMenu'
 import { useSession } from './session'
+import { MobileBarContext, useMobileBarPreference } from './mobile-bar'
+import { MobileBarOptions } from './MobileBarOptions'
 import { adminDomainForPath, adminDomains, adminMobileDock, userSidebar, navigationActive } from './navigation'
 
 const userDock = userSidebar
@@ -105,6 +107,7 @@ function AdminAccount({ signOut, onError, placement, layout, onLayoutChange }: {
               </div>
             </div>
           )}
+          {placement === 'mobile' && <MobileBarOptions />}
           <ThemeMenu id={placement === 'sidebar' ? 'admin-theme-menu' : placement === 'mobile' ? 'admin-theme-menu-topbar' : 'admin-theme-menu-desktop'} label="外观" />
           <button type="button" onClick={() => { signOut().catch(() => onError('退出登录失败，请重试')) }}><span className="account-menu-icon" aria-hidden="true"><LogOut size={16} /></span>退出登录</button>
         </nav>
@@ -117,6 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
+  const mobileBar = useMobileBarPreference()
   const shell = useRef<HTMLDivElement>(null)
   const restoreLayoutFocus = useRef(false)
   const [adminLayout, setAdminLayout] = useState(readAdminLayout)
@@ -154,8 +158,37 @@ export function AppShell({ children }: { children: ReactNode }) {
     navigate('/login', { replace: true })
   }
 
+  const mobileDock = isAdmin ? (
+    <nav className="admin-mobile-dock" aria-label="主导航">
+      {adminMobileDock.map((domain) => {
+        const { to, label, icon: Icon } = domain
+        const active = domain === adminDomain
+        return (
+          <Link
+            key={to}
+            to={to}
+            className={active ? 'admin-mobile-dock-item active' : 'admin-mobile-dock-item'}
+            aria-current={active ? (adminDomain?.section ? 'location' : 'page') : undefined}
+            aria-label={label}
+          >
+            <Icon aria-hidden="true" size={23} />
+            <span>{label}</span>
+          </Link>
+        )
+      })}
+    </nav>
+  ) : (
+    <nav className="dock nav-dock" aria-label="快捷导航">
+      {userDock.map(({ to, label, icon: Icon }) => (
+        <Link key={to} to={to} className={`dock-item nav-dock-item${navigationActive(location.pathname, to) ? ' active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
+          <Icon aria-hidden="true" size={23} /><span>{label}</span>
+        </Link>
+      ))}
+    </nav>
+  )
+
   return (
-    <div ref={shell} className={`app-layout${isAdmin ? ' admin-layout' : ''}${sidebarCollapsed ? ' sidebar-collapsed' : ''}${hasAdminTopbar ? ' admin-topbar-layout' : ''}`}>
+    <div ref={shell} data-mobile-bar={mobileBar.style} className={`app-layout${isAdmin ? ' admin-layout' : ''}${sidebarCollapsed ? ' sidebar-collapsed' : ''}${hasAdminTopbar ? ' admin-topbar-layout' : ''}`}>
       {!hasAdminTopbar && <aside className="sidebar">
         <div className="sidebar-brand">
           <img className="brand-mark" src="/logo.png" alt="" />
@@ -181,44 +214,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <AdminAccount placement="topbar" layout={adminLayout} onLayoutChange={changeAdminLayout} signOut={signOut} onError={setSignOutError} />
         </header>
       )}
-      <PageFrame
-        path={location.pathname}
-        leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
-        tools={!isAdmin && <ThemeMenu />}
-        account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" signOut={signOut} onError={setSignOutError} /></div>}
-        tabs={adminDomain?.section && <SectionTabs {...adminDomain.section} />}
-      >
-        {signOutError ? <p role="alert">{signOutError}</p> : null}
-        {children}
-      </PageFrame>
-      {isAdmin ? (
-        <nav className="admin-mobile-dock" aria-label="主导航">
-          {adminMobileDock.map((domain) => {
-            const { to, label, icon: Icon } = domain
-            const active = domain === adminDomain
-            return (
-              <Link
-                key={to}
-                to={to}
-                className={active ? 'admin-mobile-dock-item active' : 'admin-mobile-dock-item'}
-                aria-current={active ? (adminDomain?.section ? 'location' : 'page') : undefined}
-                aria-label={label}
-              >
-                <Icon aria-hidden="true" size={23} />
-                <span>{label}</span>
-              </Link>
-            )
-          })}
-        </nav>
-      ) : (
-        <nav className="dock nav-dock" aria-label="快捷导航">
-          {userDock.map(({ to, label, icon: Icon }) => (
-            <Link key={to} to={to} className={`dock-item nav-dock-item${navigationActive(location.pathname, to) ? ' active' : ''}`} aria-current={navigationActive(location.pathname, to) ? 'page' : undefined}>
-              <Icon aria-hidden="true" size={23} /><span>{label}</span>
-            </Link>
-          ))}
-        </nav>
-      )}
+      <MobileBarContext value={mobileBar}>
+        <PageFrame
+          path={location.pathname}
+          leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
+          tools={!isAdmin && <ThemeMenu />}
+          account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" layout={adminLayout} onLayoutChange={changeAdminLayout} signOut={signOut} onError={setSignOutError} /></div>}
+          footer={mobileDock}
+          tabs={adminDomain?.section && <SectionTabs {...adminDomain.section} />}
+        >
+          {signOutError ? <p role="alert">{signOutError}</p> : null}
+          {children}
+        </PageFrame>
+      </MobileBarContext>
     </div>
   )
 }

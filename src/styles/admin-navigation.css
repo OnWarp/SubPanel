@@ -113,11 +113,21 @@
   display: none;
 }
 
-.admin-account .admin-layout-options {
+.admin-account .admin-layout-options,
+.mobile-bar-options {
   display: grid;
 }
 
-.admin-account .account-menu-choices {
+.mobile-bar-settings .mobile-bar-options {
+  gap: var(--space-2);
+}
+
+.mobile-bar-options .account-menu-choices button {
+  min-height: var(--size-touch-target);
+  cursor: pointer;
+}
+
+.account-menu-choices {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
@@ -127,8 +137,10 @@
   background: var(--color-surface-subtle);
 }
 
-.admin-account nav .account-menu-choices button {
+:is(.admin-account nav, .mobile-bar-options) .account-menu-choices button {
   padding: 0 var(--space-1);
+  border: 0;
+  background: transparent;
   border-radius: calc(var(--radius-control) - 2px);
   color: var(--color-text-muted);
   text-align: center;
@@ -138,7 +150,7 @@
     box-shadow var(--duration-ui) var(--ease-out);
 }
 
-.admin-account nav .account-menu-choices button[aria-pressed='true'] {
+:is(.admin-account nav, .mobile-bar-options) .account-menu-choices button[aria-pressed='true'] {
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-shell);
   color: var(--color-text);
@@ -146,13 +158,13 @@
 }
 
 @media (hover: hover) {
-  .admin-account nav .account-menu-choices button:hover {
+  :is(.admin-account nav, .mobile-bar-options) .account-menu-choices button:hover {
     color: var(--color-text);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-account nav .account-menu-choices button {
+  :is(.admin-account nav, .mobile-bar-options) .account-menu-choices button {
     transition: none;
   }
 }
@@ -201,6 +213,8 @@
 }
 
 @media (width > 760px) {
+  .user-account-card.mobile-bar-settings { display: none; }
+
   .admin-layout .workspace {
     align-self: stretch;
     height: auto;

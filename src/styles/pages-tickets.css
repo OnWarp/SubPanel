@@ -294,8 +294,8 @@
     max-width: 100%;
   }
 
-  .tk-composer {
-    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  [data-mobile-bar="floating"] .tk-composer {
+    bottom: calc(var(--mobile-bar-overlap) + var(--space-1));
   }
 
   .tk-cell-time {
