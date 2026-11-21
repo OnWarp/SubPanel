@@ -3,6 +3,11 @@ import { Select, type SelectOption } from './Select'
 
 type InputProps = ComponentPropsWithRef<'input'>
 
+/** Drawer and dialog forms: 12px rhythm and a 460px cap on short fields. */
+export function FormStack({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`form-stack sp-form-stack ${className}`.trim()}>{children}</div>
+}
+
 /** Native editing semantics with project styling and inline constraint errors */
 export function Input({ className = '', onInvalid, onChange, ...props }: InputProps) {
   const [error, setError] = useState('')

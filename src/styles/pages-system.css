@@ -433,6 +433,7 @@
 .settings-fields { padding: var(--space-4); }
 .settings-group { display: grid; gap: var(--space-3); }
 .settings-sections :is(.sp-form-field, .field, .compact-field) { width: 100%; max-width: 460px; }
+.settings-sections .sp-form-field-wide { max-width: none; }
 .settings-sections .sys-domain-add { max-width: 460px; }
 .settings-fields > .data-section > .sys-hint { padding: var(--space-3); }
 .settings-fields .sys-domain-row { padding: 10px 12px; }

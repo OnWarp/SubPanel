@@ -4,7 +4,7 @@ import type { Plan } from './plan-types'
 import { Checkbox, Input, FormSelect, DateTimeInput } from '../../ui/Controls'
 import { TemplateBinding } from '../system/TemplateBinding'
 import { versionLabel } from '../system/template-display'
-import { CheckCircle2, Plus, QrCode, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Plus, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { loadAdminUserOptions, peekAdminUserOptions, api, peekApi, readData, watchApi, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
@@ -17,15 +17,13 @@ import { EditDrawer } from '../../ui/EditDrawer'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
-import { FormField } from '../../ui/FormField'
+import { FormField, FormGroup } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { SearchInput } from '../../ui/SearchInput'
-import { Select } from '../../ui/Select'
 import { Switch } from '../../ui/Switch'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
-import { DiagnosticList } from './DiagnosticList'
-import { DIAGNOSTIC_HELP } from './diagnostics'
+import { SubscriptionDetailRows } from './SubscriptionDetailRows'
 import { formatDate } from '../catalog/catalog-utils'
 import {
   EXPIRY_BADGE,
@@ -157,6 +155,7 @@ export function SubscriptionsPage() {
   const [detailsBinding, setDetailsBinding] = useState<Binding>()
   const [detailsBindingError, setDetailsBindingError] = useState('')
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
+  const [formBaseline, setFormBaseline] = useState<SubscriptionForm>(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [drawerError, setDrawerError] = useState('')
   const [bindingData, setBindingData] = useState<{ initial: SubscriptionTemplateBinding; options: SubscriptionTemplate[]; effective: Binding['effectiveTemplate'] }>()
@@ -294,7 +293,9 @@ export function SubscriptionsPage() {
     setBindingData(undefined)
     setBindingError('')
     setBindingLoading(true)
-    setForm({ ...EMPTY_FORM })
+    const next = { ...EMPTY_FORM }
+    setForm(next)
+    setFormBaseline(next)
     setFieldErrors({})
     setDrawerError('')
     setDrawer('create')
@@ -304,7 +305,7 @@ export function SubscriptionsPage() {
     setBindingData(undefined)
     setBindingError('')
     setBindingLoading(true)
-    setForm({
+    const next = {
       userId: subscription.userId ?? '',
       name: subscription.name,
       planId: subscription.planId ?? '',
@@ -313,7 +314,9 @@ export function SubscriptionsPage() {
       enabled: subscription.enabled,
       startsAt: toDatetimeLocal(subscription.startsAt),
       expiresAt: toDatetimeLocal(subscription.expiresAt),
-    })
+    }
+    setForm(next)
+    setFormBaseline(next)
     setFieldErrors({})
     setDrawerError('')
     setDrawer({ kind: 'edit', subscription })
@@ -571,7 +574,6 @@ export function SubscriptionsPage() {
 
   const linkEntries = Object.entries(details?.links ?? {})
   const [client = '', link = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
-  const clientLabel = CLIENT_LABELS[client] ?? client
   const effectiveTemplate = detailsBinding?.effectiveTemplate
 
   return (
@@ -601,58 +603,69 @@ export function SubscriptionsPage() {
         <ResourceFooter count={total} unit="个订阅" pagination={{ page, pageCount, onPageChange: setPage }} />
       </section>
 
-      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} onClose={closeDrawer}>
-        <form className="form-stack" onSubmit={saveSubscription}>
-          {editing && <TemplateBinding value={form.templateBinding ?? bindingData?.initial ?? INHERITED_TEMPLATE_BINDING}
-            onChange={(templateBinding) => setForm((current) => ({ ...current, templateBinding }))}
-            options={bindingData?.options ?? []} effective={bindingData?.effective ?? null} busy={busy || bindingLoading}
-            error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
-          <label className="field"><span>订阅名称</span><Input aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required /></label>
-          <label className="field"><span>所属用户</span><FormSelect aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
-          <FormField label="订阅计划" htmlFor="subscription-plan">
-            <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
-              const plan = plans.find(item => item.id === event.currentTarget.value)
-              setForm(current => ({
-                ...current, planId: plan?.id ?? '',
-                groupIds: plan ? [...plan.groupIds] : current.groupIds,
-                expiresAt: plan && drawer === 'create'
-                  ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
-                  : current.expiresAt,
-              }))
-            }}>
-              <option value="">未分配计划</option>
-              {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
-            </FormSelect>
-          </FormField>
-          <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
-          <label className="field"><span>默认客户端</span><FormSelect aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect></label>
-
-          <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
-          <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
-            <DateTimeInput id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
-              const startsAt = event.currentTarget.value
-              setForm((current) => ({ ...current, startsAt }))
-              setFieldErrors(validateWindow(startsAt, form.expiresAt))
-            }} />
-          </FormField>
-          <FormField label="到期时间" htmlFor="exp-expires-at" error={fieldErrors.expiresAt}>
-            <DateTimeInput id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
-              const expiresAt = event.currentTarget.value
-              setForm((current) => ({ ...current, expiresAt }))
-              setFieldErrors(validateWindow(form.startsAt, expiresAt))
-            }} />
-            <div className="exp-quick">
-              <button className="button secondary" type="button" onClick={() => shiftExpiry(30)}>+30 天</button>
-              <button className="button secondary" type="button" onClick={() => shiftExpiry(90)}>+90 天</button>
-              <button className="button secondary" type="button" onClick={() => shiftExpiry(365)}>+365 天</button>
-              <button className="button secondary" type="button" onClick={() => {
-                setForm((current) => ({ ...current, expiresAt: '' }))
-                setFieldErrors(validateWindow(form.startsAt, ''))
-              }}>设为永久</button>
-            </div>
-          </FormField>
+      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} dirty={editing && JSON.stringify(form) !== JSON.stringify(formBaseline)} onClose={closeDrawer} footer={<>
+        <button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button>
+        <button className="button primary" type="submit" form="subscription-edit-form" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button>
+      </>}>
+        <form id="subscription-edit-form" className="form-stack sp-form-stack" onSubmit={saveSubscription}>
+          <FormGroup title="基本信息" id="subscription-edit-basic">
+            {editing && <TemplateBinding value={form.templateBinding ?? bindingData?.initial ?? INHERITED_TEMPLATE_BINDING}
+              onChange={(templateBinding) => setForm((current) => ({ ...current, templateBinding }))}
+              options={bindingData?.options ?? []} effective={bindingData?.effective ?? null} busy={busy || bindingLoading}
+              error={bindingError} onRetry={() => setBindingAttempt((attempt) => attempt + 1)} />}
+            <FormField label="订阅名称" htmlFor="subscription-name">
+              <Input id="subscription-name" aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required />
+            </FormField>
+            <FormField label="所属用户" htmlFor="subscription-user">
+              <FormSelect id="subscription-user" aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
+            </FormField>
+            <FormField label="订阅计划" htmlFor="subscription-plan">
+              <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
+                const plan = plans.find(item => item.id === event.currentTarget.value)
+                setForm(current => ({
+                  ...current, planId: plan?.id ?? '',
+                  groupIds: plan ? [...plan.groupIds] : current.groupIds,
+                  expiresAt: plan && drawer === 'create'
+                    ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
+                    : current.expiresAt,
+                }))
+              }}>
+                <option value="">未分配计划</option>
+                {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+              </FormSelect>
+            </FormField>
+            <fieldset className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
+            <FormField label="默认客户端" htmlFor="subscription-client">
+              <FormSelect id="subscription-client" aria-label="默认客户端" value={form.defaultClient} onChange={(event) => setForm({ ...form, defaultClient: event.currentTarget.value })}>{CLIENTS.map((client) => <option key={client} value={client}>{CLIENT_LABELS[client]}</option>)}</FormSelect>
+            </FormField>
+            <FormField label="启用订阅"><Switch checked={form.enabled} ariaLabel="启用订阅" onChange={(enabled) => setForm({ ...form, enabled })} /></FormField>
+          </FormGroup>
+          <FormGroup title="有效期" id="subscription-edit-expiry">
+            <FormField label="生效时间" htmlFor="exp-starts-at" error={fieldErrors.startsAt}>
+              <DateTimeInput id="exp-starts-at" className="exp-datetime" type="datetime-local" aria-label="生效时间" value={form.startsAt} onChange={(event) => {
+                const startsAt = event.currentTarget.value
+                setForm((current) => ({ ...current, startsAt }))
+                setFieldErrors(validateWindow(startsAt, form.expiresAt))
+              }} />
+            </FormField>
+            <FormField label="到期时间" htmlFor="exp-expires-at" error={fieldErrors.expiresAt}>
+              <DateTimeInput id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
+                const expiresAt = event.currentTarget.value
+                setForm((current) => ({ ...current, expiresAt }))
+                setFieldErrors(validateWindow(form.startsAt, expiresAt))
+              }} />
+              <div className="exp-quick">
+                <button className="button secondary" type="button" onClick={() => shiftExpiry(30)}>+30 天</button>
+                <button className="button secondary" type="button" onClick={() => shiftExpiry(90)}>+90 天</button>
+                <button className="button secondary" type="button" onClick={() => shiftExpiry(365)}>+365 天</button>
+                <button className="button secondary" type="button" onClick={() => {
+                  setForm((current) => ({ ...current, expiresAt: '' }))
+                  setFieldErrors(validateWindow(form.startsAt, ''))
+                }}>设为永久</button>
+              </div>
+            </FormField>
+          </FormGroup>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button></div>
         </form>
       </EditDrawer>
 
@@ -668,56 +681,43 @@ export function SubscriptionsPage() {
         onClose={closeDrawer}
         returnFocusRef={detailsTrigger}
       >
-        {details ? <div className="subscription-details">
-          <section>
-            <h3>基本信息</h3>
-            <dl className="profile-fields subscription-detail-fields">
-              <div><dt>所属用户</dt><dd>{details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'}</dd></div>
-              <div><dt>使用分组</dt><dd>{details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</dd></div>
-              {details.planId && <>
-                <div><dt>订阅计划</dt><dd>{details.planName ?? '—'}</dd></div>
-                <div><dt>流量额度</dt><dd>{details.trafficGb ? `${details.trafficGb} GB` : '不限'}</dd></div>
-                <div><dt>限速</dt><dd>{details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限'}</dd></div>
-                <div><dt>设备数</dt><dd>{details.deviceLimit || '不限'}</dd></div>
-              </>}
-            </dl>
-          </section>
-          <section>
-            <h3>客户端链接</h3>
-            <div className="subscription-detail-fields">
-              {linkEntries.length ? <>
-                <div>
-                  <div className="subscription-client-format">
-                    <span>格式</span>
-                    <Select label="格式" value={client} onChange={setSelectedClient}
-                      options={linkEntries.map(([key]) => ({ value: key, label: CLIENT_LABELS[key] ?? key }))} />
-                  </div>
-                </div>
-                <div className="subscription-link-row">
-                  <span className="link-url" title={link}>{link}</span>
-                  <CopyButton key={client} value={link} iconOnly label={`复制 ${clientLabel} 链接`} copiedLabel="链接已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} />
-                  <button className="icon-button" type="button" aria-label={`显示 ${clientLabel} 二维码`} title="显示二维码" onClick={() => showQr(client, link)}><QrCode aria-hidden="true" size={16} /></button>
-                </div>
-              </> : <div>{details.linkError || '暂无客户端链接'}</div>}
-            </div>
-          </section>
-          <section>
-            <h3>附加配置</h3>
-            <dl className="profile-fields subscription-detail-fields" aria-busy={!detailsBinding && !detailsBindingError}>
-              <div><dt>生效方式</dt><dd>{detailsBinding ? BINDING_MODE_LABELS[detailsBinding.mode] : '—'}</dd></div>
-              <div><dt>模板</dt><dd>{effectiveTemplate?.templateName ?? '—'}</dd></div>
-              <div><dt>发布版本</dt><dd>{versionLabel(effectiveTemplate?.sequence)}</dd></div>
-            </dl>
-            {detailsBindingError ? <StatusMessage tone="error">{detailsBindingError}</StatusMessage>
-              : !detailsBinding ? <p className="drawer-note" role="status">正在加载附加配置</p> : null}
-            <details className="diagnostic-disclosure del-diagnostics"><summary>兼容诊断</summary>{Object.keys(details.diagnostics).length ? <div className="diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{Object.entries(details.diagnostics).map(([client, diagnostic]) => <article key={client}><header><strong>{CLIENT_LABELS[client] ?? client}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <p className="drawer-note">暂无编译诊断</p>}</details>
-          </section>
+        {details ? <>
+          <SubscriptionDetailRows
+            user={details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'}
+            groups={details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}
+            plan={details.planId ? {
+              name: details.planName ?? '—',
+              traffic: details.trafficGb ? `${details.trafficGb} GB` : '不限',
+              speed: details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限',
+              devices: String(details.deviceLimit || '不限'),
+            } : null}
+            links={linkEntries.map(([key]) => ({ value: key, label: CLIENT_LABELS[key] ?? key }))}
+            client={client}
+            link={link}
+            linkError={details.linkError || ''}
+            onClient={setSelectedClient}
+            onCopied={() => setError('')}
+            onCopyError={() => setError('浏览器未允许复制，请手动选择内容')}
+            onShowQr={() => { void showQr(client, link) }}
+            bindingLabel={detailsBinding ? BINDING_MODE_LABELS[detailsBinding.mode] : '—'}
+            templateName={effectiveTemplate?.templateName ?? '—'}
+            version={versionLabel(effectiveTemplate?.sequence)}
+            bindingError={detailsBindingError}
+            bindingLoading={!detailsBinding && !detailsBindingError}
+            diagnostics={Object.entries(details.diagnostics).map(([key, diagnostic]) => ({
+              key,
+              label: CLIENT_LABELS[key] ?? key,
+              available: diagnostic.available,
+              summary: `输入 ${diagnostic.inputNodes} · 输出 ${diagnostic.outputNodes} · 跳过 ${diagnostic.skippedNodes}`,
+              items: diagnostic.diagnostics,
+            }))}
+          />
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-        </div> : null}
+        </> : null}
       </EditDrawer>
 
-      <EditDrawer open={transfer !== null} title="转移订阅" busy={busy} onClose={() => setTransfer(null)}>
-        <form className="form-stack" onSubmit={async event => {
+      <EditDrawer open={transfer !== null} title="转移订阅" busy={busy} dirty={transfer !== null && targetUser !== (transfer.userId ?? '')} onClose={() => setTransfer(null)} footer={<button className="button primary" type="submit" form="subscription-transfer-form" disabled={busy}>确认转移</button>}>
+        <form id="subscription-transfer-form" className="form-stack sp-form-stack" onSubmit={async event => {
           event.preventDefault()
           if (!transfer || busy) return
           setBusy(true)
@@ -728,10 +728,11 @@ export function SubscriptionsPage() {
             await load()
           } catch (cause) { setDrawerError(errorMessage(cause, '转移失败')) } finally { setBusy(false) }
         }}>
-          <label className="field"><span>目标用户</span><FormSelect aria-label="目标用户" value={targetUser} onChange={event => setTargetUser(event.currentTarget.value)}><option value="">未分配（回收进池）</option>{users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect></label>
+          <FormField label="目标用户" htmlFor="subscription-transfer-user">
+            <FormSelect id="subscription-transfer-user" aria-label="目标用户" value={targetUser} onChange={event => setTargetUser(event.currentTarget.value)}><option value="">未分配（回收进池）</option>{users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
+          </FormField>
           <p>转移将轮换令牌，旧链接立即失效</p>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <button className="button primary" type="submit" disabled={busy}>确认转移</button>
         </form>
       </EditDrawer>
       <EditDrawer open={sharing !== null} title="临时分享" busy={busy} onClose={() => setSharing(null)}>

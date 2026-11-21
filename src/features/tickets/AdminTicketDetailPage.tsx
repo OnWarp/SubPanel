@@ -125,8 +125,8 @@ export function AdminTicketDetailPage() {
           <TicketThread ticket={thread.ticket} replies={thread.replies} viewerRole="admin" />
           <section className="data-section tk-composer" aria-label="回复工单">
             {closed ? <p className="tk-closed-hint">工单已关闭，发送回复会自动重开</p> : null}
-            <form className="tk-form" onSubmit={submitReply}>
-              <FormField label="回复用户" htmlFor="tk-admin-reply-body">
+            <form className="tk-form sp-form-stack" onSubmit={submitReply}>
+              <FormField label="回复用户" htmlFor="tk-admin-reply-body" wide>
                 <Textarea
                   id="tk-admin-reply-body"
                   rows={4}
@@ -137,7 +137,7 @@ export function AdminTicketDetailPage() {
                   onChange={(event) => setReply(event.currentTarget.value)}
                 />
               </FormField>
-              <div className="tk-form-actions">
+              <div className="tk-form-actions form-actions">
                 <button className="button primary" type="submit" disabled={busy || reply.trim() === ''}>{busy ? '发送中' : '发送回复'}</button>
               </div>
             </form>

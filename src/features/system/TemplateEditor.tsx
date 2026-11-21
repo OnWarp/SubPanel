@@ -178,19 +178,34 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
     })
   }
 
+  const applyCandidate = (result: TemplateImportResponse, savedNotice: string) => {
+    if (result.notModified) { setNotice(result.message); return }
+    changeYaml(result.candidate.yaml)
+    setSource(result.source)
+    setUrl('')
+    setImported(result.candidate)
+    setValidation(result.candidate)
+    setNotice(savedNotice)
+  }
+
   const importRemote = () => {
     if (!detail) return
     void run(async () => {
       const result = await api<TemplateImportResponse>(`${path}/import`, {
         method: 'POST', body: jsonBody({ url: url.trim() || source?.url || detail.sourceUrl, expectedRevision: detail.revision }),
       })
-      if (result.notModified) { setNotice(result.message); return }
-      changeYaml(result.candidate.yaml)
-      setSource(result.source)
-      setUrl('')
-      setImported(result.candidate)
-      setValidation(result.candidate)
-      setNotice('远程内容已导入，保存草稿后生效')
+      applyCandidate(result, '远程内容已导入，保存草稿后生效')
+    })
+  }
+
+  const fetchOnce = () => {
+    const target = url.trim()
+    if (!target) return
+    void run(async () => {
+      const result = await api<TemplateImportResponse>(`${ROOT}/import`, {
+        method: 'POST', body: jsonBody({ url: target }),
+      })
+      applyCandidate(result, '已抓取远程内容，保存草稿时一并写入')
     })
   }
 
@@ -238,7 +253,7 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
         <button className="button secondary" type="button" aria-pressed={pane === 'preview'} onClick={() => setPane('preview')}>预览</button>
       </div>}
       <div className={readOnly ? 'template-standalone' : 'template-editor-grid'} data-pane={pane}>
-        {!readOnly && <div className="form-stack template-edit-fields">
+        {!readOnly && <div className="form-stack sp-form-stack template-edit-fields">
           <FormField label="配置名称" htmlFor="template-name">
             <Input id="template-name" value={name} maxLength={128} disabled={busy} onChange={(event) => setName(event.currentTarget.value)} />
           </FormField>
@@ -249,17 +264,19 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
           </FormField>
           {mode === 'remote' && <div className="form-stack">
             <FormField label="HTTPS 地址" htmlFor="template-source-url">
-              <Input id="template-source-url" type="password" autoComplete="off" value={url} disabled={busy || isNew} maxLength={4096}
+              <Input id="template-source-url" type="password" autoComplete="off" value={url} disabled={busy} maxLength={4096}
                 placeholder={source || detail?.sourceUrl ? '已保存地址隐藏，可重新输入' : undefined}
                 onChange={(event) => setUrl(event.currentTarget.value)} />
             </FormField>
-            {isNew ? <p className="sys-hint">保存草稿后可从远程地址导入。也可以直接粘贴 YAML。</p> :
-              <div><button className="button secondary" type="button" disabled={busy || !(url.trim() || source || detail?.sourceUrl)} onClick={importRemote}>导入／重新导入</button></div>}
+            {isNew ? <>
+              <p className="sys-hint">填写 HTTPS 地址后抓取一次，确认预览再保存</p>
+              <div><button className="button secondary" type="button" disabled={busy || !url.trim()} onClick={fetchOnce}>抓取预览</button></div>
+            </> : <div><button className="button secondary" type="button" disabled={busy || !(url.trim() || source || detail?.sourceUrl)} onClick={importRemote}>导入／重新导入</button></div>}
             {(source?.fetchedAt || detail?.sourceFetchedAt) && <p>获取时间 {templateDate(source?.fetchedAt ?? detail?.sourceFetchedAt ?? '')}</p>}
             {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
             {imported && imported.ignored.length > 0 && <p>导入时发现忽略字段：{imported.ignored.join('、')}</p>}
           </div>}
-          <FormField label="YAML" htmlFor="template-yaml">
+          <FormField label="YAML" htmlFor="template-yaml" wide>
             <Textarea id="template-yaml" rows={17} wrap="off" spellCheck={false} disabled={busy} value={yaml}
               onChange={(event) => changeYaml(event.currentTarget.value)} />
           </FormField>
