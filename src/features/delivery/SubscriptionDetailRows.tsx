@@ -36,6 +36,7 @@ type SubscriptionDetailRowsProps = {
   bindingLoading: boolean
   diagnostics: SubscriptionDetailDiagnostic[]
   lifecycle?: { label: string; reason?: string | null; fix?: { label: string; href?: string } | null }
+  onFix?: () => void
   expiry?: string
   authorizedNodeCount?: number
   capabilityLabel?: string | null
@@ -47,7 +48,7 @@ type SubscriptionDetailRowsProps = {
 export function SubscriptionDetailRows({
   user, groups, plan, links, client, link, linkError, onClient, onCopied, onCopyError, onShowQr,
   bindingLabel, templateName, version, bindingError, bindingLoading, diagnostics,
-  lifecycle, expiry, authorizedNodeCount, capabilityLabel, formatNote, fetchSummary, configVersion,
+  lifecycle, onFix, expiry, authorizedNodeCount, capabilityLabel, formatNote, fetchSummary, configVersion,
 }: SubscriptionDetailRowsProps) {
   const clientLabel = links.find((entry) => entry.value === client)?.label ?? client
   return (
@@ -59,7 +60,7 @@ export function SubscriptionDetailRows({
           <div><dt>使用分组</dt><dd>{groups}</dd></div>
           {lifecycle ? <div><dt>订阅状态</dt><dd>{lifecycle.label}</dd></div> : null}
           {lifecycle?.reason ? <div><dt>状态原因</dt><dd>{lifecycle.reason}</dd></div> : null}
-          {lifecycle?.fix ? <div><dt>处理</dt><dd>{lifecycle.fix.href ? <a href={lifecycle.fix.href}>{lifecycle.fix.label}</a> : lifecycle.fix.label}</dd></div> : null}
+          {lifecycle?.fix ? <div><dt>处理</dt><dd>{lifecycle.fix.href ? <a href={lifecycle.fix.href}>{lifecycle.fix.label}</a> : <button className="button secondary" type="button" onClick={onFix}>{lifecycle.fix.label}</button>}</dd></div> : null}
           {expiry ? <div><dt>到期</dt><dd>{expiry}</dd></div> : null}
           {authorizedNodeCount !== undefined ? <div><dt>授权节点</dt><dd>{authorizedNodeCount}</dd></div> : null}
           {plan ? <>

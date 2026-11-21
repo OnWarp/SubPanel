@@ -29,18 +29,19 @@ export type AccessSnapshot = {
   plans: Awaited<ReturnType<typeof listPlans>>
 }
 
-export function previewAuthorizedOutput(
+export async function previewAuthorizedOutput(
   catalog: Awaited<ReturnType<typeof readCatalog>>,
   planGroupIds: readonly string[],
   groupIds: readonly string[],
   client: RenderClient,
+  speed: number,
 ) {
   const allowed = new Set(planGroupIds)
   const authorizedGroupIds = groupIds.filter((id) => allowed.has(id))
   const nodes = selectedNodes(catalog, { groupIds: authorizedGroupIds })
   return {
     authorizedGroupIds,
-    outputNodes: prepareClientRender(client, nodes).outputNodes,
+    outputNodes: (await prepareSubscriptionRender(client, nodes, speed)).outputNodes,
     authorizedNodeCount: nodes.filter((node) => node.enabled).length,
   }
 }
@@ -85,7 +86,7 @@ async function artifactFor(
   previewTemplate?: Template,
 ) {
   const { nodes, catalog, speed, zeroNodeReason } = context
-  const prepared = prepareClientRender(client, await nodesForClient(client, speedLimitedNodes(nodes, client, speed)))
+  const prepared = await prepareSubscriptionRender(client, nodes, speed)
   let template = previewTemplate
   let templateVersionId: string | undefined
   if (client === 'mihomo' && prepared.outputNodes > 0 && !template) {
@@ -187,8 +188,9 @@ export async function entitledNodes(env: DataEnv, subscription: Subscription, no
   const users = snapshot?.users ?? (await readAccounts(env)).users
   const owner = users.find(user => user.id === subscription.userId)
   if (!owner || owner.deletedAt || !owner.enabled) return blockedAccess(catalog, 'ownerUnavailable')
-  const plans = snapshot?.plans ?? await listPlans(env.DB)
-  const plan = subscription.planId ? plans.find(p => p.id === subscription.planId) ?? null : null
+  const plan = subscription.planId
+    ? (snapshot?.plans ?? await listPlans(env.DB)).find(p => p.id === subscription.planId) ?? null
+    : null
   if (!plan || subscriptionPlanState(subscription, plan, time) !== 'active') return blockedAccess(catalog, 'noPlan')
   const groupIds = subscription.groupIds.filter(id => plan.groupIds.includes(id))
   const nodes = selectedNodes(catalog, { groupIds })
@@ -203,6 +205,10 @@ function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: Rend
     const cap = (value: unknown) => typeof value === 'number' && value > 0 ? Math.min(speed,value) : speed
     return { ...node, transport: { ...node.transport, upMbps: cap(node.transport?.upMbps ?? node.transport?.up), downMbps: cap(node.transport?.downMbps ?? node.transport?.down) } }
   })
+}
+
+export async function prepareSubscriptionRender(client: RenderClient, nodes: CatalogNode[], speed: number) {
+  return prepareClientRender(client, await nodesForClient(client, speedLimitedNodes(nodes, client, speed)))
 }
 
 export async function renderEntitledSubscription(

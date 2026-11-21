@@ -1,6 +1,7 @@
 import { readShareSettings } from '../shares/repository.js'
 import { canUseShareFeature } from '../shares/service.js'
 import { bindingSchema, getEffectiveTemplate } from '../templates/repository.js'
+import { validateTemplate, type Template } from '../templates/validation.js'
 import { listPlans, subscriptionPlanState } from './plans.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -16,7 +17,6 @@ import { readFetchSummary } from './fetch-stats.js'
 import { subscriptionLinks } from './links.js'
 import {
   classifySubscription,
-  describeSubscriptionFormats,
   loadAccessSnapshot,
   presentSubscriptionStatus,
 } from './lifecycle.js'
@@ -140,19 +140,22 @@ async function view(
   const origin = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   const linkError = origin === null ? 'SUBSCRIPTION_DOMAIN_NOT_CONFIGURED' : null
   const links = origin === null ? {} : subscriptionLinks(origin, token)
-  const access = await classifySubscription(c.env, subscription, subscription.defaultClient, new Date().toISOString(), viewOptions.snapshot)
-  const presented = presentSubscriptionStatus(access.status, audience)
   let configVersion: number | null = null
   let conversionMode: string | null = null
   let conversionTemplate: string | null = null
+  let template: Template | undefined
+  let templateInvalid = false
   try {
     const effective = await getEffectiveTemplate(c.env.DB, subscription.id)
     configVersion = effective.sequence
     conversionMode = effective.mode
     conversionTemplate = effective.template_name
+    if (effective.yaml !== null) template = validateTemplate(effective.yaml).template
   } catch {
-    configVersion = null
+    templateInvalid = true
   }
+  const access = await classifySubscription(c.env, subscription, new Date().toISOString(), viewOptions.snapshot, template, templateInvalid)
+  const presented = presentSubscriptionStatus(access.status, audience)
   const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
   const diagnostics: Record<string, unknown> = {}
   for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
@@ -206,15 +209,15 @@ async function view(
     ...presented,
     authorizedNodeCount: access.authorizedNodeCount,
     authorizedGroupIds: access.authorizedGroupIds,
-    formats: describeSubscriptionFormats(access.nodes),
+    formats: access.formats,
     fetch: fetchSummary,
     configVersion,
-    conversion: {
+    ...(audience === 'admin' ? { conversion: {
       mode: conversionMode,
       templateName: conversionTemplate,
       versionId: configVersion,
-      note: '转换诊断只标注现行渲染能力，不执行远程规则转换',
-    },
+      note: '显示现行渲染能力',
+    } } : {}),
   }
 }
 
@@ -383,7 +386,7 @@ adminDeliveryRoutes.post('/output-preview', async (c) => {
   const plans = await listPlans(c.env.DB)
   const plan = input.planId ? plans.find((item) => item.id === input.planId) ?? null : null
   const catalog = await readCatalog(c.env)
-  const preview = previewAuthorizedOutput(catalog, plan?.groupIds ?? [], input.groupIds, input.defaultClient ?? 'mihomo')
+  const preview = await previewAuthorizedOutput(catalog, plan?.enabled ? plan.groupIds : [], input.groupIds, input.defaultClient ?? 'mihomo', plan?.speedLimitMbps ?? 0)
   return c.json({
     planGroupIds: plan?.groupIds ?? [],
     selectedGroupIds: input.groupIds,

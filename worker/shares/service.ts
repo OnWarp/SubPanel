@@ -2,7 +2,6 @@ import type { Principal } from '../app-env.js'
 import type { User } from '../accounts/schema.js'
 import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
-import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { entitledNodes, renderEntitledSubscription } from '../delivery/compiler.js'
 import { subscriptionLink } from '../delivery/links.js'
@@ -388,14 +387,6 @@ export async function revealOriginalLink(
   return { link }
 }
 
-// 预览只取计划授权范围内已启用节点的 displayName。不要把 server、port 或凭据放进公开响应。
-async function previewAccess(env: DataEnv, subscription: Subscription, now: string) {
-  const access = await entitledNodes(env, subscription, now)
-  if (access.zeroNodeReason) return { count: 0, names: [] as string[], groupIds: [] as string[] }
-  const enabled = access.nodes.filter((node) => node.enabled)
-  return { count: enabled.length, names: enabled.map((node) => node.displayName), groupIds: access.authorizedGroupIds }
-}
-
 export async function readShareMeta(
   env: DataEnv,
   token: string,
@@ -404,13 +395,14 @@ export async function readShareMeta(
   now = new Date(),
 ): Promise<ShareMeta> {
   const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
-  const catalog = await readCatalog(env)
-  const preview = await previewAccess(env, subscription, now.toISOString())
+  const { catalog, nodes, authorizedGroupIds } = await entitledNodes(env, subscription, now.toISOString())
+  // 公开预览仅返回启用节点的显示名称
+  const enabled = nodes.filter((node) => node.enabled)
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
-  const meta: ShareMeta = { nodeCount: preview.count }
+  const meta: ShareMeta = { nodeCount: enabled.length }
   if (share.showSubscriptionName) meta.subscriptionName = subscription.name
   if (share.showGroups) {
-    const allowed = new Set(preview.groupIds)
+    const allowed = new Set(authorizedGroupIds)
     meta.groupNames = subscription.groupIds.flatMap((groupId) => {
       if (!allowed.has(groupId)) return []
       const group = catalog.groups.find((item) => item.id === groupId)
@@ -418,7 +410,7 @@ export async function readShareMeta(
     })
   }
   if (share.showExpiry) meta.expiresAt = share.expiresAt
-  if (share.showNodeNames) meta.nodeNames = preview.names
+  if (share.showNodeNames) meta.nodeNames = enabled.map((node) => node.displayName)
   return meta
 }
 

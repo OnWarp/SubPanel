@@ -2,9 +2,9 @@ import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
-import { prepareClientRender, type RenderClient } from '../renderers/index.js'
-import type { RenderNode } from '../renderers/model.js'
-import { entitledNodes, type AccessSnapshot, type ZeroNodeReason } from './compiler.js'
+import type { RenderClient } from '../renderers/index.js'
+import type { Template } from '../templates/validation.js'
+import { entitledNodes, prepareSubscriptionRender, type AccessSnapshot, type ZeroNodeReason } from './compiler.js'
 import { effectiveStartsAt } from './expiry.js'
 import { listPlans } from './plans.js'
 import type { Subscription } from './schema.js'
@@ -116,12 +116,10 @@ export function lifecycleStatus(
   now: number,
   clientOutput: number,
 ): SubscriptionStatus {
-  if (subscription.expiresAt !== null && subscription.expiresAt <= now) return 'expired'
-  if (subscription.planRevoked) return 'revoked'
-  if (!subscription.enabled) return 'disabled'
-  if (!subscription.userId || reason === 'unassigned') return 'owner_unavailable'
-  if (now < effectiveStartsAt(subscription) || reason === 'pending') return 'pending'
-  if (reason === 'ownerUnavailable') return 'owner_unavailable'
+  const rowStatus = subscriptionRowStatus(subscription, now)
+  if (rowStatus) return rowStatus
+  if (reason === 'unassigned' || reason === 'ownerUnavailable') return 'owner_unavailable'
+  if (reason === 'pending') return 'pending'
   if (reason === 'noPlan') return 'no_plan'
   if (reason === 'noGroupIntersection') return 'no_groups'
   if (reason === 'noEnabledNodes') return 'no_nodes'
@@ -129,6 +127,15 @@ export function lifecycleStatus(
   if (reason === 'disabled') return 'disabled'
   if (clientOutput <= 0) return 'incompatible'
   return 'active'
+}
+
+export function subscriptionRowStatus(subscription: Subscription, now: number): SubscriptionStatus | null {
+  if (subscription.expiresAt !== null && subscription.expiresAt <= now) return 'expired'
+  if (subscription.planRevoked) return 'revoked'
+  if (!subscription.enabled) return 'disabled'
+  if (!subscription.userId) return 'owner_unavailable'
+  if (now < effectiveStartsAt(subscription)) return 'pending'
+  return null
 }
 
 export function presentSubscriptionStatus(status: SubscriptionStatus, audience: 'admin' | 'user') {
@@ -153,43 +160,42 @@ export async function loadAccessSnapshot(env: DataEnv): Promise<AccessSnapshot> 
 export async function classifySubscription(
   env: DataEnv,
   subscription: Subscription,
-  client: RenderClient,
-  now = new Date().toISOString(),
+  now: string,
   snapshot?: AccessSnapshot,
+  template?: Template,
+  templateInvalid = false,
 ) {
   const access = await entitledNodes(env, subscription, now, snapshot)
-  const prepared = prepareClientRender(client, access.nodes)
-  const status = lifecycleStatus(subscription, access.zeroNodeReason, Date.parse(now), prepared.outputNodes)
+  const results = new Map<RenderClient, Promise<number>>()
+  const outputFor = (client: RenderClient) => {
+    const existing = results.get(client)
+    if (existing) return existing
+    const result = prepareSubscriptionRender(client, access.nodes, access.speed)
+      .then((prepared) => client === 'mihomo' && templateInvalid ? 0 : prepared.render(template).outputNodes)
+      .catch(() => 0)
+    results.set(client, result)
+    return result
+  }
+  const [outputNodes, formats] = await Promise.all([
+    outputFor(subscription.defaultClient),
+    Promise.all(SUBSCRIPTION_LINK_PLATFORMS.map(async ({ platform, displayName }): Promise<SubscriptionFormatReport> => {
+      const client = PLATFORM_RENDER[platform] ?? 'generic'
+      const outputNodes = await outputFor(client)
+      const capability = FULL_RULE_PLATFORMS.has(platform) ? 'full' : 'nodes'
+      const compatible = outputNodes > 0
+      const note = !compatible
+        ? client === 'mihomo' && templateInvalid ? '已发布配置校验失败' : '当前格式没有可用节点'
+        : platform === 'auto' ? AUTO_NOTE : null
+      return {
+        platform, displayName, capability, compatible, outputNodes, note,
+        capabilityLabel: capability === 'full' ? '完整规则配置' : '仅节点订阅',
+      }
+    })),
+  ])
   return {
-    status,
-    zeroNodeReason: access.zeroNodeReason,
+    status: lifecycleStatus(subscription, access.zeroNodeReason, Date.parse(now), outputNodes),
     authorizedGroupIds: access.authorizedGroupIds,
     authorizedNodeCount: access.nodes.filter((node) => node.enabled).length,
-    outputNodes: prepared.outputNodes,
-    nodes: access.nodes,
+    formats,
   }
-}
-
-export function describeSubscriptionFormats(nodes: RenderNode[]): SubscriptionFormatReport[] {
-  const enabled = nodes.some((node) => node.enabled)
-  return SUBSCRIPTION_LINK_PLATFORMS.map(({ platform, displayName }) => {
-    const client = PLATFORM_RENDER[platform] ?? 'generic'
-    const prepared = prepareClientRender(client, nodes)
-    const capability = FULL_RULE_PLATFORMS.has(platform) ? 'full' as const : 'nodes' as const
-    const compatible = prepared.outputNodes > 0
-    const note = platform === 'auto'
-      ? AUTO_NOTE
-      : !compatible && enabled
-        ? '当前客户端没有兼容节点'
-        : null
-    return {
-      platform,
-      displayName,
-      capability,
-      capabilityLabel: capability === 'full' ? '完整规则配置' : '仅节点订阅',
-      compatible,
-      outputNodes: prepared.outputNodes,
-      note,
-    }
-  })
 }

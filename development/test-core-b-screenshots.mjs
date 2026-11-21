@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { chromium } from '@playwright/test'
 
-const baseURL = process.env.CORE_B_BASE_URL ?? 'http://127.0.0.1:4179'
+const baseURL = process.env.CORE_B_BASE_URL ?? 'http://127.0.0.1:4182'
 const output = 'development/screenshots/core-b'
 const admin = { id: 'usr_1', username: 'admin', role: 'admin', enabled: true }
 const subscription = {
@@ -48,22 +48,28 @@ const subscription = {
 
 const browser = await chromium.launch({
   headless: true,
-  executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium',
+  executablePath: process.env.CHROMIUM_PATH,
 })
 await mkdir(output, { recursive: true })
 
 try {
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: width === 1440 ? 900 : 844 } })
+    page.setDefaultTimeout(10_000)
+    page.on('pageerror', (error) => console.error(error.message))
     await page.route('**/api/**', async (route) => {
       const url = new URL(route.request().url())
       const path = url.pathname
+      if (path === '/api/account/profile') return route.fulfill({ json: { user: admin, avatar: { url: '/logo.png' }, emailBound: false, session: null } })
       if (path === '/api/bootstrap') return route.fulfill({ json: { initialized: true, user: admin } })
       if (path === '/api/admin/subscriptions' && route.request().method() === 'GET') {
         return route.fulfill({ json: { subscriptions: [subscription], total: 1, page: 1, pageSize: 20 } })
       }
       if (path === '/api/admin/subscriptions/output-preview') {
-        return route.fulfill({ json: { planGroupIds: ['grp_1'], selectedGroupIds: ['grp_1'], authorizedGroupIds: ['grp_1'], outputNodes: 2 } })
+        const { planId, groupIds } = route.request().postDataJSON()
+        const planGroupIds = planId ? ['grp_1'] : []
+        const authorizedGroupIds = groupIds.filter((id) => planGroupIds.includes(id))
+        return route.fulfill({ json: { planGroupIds, authorizedGroupIds, outputNodes: authorizedGroupIds.length * 2 } })
       }
       if (path === '/api/admin/users') return route.fulfill({ json: { users: [{ id: 'usr_2', username: 'alice', role: 'user', enabled: true }], total: 1 } })
       if (path === '/api/admin/catalog') {
@@ -72,27 +78,31 @@ try {
       if (path === '/api/admin/plans') {
         return route.fulfill({ json: { plans: [{ id: 'plan_1', name: '标准计划', enabled: true, groupIds: ['grp_1'], durationDays: 30, trafficGb: 100, speedLimitMbps: 0, deviceLimit: 3 }] } })
       }
-      if (path.startsWith('/api/admin/system/subscription-templates')) {
-        return route.fulfill({ json: { templates: [], defaultId: null, total: 0 } })
-      }
       if (path.includes('/bindings/')) {
         return route.fulfill({ json: { mode: 'inherit', revision: 1, effectiveTemplate: null } })
+      }
+      if (path.startsWith('/api/admin/system/subscription-templates')) {
+        return route.fulfill({ json: { templates: [], defaultId: null, total: 0 } })
       }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${baseURL}/delivery/subscriptions`)
     await page.getByRole('heading', { name: '订阅', exact: true }).waitFor()
     await page.getByRole('button', { name: '添加订阅' }).click()
-    await page.getByRole('dialog', { name: '添加订阅' }).waitFor()
+    await page.getByRole('dialog', { name: '添加订阅' }).getByText('预计输出节点数 0', { exact: true }).first().waitFor()
     await page.screenshot({ path: `${output}/wizard-${width}.png`, fullPage: false })
     await page.getByRole('dialog', { name: '添加订阅' }).getByRole('button', { name: '关闭' }).click()
-    await page.getByRole('row', { name: /主订阅/ }).getByRole('button', { name: '更多操作' }).click()
+    await page.getByRole('button', { name: '更多操作', exact: true }).first().click()
     await page.getByRole('button', { name: '查看详情' }).click()
     await page.getByRole('dialog', { name: '主订阅' }).waitFor()
     await page.screenshot({ path: `${output}/detail-${width}.png`, fullPage: false })
     await page.getByRole('dialog', { name: '主订阅' }).getByRole('button', { name: '关闭' }).click()
     await page.getByRole('checkbox', { name: /选择订阅/ }).check()
-    await page.getByRole('toolbar', { name: '批量操作' }).waitFor()
+    const toolbar = page.getByRole('toolbar', { name: '批量操作' })
+    await toolbar.waitFor()
+    const more = toolbar.getByRole('button', { name: '更多批量操作' })
+    if (await more.isVisible()) await more.click()
+    await toolbar.getByRole('button', { name: '更换配置', exact: true }).waitFor()
     await page.screenshot({ path: `${output}/batch-${width}.png`, fullPage: false })
     await page.close()
   }

@@ -6,7 +6,7 @@ import type { AppEnv } from './app-env.js'
 import { apiError, ApiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
 import { noteSubscriptionFetch, stageSubscriptionFetch } from './delivery/fetch-stats.js'
-import { classifySubscription } from './delivery/lifecycle.js'
+import { subscriptionRowStatus } from './delivery/lifecycle.js'
 import { compiledArtifactSchema, type Subscription } from './delivery/schema.js'
 import { renderEntitledSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
@@ -70,24 +70,25 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
 
-    const decision = await classifySubscription(c.env, subscription, client as RenderClient)
-    if (decision.status === 'expired') {
+    const now = new Date().toISOString()
+    const status = subscriptionRowStatus(subscription, Date.parse(now))
+    if (status === 'expired') {
       await disableExpiredSubscriptions(c.env)
       statusCode = 410
       throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
     }
-    if (decision.status === 'pending') {
+    if (status === 'pending') {
       statusCode = 403
       throw apiError(403, 'SUB_NOT_STARTED', '订阅尚未生效')
     }
-    if (BLOCKED_PUBLIC.has(decision.status)) {
+    if (status && BLOCKED_PUBLIC.has(status)) {
       statusCode = 404
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
 
     let artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>
     try {
-      artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient)
+      artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient, now)
     } catch (error) {
       console.error(JSON.stringify({
         event: 'subscription_render_failed', subscriptionId: subscription.id,
