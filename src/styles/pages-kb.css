@@ -148,7 +148,7 @@
 .kb-markdown strong { font-weight: var(--weight-strong); }
 .kb-markdown code {
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--radius-ctl);
   background: var(--color-surface-subtle);
   font-size: .92em;
 }

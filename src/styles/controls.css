@@ -53,3 +53,7 @@ input.sp-checkbox:checked::after {
 .sp-form-select .sp-select-trigger { width: 100%; }
 .sp-switch input.sp-checkbox { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; }
 .sp-search input.sp-input { min-height: 0; box-shadow: none; }
+
+@media (width < 768px) {
+  .sp-input, .sp-textarea { min-height: var(--size-touch-target); }
+}

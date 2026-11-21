@@ -206,7 +206,7 @@
 .node-page .sp-chip {
   max-width: 100%;
   height: auto;
-  min-height: 30px;
+  min-height: 32px;
   padding-block: 4px;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -279,8 +279,10 @@
     padding: 0;
     overflow: visible;
     gap: 5px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
   }
+
+  .node-page .sp-chip { min-height: var(--size-touch-target); }
 }
 
 /* Home link area: platform segmented control + link + copy (plan 7/8). */
