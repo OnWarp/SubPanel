@@ -182,6 +182,8 @@
   padding: var(--space-4);
 }
 
+.admin-layout .kb-admin-body { padding-inline: 0; }
+
 .kb-category-list {
   display: grid;
   margin: 0;

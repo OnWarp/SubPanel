@@ -432,6 +432,18 @@
 
 .settings-fields { padding: var(--space-4); }
 
+@media (width >= 768px) {
+  .admin-layout .page-stack > .data-section > .settings-fields {
+    padding-inline: var(--space-page-inline);
+  }
+}
+
+@media (width < 768px) {
+  .admin-layout .page-stack > .data-section > .settings-fields { padding-inline: 0; }
+}
+
+.admin-layout .settings-fields .sys-invite-form { padding-inline: 0; }
+
 .admin-layout .settings-sections .settings-fields,
 .admin-layout .settings-sections .ops-footer,
 .admin-layout .settings-sections .sys-domain-row {

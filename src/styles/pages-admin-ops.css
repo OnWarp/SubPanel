@@ -15,7 +15,9 @@
 @media (width >= 768px) {
   .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .section-heading,
   .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .ops-footer,
-  .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .sp-filter-bar {
+  .admin-layout .workspace-content > .page-stack.ops-page > .data-section > .sp-filter-bar,
+  .admin-layout .ops-page .ntc-admin-form,
+  .admin-layout .ops-page .kb-admin-body > :is(.ops-footer, .kb-category-form) {
     padding-inline: var(--space-page-inline);
   }
 
