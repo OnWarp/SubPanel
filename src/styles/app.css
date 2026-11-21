@@ -395,32 +395,6 @@ tbody tr:last-child td { border-bottom: 0; }
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.12), 0 2px 6px rgb(0 0 0 / 0.06);
     backdrop-filter: blur(18px);
   }
-  .app-layout[data-mobile-bar="inset"] {
-    display: grid;
-    height: 100dvh;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-  .app-layout[data-mobile-bar="inset"] .workspace {
-    height: auto;
-    align-self: stretch;
-  }
-  .app-layout[data-mobile-bar="inset"] :is(.dock, .admin-mobile-dock) {
-    position: static;
-    height: calc(var(--mobile-bar-height) + var(--mobile-bar-safe-bottom));
-    margin-inline: var(--space-2);
-    padding: 6px max(14px, env(safe-area-inset-right, 0px)) calc(6px + var(--mobile-bar-safe-bottom)) max(14px, env(safe-area-inset-left, 0px));
-    border: 0;
-    border-top: 1px solid var(--color-border);
-    border-radius: 0 0 var(--radius-sheet) var(--radius-sheet);
-    background: var(--color-canvas);
-    box-shadow: none;
-    backdrop-filter: none;
-  }
-  .dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
-  .dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
-  .dock-item span { display: block; overflow: visible; max-width: 100%; font-size: 13px; line-height: 1.15; white-space: nowrap; }
-  .dock-item.active { background: #5e6ad2; color: #fff; font-weight: var(--weight-medium); }
   .dock-backdrop { display: block; position: fixed; inset: 0; z-index: var(--z-overlay); border: 0; background: var(--color-overlay); }
   .dock-sheet { display: grid; padding: 8px 10px 14px; position: fixed; right: 8px; bottom: 0; left: 8px; z-index: var(--z-sidebar); gap: 6px; border: 1px solid var(--color-border); border-bottom: 0; border-radius: var(--radius-sheet) var(--radius-sheet) 0 0; background: var(--color-surface-raised); box-shadow: var(--shadow-float); outline: none; touch-action: pan-y; }
   .dock-sheet-handle { width: 36px; height: 4px; margin: 2px auto 8px; border-radius: var(--radius-pill); background: var(--color-border-strong); }
@@ -432,10 +406,6 @@ tbody tr:last-child td { border-bottom: 0; }
   .dock-sheet-account strong, .dock-sheet-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dock-sheet-account span { color: var(--color-text-muted); font-size: var(--font-xs); }
   .dock-sheet-account .icon-button { width: 40px; height: 40px; margin-left: auto; }
-  .admin-mobile-dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border-radius: 999px; background: transparent; color: var(--color-text-muted); font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
-  .admin-mobile-dock-item.active { background: #5e6ad2; color: #fff; }
-  .admin-mobile-dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
-  .admin-mobile-dock-item span { display: block; max-width: 100%; overflow: visible; font-size: 13px; line-height: 1.15; white-space: nowrap; }
   .page-stack { gap: 10px; }
   .split-heading { display: grid; min-height: 0; grid-template-columns: minmax(0,1fr); align-items: stretch; gap: 10px; }
   .split-heading > .button, .split-heading > .invite-form, .split-heading > .compact-field { width: 100%; min-width: 0; }
@@ -502,3 +472,59 @@ tbody tr:last-child td { border-bottom: 0; }
 .key-value-rows dt { color: var(--color-text-muted); }
 .key-value-rows dd { margin: 0; overflow-wrap: anywhere; }
 .data-section .empty-state { border: 0; background: transparent; }
+
+@media (width < 768px) {
+  .app-layout[data-mobile-bar="inset"] {
+    --mobile-bar-height: 68px;
+    --mobile-bar-safe-top: env(safe-area-inset-top, 0px);
+    --mobile-bar-safe-bottom: env(safe-area-inset-bottom, 0px);
+    display: grid;
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .app-layout[data-mobile-bar="inset"] .workspace {
+    height: auto;
+    align-self: stretch;
+    margin: 0 0 var(--space-2);
+    border-radius: 0 0 var(--radius-sheet) var(--radius-sheet);
+  }
+  .app-layout[data-mobile-bar="inset"] .workspace-topbar {
+    height: calc(var(--size-topbar) + var(--mobile-bar-safe-top));
+    padding-top: var(--mobile-bar-safe-top);
+  }
+  .app-layout[data-mobile-bar="inset"] :is(.dock, .admin-mobile-dock) {
+    display: flex;
+    align-items: center;
+    position: static;
+    height: calc(var(--mobile-bar-height) + var(--mobile-bar-safe-bottom));
+    margin-inline: var(--space-2);
+    padding: 6px max(14px, env(safe-area-inset-right, 0px)) calc(6px + var(--mobile-bar-safe-bottom)) max(14px, env(safe-area-inset-left, 0px));
+    border: 0;
+    border-radius: 0 0 var(--radius-sheet) var(--radius-sheet);
+    background: var(--color-canvas);
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--color-text-muted); cursor: pointer; font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
+  .dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
+  .dock-item span { display: block; overflow: visible; max-width: 100%; font-size: 13px; line-height: 1.15; white-space: nowrap; }
+  .dock-item.active { background: #5e6ad2; color: #fff; font-weight: var(--weight-medium); }
+  .admin-mobile-dock-item { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-width: 0; height: 54px; padding: 0; border-radius: 999px; background: transparent; color: var(--color-text-muted); font-size: 13px; font-weight: var(--weight-medium); line-height: 1.15; text-align: center; }
+  .admin-mobile-dock-item.active { background: #5e6ad2; color: #fff; }
+  .admin-mobile-dock-item svg { flex: 0 0 auto; width: 23px; height: 23px; }
+  .admin-mobile-dock-item span { display: block; max-width: 100%; overflow: visible; font-size: 13px; line-height: 1.15; white-space: nowrap; }
+}
+
+/* Apply the inset shell through 767px while preserving the floating breakpoint. */
+@media (760px < width < 768px) {
+  #root .app-layout[data-mobile-bar="inset"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .app-layout[data-mobile-bar="inset"] :is(.sidebar, .admin-desktop-topbar, .sidebar-toggle) { display: none; }
+  .app-layout[data-mobile-bar="inset"] .workspace { border: 1px solid var(--color-border); box-shadow: var(--shadow-shell); }
+  .app-layout[data-mobile-bar="inset"] .topbar-account { display: block; margin-left: auto; }
+  .app-layout[data-mobile-bar="inset"] .topbar-account nav { top: calc(100% + 8px); bottom: auto; left: auto; right: 0; width: 220px; }
+  .app-layout[data-mobile-bar="inset"] .mobile-bar-settings { display: grid; }
+}

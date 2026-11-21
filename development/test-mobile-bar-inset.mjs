@@ -71,32 +71,37 @@ async function verifyDock(style, entries, active, floatingPanel, safeBottom = 0)
     el.parentElement.matches('.app-layout') && el.previousElementSibling.matches('.workspace'),
   ), 'The dock and workspace must be direct siblings in the app shell')
   assert.equal(bar.height, 68 + (style === 'inset' ? safeBottom : 0))
-  assert.deepEqual(await panel.evaluate(panelEdges), floatingPanel)
   await expect(panel).toHaveCSS('border-bottom-left-radius', floatingPanel.topLeftRadius)
   await expect(panel).toHaveCSS('border-bottom-right-radius', floatingPanel.topLeftRadius)
   if (style === 'inset') {
-    assert.equal(bar.x, workspace.x)
-    assert.equal(bar.width, workspace.width)
+    assert.deepEqual(await panel.evaluate(panelEdges), {
+      top: 0, left: 0, right: width,
+      marginTop: '0px', marginLeft: '0px', marginRight: '0px',
+      topLeftRadius: '0px', topRightRadius: '0px',
+    })
     assert.equal(bar.y + bar.height, height)
-    assert(parseFloat(floatingPanel.topLeftRadius) > 0, 'Inset panel corners must have a positive radius')
+    assert(parseFloat(floatingPanel.topLeftRadius) > 0, 'Inset panel bottom corners must have a positive radius')
     const gap = bar.y - (workspace.y + workspace.height)
     assert(gap > 0, 'The inset panel must end above the dock')
-    for (const side of [workspace.x, width - workspace.x - workspace.width]) {
-      assert(Math.abs(gap - side) <= 1, 'The bottom gap must match both side insets')
-    }
+    assert.equal(gap, parseFloat(floatingPanel.marginLeft), 'The bottom gap must match the baseline')
     await expect(panel).toHaveCSS('margin-bottom', floatingPanel.marginLeft)
     const content = await main.boundingBox()
     assert.equal(content.y + content.height, workspace.y + workspace.height - 1)
     await expect(dock).toHaveCSS('padding-bottom', `${6 + safeBottom}px`)
-    await expect(dock).toHaveCSS('border-top-width', '1px')
+    await expect(dock).toHaveCSS('border-top-width', '0px')
     await expect(dock).toHaveCSS('border-left-width', '0px')
     await expect(dock).toHaveCSS('border-top-left-radius', '0px')
     await expect(dock).toHaveCSS('border-top-right-radius', '0px')
     await expect(dock).toHaveCSS('border-bottom-left-radius', floatingPanel.topLeftRadius)
     await expect(dock).toHaveCSS('border-bottom-right-radius', floatingPanel.topRightRadius)
-    await expect(dock).toHaveCSS('background-color', await shell.evaluate(el => getComputedStyle(el).backgroundColor))
+    await expect(dock).toHaveCSS('background-color', await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor))
     await expect(dock).toHaveCSS('box-shadow', 'none')
+    assert.deepEqual(await dock.evaluate(el =>
+      ['::before', '::after'].map(pseudo => getComputedStyle(el, pseudo).content),
+    ), ['none', 'none'])
+    assert.equal(await dock.locator(':scope > :not(a)').count(), 0)
   } else {
+    assert.deepEqual(await panel.evaluate(panelEdges), floatingPanel)
     assert.equal(bar.x, 19)
     assert.equal(bar.width, width - 38)
     assert.equal(bar.y + bar.height, height - 9 - safeBottom)
@@ -139,6 +144,16 @@ try {
       await shell.evaluate(el => el.style.setProperty('--mobile-bar-safe-bottom', '34px'))
       await verifyDock(style, entries, admin ? entries[0] : entries[3], floatingPanel, 34)
       await shell.evaluate(el => el.style.removeProperty('--mobile-bar-safe-bottom'))
+      if (style === 'inset') {
+        const topbar = panel.locator('.workspace-topbar')
+        const topbarHeight = (await topbar.boundingBox()).height
+        await shell.evaluate(el => el.style.setProperty('--mobile-bar-safe-top', '47px'))
+        await expect(topbar).toHaveCSS('padding-top', '47px')
+        assert.equal((await topbar.boundingBox()).height, topbarHeight + 47)
+        assert((await topbar.locator(':scope > :visible').first().boundingBox()).y >= 47)
+        await verifyDock(style, entries, admin ? entries[0] : entries[3], floatingPanel)
+        await shell.evaluate(el => el.style.removeProperty('--mobile-bar-safe-top'))
+      }
       if (admin) {
         await page.keyboard.press('Escape')
         await expect(group).toBeHidden()
@@ -163,12 +178,46 @@ try {
       }
     }
 
+    await page.setViewportSize({ width: 767, height: 844 })
+    await page.goto(settings)
+    await expect(shell).toHaveAttribute('data-mobile-bar', 'inset')
+    await verifyDock('inset', entries, admin ? entries[0] : entries[3], floatingPanel)
+    if (admin) {
+      for (const [layoutKey, value] of [
+        ['subpanel:sidebar-collapsed', '1'],
+        ['subpanel:admin-layout', 'topbar'],
+      ]) {
+        await page.evaluate(([name, setting]) => localStorage.setItem(name, setting), [layoutKey, value])
+        await page.reload()
+        await verifyDock('inset', entries, entries[0], floatingPanel)
+        await page.evaluate(name => localStorage.removeItem(name), layoutKey)
+      }
+    }
+    await page.evaluate(key => localStorage.setItem(key, 'floating'), key)
+    await page.reload()
+    await expect(shell).toHaveAttribute('data-mobile-bar', 'floating')
+    await expect(dock).toBeHidden()
+
     for (const width of [768, 1440]) {
       await page.setViewportSize({ width, height: 844 })
-      await page.goto(settings)
-      if (admin) await page.locator('.sidebar .admin-account summary').click()
-      await expect(group).toBeHidden()
-      await expect(dock).toBeHidden()
+      for (const style of ['floating', 'inset']) {
+        await page.evaluate(({ key, style }) => localStorage.setItem(key, style), { key, style })
+        await page.goto(settings)
+        await expect(shell).toHaveAttribute('data-mobile-bar', style)
+        if (admin) await page.locator('.sidebar .admin-account summary').click()
+        await expect(group).toBeHidden()
+        await expect(dock).toBeHidden()
+        if (width === 1440) {
+          // Measured in Chromium against 9e7fef9 with the default admin sidebar.
+          assert.deepEqual(await panel.boundingBox(), admin
+            ? { x: 230, y: 0, width: 1210, height: 844 }
+            : { x: 230, y: 14, width: 1196, height: 816 })
+          assert.deepEqual(await panel.evaluate(el => {
+            const css = getComputedStyle(el)
+            return [css.borderTopLeftRadius, css.borderTopRightRadius, css.borderBottomRightRadius, css.borderBottomLeftRadius]
+          }), admin ? ['12px', '0px', '0px', '12px'] : ['14px', '14px', '14px', '14px'])
+        }
+      }
     }
     await page.setViewportSize({ width: 390, height: 844 })
   }
