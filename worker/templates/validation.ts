@@ -1,12 +1,13 @@
 import { LineCounter, isNode, parseDocument } from 'yaml'
 import { sha256Base64Url } from '../platform/hash.js'
 import { z } from 'zod'
+import { mihomoClientLayer, nodeLayer } from './layers.js'
 
 export const NODES = '$SUBPANEL_NODES'
 export const RESERVED = ['DIRECT', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE', 'GLOBAL']
 
 /** Current validator version for tracking schema evolution */
-export const VALIDATOR_VERSION = '2'
+export const VALIDATOR_VERSION = '3'
 export const MAX_TEMPLATE_BYTES = 5 * 1024 * 1024
 const MAX_GROUPS = 100
 const MAX_PROVIDERS = 100
@@ -23,9 +24,21 @@ export interface Diagnostic {
 
 const groupSchema = z.object({
   name: z.string().min(1).refine(v => v.trim() === v && !/[,\p{Cc}]/u.test(v) && !RESERVED.includes(v) && !v.includes(NODES)),
-  type: z.literal('select'),
+  type: z.enum(['select', 'url-test', 'fallback', 'load-balance']),
+  url: z.string().max(2048).refine(isHttpsTemplateUrl).optional(),
+  interval: z.number().int().min(30).max(86400).optional(),
+  lazy: z.boolean().optional(),
+  tolerance: z.number().int().min(0).max(10000).optional(),
+  strategy: z.enum(['consistent-hashing', 'round-robin']).optional(),
   proxies: z.array(z.string().min(1)).min(1),
-}).strict()
+}).strict().superRefine((group, context) => {
+  const invalid = (path: string) => context.addIssue({ code: 'custom', path: [path], message: '字段与策略组类型不兼容' })
+  if (group.type === 'select') {
+    for (const key of ['url', 'interval', 'lazy'] as const) if (group[key] !== undefined) invalid(key)
+  }
+  if (group.type !== 'url-test' && group.tolerance !== undefined) invalid('tolerance')
+  if (group.type !== 'load-balance' && group.strategy !== undefined) invalid('strategy')
+})
 
 export function isHttpsTemplateUrl(value: string): boolean {
   if (!URL.canParse(value)) return false
@@ -43,6 +56,7 @@ const providerSchema = z.object({
 }).strict()
 
 const templateSchema = z.object({
+  subpanel: z.object({ nodes: nodeLayer.optional(), client: mihomoClientLayer.optional() }).strict().optional(),
   'proxy-groups': z.array(groupSchema).min(1).max(MAX_GROUPS),
   rules: z.array(z.string().min(1)).min(1).max(MAX_RULES),
   'rule-providers': z.record(z.string().regex(/^[^,\s\p{Cc}]{1,100}$/u), providerSchema)
@@ -71,7 +85,7 @@ function invalid(code: string, message: string): never {
   throw new TemplateValidationError([{ code, message, severity: 'error', path: '' }])
 }
 
-function validateStructure(yaml: string) {
+function validateStructure(yaml: string, legacy: boolean) {
   if (new TextEncoder().encode(yaml).length > MAX_TEMPLATE_BYTES) {
     invalid('YAML_TOO_LARGE', '模板超过 5 MiB')
   }
@@ -116,6 +130,7 @@ function validateStructure(yaml: string) {
     return converted
   }
   const allowed = ['proxy-groups', 'rules', 'rule-providers']
+  if (!legacy) allowed.push('subpanel')
   const ignored = [...raw.keys()].filter(key => !allowed.includes(key)) as string[]
   const diagnostics: Diagnostic[] = ignored.map(field => ({
     code: 'FIELD_IGNORED', severity: 'info', path: field, message: `字段 "${field}" 将被忽略`,
@@ -161,7 +176,7 @@ export function validateGroups(template: Template, baseDiagnostics: Diagnostic[]
       code: 'MISSING_NODES_PLACEHOLDER',
       severity: 'error',
       path: 'proxy-groups',
-      message: 'proxy-groups: 至少一个 select 组必须接收 $SUBPANEL_NODES',
+      message: 'proxy-groups: 至少一个策略组必须接收 $SUBPANEL_NODES',
     })
   }
 
@@ -345,7 +360,7 @@ function validRanges(value: string, min: number, max: number) {
   })
 }
 
-function validRuleValue(type: string, value: string) {
+export function validRuleValue(type: string, value: string) {
   if (type.endsWith('-REGEX')) {
     // Support the simple expression syntax common to JavaScript and Mihomo,
     // including the leading inline flags shown in the Mihomo examples.
@@ -406,8 +421,8 @@ function normalizeRuleProviders(template: Template, diagnostics: Diagnostic[]): 
   return { ...template, 'rule-providers': providers }
 }
 
-export function validateTemplate(yaml: string): ValidationResult {
-  const { template, ignored, diagnostics, locate } = validateStructure(yaml)
+export function validateTemplate(yaml: string, legacy = false): ValidationResult {
+  const { template, ignored, diagnostics, locate } = validateStructure(yaml, legacy)
   const rules = validateRules(template, validateGroups(template, diagnostics))
   const normalized = normalizeRuleProviders({ ...template, rules: template.rules.map(rule => rule.split(',').map(part => part.trim()).join(',')) }, rules)
   const providerPrefix = 'rule-providers.'
@@ -426,9 +441,12 @@ export function computeContentHash(template: Template) {
 }
 
 export function expandTemplate(template: Template, nodes: string[]) {
+  const { subpanel, ...policy } = template
   return {
-    ...template,
+    ...subpanel?.client,
+    ...policy,
     'proxy-groups': template['proxy-groups'].map(group => ({
+      ...(group.type !== 'select' && { url: 'https://www.gstatic.com/generate_204', interval: 300 }),
       ...group,
       proxies: [...new Set(group.proxies.flatMap(member => member === NODES ? nodes : [member]))],
     })),

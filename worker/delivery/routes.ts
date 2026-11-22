@@ -1,6 +1,6 @@
 import { readShareSettings } from '../shares/repository.js'
 import { canUseShareFeature } from '../shares/service.js'
-import { bindingSchema, getEffectiveTemplate } from '../templates/repository.js'
+import { bindingSchema, getEffectiveTemplate, isLegacyTemplateVersion } from '../templates/repository.js'
 import { validateTemplate, type Template } from '../templates/validation.js'
 import { listPlans, subscriptionPlanState } from './plans.js'
 import { Hono } from 'hono'
@@ -150,7 +150,7 @@ async function view(
     configVersion = effective.sequence
     conversionMode = effective.mode
     conversionTemplate = effective.template_name
-    if (effective.yaml !== null) template = validateTemplate(effective.yaml).template
+    if (effective.yaml !== null) template = validateTemplate(effective.yaml, isLegacyTemplateVersion(effective.validator_version)).template
   } catch {
     templateInvalid = true
   }

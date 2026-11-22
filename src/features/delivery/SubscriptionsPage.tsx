@@ -814,6 +814,9 @@ export function SubscriptionsPage() {
             bindingLabel={detailsBinding ? BINDING_MODE_LABELS[detailsBinding.mode] : '—'}
             templateName={effectiveTemplate?.templateName ?? '—'}
             version={versionLabel(effectiveTemplate?.sequence)}
+            versionHref={effectiveTemplate?.templateId && effectiveTemplate.versionId ? `/delivery/conversions?${new URLSearchParams({
+              config: effectiveTemplate.templateId, view: 'preview', version: effectiveTemplate.versionId, subscription: details.id,
+            })}` : undefined}
             bindingError={detailsBindingError}
             bindingLoading={!detailsBinding && !detailsBindingError}
             diagnostics={Object.entries(details.diagnostics).map(([key, diagnostic]) => ({

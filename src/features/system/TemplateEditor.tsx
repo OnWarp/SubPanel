@@ -11,6 +11,7 @@ import { Dialog } from '../../ui/Dialog'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
+import { BasicTemplateFields } from './BasicTemplateFields'
 import { TemplateDiagnostics, TemplatePreview } from './TemplatePreview'
 import { referenceCount, templateDate, templateError, templateStatus } from './template-display'
 
@@ -30,13 +31,15 @@ rules:
 type EditorProps = {
   config: string
   previewOnly: boolean
+  versionId?: string
+  initialSubscription?: string
   onReturn: () => void
   onCreated: (id: string) => void
 }
 
 type Validation = { diagnostics: Diagnostic[]; ignored: string[] }
 
-export default function TemplateEditor({ config, previewOnly, onReturn, onCreated }: EditorProps) {
+export default function TemplateEditor({ config, previewOnly, versionId, initialSubscription, onReturn, onCreated }: EditorProps) {
   const isNew = config === 'new'
   const path = `${ROOT}/${encodeURIComponent(config)}`
   const [initial] = useState(() => isNew ? undefined : peekApi<TemplateDetailResponse>(path))
@@ -48,7 +51,13 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
   const [source, setSource] = useState<TemplateSource>()
   const [imported, setImported] = useState<Validation>()
   const [notice, setNotice] = useState('')
-  const [subscription, setSubscription] = useState('')
+  const [subscription, setSubscription] = useState(initialSubscription ?? '')
+  const [platform, setPlatform] = useState('mihomo')
+  const [sample, setSample] = useState(false)
+  const [editorMode, setEditorMode] = useState('advanced')
+  const [publishedYaml, setPublishedYaml] = useState('')
+  const [verificationVersion, setVerificationVersion] = useState(versionId)
+  const autoPreview = useRef(Boolean(initialSubscription && versionId))
   const [preview, setPreview] = useState<TemplatePreviewResponse>()
   const [previewPending, setPreviewPending] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -106,6 +115,7 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
 
   const changeYaml = (value: string) => {
     setYaml(value)
+    setVerificationVersion(undefined)
     clearPreview()
   }
 
@@ -121,7 +131,7 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
     } finally { setBusy(false) }
   }
 
-  const runPreview = async () => {
+  const runPreview = async (compareVersion = verificationVersion) => {
     clearPreview()
     setPane('preview')
     const request = new AbortController()
@@ -129,7 +139,12 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
     setPreviewPending(true)
     try {
       const result = await api<TemplatePreviewResponse>(`${ROOT}/preview`, {
-        method: 'POST', body: jsonBody({ yaml, subscriptionId: subscription || undefined }), signal: request.signal,
+        method: 'POST', body: jsonBody({
+          yaml: compareVersion ? undefined : yaml,
+          profileId: isNew ? undefined : config,
+          versionId: compareVersion,
+          subscriptionId: subscription || undefined, platform, sample,
+        }), signal: request.signal,
       })
       if (request.signal.aborted) return
       setValidation(result)
@@ -146,6 +161,14 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
       if (!request.signal.aborted) setPreviewPending(false)
     }
   }
+
+  useEffect(() => {
+    if (!detail || !autoPreview.current) return
+    autoPreview.current = false
+    void runPreview()
+    // The version URL triggers a single preview after the profile loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail])
 
   const save = async (leaving = false) => {
     const savedName = name.trim()
@@ -218,7 +241,12 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
         api<TemplateDetailResponse>(path),
       ])
       setValidation(result)
+      if (result.diagnostics.some(item => item.severity === 'error')) throw new Error('请先处理规则集错误')
       if (latest.revision !== detail.revision) throw new Error('配置已被修改，请刷新后重试')
+      const previous = latest.publishedVersionId ? await api<{ yaml: string }>(
+        `${path}/versions/${encodeURIComponent(latest.publishedVersionId)}`,
+      ) : null
+      setPublishedYaml(previous?.yaml ?? '')
       setDetail(latest)
       setPublishConfirm(true)
     })
@@ -236,7 +264,9 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
       })
       setDetail({ ...detail, status: 'published', revision: result.revision, publishedVersionId: result.versionId, references: result.references })
       setPublishConfirm(false)
-      toast.notify(`已发布 v${result.sequence}`)
+      setVerificationVersion(result.versionId)
+      toast.notify(`已发布 v${result.sequence}，可选择订阅验证发布版本`)
+      await runPreview(result.versionId)
     })
   }
 
@@ -276,10 +306,14 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
             {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
             {imported && imported.ignored.length > 0 && <p>导入时发现忽略字段：{imported.ignored.join('、')}</p>}
           </div>}
-          <FormField label="YAML" htmlFor="template-yaml" wide>
+          <div role="group" aria-label="编辑模式" className="template-actions">
+            <button className="button secondary" type="button" aria-pressed={editorMode === 'basic'} onClick={() => setEditorMode('basic')}>基础模式</button>
+            <button className="button secondary" type="button" aria-pressed={editorMode === 'advanced'} onClick={() => setEditorMode('advanced')}>高级模式</button>
+          </div>
+          {editorMode === 'basic' ? <BasicTemplateFields yaml={yaml} onChange={changeYaml} disabled={busy} /> : <FormField label="YAML" htmlFor="template-yaml" wide>
             <Textarea id="template-yaml" rows={17} wrap="off" spellCheck={false} disabled={busy} value={yaml}
               onChange={(event) => changeYaml(event.currentTarget.value)} />
-          </FormField>
+          </FormField>}
           <section className="form-stack template-validation" aria-label="校验结果">
             <h3>校验结果</h3>
             {validation
@@ -289,7 +323,9 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
             {previewError && validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
           </section>
         </div>}
-        <TemplatePreview value={subscription} onChange={(id) => { setSubscription(id); clearPreview() }}
+        <TemplatePreview platform={platform} onPlatform={value => { setPlatform(value); clearPreview() }}
+          sample={sample} onSample={value => { setSample(value); if (value) setSubscription(''); clearPreview() }}
+          value={subscription} onChange={(id) => { setSubscription(id); setSample(false); clearPreview() }}
           result={preview} pending={previewPending} onPreview={() => void runPreview()} standalone={readOnly} disabled={busy} />
         {readOnly && <>
           {validation && <TemplateDiagnostics {...validation} />}
@@ -311,7 +347,9 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
         <button className="button primary" type="button" disabled={busy} onClick={publish}>{busy ? '正在发布' : '确认发布'}</button>
       </>}>
       <div className="form-stack">
-        <p>发布「{detail?.name}」的草稿修订 {detail?.revision}，将影响 {detail ? referenceCount(detail.references) : 0} 条订阅。</p>
+        <p>发布「{detail?.name}」的草稿修订 {detail?.revision}，将影响 {detail ? referenceCount(detail.references) : 0} 条订阅</p>
+        <p>如需先灰度，可复制配置并仅将副本绑定到测试订阅</p>
+        <TemplateDiff previous={publishedYaml} draft={yaml} />
         {validation && validation.ignored.length > 0 && <p>发布将忽略以下字段，请确认：{validation.ignored.join('、')}</p>}
         {publishConfirm && error && <StatusMessage tone="error">{error}</StatusMessage>}
       </div>
@@ -324,7 +362,7 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
           {busy ? '处理中' : '保存并离开'}
         </button>
       </>}>
-      <p>离开前可保存草稿，或放弃本次修改。</p>
+      <p>离开前可保存草稿，或放弃本次修改</p>
       {blocker.state === 'blocked' && error && <StatusMessage tone="error">{error}</StatusMessage>}
     </Dialog>
   </>
@@ -332,4 +370,22 @@ export default function TemplateEditor({ config, previewOnly, onReturn, onCreate
 
 function getDiagnostics(cause: unknown): Diagnostic[] | undefined {
   return cause instanceof ApiClientError ? (cause.details as { diagnostics?: Diagnostic[] } | undefined)?.diagnostics : undefined
+}
+
+function TemplateDiff({ previous, draft }: { previous: string; draft: string }) {
+  if (previous === draft) return <p>配置内容无变化</p>
+  const before = previous.split('\n')
+  const after = draft.split('\n')
+  let first = 0
+  while (first < before.length && first < after.length && before[first] === after[first]) first++
+  let oldEnd = before.length
+  let newEnd = after.length
+  while (oldEnd > first && newEnd > first && before[oldEnd - 1] === after[newEnd - 1]) {
+    oldEnd--
+    newEnd--
+  }
+  return <details open>
+    <summary>发布差异 · 从第 {first + 1} 行起</summary>
+    <pre className="template-diff" tabIndex={0}><del>{before.slice(first, oldEnd).join('\n')}</del>{'\n'}<ins>{after.slice(first, newEnd).join('\n')}</ins></pre>
+  </details>
 }

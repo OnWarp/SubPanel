@@ -4,6 +4,7 @@ import { loadTemplateSubscriptions, type Diagnostic, type TemplatePreviewRespons
 import { FormSelect, Input } from '../../ui/Controls'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
+import { DiagnosticList } from '../delivery/DiagnosticList'
 import { templateError } from './template-display'
 
 const reasons: Record<TemplateZeroNodeReason, string> = {
@@ -31,7 +32,11 @@ export function TemplateDiagnostics({ diagnostics, ignored }: { diagnostics: Dia
   </>
 }
 
-export function TemplatePreview({ value, onChange, onPreview, pending, result, standalone, disabled }: {
+export function TemplatePreview({ value, onChange, onPreview, pending, result, standalone, disabled, platform, onPlatform, sample, onSample }: {
+  platform: string
+  onPlatform: (value: string) => void
+  sample: boolean
+  onSample: (value: boolean) => void
   value: string
   onChange: (id: string) => void
   onPreview: () => void
@@ -59,6 +64,16 @@ export function TemplatePreview({ value, onChange, onPreview, pending, result, s
 
   return <section className="form-stack template-preview" aria-labelledby="template-preview-title">
     <h3 id="template-preview-title">预览</h3>
+    <FormField label="目标平台" htmlFor="template-platform">
+      <FormSelect id="template-platform" value={platform} onChange={event => onPlatform(event.currentTarget.value)}>
+        <option value="mihomo">Mihomo · 完整规则配置</option>
+        <option value="singbox">sing-box · 仅节点订阅</option>
+        <option value="surge">Surge · 仅节点订阅</option>
+        <option value="loon">Loon · 仅节点订阅</option>
+        <option value="quantumultx">Quantumult X · 仅节点订阅</option>
+      </FormSelect>
+    </FormField>
+    <label><input type="checkbox" checked={sample} onChange={event => onSample(event.currentTarget.checked)} /> 使用合成节点样本</label>
     <FormField label="搜索预览订阅" htmlFor="template-subscription-search">
       <Input id="template-subscription-search" type="search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
     </FormField>
@@ -88,13 +103,20 @@ function PreviewResult({ result }: { result: TemplatePreviewResponse }) {
   }, { lineWidth: 0 }), [groups, rules, ruleProviders, providers.length])
 
   return <div className="form-stack template-preview-result">
-    <StatusMessage tone="success">草稿结构校验通过</StatusMessage>
+    {result.diagnostics.some(item => item.severity === 'error')
+      ? <TemplateDiagnostics diagnostics={result.diagnostics} ignored={result.ignored} />
+      : <StatusMessage tone="success">配置预览已生成</StatusMessage>}
+    <p>输入 {result.inputNodes ?? 0} · 授权 {result.authorizedNodes ?? 0} · 输出 {outputNodes ?? '—'} · 跳过 {result.skippedNodes ?? 0}</p>
+    <p>配置版本 {result.effectiveVersionId ?? (result.draftRevision ? `草稿修订 ${result.draftRevision}` : '基础配置')} · 渲染器 {result.rendererVersion ?? '—'}</p>
+    {result.summary && <p>输出摘要 {result.summary.bytes} 字节 · {result.summary.groups} 个策略组 · {result.summary.rules} 条规则</p>}
+    {Boolean(result.nodeDiagnostics?.length) && <DiagnosticList items={result.nodeDiagnostics ?? []} />}
     {outputNodes === null ? <p>生产下发：选择订阅后核对</p> : <>
       <p>{subscriptionName} · 节点数 {outputNodes}</p>
       {outputNodes === 0
         ? <StatusMessage tone="error">{`生产下发受阻：${zeroNodeReason ? reasons[zeroNodeReason] ?? '无可用节点' : '无可用节点'}`}</StatusMessage>
-        : <p>生产下发：此草稿在当前订阅条件下可渲染</p>}
+        : <p>当前样本可生成输出</p>}
     </>}
+    <details open><summary>生成配置预览</summary><pre tabIndex={0}>{result.body ?? yaml}</pre></details>
     <div><h4>策略组（{groups.length}）</h4>
       {groups.map((group) => <details key={group.name}>
         <summary>{group.name} · {group.type} · {group.proxies.length} 个成员</summary>
@@ -110,6 +132,5 @@ function PreviewResult({ result }: { result: TemplatePreviewResponse }) {
         <dl><dt>来源</dt><dd>{provider.url}</dd>{provider.path && <><dt>路径</dt><dd>{provider.path}</dd></>}</dl>
       </details>)}
     </div>
-    <details open><summary>策略配置预览</summary><pre tabIndex={0}>{yaml}</pre></details>
   </div>
 }

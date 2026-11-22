@@ -1,5 +1,5 @@
 import { readAccounts } from '../accounts/repository.js'
-import { getEffectiveTemplate } from '../templates/repository.js'
+import { getEffectiveTemplate, isLegacyTemplateVersion } from '../templates/repository.js'
 import { validateTemplate, type Template } from '../templates/validation.js'
 import { apiError } from '../platform/api-error.js'
 import { effectiveStartsAt } from './expiry.js'
@@ -8,6 +8,7 @@ import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import { hashToken } from '../platform/crypto.js'
+import { RENDERER_VERSION } from '../renderers/model.js'
 import { CLIENT_IDS, prepareClientRender, type RenderClient } from '../renderers/index.js'
 import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from './schema.js'
 import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
@@ -74,7 +75,7 @@ async function nodesForClient(client: RenderClient, nodes: ReturnType<typeof sel
   }))
 }
 
-export const RENDERER_VERSION = '2'
+export { RENDERER_VERSION } from '../renderers/model.js'
 export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' | 'noPlan' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible' | 'ownerUnavailable'
 
 async function artifactFor(
@@ -94,7 +95,7 @@ async function artifactFor(
     templateVersionId = effective.version_id ?? undefined
     if (effective.yaml !== null) {
       try {
-        template = validateTemplate(effective.yaml).template
+        template = validateTemplate(effective.yaml, isLegacyTemplateVersion(effective.validator_version)).template
       } catch {
         throw apiError(500, 'TEMPLATE_OUTPUT_INVALID', '已发布配置校验失败')
       }
@@ -217,8 +218,15 @@ export async function renderEntitledSubscription(
   client: RenderClient,
   now = new Date().toISOString(),
   previewTemplate?: Template,
+  preview = false,
 ) {
-  return artifactFor(env, subscription, client, await entitledNodes(env, subscription, now), now, previewTemplate)
+  const access = await entitledNodes(env, subscription, now)
+  const artifact = await artifactFor(env, subscription, client, access, now, previewTemplate)
+  return {
+    ...artifact,
+    previewInputNodes: preview ? selectedNodes(access.catalog, subscription).length : undefined,
+    previewAuthorizedNodes: preview ? access.nodes.filter(node => node.enabled).length : undefined,
+  }
 }
 
 export async function previewCatalogEntitlement(
