@@ -1,4 +1,3 @@
-import { disableExpiredSubscriptions } from './delivery/service.js'
 import type { RenderClient } from './renderers/index.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -6,7 +5,7 @@ import type { AppEnv } from './app-env.js'
 import { apiError, ApiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
 import { noteSubscriptionFetch, stageSubscriptionFetch } from './delivery/fetch-stats.js'
-import { subscriptionRowStatus } from './delivery/lifecycle.js'
+import { subscriptionRowStatus } from './delivery/expiry.js'
 import { compiledArtifactSchema, type Subscription } from './delivery/schema.js'
 import { renderEntitledSubscription } from './delivery/compiler.js'
 import { compiledKey, readDelivery } from './delivery/repository.js'
@@ -73,7 +72,6 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     const now = new Date().toISOString()
     const status = subscriptionRowStatus(subscription, Date.parse(now))
     if (status === 'expired') {
-      await disableExpiredSubscriptions(c.env)
       statusCode = 410
       throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
     }

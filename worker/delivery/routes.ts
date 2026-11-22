@@ -40,7 +40,19 @@ import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-us
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 const epochField = epochMillisSchema.nullable().optional()
+const allowanceFields = {
+  trafficGb: z.number().nonnegative().max(1e9).optional(),
+  speedLimitMbps: z.number().int().nonnegative().max(1_000_000).optional(),
+  deviceLimit: z.number().int().nonnegative().max(1_000_000).optional(),
+}
 const createSchema = z.object({
+  ...allowanceFields,
+  mode: z.literal('manual').optional(),
+  duration: z.object({
+    value: z.number().int().min(1).max(36_500),
+    unit: z.enum(['day', 'week', 'month', 'year']),
+  }).strict().optional(),
+  idempotencyKey: z.string().trim().min(1).max(128).optional(),
   userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
   planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128),
@@ -50,8 +62,9 @@ const createSchema = z.object({
   startsAt: epochField,
   expiresAt: epochField,
   templateBinding: bindingSchema.optional(),
-})
+}).strict()
 const updateSchema = z.object({
+  ...allowanceFields,
   planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128).optional(),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)).optional(),
@@ -185,6 +198,7 @@ async function view(
     }
   }
   return {
+    sourceType: subscription.sourceType ?? 'legacy',
     planId: subscription.planId ?? null,
     planName: plan?.name ?? null,
     planState: subscriptionPlanState(subscription, plan, Date.now()),
@@ -380,13 +394,16 @@ adminDeliveryRoutes.post('/batch', async (c) => {
 adminDeliveryRoutes.post('/output-preview', async (c) => {
   const input = await readJson(c, z.object({
     planId: z.string().min(1).nullable().optional(),
+    userId: z.string().nullable().optional(),
+    speedLimitMbps: allowanceFields.speedLimitMbps,
     groupIds: z.array(z.string()),
     defaultClient: client.optional(),
   }))
   const plans = await listPlans(c.env.DB)
   const plan = input.planId ? plans.find((item) => item.id === input.planId) ?? null : null
   const catalog = await readCatalog(c.env)
-  const preview = await previewAuthorizedOutput(catalog, plan?.enabled ? plan.groupIds : [], input.groupIds, input.defaultClient ?? 'mihomo', plan?.speedLimitMbps ?? 0)
+  const preview = await previewAuthorizedOutput(catalog, input.userId === null || !input.planId ? input.groupIds : plan?.groupIds ?? [],
+    input.groupIds, input.defaultClient ?? 'mihomo', input.speedLimitMbps ?? plan?.speedLimitMbps ?? 0)
   return c.json({
     planGroupIds: plan?.groupIds ?? [],
     selectedGroupIds: input.groupIds,
@@ -396,10 +413,22 @@ adminDeliveryRoutes.post('/output-preview', async (c) => {
 })
 
 adminDeliveryRoutes.post('/', async (c) => {
-  const input = await readJson(c, createSchema)
-  const result = await run(() => createSubscription(c.env, input, { actorRole: 'admin' }))
+  const { mode: _mode, ...input } = await readJson(c, createSchema)
+  const rawKey = c.req.header('Idempotency-Key') ?? input.idempotencyKey
+  const key = z.string().trim().min(1).max(128).optional().safeParse(rawKey)
+  if (!key.success || (input.idempotencyKey && input.idempotencyKey !== key.data)) {
+    throw apiError(422, 'VALIDATION_FAILED', '幂等键无效')
+  }
+  const result = await run(() => createSubscription(c.env, { ...input, idempotencyKey: key.data }, {
+    actorRole: 'admin', actorUserId: c.get('principal').id,
+  }))
   const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
   return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
+})
+
+adminDeliveryRoutes.get('/:id', async (c) => {
+  const subscription = await run(() => getSubscription(c.env, c.req.param('id')))
+  return c.json({ subscription: await view(c, subscription) })
 })
 
 adminDeliveryRoutes.post('/:id/copy', async (c) => {
@@ -462,6 +491,11 @@ userDeliveryRoutes.get('/', async (c) => {
   const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
     .map(subscription => userSubscriptionView(c, subscription, snapshot.catalog.revision, snapshot)))
   return c.json({ subscriptions: views, shareEnabled: canUseShareFeature(role, shareSettings) })
+})
+
+userDeliveryRoutes.get('/:id', async (c) => {
+  const subscription = await run(() => getSubscription(c.env, c.req.param('id'), c.get('principal').id))
+  return c.json({ subscription: await userSubscriptionView(c, subscription) })
 })
 
 userDeliveryRoutes.post('/:id/token/reset', async (c) => {

@@ -1,0 +1,36 @@
+{
+  "mode": "dry-run",
+  "before": {
+    "subscriptions": 2,
+    "unassigned": 1,
+    "distinct_token_hashes": 2,
+    "quota_total_gib": 102.5,
+    "group_references": 2,
+    "effective_legacy": null
+  },
+  "after": {
+    "subscriptions": 2,
+    "unassigned": 1,
+    "distinct_token_hashes": 2,
+    "quota_total_gib": 102.5,
+    "group_references": 2,
+    "effective_legacy": 2
+  },
+  "diff": {
+    "subscriptions_added": 0,
+    "subscriptions_removed": 0,
+    "subscriptions_changed": 0,
+    "group_references_added": 0,
+    "group_references_removed": 0
+  },
+  "replay_matches": true,
+  "metadata_foreign_key_violations": 0,
+  "local_diff": {
+    "subscriptions_added": 0,
+    "subscriptions_removed": 0,
+    "subscriptions_changed": 0,
+    "group_references_added": 0,
+    "group_references_removed": 0
+  },
+  "local_matches_dry_run": true
+}

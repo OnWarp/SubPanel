@@ -1,3 +1,4 @@
+import subscriptionV2Sql from '../../../migrations/0021_subscription_v2_p1.sql?raw'
 import conversionProfilesSql from '../../../migrations/0020_conversion_profiles.sql?raw'
 import catalogSyncSql from '../../../migrations/0019_catalog_sync.sql?raw'
 import subscriptionPlansSql from '../../../migrations/0018_subscription_plans.sql?raw'
@@ -60,6 +61,7 @@ export const D1_TABLES = [
   'rate_limits',
   'shares',
   'sources',
+  'subscription_creation',
   'subscription_domains',
   'subscription_groups',
   'subscription_plan_migration',
@@ -243,6 +245,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0018_subscription_plans.sql', queries: splitSqlStatements(subscriptionPlansSql) },
     { name: '0019_catalog_sync.sql', queries: splitSqlStatements(catalogSyncSql) },
     conversionProfilesMigration,
+    { name: '0021_subscription_v2_p1.sql', queries: splitSqlStatements(subscriptionV2Sql) },
   ])
 }
 

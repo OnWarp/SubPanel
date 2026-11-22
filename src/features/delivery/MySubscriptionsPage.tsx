@@ -110,6 +110,20 @@ export function MySubscriptionsPage() {
     }, { replace: true })
   }
 
+  useEffect(() => {
+    if (!selectedId) return
+    const abort = new AbortController()
+    void api<{ subscription: AdminSubscription }>(`/api/me/subscriptions/${selectedId}`, { signal: abort.signal })
+      .then(({ subscription }) => {
+        if (!abort.signal.aborted) setSubscriptions(current => current.map(row =>
+          row.id === subscription.id && row.revision <= subscription.revision ? subscription : row))
+      })
+      .catch(cause => {
+        if (!abort.signal.aborted) setError(errorMessage(cause, '加载订阅详情失败'))
+      })
+    return () => abort.abort()
+  }, [selectedId])
+
   const selected = useMemo(
     () => subscriptions.find((subscription) => subscription.id === selectedId) ?? null,
     [selectedId, subscriptions],
@@ -267,11 +281,9 @@ export function MySubscriptionsPage() {
             <p className="del-status-group">{groupSummary(selected.groupIds)}</p>
             <dl className="exp-status-meta">
               <div><dt>订阅计划</dt><dd>{selected.planName ?? '未分配计划'}</dd></div>
-              {selected.planId ? <>
                 <div><dt>流量额度</dt><dd>{selected.trafficGb ? `${selected.trafficGb} GB` : '不限'} · 配额定义／未强制执行</dd></div>
                 <div><dt>限速</dt><dd>{selected.speedLimitMbps ? `${selected.speedLimitMbps} Mbps` : '不限'}</dd></div>
                 <div><dt>设备数</dt><dd>{selected.deviceLimit || '不限'} · 配额定义／未强制执行</dd></div>
-              </> : null}
             </dl>
           </section>
 

@@ -1,11 +1,10 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../app-env.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
-import { readCatalog } from '../catalog/repository.js'
 import type { CatalogSnapshot, Group, Node } from '../catalog/schema.js'
-import { ApiError } from '../platform/api-error.js'
-import { assertSubscriptionAvailable } from './expiry.js'
-import { listPlans, subscriptionPlanState } from './plans.js'
+import { subscriptionRowStatus } from './expiry.js'
+import { resolveEntitlement } from './compiler.js'
+import { loadAccessSnapshot } from './lifecycle.js'
 import { readDelivery } from './repository.js'
 
 export type UserNodeRef = {
@@ -40,16 +39,6 @@ function groupIsActive(group: Group): boolean {
   return enabled !== false
 }
 
-function subscriptionIsActive(subscription: UserNodeSubscription, now: number): boolean {
-  try {
-    assertSubscriptionAvailable(subscription, now)
-    return true
-  } catch (error) {
-    if (error instanceof ApiError && (error.code === 'SUB_EXPIRED' || error.code === 'SUB_NOT_STARTED')) return false
-    throw error
-  }
-}
-
 function protocolOf(node: Node): string | null {
   return node.protocol ? node.protocol : null
 }
@@ -68,7 +57,7 @@ export function collectUserNodes(
   const merged = new Map<string, UserNodeDto>()
 
   for (const subscription of subscriptions) {
-    if (subscription.userId !== userId || !subscription.enabled || !subscriptionIsActive(subscription, now)) continue
+    if (subscription.userId !== userId || subscriptionRowStatus(subscription, now)) continue
     for (const groupId of subscription.groupIds) {
       const group = groupsById.get(groupId)
       if (!group || !groupIsActive(group)) continue
@@ -144,20 +133,16 @@ const hasUserNodeParams = (query: Record<string, string | undefined>): boolean =
 export const userNodeRoutes = new Hono<AppEnv>()
 
 userNodeRoutes.get('/', async (c) => {
-  const [delivery, catalog] = await Promise.all([
-    readDelivery(c.env),
-    readCatalog(c.env),
-  ])
+  const [delivery, snapshot] = await Promise.all([readDelivery(c.env), loadAccessSnapshot(c.env)])
   const userId = c.get('principal').id
-  const assigned = delivery.subscriptions.filter(subscription => subscription.userId === userId && subscription.planId)
-  const plans = new Map(assigned.length ? (await listPlans(c.env.DB)).map(plan => [plan.id, plan]) : [])
-  const now = Date.now()
-  const eligible = assigned.flatMap(subscription => {
-    const plan = plans.get(subscription.planId!)
-    if (!plan || subscriptionPlanState(subscription, plan, now) !== 'active') return []
-    return [{ ...subscription, groupIds: subscription.groupIds.filter(id => plan.groupIds.includes(id)) }]
-  })
-  const nodes = collectUserNodes(eligible, catalog, userId, now)
+  const now = new Date()
+  const assigned = delivery.subscriptions.filter(subscription => subscription.userId === userId)
+  const eligible = (await Promise.all(assigned.map(async (subscription) => {
+    const access = await resolveEntitlement(c.env, subscription, now.toISOString(), snapshot)
+    return access.zeroNodeReason && !['noGroupIntersection', 'noEnabledNodes'].includes(access.zeroNodeReason)
+      ? [] : [{ ...subscription, groupIds: access.authorizedGroupIds }]
+  }))).flat()
+  const nodes = collectUserNodes(eligible, snapshot.catalog, userId, now.getTime())
   const query = c.req.query()
   if (!hasUserNodeParams(query)) return c.json({ nodes })
   const { page, pageSize } = parsePagination(query)

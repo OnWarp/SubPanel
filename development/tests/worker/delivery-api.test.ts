@@ -56,7 +56,7 @@ describe('Delivery APIs and public subscriptions', () => {
     const pool = await created.json() as Result
     expect(pool.subscription.userId).toBeNull()
     const pull = (token: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
-    expect((await pull(pool.token)).status).toBe(404)
+    expect((await pull(pool.token)).status).toBe(200)
     const transfer = async (userId: string | null) => {
       const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${pool.subscription.id}/transfer`, jsonRequest({ userId }, withCookie(admin)))
       expect(response.status).toBe(200)
@@ -72,7 +72,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect((await pull(moved.token)).status).toBe(200)
     const recycled = await transfer(null)
     expect((await pull(moved.token)).status).toBe(404)
-    expect((await pull(recycled.token)).status).toBe(404)
+    expect((await pull(recycled.token)).status).toBe(200)
     const audits = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action = 'post.subscriptions.transfer'").all<{ detail: string }>()
     expect(audits.results).toHaveLength(3)
     expect(JSON.stringify(audits.results)).not.toContain(moved.token)

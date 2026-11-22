@@ -37,7 +37,7 @@ export function getExpiryState(sub: ExpiryInput, now = Date.now()): ExpiryState 
   const parsedStart = sub.startsAt ?? Date.parse(sub.createdAt)
   const startsAt = Number.isFinite(parsedStart) ? parsedStart : 0
   const expiresAt = sub.expiresAt ?? null
-  if (expiresAt !== null && now > expiresAt) {
+  if (expiresAt !== null && now >= expiresAt) {
     return { kind: 'expired', startsAt, expiresAt, remainingDays: 0 }
   }
   if (now < startsAt) {

@@ -103,11 +103,12 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
   try {
     const placeholders = DELIVERY_META_KEYS.map(() => '?').join(', ')
     const [subscriptions, groups, metadata] = await batch(db, [
-      db.prepare('SELECT * FROM subscriptions'),
+      db.prepare(`SELECT subscriptions.*, coalesce(source_type, 'legacy') AS source_type
+        FROM subscriptions LEFT JOIN subscription_creation ON subscription_id = subscriptions.id`),
       db.prepare('SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position'),
       db.prepare(`SELECT key, value FROM system_settings WHERE key IN (${placeholders})`).bind(...DELIVERY_META_KEYS),
     ])
-    const subscriptionRows = subscriptions.results as SubscriptionRow[]
+    const subscriptionRows = subscriptions.results as (SubscriptionRow & { source_type: 'manual' | 'legacy' })[]
     const groupRows = groups.results as SubscriptionGroupSql[]
     const metadataRows = metadata.results as { key: string; value: string }[]
     const storedOrderRaw = metadataRows.find(row => row.key === DELIVERY_SETTING_KEYS.entityOrder)?.value ?? null
@@ -145,11 +146,14 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
         tokenHash: row.token_hash,
         tokenPrefix: row.token_prefix,
         encryptedToken: row.encrypted_token === '{}' ? null : parseJson(row.encrypted_token),
-        ...(row.plan_id ? {
-          planId: row.plan_id,
+        ...(row.source_type === 'manual' ? { sourceType: row.source_type } : {}),
+        ...(row.plan_id || row.source_type === 'manual' || row.traffic_gb || row.speed_limit_mbps || row.device_limit ? {
           trafficGb: row.traffic_gb,
           speedLimitMbps: row.speed_limit_mbps,
           deviceLimit: row.device_limit,
+        } : {}),
+        ...(row.plan_id ? {
+          planId: row.plan_id,
           planSource: row.plan_source,
           planNote: row.plan_note,
           planRevoked: row.plan_revoked === 1,
@@ -171,13 +175,19 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
   }
 }
 
-function subscriptionInsert(db: AppDatabase, row: SubscriptionRow): D1PreparedStatement {
-  return db.prepare(
-    `INSERT INTO subscriptions (
-      id, user_id, name, token_hash, token_prefix, encrypted_token,
-      enabled, default_client, revision, starts_at, expires_at, created_at, updated_at,
-      plan_id, traffic_gb, speed_limit_mbps, device_limit, plan_source, plan_note, plan_revoked, last_reminded_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+export function subscriptionInsert(
+  db: AppDatabase,
+  row: Omit<SubscriptionRow, 'id'>,
+  target: { id: string } | { where: string; bindings: string[] },
+): D1PreparedStatement {
+  const values = [
+    row.user_id, row.name, row.token_hash, row.token_prefix, row.encrypted_token,
+    row.enabled, row.default_client, row.revision, row.starts_at, row.expires_at, row.created_at, row.updated_at,
+    row.plan_id, row.traffic_gb, row.speed_limit_mbps, row.device_limit, row.plan_source, row.plan_note,
+    row.plan_revoked, row.last_reminded_at,
+  ]
+  const placeholders = values.map(() => '?').join(', ')
+  const source = 'id' in target ? `VALUES (?, ${placeholders})
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id,
       name = excluded.name,
@@ -199,30 +209,18 @@ function subscriptionInsert(db: AppDatabase, row: SubscriptionRow): D1PreparedSt
       plan_note = excluded.plan_note,
       plan_revoked = excluded.plan_revoked,
       last_reminded_at = CASE WHEN subscriptions.expires_at IS excluded.expires_at
-        THEN subscriptions.last_reminded_at ELSE excluded.last_reminded_at END`,
-  ).bind(
-    row.id,
-    row.user_id,
-    row.name,
-    row.token_hash,
-    row.token_prefix,
-    row.encrypted_token,
-    row.enabled,
-    row.default_client,
-    row.revision,
-    row.starts_at,
-    row.expires_at,
-    row.created_at,
-    row.updated_at,
-    row.plan_id,
-    row.traffic_gb,
-    row.speed_limit_mbps,
-    row.device_limit,
-    row.plan_source,
-    row.plan_note,
-    row.plan_revoked,
-    row.last_reminded_at,
-  )
+        THEN subscriptions.last_reminded_at ELSE excluded.last_reminded_at END`
+    : `SELECT 'sub_' || max(
+      coalesce((SELECT max(cast(substr(id, 5) AS INTEGER)) + 1 FROM subscriptions), 1),
+      coalesce((SELECT cast(value AS INTEGER) FROM system_settings WHERE key='next_subscription_id'), 1)
+    ), ${placeholders} WHERE ${target.where}`
+  return db.prepare(
+    `INSERT INTO subscriptions (
+      id, user_id, name, token_hash, token_prefix, encrypted_token,
+      enabled, default_client, revision, starts_at, expires_at, created_at, updated_at,
+      plan_id, traffic_gb, speed_limit_mbps, device_limit, plan_source, plan_note, plan_revoked, last_reminded_at
+    ) ${source}`,
+  ).bind(...('id' in target ? [target.id, ...values] : [...values, ...target.bindings]))
 }
 
 function groupInsert(db: AppDatabase, row: SubscriptionGroupRow): D1PreparedStatement {
@@ -237,6 +235,7 @@ export async function persistDeliverySnapshot(
   users: readonly User[],
   bindingStatement?: D1PreparedStatement,
   expectedRevision?: number,
+  request?: { id: string; keyHash: string; fingerprint: string },
 ): Promise<void> {
   const converted = convertDelivery(snapshot)
   const ids = converted.rows.subscriptions.map((row) => row.id)
@@ -244,7 +243,15 @@ export async function persistDeliverySnapshot(
   const statements: D1PreparedStatement[] = [
     ...userAnchorStatements(db, users, converted.rows.subscriptions.flatMap((row) => row.user_id ? [row.user_id] : [])),
     db.prepare('DELETE FROM subscriptions WHERE id NOT IN (SELECT value FROM json_each(?))').bind(idJson),
-    ...converted.rows.subscriptions.map((row) => subscriptionInsert(db, row)),
+    ...converted.rows.subscriptions.map((row) => subscriptionInsert(db, row, { id: row.id })),
+    ...(request ? [db.prepare(`INSERT INTO subscription_creation
+      (subscription_id, source_type, request_key_hash, request_fingerprint) VALUES (?, 'manual', ?, ?)`)
+      .bind(request.id, request.keyHash, request.fingerprint)] : []),
+    db.prepare(`INSERT OR IGNORE INTO subscription_creation (subscription_id, source_type)
+      SELECT value, 'manual' FROM json_each(?)`).bind(JSON.stringify(
+      snapshot.subscriptions.filter((row) => row.sourceType === 'manual').map(({ id }) => id),
+    )),
+    db.prepare('DELETE FROM subscription_creation WHERE subscription_id IS NULL AND request_key_hash IS NULL'),
     db.prepare('DELETE FROM subscription_groups WHERE subscription_id IN (SELECT value FROM json_each(?))').bind(idJson),
     ...converted.rows.subscription_groups.map((row) => groupInsert(db, row)),
     upsertSettingStatement(db, DELIVERY_SETTING_KEYS.schemaVersion, snapshot.schemaVersion, snapshot.updatedAt),

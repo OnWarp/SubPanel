@@ -58,7 +58,7 @@ describe('central entitlement decisions and operations', () => {
     const rows = await env.DB.prepare('SELECT plan_id FROM subscriptions WHERE user_id = ?').bind('usr_1').all<{ plan_id: string }>()
     expect(rows.results).toEqual([{ plan_id: other.id }])
   })
-  it('disables access with the plan and preserves referenced plans', async () => {
+  it('disables plan operations and preserves referenced plans', async () => {
     const plan = await makePlan()
     await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
     await savePlan(env.DB,{ ...plan,enabled: false },plan.id)
@@ -96,32 +96,34 @@ const proxies = async (token: string) => {
   expect(response.status).toBe(200)
   return (parseYaml(await response.text()) as { proxies: Array<Record<string, unknown>> }).proxies
 }
-async function expectNoMihomoNodes(token: string, reason = 'noPlan') {
+async function expectNoMihomoNodes(token: string, reason = 'noGroupIntersection') {
   const response = await fetchApi(`/sub/${token}/mihomo`)
   expect(response.status).toBe(422)
   expect(await response.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason } } })
 }
 describe('live subscription gating', () => {
-  it('gates compiled artifacts as well as public downloads', async () => {
+  it('uses the same configured groups for compiled artifacts and public downloads', async () => {
     const { token,ids } = await deliveryFixture()
     const { readDelivery } = await import('../../../worker/delivery/repository')
     const { compileSubscription } = await import('../../../worker/delivery/compiler')
     const subscription = (await readDelivery(env)).subscriptions[0]
-    expect((await compileSubscription(env,subscription)).every((a) => a.outputNodes === 0)).toBe(true)
+    expect((await compileSubscription(env,subscription)).find((a) => a.client === 'mihomo')?.outputNodes).toBe(2)
     const plan = await savePlan(env.DB,{ name: 'Compilation',groupIds: [ids[0]],durationDays: 30 })
     await operateSubscriptionPlan(env,'usr_1','grant',plan.id)
     const artifacts = await compileSubscription(env,(await readDelivery(env)).subscriptions[0])
     expect(artifacts.find((a) => a.client === 'mihomo')?.outputNodes).toBe(1)
     expect((await proxies(token)).length).toBe(1)
   })
-  it('blocks Mihomo without rights, keeps the generic empty response and reports none', async () => {
+  it('serves manual groups without a plan and keeps empty output semantics', async () => {
     const { token } = await deliveryFixture()
-    await expectNoMihomoNodes(token)
-    expect(await (await fetchApi(`/sub/${token}/generic`)).text()).toBe('')
+    expect(await proxies(token)).toHaveLength(2)
+    const empty = await (await admin('/api/admin/subscriptions', { name: 'Empty', userId: 'usr_1', groupIds: [] })).json<{ token: string }>()
+    await expectNoMihomoNodes(empty.token)
+    expect(await (await fetchApi(`/sub/${empty.token}/generic`)).text()).toBe('')
     const status = await fetchApi('/api/account/entitlement',withCookie(cookie))
     expect(await status.json()).toMatchObject({ state: 'none',current: null })
   })
-  it('blocks Mihomo for expired and revoked rights despite populated cached artifacts', async () => {
+  it('blocks expired delivery even with a populated cache and keeps delivery after revocation', async () => {
     const { token,ids } = await deliveryFixture()
     const plan = await savePlan(env.DB,{ name: 'Expired',groupIds: ids,durationDays: 1 })
     await operateSubscriptionPlan(env,'usr_1','grant',plan.id,'',NOW)
@@ -130,7 +132,7 @@ describe('live subscription gating', () => {
     await operateSubscriptionPlan(env,'usr_1','renew')
     expect((await proxies(token)).length).toBe(2)
     await operateSubscriptionPlan(env,'usr_1','revoke')
-    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(404)
+    expect(await proxies(token)).toHaveLength(2)
   })
   it('uses each subscription plan independently and ignores the migration backup', async () => {
     const { token, ids } = await deliveryFixture()
@@ -144,7 +146,7 @@ describe('live subscription gating', () => {
       VALUES ('legacy-test','usr_1',?,?,'2099-01-01T00:00:00.000Z','active','admin',?,?)`)
       .bind(plan.id, NOW, NOW, NOW).run()
     try {
-      await expectNoMihomoNodes(token)
+      expect(await proxies(token)).toHaveLength(ids.length)
       expect(await proxies(result.token)).toHaveLength(ids.length)
     } finally {
       await env.DB.prepare("DELETE FROM user_entitlements_legacy WHERE id='legacy-test'").run()
@@ -162,7 +164,7 @@ describe('live subscription gating', () => {
     await savePlan(env.DB,{ ...plan,groupIds: [] },plan.id)
     await expectNoMihomoNodes(token, 'noGroupIntersection')
     await savePlan(env.DB,{ ...plan,enabled: false },plan.id)
-    await expectNoMihomoNodes(token)
+    expect(await proxies(token)).toHaveLength(1)
   })
 })
 

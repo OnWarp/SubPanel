@@ -2,8 +2,8 @@ import { readAccounts } from '../accounts/repository.js'
 import { getEffectiveTemplate, isLegacyTemplateVersion } from '../templates/repository.js'
 import { validateTemplate, type Template } from '../templates/validation.js'
 import { apiError } from '../platform/api-error.js'
-import { effectiveStartsAt } from './expiry.js'
-import { listPlans, subscriptionPlanState } from './plans.js'
+import { subscriptionRowStatus } from './expiry.js'
+import { listPlans } from './plans.js'
 import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
@@ -82,7 +82,7 @@ async function artifactFor(
   env: DataEnv,
   subscription: Subscription,
   client: RenderClient,
-  context: Awaited<ReturnType<typeof entitledNodes>>,
+  context: Awaited<ReturnType<typeof resolveEntitlement>>,
   now: string,
   previewTemplate?: Template,
 ) {
@@ -131,7 +131,7 @@ export async function compileSubscription(
 ): Promise<CompiledArtifact[]> {
   const kv = env.DATA
   const now = options.now ?? new Date().toISOString()
-  const context = await entitledNodes(env, subscription, now)
+  const context = await resolveEntitlement(env, subscription, now)
   const artifacts = await Promise.all(CLIENT_IDS.map(client => artifactFor(env, subscription, client, context, now)))
   await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
   const keep = new Set(artifacts.map((artifact) => compiledKey(subscription.tokenHash, artifact.client)))
@@ -175,25 +175,21 @@ function blockedAccess(
   return { catalog, nodes: [] as CatalogNode[], speed: 0, zeroNodeReason, authorizedGroupIds: [] as string[] }
 }
 
-export async function entitledNodes(env: DataEnv, subscription: Subscription, now: string, snapshot?: Partial<AccessSnapshot>) {
+export async function resolveEntitlement(env: DataEnv, subscription: Subscription, now: string, snapshot?: Partial<AccessSnapshot>) {
   const catalog = snapshot?.catalog ?? await readCatalog(env)
-  const time = Date.parse(now)
-  const blocked: ZeroNodeReason | null =
-    subscription.expiresAt !== null && subscription.expiresAt <= time ? 'expired'
-    : !subscription.enabled ? 'disabled'
-    : !subscription.userId ? 'unassigned'
-    : time < effectiveStartsAt(subscription) ? 'pending'
-    : null
-  if (blocked) return blockedAccess(catalog, blocked)
+  const status = subscriptionRowStatus(subscription, Date.parse(now))
+  if (status) return blockedAccess(catalog, status === 'revoked' ? 'disabled' : status)
 
-  const users = snapshot?.users ?? (await readAccounts(env)).users
-  const owner = users.find(user => user.id === subscription.userId)
-  if (!owner || owner.deletedAt || !owner.enabled) return blockedAccess(catalog, 'ownerUnavailable')
-  const plan = subscription.planId
-    ? (snapshot?.plans ?? await listPlans(env.DB)).find(p => p.id === subscription.planId) ?? null
-    : null
-  if (!plan || subscriptionPlanState(subscription, plan, time) !== 'active') return blockedAccess(catalog, 'noPlan')
-  const groupIds = subscription.groupIds.filter(id => plan.groupIds.includes(id))
+  if (subscription.userId !== null) {
+    const users = snapshot?.users ?? (await readAccounts(env)).users
+    const owner = users.find(user => user.id === subscription.userId)
+    if (!owner || owner.deletedAt || !owner.enabled) return blockedAccess(catalog, 'ownerUnavailable')
+  }
+  const plan = subscription.planId && subscription.userId !== null
+    ? (snapshot?.plans ?? await listPlans(env.DB)).find(p => p.id === subscription.planId)
+    : undefined
+  if (subscription.planId && subscription.userId !== null && !plan) return blockedAccess(catalog, 'noPlan')
+  const groupIds = plan ? subscription.groupIds.filter(id => plan.groupIds.includes(id)) : subscription.groupIds
   const nodes = selectedNodes(catalog, { groupIds })
   const zeroNodeReason: ZeroNodeReason | null = !groupIds.length ? 'noGroupIntersection'
     : nodes.some(node => node.enabled) ? null : 'noEnabledNodes'
@@ -220,7 +216,7 @@ export async function renderEntitledSubscription(
   previewTemplate?: Template,
   preview = false,
 ) {
-  const access = await entitledNodes(env, subscription, now)
+  const access = await resolveEntitlement(env, subscription, now)
   const artifact = await artifactFor(env, subscription, client, access, now, previewTemplate)
   return {
     ...artifact,
@@ -236,7 +232,7 @@ export async function previewCatalogEntitlement(
   catalog: Awaited<ReturnType<typeof readCatalog>>,
 ) {
   const now = new Date().toISOString()
-  const context = await entitledNodes(env, subscription, now, { catalog })
+  const context = await resolveEntitlement(env, subscription, now, { catalog })
   const artifact = await artifactFor(env, subscription, client, context, now)
   return {
     authorizedNodeIds: context.nodes.map(({ id }) => id),

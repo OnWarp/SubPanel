@@ -3,11 +3,11 @@ import type { User } from '../accounts/schema.js'
 import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
 import type { DataEnv } from '../db/module-switch.js'
-import { entitledNodes, renderEntitledSubscription } from '../delivery/compiler.js'
+import { resolveEntitlement, renderEntitledSubscription } from '../delivery/compiler.js'
 import { subscriptionLink } from '../delivery/links.js'
 import { readDelivery } from '../delivery/repository.js'
 import { clientIdSchema, type ClientId, type Subscription } from '../delivery/schema.js'
-import { assertSubscriptionAvailable } from '../delivery/expiry.js'
+import { assertSubscriptionAvailable, subscriptionRowStatus } from '../delivery/expiry.js'
 import { decryptSubscriptionToken } from '../delivery/service.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken } from '../platform/crypto.js'
 import {
@@ -196,6 +196,7 @@ async function guard(
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
   const subscription = await liveSubscription(env, share)
   if (!subscription) throw notFound()
+  if (kind !== 'export' && subscriptionRowStatus(subscription, now.getTime())) throw notFound()
   return { share, subscription, settings }
 }
 
@@ -234,7 +235,10 @@ export async function createShare(
   const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === input.subscriptionId)
   if (!subscription || subscription.userId !== ownerUserId) throw shareError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-  if (!subscription.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
+  const status = subscriptionRowStatus(subscription, now.getTime())
+  if (status && status !== 'pending') {
+    throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
+  }
   const expiresAt = input.expiresAt ?? new Date(now.getTime() + settings.maxValidityDays * DAY_MS).toISOString()
   assertExpiry(expiresAt, now.getTime(), settings.maxValidityDays)
   await assertSubscriptionCapacity(env, settings, subscription.id)
@@ -378,7 +382,7 @@ export async function revealOriginalLink(
   if (!current.allowOriginalLink) throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
   const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
-  if (!subscription?.enabled) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
+  if (!subscription || subscriptionRowStatus(subscription, now.getTime())) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
   const settings = await readShareSettings(env)
   const link = subscriptionLink(await publicOrigin(env, settings, requestUrl), await decryptSubscriptionToken(env, subscription), 'auto')
   const nowIso = now.toISOString()
@@ -395,7 +399,7 @@ export async function readShareMeta(
   now = new Date(),
 ): Promise<ShareMeta> {
   const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
-  const { catalog, nodes, authorizedGroupIds } = await entitledNodes(env, subscription, now.toISOString())
+  const { catalog, nodes, authorizedGroupIds } = await resolveEntitlement(env, subscription, now.toISOString())
   // 公开预览仅返回启用节点的显示名称
   const enabled = nodes.filter((node) => node.enabled)
   // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。

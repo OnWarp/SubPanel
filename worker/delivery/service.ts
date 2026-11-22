@@ -5,7 +5,10 @@ import type { DataEnv } from '../db/module-switch.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
 import { batch } from '../db/db.js'
 import { apiError } from '../platform/api-error.js'
-import { bumpDeliveryRevision, getPlan, requirePlanStorage } from './plans.js'
+import { bumpDeliveryRevision, getPlan, requirePlanStorage, type Plan } from './plans.js'
+import { subscriptionInsert } from './d1-repository.js'
+import { subscriptionToColumns } from '../migration/delivery.js'
+import { expiryFromDuration, type SubscriptionDuration } from './expiry.js'
 import { deleteFetchStats } from './fetch-stats.js'
 import { deleteCompiledArtifacts } from './repository.js'
 import { readDelivery, writeDelivery } from './repository.js'
@@ -31,6 +34,11 @@ export type SubscriptionInput = {
   startsAt?: number | null
   expiresAt?: number | null
   templateBinding?: BindingInput
+  trafficGb?: number
+  speedLimitMbps?: number
+  deviceLimit?: number
+  idempotencyKey?: string
+  duration?: SubscriptionDuration
 }
 
 export type SubscriptionMutationOptions = {
@@ -114,35 +122,36 @@ async function subscriptionPlanFields(env: DataEnv, planId: string | null) {
   if (plan && !plan.enabled) throw apiError(409, 'PLAN_DISABLED', '计划已停用')
   if (plan) await requirePlanStorage(env)
   return {
-    planId, trafficGb: plan?.trafficGb ?? 0, speedLimitMbps: plan?.speedLimitMbps ?? 0,
-    deviceLimit: plan?.deviceLimit ?? 0, planSource: plan ? 'admin' as const : null,
+    planId, ...subscriptionEntitlementFields(plan, {}), planSource: plan ? 'admin' as const : null,
     planNote: '', planRevoked: false, lastRemindedAt: null,
   }
 }
 
-export async function createSubscription(
-  env: DataEnv,
-  input: SubscriptionInput,
-  options: SubscriptionMutationOptions = {},
-): Promise<SubscriptionMutationResult> {
-  await assertReferences(env, input.userId, input.groupIds)
-  const plan = input.planId ? await subscriptionPlanFields(env, input.planId) : {}
-  const snapshot = await readDelivery(env)
-  const now = options.now ?? new Date().toISOString()
-  const token = validToken(options.token ?? randomToken())
-  const id = `sub_${snapshot.nextSubscriptionId}` as const
-  const tokenData = await createToken(env.DATA, token)
-  if (snapshot.subscriptions.some((item) => item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
+function subscriptionEntitlementFields(plan: Plan | null, input: Partial<SubscriptionInput>) {
+  return {
+    trafficGb: input.trafficGb ?? plan?.trafficGb ?? 0,
+    speedLimitMbps: input.speedLimitMbps ?? plan?.speedLimitMbps ?? 0,
+    deviceLimit: input.deviceLimit ?? plan?.deviceLimit ?? 0,
+  }
+}
+
+async function prepareSubscription(
+  env: DataEnv, input: SubscriptionInput, now: string, sourceType: 'manual' | 'legacy', suppliedToken?: string,
+) {
   const startsAt = cleanEpoch(input.startsAt ?? null)
-  const expiresAt = cleanEpoch(input.expiresAt ?? null)
+  if (input.duration && input.expiresAt != null) fail('SUBSCRIPTION_WINDOW_INVALID')
+  const expiresAt = cleanEpoch(input.duration
+    ? expiryFromDuration(startsAt ?? Date.parse(now), input.duration)
+    : input.expiresAt ?? null)
   assertWindow(startsAt, expiresAt)
-  const subscription: Subscription = {
-    id,
-    userId: (input.userId ?? null) as Subscription['userId'],
+  const token = validToken(suppliedToken ?? randomToken())
+  const subscription: Omit<Subscription, 'id'> = {
+    userId: input.userId ?? null,
     name: normalizedName(input.name),
-    groupIds: [...input.groupIds] as Subscription['groupIds'],
-    ...tokenData,
-    ...plan,
+    groupIds: [...input.groupIds],
+    ...await createToken(env.DATA, token),
+    ...subscriptionEntitlementFields(null, input),
+    sourceType,
     enabled: input.enabled ?? true,
     defaultClient: clientIdSchema.parse(input.defaultClient ?? 'mihomo'),
     revision: 1,
@@ -151,12 +160,85 @@ export async function createSubscription(
     createdAt: now,
     updatedAt: now,
   }
-  await writeDelivery(env, {
-    ...snapshot,
-    nextSubscriptionId: snapshot.nextSubscriptionId + 1,
-    subscriptions: [...snapshot.subscriptions, subscription],
-  }, now, input.templateBinding ? { id, binding: input.templateBinding } : undefined)
   return { subscription, token }
+}
+
+export async function createSubscription(
+  env: DataEnv,
+  { idempotencyKey, ...input }: SubscriptionInput,
+  options: SubscriptionMutationOptions = {},
+): Promise<SubscriptionMutationResult> {
+  const keyHash = idempotencyKey && await hashToken(JSON.stringify([options.actorUserId, idempotencyKey]))
+  const fingerprint = keyHash ? await hashToken(JSON.stringify(input)) : ''
+  if (keyHash) await requirePlanStorage(env)
+  const replay = async () => {
+    if (!keyHash) return null
+    const row = await env.DB.prepare(`SELECT subscription_id, request_fingerprint FROM subscription_creation
+      WHERE request_key_hash=?`).bind(keyHash).first<{ subscription_id: string | null; request_fingerprint: string }>()
+    if (!row) return null
+    if (fingerprint !== row.request_fingerprint || !row.subscription_id) {
+      throw apiError(409, 'SUBSCRIPTION_IDEMPOTENCY_CONFLICT', '此创建请求已使用，请刷新后重试')
+    }
+    const subscription = await getSubscription(env, row.subscription_id)
+    return { subscription, token: await decryptSubscriptionToken(env, subscription) }
+  }
+  const previous = await replay()
+  if (previous) return previous
+  await assertReferences(env, input.userId, input.groupIds)
+  const plan = input.planId ? await subscriptionPlanFields(env, input.planId) : undefined
+  const snapshot = await readDelivery(env)
+  const now = options.now ?? new Date().toISOString()
+  const prepared = await prepareSubscription(env, { ...plan, ...input }, now, 'manual', options.token)
+  const id = `sub_${snapshot.nextSubscriptionId}` as const
+  const subscription = { ...plan, ...prepared.subscription, id }
+  if (snapshot.subscriptions.some((item) => item.tokenHash === subscription.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
+  try {
+    await writeDelivery(env, {
+      ...snapshot,
+      nextSubscriptionId: snapshot.nextSubscriptionId + 1,
+      subscriptions: [...snapshot.subscriptions, subscription],
+    }, now, input.templateBinding ? { id, binding: input.templateBinding } : undefined,
+    keyHash ? { id, keyHash, fingerprint } : undefined)
+  } catch (error) {
+    const concurrent = await replay()
+    if (concurrent) return concurrent
+    throw error
+  }
+  return { subscription, token: prepared.token }
+}
+
+// Registration appends these statements immediately after the guarded account insert.
+export async function preparePlanSubscription(
+  env: DataEnv, userId: string, plan: Plan, days: number, source: 'admin' | 'trial', note: string, now: string,
+) {
+  const start = Date.parse(now)
+  const { subscription } = await prepareSubscription(env, {
+    userId, name: plan.name, groupIds: plan.groupIds, startsAt: start, expiresAt: start + days * 86_400_000,
+    ...subscriptionEntitlementFields(plan, {}),
+  }, now, 'legacy')
+  const { tokenHash } = subscription
+  const row = subscriptionToColumns({ ...subscription, planId: plan.id, planSource: source, planNote: note })
+  const guard = source === 'trial'
+    ? 'changes() = 1'
+    : `NOT EXISTS (SELECT 1 FROM subscriptions WHERE user_id=? AND plan_id IS NOT NULL AND plan_revoked=0)`
+  return [
+    subscriptionInsert(env.DB, row, {
+      where: `${guard} AND EXISTS (SELECT 1 FROM plans WHERE id=? AND enabled=1 AND updated_at=?)`,
+      bindings: [...(source === 'admin' ? [userId] : []), plan.id, plan.updatedAt],
+    }),
+    bumpDeliveryRevision(env.DB, now, true),
+    env.DB.prepare(`INSERT INTO subscription_groups (subscription_id, group_id, position)
+      SELECT s.id, pg.group_id, pg.position FROM subscriptions s JOIN plan_groups pg ON pg.plan_id=s.plan_id
+      WHERE s.token_hash=?`).bind(tokenHash),
+    env.DB.prepare(`INSERT INTO system_settings (key,value,updated_at)
+      SELECT 'next_subscription_id', cast(substr(id,5) AS INTEGER)+1, ? FROM subscriptions WHERE token_hash=?
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).bind(now, tokenHash),
+    env.DB.prepare(`INSERT INTO system_settings (key,value,updated_at)
+      SELECT 'delivery_entity_order', json_insert(coalesce(
+        (SELECT value FROM system_settings WHERE key='delivery_entity_order' AND json_valid(value)), '[]'
+      ), '$[#]', id), ? FROM subscriptions WHERE token_hash=?
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`).bind(now, tokenHash),
+  ]
 }
 
 async function bindingForCopy(env: DataEnv, id: string): Promise<BindingInput | undefined> {
@@ -192,6 +274,9 @@ export async function copySubscription(
     startsAt: current.startsAt,
     expiresAt: current.expiresAt,
     templateBinding,
+    trafficGb: current.trafficGb,
+    speedLimitMbps: current.speedLimitMbps,
+    deviceLimit: current.deviceLimit,
   }, options)
 }
 
@@ -203,18 +288,57 @@ export async function listAllSubscriptions(env: DataEnv): Promise<Subscription[]
   return (await readDelivery(env)).subscriptions
 }
 
-export async function getSubscription(env: DataEnv, id: string): Promise<Subscription> {
-  return findSubscription(await readDelivery(env), id)
+export async function getSubscription(env: DataEnv, id: string, ownerUserId?: string): Promise<Subscription> {
+  const subscription = findSubscription(await readDelivery(env), id)
+  if (ownerUserId !== undefined && subscription.userId !== ownerUserId) fail('SUBSCRIPTION_NOT_FOUND')
+  return subscription
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding' | 'planId'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding' | 'planId' | 'trafficGb' | 'speedLimitMbps' | 'deviceLimit'>>
+
+type PlanOperation = {
+  action: 'grant' | 'renew' | 'switch' | 'revoke'
+  userId: string
+  previousPlanId: string | null
+  plan: Plan | null
+  note: string
+}
+
+// Compute renewals inside D1 so concurrent requests each extend the latest deadline.
+async function applyPlanOperation(env: DataEnv, id: string, now: string, operation: PlanOperation) {
+  const { action, userId, previousPlanId, plan, note } = operation
+  const db = env.DB
+  const time = Date.parse(now)
+  const days = (plan?.durationDays ?? 0) * 86_400_000
+  const statement = action === 'revoke'
+    ? db.prepare("UPDATE subscriptions SET plan_revoked=1, plan_note=?, revision=revision+1, updated_at=? WHERE id=? AND user_id=? AND plan_id=? AND plan_revoked=0")
+      .bind(note, now, id, userId, previousPlanId)
+    : action === 'renew'
+    ? db.prepare(`UPDATE subscriptions SET expires_at=max(coalesce(expires_at,?),?)+?,
+        enabled=CASE WHEN expires_at <= ? THEN 1 ELSE enabled END,
+        plan_note=?, revision=revision+1, updated_at=? WHERE id=? AND user_id=? AND plan_id=? AND plan_revoked=0`)
+      .bind(time, time, days, time, note, now, id, userId, previousPlanId)
+    : db.prepare(`UPDATE subscriptions SET plan_id=?, traffic_gb=?, speed_limit_mbps=?, device_limit=?,
+        starts_at=?, expires_at=?, plan_note=?, plan_source='admin', last_reminded_at=NULL, revision=revision+1, updated_at=?
+        WHERE id=? AND user_id=? AND plan_id IS ? AND plan_revoked=0
+        AND (? IS NOT NULL OR NOT EXISTS (SELECT 1 FROM subscriptions WHERE user_id=? AND plan_id IS NOT NULL AND plan_revoked=0))`)
+      .bind(plan!.id, plan!.trafficGb, plan!.speedLimitMbps, plan!.deviceLimit, time, time+days, note, now,
+        id, userId, previousPlanId, previousPlanId, userId)
+  const [result] = await batch(db, [statement, bumpDeliveryRevision(db, now, true)])
+  if (result.meta.changes !== 1) throw apiError(409, 'ENTITLEMENT_CHANGED', '订阅已变更，请刷新')
+}
 
 export async function updateSubscription(
   env: DataEnv,
   id: string,
   input: UpdateSubscriptionInput,
-  options: SubscriptionMutationOptions = {},
+  options: SubscriptionMutationOptions & { planOperation?: PlanOperation } = {},
 ): Promise<Subscription> {
+  if (options.planOperation) {
+    if (options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
+    await applyPlanOperation(env, id, options.now ?? new Date().toISOString(), options.planOperation)
+    return getSubscription(env, id, options.planOperation.userId)
+  }
   if (input.planId !== undefined && options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
   const snapshot = await readDelivery(env)
   const current = findSubscription(snapshot, id)
@@ -231,10 +355,12 @@ export async function updateSubscription(
   const updated: Subscription = {
     ...current,
     ...plan,
+    trafficGb: input.trafficGb ?? plan?.trafficGb ?? current.trafficGb,
+    speedLimitMbps: input.speedLimitMbps ?? plan?.speedLimitMbps ?? current.speedLimitMbps,
+    deviceLimit: input.deviceLimit ?? plan?.deviceLimit ?? current.deviceLimit,
     name: nextName,
     groupIds: nextGroups as Subscription['groupIds'],
     enabled: input.enabled ?? current.enabled,
-    ...(current.planRevoked && input.enabled ? { planRevoked: false } : {}),
     defaultClient: input.defaultClient === undefined ? current.defaultClient : clientIdSchema.parse(input.defaultClient),
     startsAt,
     expiresAt,

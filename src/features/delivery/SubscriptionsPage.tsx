@@ -46,6 +46,11 @@ type SubscriptionForm = {
   enabled: boolean
   startsAt: string
   expiresAt: string
+  duration: string
+  durationUnit: 'absolute' | 'day' | 'week' | 'month' | 'year'
+  trafficGb: number
+  speedLimitMbps: number
+  deviceLimit: number
   templateBinding?: SubscriptionTemplateBinding
 }
 
@@ -56,6 +61,8 @@ type FieldErrors = { startsAt?: string; expiresAt?: string }
 type DrawerState = 'create' | { kind: 'edit' | 'details'; subscription: AdminSubscription }
 type ConfirmAction = 'disable' | 'delete'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
+
+const DURATION_UNITS = { absolute: '指定时间或永久', day: '天', week: '周', month: '自然月', year: '自然年' } as const
 
 const CLIENTS = ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'] as const
 const CLIENT_LABELS: Record<string, string> = {
@@ -101,7 +108,7 @@ const BINDING_MODE_LABELS: Record<Binding['mode'], string> = {
 
 const INHERITED_TEMPLATE_BINDING: SubscriptionTemplateBinding = { mode: 'inherit', expectedRevision: 1 }
 
-const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '' }
+const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '', duration: '30', durationUnit: 'absolute', trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0 }
 
 const LEGACY_EXPIRY_WINDOWS: ExpiryFilter[] = ['7', '15', '30']
 
@@ -150,11 +157,13 @@ export function SubscriptionsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const listRequestSeq = useRef(0)
+  const creationRequest = useRef<{ body: string; key: string } | null>(null)
   const detailsTrigger = useRef<HTMLButtonElement>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [selectedClient, setSelectedClient] = useState('')
   const [detailsBinding, setDetailsBinding] = useState<Binding>()
+  const [detailsError, setDetailsError] = useState('')
   const [detailsBindingError, setDetailsBindingError] = useState('')
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
   const [formBaseline, setFormBaseline] = useState<SubscriptionForm>(EMPTY_FORM)
@@ -175,12 +184,12 @@ export function SubscriptionsPage() {
       void api<OutputPreview>('/api/admin/subscriptions/output-preview', {
         method: 'POST',
         signal: abort.signal,
-        body: jsonBody({ planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient }),
+        body: jsonBody({ userId: form.userId || null, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, speedLimitMbps: form.speedLimitMbps }),
       }).then((preview) => { if (!abort.signal.aborted) setOutputPreview(preview) })
         .catch(() => { if (!abort.signal.aborted) setOutputPreview(null) })
     }, 200)
     return () => { window.clearTimeout(handle); abort.abort() }
-  }, [editing, form.defaultClient, form.groupIds, form.planId])
+  }, [editing, form.defaultClient, form.groupIds, form.planId, form.speedLimitMbps, form.userId])
 
   useEffect(() => {
     if (drawer === null || (drawer !== 'create' && drawer.kind !== 'edit')) return
@@ -325,6 +334,7 @@ export function SubscriptionsPage() {
   }
 
   const openCreate = () => {
+    creationRequest.current = null
     setBindingData(undefined)
     setBindingError('')
     setBindingLoading(true)
@@ -341,6 +351,7 @@ export function SubscriptionsPage() {
     setBindingError('')
     setBindingLoading(true)
     const next = {
+      ...EMPTY_FORM,
       userId: subscription.userId ?? '',
       name: subscription.name,
       planId: subscription.planId ?? '',
@@ -349,6 +360,9 @@ export function SubscriptionsPage() {
       enabled: subscription.enabled,
       startsAt: toDatetimeLocal(subscription.startsAt),
       expiresAt: toDatetimeLocal(subscription.expiresAt),
+      trafficGb: subscription.trafficGb ?? 0,
+      speedLimitMbps: subscription.speedLimitMbps ?? 0,
+      deviceLimit: subscription.deviceLimit ?? 0,
     }
     setForm(next)
     setFormBaseline(next)
@@ -392,7 +406,8 @@ export function SubscriptionsPage() {
       setDrawerError('请填写订阅名称')
       return
     }
-    const windowErrors = validateWindow(form.startsAt, form.expiresAt)
+    const relative = drawer === 'create' && form.durationUnit !== 'absolute'
+    const windowErrors = validateWindow(form.startsAt, relative ? '' : form.expiresAt)
     if (windowErrors.startsAt || windowErrors.expiresAt) {
       setFieldErrors(windowErrors)
       return
@@ -405,20 +420,33 @@ export function SubscriptionsPage() {
     const bindingChanged = templateBinding && (templateBinding.mode !== bindingData?.initial.mode ||
       templateBinding.templateId !== bindingData?.initial.templateId)
     const startsAt = fromDatetimeLocal(form.startsAt)
-    const expiresAt = fromDatetimeLocal(form.expiresAt)
+    const expiresAt = relative ? null : fromDatetimeLocal(form.expiresAt)
     setBusy(true)
     try {
+      const configuration = {
+        name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient,
+        enabled: form.enabled, startsAt, expiresAt, trafficGb: form.trafficGb, speedLimitMbps: form.speedLimitMbps,
+        deviceLimit: form.deviceLimit, templateBinding: bindingChanged ? templateBinding : undefined,
+      }
       if (drawer === 'create') {
+        const duration = form.durationUnit === 'absolute' ? undefined : { value: Number(form.duration), unit: form.durationUnit }
+        const body = jsonBody({ ...configuration, mode: 'manual', userId: form.userId || null, duration })
+        if (creationRequest.current?.body !== body) creationRequest.current = { body, key: crypto.randomUUID() }
         const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>('/api/admin/subscriptions', {
           method: 'POST',
-          body: jsonBody({ userId: form.userId || null, name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
+          headers: { 'Idempotency-Key': creationRequest.current.key },
+          body,
         })
         setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
         setMessage('订阅已添加')
+        setSelectedClient(result.subscription.defaultClient)
+        setDrawer({ kind: 'details', subscription: result.subscription })
+        await load()
+        return
       } else if (drawer.kind === 'edit') {
         const result = await api<{ subscription: AdminSubscription; warning: string }>(`/api/admin/subscriptions/${drawer.subscription.id}`, {
           method: 'PATCH',
-          body: jsonBody({ name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, enabled: form.enabled, startsAt, expiresAt, templateBinding: bindingChanged ? templateBinding : undefined }),
+          body: jsonBody(configuration),
         })
         setMessage(`订阅已更新。${result.warning}`)
       }
@@ -638,7 +666,19 @@ export function SubscriptionsPage() {
   const detailsId = details?.id
   useEffect(() => {
     if (!detailsId) return
+    setDetailsError('')
+    setDetailsBinding(undefined)
+    setDetailsBindingError('')
     const abort = new AbortController()
+    void api<{ subscription: AdminSubscription }>(`/api/admin/subscriptions/${detailsId}`, { signal: abort.signal })
+      .then(({ subscription }) => {
+        if (abort.signal.aborted) return
+        setDrawer(current => current && current !== 'create' && current.kind === 'details' && current.subscription.id === detailsId
+          ? { kind: 'details', subscription } : current)
+      })
+      .catch(cause => {
+        if (!abort.signal.aborted) setDetailsError(errorMessage(cause, '加载订阅详情失败'))
+      })
     void watchApi<Binding>(
       `${subscriptionTemplatesPath}/bindings/${encodeURIComponent(detailsId)}`, setDetailsBinding, { signal: abort.signal },
     ).catch((cause) => {
@@ -713,6 +753,9 @@ export function SubscriptionsPage() {
                   setForm(current => ({
                     ...current, planId: plan?.id ?? '',
                     groupIds: plan ? [...plan.groupIds] : current.groupIds,
+                    trafficGb: plan?.trafficGb ?? current.trafficGb,
+                    speedLimitMbps: plan?.speedLimitMbps ?? current.speedLimitMbps,
+                    deviceLimit: plan?.deviceLimit ?? current.deviceLimit,
                     expiresAt: plan && drawer === 'create'
                       ? toDatetimeLocal(addExpiryDays(fromDatetimeLocal(current.startsAt), plan.durationDays))
                       : current.expiresAt,
@@ -738,6 +781,16 @@ export function SubscriptionsPage() {
                 setFieldErrors(validateWindow(startsAt, form.expiresAt))
               }} />
             </FormField>
+            {drawer === 'create' ? <FormField label="有效期方式" htmlFor="subscription-duration-unit">
+              <FormSelect id="subscription-duration-unit" value={form.durationUnit} onChange={event => setForm({
+                ...form, durationUnit: event.currentTarget.value as SubscriptionForm['durationUnit'],
+              })}>{Object.entries(DURATION_UNITS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</FormSelect>
+            </FormField> : null}
+            {drawer === 'create' && form.durationUnit !== 'absolute' ?
+              <FormField label={`有效期（${DURATION_UNITS[form.durationUnit]}）`} htmlFor="subscription-duration">
+                <Input id="subscription-duration" required type="number" min={1} max={36_500} step={1}
+                  value={form.duration} onChange={event => setForm({ ...form, duration: event.currentTarget.value })} />
+              </FormField> :
             <FormField label="到期时间" htmlFor="exp-expires-at" error={fieldErrors.expiresAt}>
               <DateTimeInput id="exp-expires-at" className="exp-datetime" type="datetime-local" aria-label="到期时间" value={form.expiresAt} onChange={(event) => {
                 const expiresAt = event.currentTarget.value
@@ -753,7 +806,17 @@ export function SubscriptionsPage() {
                   setFieldErrors(validateWindow(form.startsAt, ''))
                 }}>设为永久</button>
               </div>
-            </FormField>
+            </FormField>}
+          </FormGroup>
+          <FormGroup title="额度与限制">
+            {([
+              ['trafficGb', '流量 GiB（0 为不限，仅配置额度）', 'any', 1e9],
+              ['speedLimitMbps', '限速 Mbps（0 为不限，适用于支持的协议与客户端）', 1, 1_000_000],
+              ['deviceLimit', '设备数（0 为不限，仅配置额度）', 1, 1_000_000],
+            ] as const).map(([field, label, step, max]) => <FormField key={field} label={label} htmlFor={`subscription-${field}`}>
+              <Input id={`subscription-${field}`} type="number" min={0} max={max} step={step} required value={form[field]}
+                onChange={event => setForm({ ...form, [field]: Number(event.currentTarget.value) })} />
+            </FormField>)}
           </FormGroup>
           <FormGroup title="客户端与配置" id="subscription-wizard-client">
             <FormField label="默认客户端" htmlFor="subscription-client">
@@ -773,9 +836,11 @@ export function SubscriptionsPage() {
             <span>{users.find((user) => user.id === form.userId)?.username ?? '未分配'}</span>
             <span>{plans.find((plan) => plan.id === form.planId)?.name ?? '未分配计划'}</span>
             <span>{form.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</span>
-            <span>{form.startsAt || '立即生效'} → {form.expiresAt || '永久有效'}</span>
+            <span>{form.startsAt || '立即生效'} → {form.durationUnit === 'absolute'
+              ? form.expiresAt || '永久有效' : `${form.duration} ${DURATION_UNITS[form.durationUnit]}`}</span>
+            <span>流量 {form.trafficGb ? `${form.trafficGb} GiB` : '不限'} · 限速 {form.speedLimitMbps ? `${form.speedLimitMbps} Mbps` : '不限'} · 设备 {form.deviceLimit || '不限'}</span>
             <span>{CLIENT_LABELS[form.defaultClient]} · {BINDING_MODE_LABELS[form.templateBinding?.mode ?? 'inherit']}</span>
-            <span>预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
+            <span>{form.enabled ? '已启用' : '已停用'} · 预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
           </section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </form>
@@ -793,16 +858,17 @@ export function SubscriptionsPage() {
         onClose={closeDrawer}
         returnFocusRef={detailsTrigger}
       >
-        {details ? <>
+        {detailsError ? <StatusMessage tone="error">{detailsError}</StatusMessage> : null}
+        {details && !detailsError ? <>
           <SubscriptionDetailRows
             user={details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'}
             groups={details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}
-            plan={details.planId ? {
+            plan={{
               name: details.planName ?? '—',
               traffic: details.trafficGb ? `${details.trafficGb} GB` : '不限',
               speed: details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限',
               devices: String(details.deviceLimit || '不限'),
-            } : null}
+            }}
             links={linkEntries.map(([key]) => ({ value: key, label: CLIENT_LABELS[key] ?? key }))}
             client={client}
             link={link}

@@ -429,7 +429,7 @@ catalogRoutes.delete('/groups/:groupId', async (c) => {
   const [delivery, plans] = await Promise.all([readDelivery(c.env), listPlans(c.env.DB)])
   const now = Date.now()
   if (plans.some((plan) => plan.enabled && plan.groupIds.includes(id.data)) ||
-    delivery.subscriptions.some((sub) => sub.enabled && !sub.planRevoked &&
+    delivery.subscriptions.some((sub) => sub.enabled &&
       (sub.expiresAt === null || sub.expiresAt > now) && sub.groupIds.includes(id.data))) {
     throw apiError(409, 'GROUP_IN_USE', '请先在计划和订阅中更换或移除此分组')
   }

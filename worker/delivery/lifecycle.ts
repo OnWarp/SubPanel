@@ -4,8 +4,8 @@ import type { DataEnv } from '../db/module-switch.js'
 import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
 import type { RenderClient } from '../renderers/index.js'
 import type { Template } from '../templates/validation.js'
-import { entitledNodes, prepareSubscriptionRender, type AccessSnapshot, type ZeroNodeReason } from './compiler.js'
-import { effectiveStartsAt } from './expiry.js'
+import { resolveEntitlement, prepareSubscriptionRender, type AccessSnapshot, type ZeroNodeReason } from './compiler.js'
+import { subscriptionRowStatus } from './expiry.js'
 import { listPlans } from './plans.js'
 import type { Subscription } from './schema.js'
 
@@ -57,7 +57,7 @@ const ADMIN_REASON: Record<SubscriptionStatus, string> = {
   revoked: '计划已撤销',
   owner_unavailable: '所属用户已停用或删除',
   no_plan: '未绑定有效计划',
-  no_groups: '计划允许的组与所选组没有交集',
+  no_groups: '订阅没有可授权的分组',
   no_nodes: '授权范围内没有启用节点',
   incompatible: '默认客户端没有兼容节点',
 }
@@ -129,15 +129,6 @@ export function lifecycleStatus(
   return 'active'
 }
 
-export function subscriptionRowStatus(subscription: Subscription, now: number): SubscriptionStatus | null {
-  if (subscription.expiresAt !== null && subscription.expiresAt <= now) return 'expired'
-  if (subscription.planRevoked) return 'revoked'
-  if (!subscription.enabled) return 'disabled'
-  if (!subscription.userId) return 'owner_unavailable'
-  if (now < effectiveStartsAt(subscription)) return 'pending'
-  return null
-}
-
 export function presentSubscriptionStatus(status: SubscriptionStatus, audience: 'admin' | 'user') {
   if (audience === 'user') return { status, statusLabel: USER_LABEL[status] }
   return {
@@ -165,7 +156,7 @@ export async function classifySubscription(
   template?: Template,
   templateInvalid = false,
 ) {
-  const access = await entitledNodes(env, subscription, now, snapshot)
+  const access = await resolveEntitlement(env, subscription, now, snapshot)
   const results = new Map<RenderClient, Promise<number>>()
   const outputFor = (client: RenderClient) => {
     const existing = results.get(client)

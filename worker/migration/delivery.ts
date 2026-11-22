@@ -44,12 +44,8 @@ export interface SubscriptionGroupRow {
   position: number
 }
 
-export function convertDelivery(kvValue: unknown): DeliveryConversionResult {
-  const report: ConversionReport = { converted: 0, skipped: 0, anomalies: [] }
-  const snapshot = deliverySnapshotSchema.parse(kvValue) as DeliverySnapshot
-
-  // Convert subscriptions
-  const subscriptions: SubscriptionRow[] = snapshot.subscriptions.map((sub) => ({
+export function subscriptionToColumns(sub: Omit<DeliverySnapshot['subscriptions'][number], 'id'>): Omit<SubscriptionRow, 'id'> {
+  return {
     plan_id: sub.planId ?? null,
     traffic_gb: sub.trafficGb ?? 0,
     speed_limit_mbps: sub.speedLimitMbps ?? 0,
@@ -58,7 +54,6 @@ export function convertDelivery(kvValue: unknown): DeliveryConversionResult {
     plan_note: sub.planNote ?? "",
     plan_revoked: sub.planRevoked ? 1 : 0,
     last_reminded_at: sub.lastRemindedAt ?? null,
-    id: sub.id,
     user_id: sub.userId,
     name: sub.name,
     token_hash: sub.tokenHash,
@@ -71,7 +66,15 @@ export function convertDelivery(kvValue: unknown): DeliveryConversionResult {
     expires_at: sub.expiresAt ?? null,
     created_at: sub.createdAt,
     updated_at: sub.updatedAt,
-  }))
+  }
+}
+
+export function convertDelivery(kvValue: unknown): DeliveryConversionResult {
+  const report: ConversionReport = { converted: 0, skipped: 0, anomalies: [] }
+  const snapshot = deliverySnapshotSchema.parse(kvValue) as DeliverySnapshot
+
+  // Convert subscriptions
+  const subscriptions = snapshot.subscriptions.map((sub) => ({ id: sub.id, ...subscriptionToColumns(sub) }))
 
   // Convert subscription_groups
   const subscription_groups: SubscriptionGroupRow[] = []

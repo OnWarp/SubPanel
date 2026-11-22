@@ -12,6 +12,7 @@ const ssLine = (name: string, host = 'ss.example.com') =>
 type SubscriptionView = {
   id: string
   name: string
+  planState?: string
   status?: string
   statusLabel?: string
   statusReason?: string
@@ -146,19 +147,20 @@ describe('subscription lifecycle', () => {
     )
     expect(revoke.status).toBe(200)
     const revokedView = await adminSubscription(admin, revoked.subscription.id)
-    expect(revokedView.status).toBe('revoked')
-    expect(revokedView.statusLabel).toBe('已撤销')
-    expect(revokedView.statusFix).toEqual({ label: '重新分配计划' })
-    expect((await userSubscription(revokeOwner.cookie, revoked.subscription.id))?.statusLabel).toBe('已停用')
+    expect(revokedView.status).toBe('active')
+    expect(revokedView.planState).toBe('revoked')
+    expect((await userSubscription(revokeOwner.cookie, revoked.subscription.id))?.statusLabel).toBe('有效')
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${revoked.token}/mihomo`)).status).toBe(200)
+    // Existing explicitly stopped records retain the previous revoked response.
+    await env.DB.prepare('UPDATE subscriptions SET enabled=0 WHERE id=?').bind(revoked.subscription.id).run()
+    expect((await adminSubscription(admin, revoked.subscription.id)).status).toBe('revoked')
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${revoked.token}/mihomo`)).status).toBe(404)
 
     const noPlan = await createSubscription(admin, {
       name: 'No plan', userId: owner.id, groupIds: [primary.groupId],
     })
-    expect((await adminSubscription(admin, noPlan.subscription.id)).status).toBe('no_plan')
-    const noPlanPull = await exports.default.fetch(`${TEST_ORIGIN}/sub/${noPlan.token}/mihomo`)
-    expect(noPlanPull.status).toBe(422)
-    expect(await noPlanPull.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NO_NODES', details: { reason: 'noPlan' } } })
+    expect((await adminSubscription(admin, noPlan.subscription.id)).status).toBe('active')
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${noPlan.token}/mihomo`)).status).toBe(200)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${noPlan.token}/generic`)).status).toBe(200)
 
     const noGroups = await createSubscription(admin, {
@@ -358,6 +360,6 @@ describe('subscription lifecycle', () => {
       jsonRequest({ planId: null, groupIds: [primary.groupId], defaultClient: 'mihomo' }, withCookie(admin)),
     )
     expect(preview.status).toBe(200)
-    expect(await preview.json()).toMatchObject({ planGroupIds: [], outputNodes: 0 })
+    expect(await preview.json()).toMatchObject({ planGroupIds: [], outputNodes: 1 })
   })
 })
