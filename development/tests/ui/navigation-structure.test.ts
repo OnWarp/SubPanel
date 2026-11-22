@@ -64,7 +64,7 @@ describe('navigation ownership and route compatibility', () => {
 
   it.each([
     ['节点管理导航', '/catalog/nodes', ['/catalog/nodes', '/catalog/sources', '/catalog/groups']],
-    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/shares', '/plans']],
+    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/conversions', '/delivery/shares', '/plans']],
     ['用户管理子页', '/users', ['/users', '/invites', '/users/recycle-bin']],
     ['运营管理导航', '/delivery/tickets', ['/delivery/tickets', '/operations/notices', '/kb/manage', '/catalog/apps']],
     ['系统设置导航', '/system/registration', ['/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs']],

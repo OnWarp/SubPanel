@@ -1,3 +1,4 @@
+import { prepareNodeLayer } from '../templates/layers.js'
 import { stringify as stringifyYaml } from 'yaml'
 import { expandTemplate, RESERVED, type Template } from '../templates/validation.js'
 import type { JsonValue, Protocol } from '../catalog/schema.js'
@@ -541,8 +542,8 @@ function renderStructured(client: RenderClient, nodes: RenderNode[], template?: 
     }
     const proxies = nodes.map(node => mihomoProxy({ ...node, displayName: namesByNode.get(node)! }))
     const names = proxies.map((node) => node.name as string)
-    if (template && nodes.length) return stringifyYaml({ proxies, ...expandTemplate(template, names) })
-    return stringifyYaml({ proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
+    if (template && nodes.length) return stringifyYaml({ mode: 'rule', proxies, ...expandTemplate(template, names) })
+    return stringifyYaml({ mode: 'rule', proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
   }
   if (client === 'singbox') {
     const outbounds = nodes.map(singboxOutbound)
@@ -769,6 +770,7 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
   return {
     outputNodes: candidates.length,
     render(template?: Template): RenderResult {
+      const output = client === 'mihomo' ? prepareNodeLayer(candidates, template?.subpanel?.nodes) : candidates
       let body: string
       if (['v2rayn', 'nekobox', 'shadowrocket', 'generic'].includes(client)) {
         const uris = candidates.map((node) => uriForClient(client, node)).filter((uri): uri is string => uri !== null)
@@ -776,7 +778,7 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
         for (const byte of new TextEncoder().encode(uris.join('\n'))) binary += String.fromCharCode(byte)
         body = btoa(binary)
       } else {
-        body = renderStructured(client, candidates, template)
+        body = renderStructured(client, output, template)
       }
       const metadata = contentMetadata(client)
       return {
@@ -785,8 +787,8 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
         ...metadata,
         diagnostics,
         inputNodes: input.length,
-        outputNodes: candidates.length,
-        skippedNodes: enabledNodes.length - candidates.length,
+        outputNodes: output.length,
+        skippedNodes: enabledNodes.length - output.length,
       }
     },
   }

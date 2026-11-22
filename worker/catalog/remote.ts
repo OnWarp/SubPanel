@@ -160,7 +160,7 @@ function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
   void reader.cancel().catch(() => {})
 }
 
-async function readBoundedBody(response: Response, signal: AbortSignal): Promise<string> {
+async function readBoundedBody(response: Response, signal: AbortSignal, maxBytes: number): Promise<string> {
   if (!response.body) return ''
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false })
@@ -176,7 +176,7 @@ async function readBoundedBody(response: Response, signal: AbortSignal): Promise
         break
       }
       total += result.value.byteLength
-      if (total > MAX_REMOTE_BYTES) {
+      if (total > maxBytes) {
         cancelReader(reader)
         done = true
         fail('REMOTE_BODY_TOO_LARGE')
@@ -220,6 +220,7 @@ export async function fetchRemoteTextWithMetadata(
   fetcher: typeof fetch = fetch,
   timeoutMs = REMOTE_TIMEOUT_MS,
   cancellation?: AbortSignal,
+  limits = { maxBytes: MAX_REMOTE_BYTES, maxRedirects: MAX_REDIRECTS },
 ): Promise<RemoteTextResult> {
   let current = validateRemoteUrl(encryptedSafeRequest.url)
   let headers = validateRemoteHeaders(encryptedSafeRequest.headers)
@@ -239,7 +240,7 @@ export async function fetchRemoteTextWithMetadata(
 
     if (redirectStatuses.has(response.status)) {
       cancelBody(response)
-      if (redirects >= MAX_REDIRECTS) fail('REMOTE_TOO_MANY_REDIRECTS')
+      if (redirects >= limits.maxRedirects) fail('REMOTE_TOO_MANY_REDIRECTS')
       const location = response.headers.get('location')
       if (!location) fail('REMOTE_REDIRECT_INVALID')
       let target: URL
@@ -263,7 +264,7 @@ export async function fetchRemoteTextWithMetadata(
     return {
       notModified: false,
       status: response.status,
-      text: await readBoundedBody(response, signal),
+      text: await readBoundedBody(response, signal, limits.maxBytes),
       etag: response.headers.get('ETag'),
       lastModified: response.headers.get('Last-Modified'),
     }

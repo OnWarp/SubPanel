@@ -262,6 +262,13 @@ export type TemplateValidateResponse = {
 export type TemplatePreviewResponse = {
   ignored: string[]
   diagnostics: Diagnostic[]
+  inputNodes?: number
+  authorizedNodes?: number
+  skippedNodes?: number
+  draftRevision?: number | null
+  body?: string | null
+  nodeDiagnostics?: SubscriptionDiagnostic['diagnostics']
+  summary?: { bytes: number; groups: number; rules: number } | null
   groups: TemplateStructure['proxy-groups']
   rules: string[]
   ruleProviders: NonNullable<TemplateStructure['rule-providers']>
@@ -285,7 +292,7 @@ export type TemplateRollback = { ok: true; revision: number; versionId: string; 
 export type TemplateStructure = {
   'proxy-groups': Array<{
     name: string
-    type: 'select'
+    type: 'select' | 'url-test' | 'fallback' | 'load-balance'
     proxies: string[]
   }>
   rules: string[]

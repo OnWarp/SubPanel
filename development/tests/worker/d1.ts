@@ -1,3 +1,4 @@
+import conversionProfilesSql from '../../../migrations/0020_conversion_profiles.sql?raw'
 import catalogSyncSql from '../../../migrations/0019_catalog_sync.sql?raw'
 import subscriptionPlansSql from '../../../migrations/0018_subscription_plans.sql?raw'
 import sourceKeepOnFailureSql from '../../../migrations/0016_source_keep_on_failure.sql?raw'
@@ -29,6 +30,11 @@ export const D1_TABLES = [
   'audit_logs',
   'catalog_sync_leases',
   'catalog_sync_runs',
+  'conversion_bindings',
+  'conversion_local_rule_sets',
+  'conversion_profile_versions',
+  'conversion_profiles',
+  'conversion_rule_sources',
   'cron_runs',
   'email_change_requests',
   'email_verifications',
@@ -207,6 +213,15 @@ export const templateEnhancementsMigration = {
   queries: splitSqlStatements(templateEnhancementsSql),
 }
 
+const triggerPattern = /CREATE TRIGGER [\s\S]*?\nEND;/gu
+export const conversionProfilesMigration = {
+  name: '0020_conversion_profiles.sql',
+  queries: [
+    ...splitSqlStatements(conversionProfilesSql.replace(triggerPattern, '')),
+    ...(conversionProfilesSql.match(triggerPattern) ?? []),
+  ],
+}
+
 export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
   await applyD1Migrations(db, [
     initMigration,
@@ -227,6 +242,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     templateEnhancementsMigration,
     { name: '0018_subscription_plans.sql', queries: splitSqlStatements(subscriptionPlansSql) },
     { name: '0019_catalog_sync.sql', queries: splitSqlStatements(catalogSyncSql) },
+    conversionProfilesMigration,
   ])
 }
 
@@ -242,6 +258,9 @@ export async function emptyDatabase(db: D1Database = env.DB): Promise<void> {
   if (names.length === 0) return
   const sql = [
     'PRAGMA foreign_keys = OFF',
+    'DROP VIEW IF EXISTS conversion_effective_bindings',
+    'DROP VIEW IF EXISTS conversion_profile_catalog',
+    'DROP VIEW IF EXISTS conversion_profile_outputs',
     ...names.map((name) => `DROP TABLE IF EXISTS "${name.replaceAll('"', '""')}"`),
     'PRAGMA foreign_keys = ON',
   ].join(';\n')

@@ -40,6 +40,7 @@ import {
   TICKETS_NOTICES_MIGRATION_NAME,
   templatesMigration,
   templateEnhancementsMigration,
+  conversionProfilesMigration,
 } from './d1'
 import { resetData } from './helpers'
 
@@ -70,6 +71,27 @@ describe('D1 migrations', () => {
       .toMatchObject({ template_id: 'template', revision: 1 })
   })
 
+  it('exposes legacy identity and bindings and reserves native platform outputs', async () => {
+    await emptyDatabase(env.DB)
+    await applyD1Migrations(env.DB, [templatesMigration, templateEnhancementsMigration])
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO subscription_templates(id,name,draft,published_id,updated_at) VALUES ('legacy','Legacy','draft','v1',?)").bind(NOW),
+      env.DB.prepare("INSERT INTO subscription_template_versions(id,template_id,yaml,created_at) VALUES ('v1','legacy','policy',?)").bind(NOW),
+      env.DB.prepare("INSERT INTO subscription_template_bindings(subscription_id,mode,template_id) VALUES ('one','specific','legacy'),('two','inherit',NULL),('three','base',NULL)"),
+    ])
+    await applyD1Migrations(env.DB, [conversionProfilesMigration])
+    expect(await env.DB.prepare("SELECT legacy_yaml FROM conversion_profile_outputs WHERE profile_id='legacy' AND id='v1'").first()).toEqual({ legacy_yaml: 'policy' })
+    const bindings = await env.DB.prepare("SELECT mode,profile_id FROM conversion_effective_bindings WHERE platform='mihomo' ORDER BY subscription_id").all()
+    expect(bindings.results).toEqual([{ mode: 'specific', profile_id: 'legacy' }, { mode: 'base', profile_id: null }, { mode: 'inherit', profile_id: null }])
+    const add = (body: string) => env.DB.prepare(`
+      INSERT INTO conversion_profile_versions(profile_id,id,platform,target_version,source_json,compiled_json,created_at)
+      VALUES ('legacy','s1','singbox','1.13','{}',?,?)
+    `).bind(body, NOW).run()
+    await expect(add('{"proxies":[]}')).rejects.toThrow('CHECK constraint failed')
+    await add('{"outbounds":[],"route":{"rule_set":[]},"dns":{}}')
+    expect(await env.DB.prepare("SELECT published_id FROM subscription_templates WHERE id='legacy'").first()).toEqual({ published_id: 'v1' })
+  })
+
   it('applies the full schema on an empty database and skips a second run', async () => {
     await emptyDatabase(env.DB)
     expect(await listTables(env.DB)).toEqual([])
@@ -98,11 +120,12 @@ describe('D1 migrations', () => {
       '0017_template_enhancements.sql',
       '0018_subscription_plans.sql',
       '0019_catalog_sync.sql',
+      '0020_conversion_profiles.sql',
     ])
 
     await applyMigrations(env.DB)
     const replayed = await env.DB.prepare('SELECT COUNT(*) AS count FROM d1_migrations').first<{ count: number }>()
-    expect(replayed?.count).toBe(18)
+    expect(replayed?.count).toBe(19)
 
     await env.DB.prepare(
       `INSERT INTO users (

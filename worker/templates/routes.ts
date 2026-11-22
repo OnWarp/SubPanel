@@ -1,3 +1,7 @@
+import { checkRuleSources, listLocalRuleSets, listRuleSources, localRuleSet, refreshRuleSource, ruleSource, saveLocalRuleSet } from './rule-library.js'
+import { stringify } from 'yaml'
+import { renderClient, CLIENT_IDS, type RenderNode } from '../renderers/index.js'
+import { RENDERER_VERSION } from '../renderers/model.js'
 import { fetchRemoteTextWithMetadata, RemoteFetchError } from '../catalog/remote.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -10,7 +14,7 @@ import { readDelivery } from '../delivery/repository.js'
 import { logAudit } from '../admin/audit.js'
 import { DeliveryError, getSubscription } from '../delivery/service.js'
 import { renderEntitledSubscription } from '../delivery/compiler.js'
-import { bindingSchema, bindingWrite, rethrowBindingError, templateConflict, templateReferencesSql, getTemplate, requirePublished, getDefault, getEffectiveTemplate, checkTemplateReferences, countInheritedSubscriptions, computeDraftHash, type TemplateRow, type TemplateVersionRow } from './repository.js'
+import { bindingSchema, bindingWrite, rethrowBindingError, templateConflict, templateReferencesSql, getTemplate, requirePublished, getDefault, getEffectiveTemplate, isLegacyTemplateVersion, checkTemplateReferences, countInheritedSubscriptions, computeDraftHash, type TemplateRow, type TemplateVersionRow } from './repository.js'
 import { validateTemplate, computeContentHash, TemplateValidationError, VALIDATOR_VERSION, MAX_TEMPLATE_BYTES, isHttpsTemplateUrl } from './validation.js'
 
 export const templateRoutes = new Hono<AppEnv>()
@@ -58,7 +62,13 @@ const defaultSchema = z.object({
 const previewSchema = z.object({
   yaml: z.string().max(MAX_TEMPLATE_BYTES).optional(),
   subscriptionId: z.string().optional(),
-}).refine(input => input.yaml !== undefined || input.subscriptionId)
+  platform: z.enum(CLIENT_IDS).default('mihomo'),
+  profileId: z.string().optional(),
+  versionId: z.string().optional(),
+  sample: z.boolean().optional(),
+}).refine(input => input.yaml !== undefined || input.subscriptionId || (input.profileId && input.versionId))
+  .refine(input => !input.versionId || (input.profileId && input.yaml === undefined))
+  .refine(input => !(input.sample && input.subscriptionId))
 
 const validateSchema = z.object({
   yaml: z.string().max(MAX_TEMPLATE_BYTES),
@@ -160,6 +170,20 @@ async function createDraft(db: D1Database, input: z.infer<typeof draftSchema>) {
 
 templateRoutes.post('/', async c => c.json(await createDraft(c.env.DB, await readJson(c, draftSchema)), 201))
 
+templateRoutes.get('/rule-sources', async c => {
+  c.header('Cache-Control', 'no-store')
+  const [sources, localSets] = await Promise.all([listRuleSources(c.env.DB), listLocalRuleSets(c.env.DB)])
+  return c.json({ sources: sources.results, localSets })
+})
+templateRoutes.post('/rule-sources/local', async c => {
+  await saveLocalRuleSet(c.env.DB, await readJson(c, localRuleSet))
+  return c.json({ ok: true })
+})
+templateRoutes.post('/rule-sources', async c => {
+  await refreshRuleSource(c.env.DB, await readJson(c, ruleSource))
+  return c.json({ ok: true })
+})
+
 templateRoutes.get('/:id', async c => {
   const row = await getTemplate(c.env.DB, c.req.param('id'))
   const version = row.published_id ? await c.env.DB.prepare(
@@ -184,9 +208,9 @@ templateRoutes.post('/:id/copy', async c => {
   return c.json(await createDraft(c.env.DB, { name, yaml: row.draft }), 201)
 })
 
-function validateForAdmin(yaml: string) {
+function validateForAdmin(yaml: string, legacy = false) {
   try {
-    return validateTemplate(yaml)
+    return validateTemplate(yaml, legacy)
   } catch (error) {
     if (!(error instanceof TemplateValidationError)) throw error
     throw apiError(422, 'TEMPLATE_INVALID', '配置校验失败', { diagnostics: error.diagnostics })
@@ -196,7 +220,8 @@ function validateForAdmin(yaml: string) {
 templateRoutes.post('/validate', async c => {
   const { yaml } = await readJson(c, validateSchema)
   const { normalized, ignored, diagnostics } = validateForAdmin(yaml)
-  return c.json({ normalized, ignored, diagnostics, contentHash: await computeContentHash(normalized), validatorVersion: VALIDATOR_VERSION })
+  const sources = await checkRuleSources(c.env.DB, normalized)
+  return c.json({ normalized, ignored, diagnostics: [...diagnostics, ...sources], contentHash: await computeContentHash(normalized), validatorVersion: VALIDATOR_VERSION })
 })
 
 async function getTemplateSubscription(env: DataEnv, id: string) {
@@ -210,33 +235,72 @@ async function getTemplateSubscription(env: DataEnv, id: string) {
   }
 }
 
-templateRoutes.post('/preview', async c => {
-  const input = await readJson(c, previewSchema)
-  const validation = input.yaml === undefined ? undefined : validateForAdmin(input.yaml)
-  const { template, ignored = [], diagnostics = [] } = validation ?? {}
-  if (!input.subscriptionId) {
-    return c.json({
-      ignored, diagnostics,
-      groups: template?.['proxy-groups'] ?? [],
-      rules: template?.rules ?? [],
-      ruleProviders: template?.['rule-providers'] ?? {},
-      subscriptionName: null, outputNodes: null, effectiveVersionId: null, zeroNodeReason: null,
-    })
-  }
+// Deferred platforms retain their existing node-only output format.
+const previewNode: RenderNode = {
+  id: 'sample', displayName: '示例节点', protocol: 'trojan', server: 'sample.example', port: 443,
+  credentials: { password: 'sample-password' }, enabled: true, tls: { enabled: true },
+  transport: {}, extensions: {}, plugin: {}, rawVariants: [], sourceIds: [], order: 0, fingerprint: 'preview', retained: false,
+  createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+}
 
-  const subscription = await getTemplateSubscription(c.env, input.subscriptionId)
-  const artifact = await renderEntitledSubscription(c.env, subscription, 'mihomo', undefined, template)
-  const output = artifact.available ? parse(artifact.body) as Record<string, unknown> : template
+function previewBody(body: string, platform: (typeof CLIENT_IDS)[number]) {
+  if (platform === 'mihomo') {
+    const output = parse(body) as Record<string, unknown>
+    const proxies = output.proxies as { name: string; type: string }[]
+    return stringify({ ...output, proxies: proxies.map(({ name, type }) => ({ name, type })) })
+  }
+  if (platform === 'singbox') {
+    const { outbounds } = JSON.parse(body) as { outbounds: { type: string; tag: string; outbounds?: string[] }[] }
+    return JSON.stringify({ outbounds: outbounds.map(({ type, tag, outbounds }) => ({ type, tag, outbounds })) }, null, 2)
+  }
+  if (platform === 'surge' || platform === 'loon') {
+    return body.split('\n').map(line => line.includes(' = ') && !line.startsWith('Proxy = select,')
+      ? `${line.split(' = ', 1)[0]} = <已隐藏连接参数>` : line).join('\n')
+  }
+  if (platform === 'quantumultx') return body.trim().split('\n').filter(Boolean)
+    .map(line => `${line.split('://', 1)[0]}://<已隐藏连接参数>`).join('\n')
+  return null
+}
+
+templateRoutes.post('/preview', async c => {
+  c.header('Cache-Control', 'no-store')
+  const input = await readJson(c, previewSchema)
+  const row = input.profileId ? await getTemplate(c.env.DB, input.profileId) : null
+  const version = input.versionId && row ? await c.env.DB.prepare(
+    `SELECT l.* FROM conversion_profile_outputs v
+       JOIN subscription_template_versions l ON l.id=v.id
+       WHERE v.profile_id=? AND v.id=? AND v.platform='mihomo'`,
+  ).bind(row.id, input.versionId).first<TemplateVersionRow>() : null
+  if (input.versionId && !version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
+  const yaml = version?.yaml ?? input.yaml
+  const validation = yaml === undefined || input.platform !== 'mihomo' ? undefined : validateForAdmin(yaml, version ? isLegacyTemplateVersion(version.validator_version) : false)
+  const { template, ignored = [], diagnostics = [] } = validation ?? {}
+  const sourceDiagnostics = template && !(version && isLegacyTemplateVersion(version.validator_version))
+    ? await checkRuleSources(c.env.DB, template) : []
+  const subscription = input.subscriptionId ? await getTemplateSubscription(c.env, input.subscriptionId) : null
+  const artifact = subscription ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true) : null
+  const rendered = input.sample ? renderClient(input.platform, [previewNode], template) : artifact
+  const output = input.platform === 'mihomo' && rendered?.outputNodes ? parse(rendered.body) as Record<string, unknown> : template
+  const body = rendered ? input.sample ? rendered.body : previewBody(rendered.body, input.platform) : null
   return c.json({
-    ignored, diagnostics,
+    ignored, diagnostics: [...diagnostics, ...sourceDiagnostics],
     groups: output?.['proxy-groups'] ?? [],
     rules: output?.rules ?? [],
     ruleProviders: output?.['rule-providers'] ?? {},
-    subscriptionName: subscription.name,
-    outputNodes: artifact.outputNodes,
-    rendererVersion: artifact.rendererVersion,
-    effectiveVersionId: artifact.templateVersionId ?? null,
-    zeroNodeReason: artifact.zeroNodeReason,
+    subscriptionName: subscription?.name ?? (input.sample ? '合成节点样本' : null),
+    inputNodes: artifact?.previewInputNodes ?? rendered?.inputNodes ?? 0,
+    authorizedNodes: artifact?.previewAuthorizedNodes ?? rendered?.inputNodes ?? 0,
+    outputNodes: rendered?.outputNodes ?? null,
+    skippedNodes: rendered?.skippedNodes ?? 0,
+    nodeDiagnostics: rendered?.diagnostics ?? [],
+    rendererVersion: artifact?.rendererVersion ?? RENDERER_VERSION,
+    effectiveVersionId: input.platform === 'mihomo' ? version?.id ?? artifact?.templateVersionId ?? (yaml === undefined ? row?.published_id : null) ?? null : null,
+    draftRevision: yaml !== undefined && !version ? row?.revision ?? null : null,
+    zeroNodeReason: artifact?.zeroNodeReason ?? null,
+    body,
+    capability: input.platform === 'mihomo' ? 'full' : 'nodes',
+    summary: rendered ? { bytes: new TextEncoder().encode(rendered.body).length, groups: (output?.['proxy-groups'] as unknown[] | undefined)?.length ?? 0,
+      rules: (output?.rules as unknown[] | undefined)?.length ?? 0 } : null,
   })
 })
 
@@ -303,6 +367,9 @@ templateRoutes.post('/:id/publish', async c => {
   // Re-validate draft before publishing
   const validation = validateForAdmin(row.draft)
 
+  const ruleDiagnostics = await checkRuleSources(c.env.DB, validation.normalized)
+  if (ruleDiagnostics.length) throw apiError(422, 'TEMPLATE_INVALID', '规则集校验失败', { diagnostics: ruleDiagnostics })
+
   // Check if there are unacknowledged ignored fields
   if (validation.ignored.length > 0 && !input.ignoredAcknowledged) {
     throw apiError(422, 'TEMPLATE_INVALID', '请确认被忽略的字段', { diagnostics: validation.diagnostics })
@@ -364,7 +431,7 @@ templateRoutes.get('/:id/versions/:versionId', async c => {
   const version = await c.env.DB.prepare('SELECT * FROM subscription_template_versions WHERE template_id=? AND id=?')
     .bind(c.req.param('id'), c.req.param('versionId')).first<TemplateVersionRow>()
   if (!version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
-  const validation = validateForAdmin(version.yaml)
+  const validation = validateForAdmin(version.yaml, isLegacyTemplateVersion(version.validator_version))
   return c.json({
     ...versionSummary(version), yaml: version.yaml, normalized: validation.normalized,
     contentHash: version.content_hash ?? await computeContentHash(validation.normalized),

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { EmptyState } from '../../ui/EmptyState'
 import { useEffect, useState } from 'react'
 import {
@@ -137,13 +138,14 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
       : rows.length === 0 ? <EmptyState title={archived ? '暂无已归档配置' : '暂无附加配置'}>
         {!archived && <button className="button secondary" type="button" onClick={() => onOpen('new')}>新增配置</button>}</EmptyState>
       : <table className="template-table" aria-label="附加配置列表">
-        <thead><tr>{['名称', '状态', '当前发布版本', '更新时间', '引用数', '操作'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
+        <thead><tr>{['名称', '支持平台', '状态', '当前发布版本', '最近发布', '绑定订阅数', '操作'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id}>
           <th scope="row">{row.name}</th>
+          <td data-label="支持平台">Mihomo</td>
           <td data-label="状态">{templateStatus[row.status]}</td>
           <td data-label="当前发布版本">{versionLabel(row.publishedSequence)}</td>
-          <td data-label="更新时间"><time dateTime={row.updatedAt}>{templateDate(row.updatedAt)}</time></td>
-          <td data-label="引用数">{referenceCount(row.references)}</td>
+          <td data-label="最近发布">{row.publishedAt ? <time dateTime={row.publishedAt}>{templateDate(row.publishedAt)}</time> : '—'}</td>
+          <td data-label="绑定订阅数">{referenceCount(row.references)}</td>
           <td><div className="template-actions">
             <button className="button secondary" type="button" disabled={row.status === 'archived'} onClick={() => onOpen(row.id)}>编辑</button>
             <ResourceRowActions actions={[
@@ -228,6 +230,7 @@ function TemplateHistory({ row, onClose, onRollback }: {
     {result && <div className="form-stack">
       {result.versions.map((version) => <div className="template-history-row" key={version.id}>
         <span>{versionLabel(version.sequence)} · {templateDate(version.createdAt)}</span>
+        <Link className="button secondary" to={`/delivery/conversions?${new URLSearchParams({ config: row.id, view: 'preview', version: version.id })}`}>验证此版本</Link>
         {version.id === current.id ? <span>当前发布</span> : row.status !== 'archived' &&
           <button className="button secondary" type="button" disabled={busy || Boolean(selected)} onClick={() => { setError(''); setSelected(version) }}>回退</button>}
       </div>)}
@@ -235,7 +238,7 @@ function TemplateHistory({ row, onClose, onRollback }: {
         <button className="button secondary" type="button" disabled={busy || page === 1} onClick={() => { setError(''); setResult(undefined); setPage(page - 1) }}>上一页</button>
         <button className="button secondary" type="button" disabled={busy || page * result.pageSize >= result.total} onClick={() => { setError(''); setResult(undefined); setPage(page + 1) }}>下一页</button>
       </div>}
-      {selected && <p>将生效版本切换为 {versionLabel(selected.sequence)}，影响 {referenceCount(row.references)} 条订阅。</p>}
+      {selected && <p>将生效版本切换为 {versionLabel(selected.sequence)}，影响 {referenceCount(row.references)} 条订阅</p>}
     </div>}
   </Dialog>
 }

@@ -326,7 +326,36 @@
   .template-table td[data-label]::before { content: attr(data-label); color: var(--color-text-muted); }
   .template-editor-grid { display: block; }
   .ops-template .template-tabs { display: flex; }
-  .template-tabs [aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
   .template-editor-grid[data-pane="preview"] > .template-edit-fields,
   .template-editor-grid[data-pane="edit"] > .template-preview { display: none; }
+}
+
+.template-basic {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.ops-template [aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); }
+
+.template-diff {
+  max-height: 20rem;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.template-diff del, .template-diff ins { display: block; }
+
+@media (width >= 768px) {
+  .admin-layout .workspace-content > .conversion-page > .data-section { flex-grow: 0; }
+
+  .conversion-page .ops-template > :not(.data-header, .template-table) {
+    margin-inline: var(--space-page-inline);
+  }
+
+  .conversion-page .template-table tr > :first-child { padding-inline-start: var(--space-page-inline); }
+  .conversion-page .template-table tr > :last-child { padding-inline-end: var(--space-page-inline); }
 }

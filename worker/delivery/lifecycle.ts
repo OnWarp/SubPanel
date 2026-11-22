@@ -185,7 +185,8 @@ export async function classifySubscription(
       const compatible = outputNodes > 0
       const note = !compatible
         ? client === 'mihomo' && templateInvalid ? '已发布配置校验失败' : '当前格式没有可用节点'
-        : platform === 'auto' ? AUTO_NOTE : null
+        : platform === 'auto' ? AUTO_NOTE
+          : FULL_RULE_PLATFORMS.has(platform) ? '导入后请检查客户端是否使用规则模式，部分客户端会保留本地模式设置' : null
       return {
         platform, displayName, capability, compatible, outputNodes, note,
         capabilityLabel: capability === 'full' ? '完整规则配置' : '仅节点订阅',

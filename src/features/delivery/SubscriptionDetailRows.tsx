@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { QrCode } from 'lucide-react'
 import type { SubscriptionDiagnostic } from '../../app/api'
 import { CopyButton } from '../../ui/CopyButton'
@@ -32,6 +33,7 @@ type SubscriptionDetailRowsProps = {
   bindingLabel: string
   templateName: string
   version: string
+  versionHref?: string
   bindingError: string
   bindingLoading: boolean
   diagnostics: SubscriptionDetailDiagnostic[]
@@ -47,7 +49,7 @@ type SubscriptionDetailRowsProps = {
 
 export function SubscriptionDetailRows({
   user, groups, plan, links, client, link, linkError, onClient, onCopied, onCopyError, onShowQr,
-  bindingLabel, templateName, version, bindingError, bindingLoading, diagnostics,
+  bindingLabel, templateName, version, versionHref, bindingError, bindingLoading, diagnostics,
   lifecycle, onFix, expiry, authorizedNodeCount, capabilityLabel, formatNote, fetchSummary, configVersion,
 }: SubscriptionDetailRowsProps) {
   const clientLabel = links.find((entry) => entry.value === client)?.label ?? client
@@ -99,7 +101,7 @@ export function SubscriptionDetailRows({
         <dl className="key-value-rows" aria-busy={bindingLoading}>
           <div><dt>生效方式</dt><dd>{bindingLabel}</dd></div>
           <div><dt>模板</dt><dd>{templateName}</dd></div>
-          <div><dt>发布版本</dt><dd>{version}</dd></div>
+          <div><dt>发布版本</dt><dd>{versionHref ? <Link to={versionHref}>{version} · 查看配置诊断</Link> : version}</dd></div>
           {configVersion ? <div><dt>配置版本</dt><dd>{configVersion}</dd></div> : null}
         </dl>
         {bindingError ? <StatusMessage tone="error">{bindingError}</StatusMessage>
@@ -124,7 +126,6 @@ export function SubscriptionDetailRows({
             </>
           ) : <p className="drawer-note">暂无编译诊断</p>}
         </details>
-        <p className="drawer-note">转换诊断只标注现行渲染能力，不执行远程规则转换</p>
       </section>
       {fetchSummary ? <section>
         <h3 className="drawer-section-title">最近拉取</h3>

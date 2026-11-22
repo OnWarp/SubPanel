@@ -106,7 +106,7 @@ export async function getEffectiveTemplate(db: D1Database, subscriptionId: strin
     SELECT CASE COALESCE(b.mode, 'inherit')
              WHEN 'specific' THEN b.template_id WHEN 'inherit' THEN d.template_id END AS selected_id,
            t.id AS template_id, t.name AS template_name, t.archived,
-           v.id AS version_id, v.sequence, v.yaml,
+           v.id AS version_id, v.sequence, v.yaml, v.validator_version,
            COALESCE(b.mode, 'inherit') AS mode, b.template_id AS binding_template_id,
            COALESCE(b.revision, 1) AS revision, b.updated_at
     FROM (SELECT ? AS id) AS subscription
@@ -123,6 +123,7 @@ export async function getEffectiveTemplate(db: D1Database, subscriptionId: strin
     version_id: string | null
     sequence: number | null
     yaml: string | null
+    validator_version: string | null
     mode: BindingInput['mode']
     binding_template_id: string | null
     revision: number
@@ -136,7 +137,7 @@ export async function getEffectiveTemplate(db: D1Database, subscriptionId: strin
 
 export async function resolvedTemplate(db: D1Database, subscriptionId: string) {
   const row = await getEffectiveTemplate(db, subscriptionId)
-  return row.yaml === null ? undefined : validateTemplate(row.yaml).template
+  return row.yaml === null ? undefined : validateTemplate(row.yaml, isLegacyTemplateVersion(row.validator_version)).template
 }
 
 export function templateReferencesSql(alias: string) {
@@ -162,4 +163,8 @@ export async function checkTemplateReferences(db: D1Database, templateId: string
     directBindings: row?.direct ?? 0,
     inheritedCount: row?.is_default ? await countInheritedSubscriptions(db, subscriptionIds) : 0,
   }
+}
+
+export function isLegacyTemplateVersion(validatorVersion: string | null) {
+  return validatorVersion === null || validatorVersion === '1' || validatorVersion === '2'
 }

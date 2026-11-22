@@ -747,6 +747,99 @@ rules:
     expect(JSON.parse(audit!.detail)).toMatchObject({ versionId })
   })
 
+  it('publishes a four-layer profile, verifies the exact version and preserves the existing public link', async () => {
+    const { admin, subscription, token } = await fixture()
+    const draft = `subpanel:
+  nodes:
+    prefix: "灰度 "
+    rename:
+      - pattern: "^Delivery"
+        replacement: "Tokyo"
+    sort: name
+    deduplicate: name
+  client:
+    dns: { enable: true, nameserver: [1.1.1.1] }
+proxy-groups:
+  - { name: Proxy, type: select, proxies: [Fast, Backup, Balance] }
+  - { name: Fast, type: url-test, proxies: ["$SUBPANEL_NODES"], tolerance: 50 }
+  - { name: Backup, type: fallback, proxies: ["$SUBPANEL_NODES"] }
+  - { name: Balance, type: load-balance, proxies: ["$SUBPANEL_NODES"], strategy: round-robin }
+rules:
+  - DOMAIN-SUFFIX,example.org,DIRECT
+  - MATCH,Proxy
+`
+    const create = await mutation(templateRoot, admin, { name: '灰度配置', yaml: draft })
+    expect(create.status).toBe(201)
+    const { id: profileId, revision, draftHash } = await create.json() as { id: string; revision: number; draftHash: string }
+    const root = `${templateRoot}/${profileId}`
+    const publish = await mutation(root + '/publish', admin, { expectedRevision: revision, draftHash })
+    expect(publish.status, await publish.clone().text()).toBe(200)
+    const { versionId } = await publish.json() as { versionId: string }
+    const url = `${TEST_ORIGIN}/sub/${token}/mihomo`
+    expect((await (await exports.default.fetch(url)).text())).not.toContain('Tokyo')
+    expect((await mutation(`${templateRoot}/bindings/${subscription.id}`, admin, {
+      mode: 'specific', templateId: profileId, expectedRevision: 1,
+    }, 'PUT')).status).toBe(200)
+    const pull = await exports.default.fetch(url)
+    expect(pull.status).toBe(200)
+    expect(parseYaml(await pull.text())).toMatchObject({
+      mode: 'rule', dns: { enable: true },
+      proxies: [{ name: '灰度 Tokyo node', type: 'ss' }],
+      'proxy-groups': [
+        { name: 'Proxy', type: 'select', proxies: ['Fast', 'Backup', 'Balance'] },
+        { name: 'Fast', type: 'url-test', url: 'https://www.gstatic.com/generate_204', interval: 300, proxies: ['灰度 Tokyo node'] },
+        { name: 'Backup', type: 'fallback' },
+        { name: 'Balance', type: 'load-balance', strategy: 'round-robin' },
+      ],
+      rules: ['DOMAIN-SUFFIX,example.org,DIRECT', 'MATCH,Proxy'],
+    })
+    const preview = await mutation(templateRoot + '/preview', admin, { profileId, versionId, subscriptionId: subscription.id })
+    expect(preview.status, await preview.clone().text()).toBe(200)
+    expect(preview.headers.get('Cache-Control')).toBe('no-store')
+    const result = await preview.text()
+    expect(JSON.parse(result)).toMatchObject({ effectiveVersionId: versionId, inputNodes: 1, authorizedNodes: 1, outputNodes: 1, skippedNodes: 0, rendererVersion: '3', summary: { groups: 4, rules: 2 } })
+    expect(result).not.toContain('ss.example.com')
+    const singbox = await mutation(templateRoot + '/preview', admin, { profileId, versionId, platform: 'singbox', subscriptionId: subscription.id })
+    expect(await singbox.json()).toMatchObject({ capability: 'nodes', effectiveVersionId: null, groups: [], rules: [] })
+    expect(await env.DB.prepare("SELECT profile_id FROM conversion_effective_bindings WHERE subscription_id=? AND platform='mihomo'")
+      .bind(subscription.id).first()).toMatchObject({ profile_id: profileId })
+    await env.DB.prepare('DELETE FROM subscription_template_bindings WHERE subscription_id=?').bind(subscription.id).run()
+  })
+
+  it('requires a verified remote rule source, uses conditional refresh and preserves the last successful version', async () => {
+    const { admin } = await fixture()
+    const url = 'https://raw.githubusercontent.com/example/rules/main/privacy.yaml'
+    const source = { url, behavior: 'domain', format: 'yaml' }
+    const draft = yaml.replace('  - MATCH,Policy', '  - RULE-SET,privacy,REJECT\n  - MATCH,Policy') +
+      `rule-providers:\n  privacy: { type: http, behavior: domain, url: ${url} }\n`
+    const saved = await mutation(templateRoot, admin, { name: 'Remote rules', yaml: draft })
+    expect(saved.status).toBe(201)
+    const { id, revision, draftHash } = await saved.json() as { id: string; revision: number; draftHash: string }
+    const publish = () => mutation(`${templateRoot}/${id}/publish`, admin, { expectedRevision: revision, draftHash })
+    expect(await (await publish()).json()).toMatchObject({
+      error: { code: 'TEMPLATE_INVALID', details: { diagnostics: [{ code: 'RULE_SOURCE_UNVERIFIED', path: 'rule-providers.privacy' }] } },
+    })
+    const fetcher = vi.fn()
+      .mockImplementationOnce(async () => new Response('payload: ["+.example.org"]', { headers: { etag: '"one"', 'last-modified': 'Wed, 01 Jan 2025 00:00:00 GMT' } }))
+      .mockImplementationOnce(async () => new Response(null, { status: 304 }))
+      .mockImplementationOnce(async () => new Response('', { status: 302, headers: { location: 'https://127.0.0.1/private' } }))
+    vi.stubGlobal('fetch', fetcher)
+    const refresh = (input: typeof source) => mutation(templateRoot + '/rule-sources', admin, input)
+    const record = () => env.DB.prepare('SELECT version,payload,last_success_at,error_code FROM conversion_rule_sources WHERE url=?').bind(url).first()
+    expect((await refresh({ ...source, url: 'https://127.0.0.1/rules' })).status).toBe(422)
+    expect(fetcher).not.toHaveBeenCalled()
+    const firstRefresh = await refresh(source)
+    expect(firstRefresh.status, await firstRefresh.clone().text()).toBe(200)
+    const known = await record()
+    expect((await refresh(source)).status).toBe(200)
+    expect(fetcher.mock.calls[1][1].headers).toMatchObject({ 'If-None-Match': '"one"', 'If-Modified-Since': 'Wed, 01 Jan 2025 00:00:00 GMT' })
+    expect((await publish()).status).toBe(200)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect((await refresh(source)).status).toBe(422)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(await record()).toMatchObject({ version: known!.version, payload: known!.payload, error_code: 'REMOTE_TOO_MANY_REDIRECTS' })
+  })
+
   it('rejects a matching cached ETag after subscription expiry and explains zero nodes', async () => {
     const { admin, subscription, token } = await fixture()
     const url = `${TEST_ORIGIN}/sub/${token}/mihomo`
