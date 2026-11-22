@@ -33,6 +33,7 @@ import {
   updateSubscription,
   DeliveryError,
 } from './service.js'
+import { directNodeIdsSchema, durationSchema } from './entitlement-templates.js'
 import { compiledKey, deleteCompiledArtifacts } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
 import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
@@ -48,26 +49,31 @@ const allowanceFields = {
 const createSchema = z.object({
   ...allowanceFields,
   mode: z.literal('manual').optional(),
-  duration: z.object({
-    value: z.number().int().min(1).max(36_500),
-    unit: z.enum(['day', 'week', 'month', 'year']),
-  }).strict().optional(),
+  duration: durationSchema.optional(),
   idempotencyKey: z.string().trim().min(1).max(128).optional(),
   userId: z.string().regex(/^usr_[1-9]\d*$/).nullable().optional(),
   planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)),
+  nodeIds: directNodeIdsSchema.optional(),
   enabled: z.boolean().optional(),
   defaultClient: client.optional(),
   startsAt: epochField,
   expiresAt: epochField,
   templateBinding: bindingSchema.optional(),
 }).strict()
+const templateCreateSchema = createSchema.omit({ mode: true, planId: true, userId: true, deviceLimit: true })
+  .partial().extend({
+    mode: z.literal('template'),
+    templateVersionId: z.uuid(),
+    userId: z.string().regex(/^usr_[1-9]\d*$/),
+  }).strict()
 const updateSchema = z.object({
   ...allowanceFields,
   planId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(1).max(128).optional(),
   groupIds: z.array(z.string().regex(/^grp_[1-9]\d*$/)).optional(),
+  nodeIds: directNodeIdsSchema.optional(),
   enabled: z.boolean().optional(),
   defaultClient: client.optional(),
   startsAt: epochField,
@@ -226,12 +232,20 @@ async function view(
     formats: access.formats,
     fetch: fetchSummary,
     configVersion,
-    ...(audience === 'admin' ? { conversion: {
-      mode: conversionMode,
-      templateName: conversionTemplate,
-      versionId: configVersion,
-      note: '显示现行渲染能力',
-    } } : {}),
+    ...(audience === 'admin' ? {
+      ...(subscription.nodeIds?.length ? { nodeIds: subscription.nodeIds } : {}),
+      ...(subscription.templateVersionId ? {
+        templateVersionId: subscription.templateVersionId,
+        entitlementTemplateName: subscription.entitlementTemplateName,
+        entitlementVersionNumber: subscription.entitlementVersionNumber,
+      } : {}),
+      conversion: {
+        mode: conversionMode,
+        templateName: conversionTemplate,
+        versionId: configVersion,
+        note: '显示现行渲染能力',
+      },
+    } : {}),
   }
 }
 
@@ -397,13 +411,14 @@ adminDeliveryRoutes.post('/output-preview', async (c) => {
     userId: z.string().nullable().optional(),
     speedLimitMbps: allowanceFields.speedLimitMbps,
     groupIds: z.array(z.string()),
+    nodeIds: directNodeIdsSchema.optional(),
     defaultClient: client.optional(),
   }))
   const plans = await listPlans(c.env.DB)
   const plan = input.planId ? plans.find((item) => item.id === input.planId) ?? null : null
   const catalog = await readCatalog(c.env)
   const preview = await previewAuthorizedOutput(catalog, input.userId === null || !input.planId ? input.groupIds : plan?.groupIds ?? [],
-    input.groupIds, input.defaultClient ?? 'mihomo', input.speedLimitMbps ?? plan?.speedLimitMbps ?? 0)
+    input.groupIds, input.defaultClient ?? 'mihomo', input.speedLimitMbps ?? plan?.speedLimitMbps ?? 0, input.planId ? undefined : input.nodeIds)
   return c.json({
     planGroupIds: plan?.groupIds ?? [],
     selectedGroupIds: input.groupIds,
@@ -413,7 +428,7 @@ adminDeliveryRoutes.post('/output-preview', async (c) => {
 })
 
 adminDeliveryRoutes.post('/', async (c) => {
-  const { mode: _mode, ...input } = await readJson(c, createSchema)
+  const { mode: _mode, ...input } = await readJson(c, z.union([createSchema, templateCreateSchema]))
   const rawKey = c.req.header('Idempotency-Key') ?? input.idempotencyKey
   const key = z.string().trim().min(1).max(128).optional().safeParse(rawKey)
   if (!key.success || (input.idempotencyKey && input.idempotencyKey !== key.data)) {

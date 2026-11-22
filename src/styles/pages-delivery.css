@@ -303,3 +303,41 @@
   max-width: 100%;
   font-size: var(--font-sm);
 }
+
+.del-templates-page {
+  min-width: 0;
+}
+
+.del-template-filters .sp-search {
+  flex: 1 1 15rem;
+  width: auto;
+}
+
+.del-template-table .sp-table td {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .del-template-table .sp-badge {
+    justify-self: start;
+  }
+}
+
+@media (min-width: 761px) {
+  .del-template-table.sp-table-wrap {
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .del-template-table .sp-table {
+    min-width: 44rem;
+  }
+}
+
+@media (min-width: 900px) {
+  .del-templates-page {
+    padding-inline: var(--space-page-inline);
+  }
+}

@@ -1,3 +1,4 @@
+import { versionUnavailable } from './entitlement-templates.js'
 import { apiError } from '../platform/api-error.js'
 import type { User } from '../accounts/schema.js'
 import { batch, type AppDatabase } from '../db/db.js'
@@ -102,13 +103,29 @@ export async function deliveryCounts(db: AppDatabase): Promise<DeliveryCounts> {
 export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnapshot> {
   try {
     const placeholders = DELIVERY_META_KEYS.map(() => '?').join(', ')
-    const [subscriptions, groups, metadata] = await batch(db, [
-      db.prepare(`SELECT subscriptions.*, coalesce(source_type, 'legacy') AS source_type
-        FROM subscriptions LEFT JOIN subscription_creation ON subscription_id = subscriptions.id`),
+    const [subscriptions, groups, metadata, nodes] = await batch(db, [
+      db.prepare(`SELECT s.*, coalesce(sc.source_type, 'legacy') AS source_type,
+        v.id AS entitlement_version_id, v.version_no AS entitlement_version_no, t.name AS entitlement_template_name
+        FROM subscriptions s LEFT JOIN subscription_creation sc ON sc.subscription_id = s.id
+        LEFT JOIN subscription_template_origins o ON o.subscription_id = s.id
+        LEFT JOIN entitlement_template_versions v ON v.id = o.version_id
+        LEFT JOIN entitlement_templates t ON t.id = v.template_id`),
       db.prepare('SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position'),
       db.prepare(`SELECT key, value FROM system_settings WHERE key IN (${placeholders})`).bind(...DELIVERY_META_KEYS),
+      db.prepare('SELECT subscription_id, node_id FROM subscription_nodes ORDER BY subscription_id, position'),
     ])
-    const subscriptionRows = subscriptions.results as (SubscriptionRow & { source_type: 'manual' | 'legacy' })[]
+    const subscriptionRows = subscriptions.results as (SubscriptionRow & {
+      source_type: 'manual' | 'legacy'
+      entitlement_version_id: string | null
+      entitlement_version_no: number | null
+      entitlement_template_name: string | null
+    })[]
+    const directIds = new Map<string, string[]>()
+    for (const { subscription_id, node_id } of nodes.results as { subscription_id: string; node_id: string }[]) {
+      const ids = directIds.get(subscription_id) ?? []
+      ids.push(node_id)
+      directIds.set(subscription_id, ids)
+    }
     const groupRows = groups.results as SubscriptionGroupSql[]
     const metadataRows = metadata.results as { key: string; value: string }[]
     const storedOrderRaw = metadataRows.find(row => row.key === DELIVERY_SETTING_KEYS.entityOrder)?.value ?? null
@@ -146,7 +163,13 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
         tokenHash: row.token_hash,
         tokenPrefix: row.token_prefix,
         encryptedToken: row.encrypted_token === '{}' ? null : parseJson(row.encrypted_token),
-        ...(row.source_type === 'manual' ? { sourceType: row.source_type } : {}),
+        ...(directIds.has(row.id) ? { nodeIds: directIds.get(row.id) } : {}),
+        ...(row.entitlement_version_id ? {
+          sourceType: 'template',
+          templateVersionId: row.entitlement_version_id,
+          entitlementTemplateName: row.entitlement_template_name,
+          entitlementVersionNumber: row.entitlement_version_no,
+        } : row.source_type === 'manual' ? { sourceType: row.source_type } : {}),
         ...(row.plan_id || row.source_type === 'manual' || row.traffic_gb || row.speed_limit_mbps || row.device_limit ? {
           trafficGb: row.traffic_gb,
           speedLimitMbps: row.speed_limit_mbps,
@@ -229,18 +252,26 @@ function groupInsert(db: AppDatabase, row: SubscriptionGroupRow): D1PreparedStat
   ).bind(row.subscription_id, row.group_id, row.position)
 }
 
+export type DeliveryCreationRequest = { id: string; keyHash: string; fingerprint: string }
+export type DeliveryNodePolicyWrite = { id: string; nodeIds?: string[]; templateVersionId?: string }
+
 export async function persistDeliverySnapshot(
   db: AppDatabase,
   snapshot: DeliverySnapshot,
   users: readonly User[],
   bindingStatement?: D1PreparedStatement,
   expectedRevision?: number,
-  request?: { id: string; keyHash: string; fingerprint: string },
+  request?: DeliveryCreationRequest,
+  policy?: DeliveryNodePolicyWrite,
 ): Promise<void> {
   const converted = convertDelivery(snapshot)
   const ids = converted.rows.subscriptions.map((row) => row.id)
   const idJson = JSON.stringify(ids)
   const statements: D1PreparedStatement[] = [
+    ...(expectedRevision === undefined ? [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+      SELECT 'delivery_import_conflict', NULL, ?
+      WHERE EXISTS (SELECT 1 FROM subscription_template_origins) OR EXISTS (SELECT 1 FROM subscription_nodes)`)
+      .bind(snapshot.updatedAt)] : []),
     ...userAnchorStatements(db, users, converted.rows.subscriptions.flatMap((row) => row.user_id ? [row.user_id] : [])),
     db.prepare('DELETE FROM subscriptions WHERE id NOT IN (SELECT value FROM json_each(?))').bind(idJson),
     ...converted.rows.subscriptions.map((row) => subscriptionInsert(db, row, { id: row.id })),
@@ -261,6 +292,23 @@ export async function persistDeliverySnapshot(
     upsertSettingStatement(db, DELIVERY_SETTING_KEYS.entityOrder, ids, snapshot.updatedAt),
   ]
   if (bindingStatement) statements.push(bindingStatement)
+  if (policy?.templateVersionId) {
+    statements.push(db.prepare('INSERT INTO subscription_template_origins (subscription_id, version_id) VALUES (?, ?)')
+      .bind(policy.id, policy.templateVersionId))
+  }
+  if (policy?.nodeIds) {
+    const nodes = JSON.stringify(policy.nodeIds)
+    statements.push(
+      db.prepare('DELETE FROM subscription_nodes WHERE subscription_id = ? AND node_id NOT IN (SELECT value FROM json_each(?))')
+        .bind(policy.id, nodes),
+      db.prepare(`UPDATE subscription_nodes SET position = selected.key FROM json_each(?) AS selected
+        WHERE subscription_id = ? AND node_id = selected.value AND position <> selected.key`).bind(nodes, policy.id),
+      db.prepare(`INSERT INTO subscription_nodes (subscription_id, node_id, position)
+        SELECT ?, selected.value, selected.key FROM json_each(?) AS selected WHERE NOT EXISTS (
+          SELECT 1 FROM subscription_nodes WHERE subscription_id = ? AND node_id = selected.value
+        )`).bind(policy.id, nodes, policy.id),
+    )
+  }
   if (expectedRevision !== undefined) {
     // Updating the metadata in this guard would itself overwrite a concurrent
     // writer. A NULL value instead aborts the batch when the snapshot changed.
@@ -275,6 +323,13 @@ export async function persistDeliverySnapshot(
   } catch (error) {
     if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
       throw apiError(409, bindingStatement ? 'TEMPLATE_CONFLICT' : 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
+    }
+    if (error instanceof Error && error.message.includes('ENTITLEMENT_VERSION_UNAVAILABLE')) versionUnavailable()
+    if (error instanceof Error && error.message.includes('SUBSCRIPTION_NODE_UNAVAILABLE')) {
+      throw apiError(422, 'SUBSCRIPTION_NODE_UNAVAILABLE', '请选择当前可用的节点')
+    }
+    if (policy && error instanceof Error && error.message.includes('FOREIGN KEY constraint failed')) {
+      throw apiError(409, 'SUBSCRIPTION_REFERENCE_CHANGED', '节点或分组已变更，请刷新后重试')
     }
     throw error
   }

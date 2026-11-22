@@ -1,3 +1,4 @@
+import { expiryFromDuration } from '../../../shared/subscription-duration'
 import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { CreateShareForm } from '../shares/ShareDrawer'
 import type { Plan } from './plan-types'
@@ -22,6 +23,9 @@ import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { Switch } from '../../ui/Switch'
+import { SegmentedControl } from '../../ui/SegmentedControl'
+import { NodeAssignmentPicker } from './NodeAssignmentPicker'
+import { BYTES_PER_GIB, MAX_QUOTA_GIB, entitlementTemplatesPath, nodePolicyLabel, quotaLabel, termLabel, type EntitlementTemplate } from './entitlement-types'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { SubscriptionDetailRows } from './SubscriptionDetailRows'
@@ -42,6 +46,7 @@ type SubscriptionForm = {
   planId: string
   name: string
   groupIds: string[]
+  nodeIds: string[]
   defaultClient: string
   enabled: boolean
   startsAt: string
@@ -60,6 +65,7 @@ type FieldErrors = { startsAt?: string; expiresAt?: string }
 
 type DrawerState = 'create' | { kind: 'edit' | 'details'; subscription: AdminSubscription }
 type ConfirmAction = 'disable' | 'delete'
+type CreationMode = 'manual' | 'template'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 
 const DURATION_UNITS = { absolute: '指定时间或永久', day: '天', week: '周', month: '自然月', year: '自然年' } as const
@@ -108,7 +114,7 @@ const BINDING_MODE_LABELS: Record<Binding['mode'], string> = {
 
 const INHERITED_TEMPLATE_BINDING: SubscriptionTemplateBinding = { mode: 'inherit', expectedRevision: 1 }
 
-const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '', duration: '30', durationUnit: 'absolute', trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0 }
+const EMPTY_FORM: SubscriptionForm = { userId: '', planId: '', name: '', groupIds: [], nodeIds: [], defaultClient: 'mihomo', enabled: true, startsAt: '', expiresAt: '', duration: '30', durationUnit: 'absolute', trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0 }
 
 const LEGACY_EXPIRY_WINDOWS: ExpiryFilter[] = ['7', '15', '30']
 
@@ -165,6 +171,12 @@ export function SubscriptionsPage() {
   const [detailsBinding, setDetailsBinding] = useState<Binding>()
   const [detailsError, setDetailsError] = useState('')
   const [detailsBindingError, setDetailsBindingError] = useState('')
+  const [issuableTemplates, setIssuableTemplates] = useState<EntitlementTemplate[]>([])
+  const [templateLoading, setTemplateLoading] = useState(true)
+  const [templateLoadError, setTemplateLoadError] = useState('')
+  const [creationMode, setCreationMode] = useState<CreationMode>('manual')
+  const [selectedTemplate, setSelectedTemplate] = useState<EntitlementTemplate>()
+  const draftByMode = useRef<Partial<Record<CreationMode, SubscriptionForm>>>({})
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
   const [formBaseline, setFormBaseline] = useState<SubscriptionForm>(EMPTY_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
@@ -175,6 +187,20 @@ export function SubscriptionsPage() {
   const [bindingAttempt, setBindingAttempt] = useState(0)
   const editing = drawer === 'create' || (drawer !== null && drawer.kind === 'edit')
 
+  const loadIssuableTemplates = useCallback(async () => {
+    setTemplateLoading(true)
+    setTemplateLoadError('')
+    try {
+      const { templates } = await api<{ templates: EntitlementTemplate[] }>(`${entitlementTemplatesPath}?status=enabled`)
+      setIssuableTemplates(templates)
+    } catch (cause) {
+      setTemplateLoadError(errorMessage(cause, '无法加载订阅模板'))
+    } finally {
+      setTemplateLoading(false)
+    }
+  }, [])
+  useEffect(() => { void loadIssuableTemplates() }, [loadIssuableTemplates])
+
   const [outputPreview, setOutputPreview] = useState<OutputPreview | null>(null)
   useEffect(() => {
     setOutputPreview(null)
@@ -184,12 +210,12 @@ export function SubscriptionsPage() {
       void api<OutputPreview>('/api/admin/subscriptions/output-preview', {
         method: 'POST',
         signal: abort.signal,
-        body: jsonBody({ userId: form.userId || null, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient, speedLimitMbps: form.speedLimitMbps }),
+        body: jsonBody({ userId: form.userId || null, planId: form.planId || null, groupIds: form.groupIds, nodeIds: form.nodeIds, defaultClient: form.defaultClient, speedLimitMbps: form.speedLimitMbps }),
       }).then((preview) => { if (!abort.signal.aborted) setOutputPreview(preview) })
         .catch(() => { if (!abort.signal.aborted) setOutputPreview(null) })
     }, 200)
     return () => { window.clearTimeout(handle); abort.abort() }
-  }, [editing, form.defaultClient, form.groupIds, form.planId, form.speedLimitMbps, form.userId])
+  }, [editing, form.defaultClient, form.groupIds, form.nodeIds, form.planId, form.speedLimitMbps, form.userId])
 
   useEffect(() => {
     if (drawer === null || (drawer !== 'create' && drawer.kind !== 'edit')) return
@@ -334,6 +360,9 @@ export function SubscriptionsPage() {
   }
 
   const openCreate = () => {
+    draftByMode.current = {}
+    setSelectedTemplate(undefined)
+    setCreationMode(issuableTemplates.length ? 'template' : 'manual')
     creationRequest.current = null
     setBindingData(undefined)
     setBindingError('')
@@ -347,6 +376,7 @@ export function SubscriptionsPage() {
   }
 
   const openEdit = (subscription: AdminSubscription) => {
+    draftByMode.current = {}
     setBindingData(undefined)
     setBindingError('')
     setBindingLoading(true)
@@ -356,6 +386,7 @@ export function SubscriptionsPage() {
       name: subscription.name,
       planId: subscription.planId ?? '',
       groupIds: [...subscription.groupIds],
+      nodeIds: subscription.nodeIds ?? [],
       defaultClient: subscription.defaultClient,
       enabled: subscription.enabled,
       startsAt: toDatetimeLocal(subscription.startsAt),
@@ -369,6 +400,47 @@ export function SubscriptionsPage() {
     setFieldErrors({})
     setDrawerError('')
     setDrawer({ kind: 'edit', subscription })
+  }
+
+  const changeCreationMode = (mode: CreationMode) => {
+    if (mode === creationMode) return
+    draftByMode.current[creationMode] = form
+    setCreationMode(mode)
+    setForm(draftByMode.current[mode] ?? { ...EMPTY_FORM, userId: form.userId })
+    setFieldErrors({})
+    setDrawerError('')
+  }
+
+  const templateConfig = selectedTemplate?.currentVersion.config
+  const templateCustomized = selectedTemplate && templateConfig && (
+    form.name !== selectedTemplate.name || form.startsAt !== '' || form.duration !== String(templateConfig.duration.value) ||
+    form.durationUnit !== templateConfig.duration.unit || form.trafficGb !== (templateConfig.quotaBytes ?? 0) / BYTES_PER_GIB ||
+    form.speedLimitMbps !== templateConfig.limits.speedLimitMbps ||
+    JSON.stringify(form.groupIds) !== JSON.stringify(templateConfig.groupIds) ||
+    JSON.stringify(form.nodeIds) !== JSON.stringify(templateConfig.nodeIds)
+  )
+  const creatingFromTemplate = drawer === 'create' && creationMode === 'template'
+  const durationValue = Number(form.duration)
+  const estimatedExpiry = drawer === 'create' && form.durationUnit !== 'absolute' &&
+    Number.isInteger(durationValue) && durationValue >= 1 && durationValue <= 36_500
+    ? expiryFromDuration(fromDatetimeLocal(form.startsAt) ?? Date.now(), { value: durationValue, unit: form.durationUnit })
+    : null
+
+  const selectEntitlementTemplate = (versionId: string) => {
+    const template = issuableTemplates.find((item) => item.currentVersion.id === versionId)
+    if (template?.currentVersion.id === selectedTemplate?.currentVersion.id) return
+    if (selectedTemplate && templateCustomized && !window.confirm('更换模板将覆盖已自定义的模板字段，是否继续？')) return
+    setSelectedTemplate(template)
+    if (template) {
+      const { config } = template.currentVersion
+      setForm((current) => ({
+        ...current, name: template.name, planId: '', groupIds: config.groupIds, nodeIds: config.nodeIds,
+        duration: String(config.duration.value), durationUnit: config.duration.unit, expiresAt: '',
+        trafficGb: (config.quotaBytes ?? 0) / BYTES_PER_GIB, speedLimitMbps: config.limits.speedLimitMbps,
+      }))
+    }
+    setFieldErrors({})
+    setDrawerError('')
   }
 
   const shiftExpiry = (days: number) => {
@@ -402,6 +474,10 @@ export function SubscriptionsPage() {
     event.preventDefault()
     if (!drawer) return
     setDrawerError('')
+    if (creatingFromTemplate && (!selectedTemplate || !form.userId)) {
+      setDrawerError(!selectedTemplate ? '请选择订阅模板' : '请选择所属用户')
+      return
+    }
     if (!form.name.trim()) {
       setDrawerError('请填写订阅名称')
       return
@@ -425,12 +501,15 @@ export function SubscriptionsPage() {
     try {
       const configuration = {
         name: form.name, planId: form.planId || null, groupIds: form.groupIds, defaultClient: form.defaultClient,
-        enabled: form.enabled, startsAt, expiresAt, trafficGb: form.trafficGb, speedLimitMbps: form.speedLimitMbps,
+        enabled: form.enabled, startsAt, expiresAt, nodeIds: form.nodeIds, trafficGb: form.trafficGb, speedLimitMbps: form.speedLimitMbps,
         deviceLimit: form.deviceLimit, templateBinding: bindingChanged ? templateBinding : undefined,
       }
       if (drawer === 'create') {
         const duration = form.durationUnit === 'absolute' ? undefined : { value: Number(form.duration), unit: form.durationUnit }
-        const body = jsonBody({ ...configuration, mode: 'manual', userId: form.userId || null, duration })
+        const body = jsonBody(creatingFromTemplate ? {
+          ...configuration, planId: undefined, deviceLimit: undefined, mode: 'template',
+          templateVersionId: selectedTemplate?.currentVersion.id, userId: form.userId, duration,
+        } : { ...configuration, mode: 'manual', userId: form.userId || null, duration })
         if (creationRequest.current?.body !== body) creationRequest.current = { body, key: crypto.randomUUID() }
         const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>('/api/admin/subscriptions', {
           method: 'POST',
@@ -455,7 +534,10 @@ export function SubscriptionsPage() {
     } catch (cause) {
       const message = errorMessage(cause, '保存订阅失败')
       if (cause instanceof ApiClientError && cause.code === 'SUBSCRIPTION_WINDOW_INVALID') setFieldErrors({ expiresAt: message })
-      else setDrawerError(message)
+      else {
+        setDrawerError(message)
+        if (cause instanceof ApiClientError && cause.code === 'ENTITLEMENT_VERSION_UNAVAILABLE') void loadIssuableTemplates()
+      }
     } finally {
       setBusy(false)
     }
@@ -582,7 +664,8 @@ export function SubscriptionsPage() {
       render: (subscription) => (
         <span className="resource-card-name">
           <strong>{subscription.name}</strong>
-          <span className="cell-note">{subscription.tokenPrefix}…</span>
+          <span className="cell-note">{subscription.entitlementVersionNumber
+            ? `${subscription.entitlementTemplateName} v${subscription.entitlementVersionNumber}` : `${subscription.tokenPrefix}…`}</span>
         </span>
       ),
     },
@@ -694,13 +777,12 @@ export function SubscriptionsPage() {
   return (
     <div className="page-stack resource-pages del-admin-page">
       <PageHeader title="订阅" />
-
       {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton value={tokenNotice.token} iconOnly label="复制新订阅令牌" copiedLabel="令牌已复制" onCopied={() => setError('')} onError={() => setError('浏览器未允许复制，请手动选择内容')} /></section> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><button className="button secondary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button></div> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
 
       <section className="data-section resource-card" aria-label="订阅列表">
-        <div className="section-heading"><span /><div className="data-header-actions"><button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
+        <div className="section-heading"><span /><div className="data-header-actions"><button className="button primary" type="button" onClick={openCreate} disabled={templateLoading}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
         <FilterBar className="resource-card-filters">
           <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="订阅状态" value={activeUnified} onChange={(event) => {
@@ -719,11 +801,28 @@ export function SubscriptionsPage() {
         <ResourceFooter count={total} unit="个订阅" pagination={{ page, pageCount, onPageChange: setPage }} />
       </section>
 
-      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} dirty={editing && JSON.stringify(form) !== JSON.stringify(formBaseline)} onClose={closeDrawer} footer={<>
+      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} dirty={editing && [form, ...Object.values(draftByMode.current)].some((draft) => JSON.stringify(draft) !== JSON.stringify(formBaseline))} onClose={closeDrawer} footer={<>
         <button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button>
         <button className="button primary" type="submit" form="subscription-edit-form" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button>
       </>}>
         <form id="subscription-edit-form" className="form-stack sp-form-stack" onSubmit={saveSubscription}>
+          {drawer === 'create' && <FormGroup title="创建方式">
+            <SegmentedControl label="创建方式" value={creationMode} options={[
+              { value: 'template', label: '使用模板' }, { value: 'manual', label: '手动创建' },
+            ]} onChange={changeCreationMode} />
+            {creatingFromTemplate && <FormField label="订阅模板" htmlFor="issue-entitlement-template">
+              <FormSelect id="issue-entitlement-template" required value={issuableTemplates.some((item) => item.currentVersion.id === selectedTemplate?.currentVersion.id) ? selectedTemplate?.currentVersion.id : ''}
+                onChange={(event) => selectEntitlementTemplate(event.currentTarget.value)}>
+                <option value="">请选择启用的模板</option>
+                {issuableTemplates.map((item) => <option key={item.id} value={item.currentVersion.id}>
+                  {item.name} · v{item.currentVersion.number} · {termLabel(item.currentVersion.config)}
+                </option>)}
+              </FormSelect>
+              {selectedTemplate && templateConfig && <p className="drawer-note">v{selectedTemplate.currentVersion.number} · {termLabel(templateConfig)} · {quotaLabel(templateConfig)} · {nodePolicyLabel(templateConfig)}{templateCustomized && ' · 已自定义'}</p>}
+            </FormField>}
+            {!issuableTemplates.length && !templateLoadError && <p className="drawer-note">可在「订阅模板」页创建可复用的模板</p>}
+            {templateLoadError && <ErrorState message={templateLoadError} onRetry={() => { void loadIssuableTemplates() }} />}
+          </FormGroup>}
           {drawer === 'create' ? <nav className="sub-wizard" aria-label="创建步骤">
             {([
               ['subscription-wizard-user', '用户'],
@@ -733,25 +832,28 @@ export function SubscriptionsPage() {
               ['subscription-wizard-client', '客户端'],
               ['subscription-wizard-binding', '配置'],
               ['subscription-wizard-confirm', '确认'],
-            ] as const).map(([id, label]) => (
+            ] as const).filter(([id]) => !creatingFromTemplate || id !== 'subscription-wizard-plan').map(([id, label]) => (
               <button key={id} className="button secondary" type="button" onClick={() => document.getElementById(id)?.scrollIntoView({ block: 'start' })}>{label}</button>
             ))}
           </nav> : null}
+          {drawer && drawer !== 'create' && drawer.subscription.entitlementVersionNumber && <p className="drawer-note">
+            来源模板 {drawer.subscription.entitlementTemplateName} v{drawer.subscription.entitlementVersionNumber}（仅追溯）
+          </p>}
           <FormGroup title="基本信息" id="subscription-edit-basic">
             <FormField label="订阅名称" htmlFor="subscription-name">
               <Input id="subscription-name" aria-label="订阅名称" value={form.name} maxLength={128} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} required />
             </FormField>
             <div id="subscription-wizard-user">
               <FormField label="所属用户" htmlFor="subscription-user">
-                <FormSelect id="subscription-user" aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'}><option value="">未分配</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
+                <FormSelect id="subscription-user" aria-label="所属用户" value={form.userId} onChange={(event) => setForm({ ...form, userId: event.currentTarget.value })} disabled={drawer !== 'create'} required={creatingFromTemplate}><option value="">{creatingFromTemplate ? '请选择用户' : '未分配'}</option>{users.map((user) => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
               </FormField>
             </div>
-            <div id="subscription-wizard-plan">
+            {!creatingFromTemplate && <div id="subscription-wizard-plan">
               <FormField label="订阅计划" htmlFor="subscription-plan">
                 <FormSelect id="subscription-plan" value={form.planId} onChange={event => {
                   const plan = plans.find(item => item.id === event.currentTarget.value)
                   setForm(current => ({
-                    ...current, planId: plan?.id ?? '',
+                    ...current, planId: plan?.id ?? '', nodeIds: plan ? [] : current.nodeIds,
                     groupIds: plan ? [...plan.groupIds] : current.groupIds,
                     trafficGb: plan?.trafficGb ?? current.trafficGb,
                     speedLimitMbps: plan?.speedLimitMbps ?? current.speedLimitMbps,
@@ -765,10 +867,12 @@ export function SubscriptionsPage() {
                   {plans.filter(plan => plan.enabled || plan.id === form.planId).map(plan => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
                 </FormSelect>
               </FormField>
-            </div>
+            </div>}
             <fieldset id="subscription-wizard-groups" className="choice-section"><legend>使用分组</legend>{groups.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选使用分组" onClick={() => setForm((current) => ({ ...current, groupIds: groups.map((group) => group.id).filter((id) => !current.groupIds.includes(id)) }))}>反选</button></div><div className="choice-list">{groups.map((group) => <label key={group.id} className="choice-row"><Checkbox type="checkbox" aria-label={`使用分组 ${group.name}`} checked={form.groupIds.includes(group.id)} onChange={() => setForm((current) => ({ ...current, groupIds: toggle(current.groupIds, group.id) }))} /><span>{group.name}</span></label>)}</div></> : <p className="drawer-note">请先创建分组</p>}</fieldset>
+            {!form.planId && <NodeAssignmentPicker nodes={catalog?.nodes ?? []} selected={form.nodeIds}
+              onChange={(nodeIds) => setForm((current) => ({ ...current, nodeIds }))} />}
             <div className="sub-preview" aria-live="polite">
-              <span>计划允许的组 {outputPreview ? (outputPreview.planGroupIds.map((id) => groupNames.get(id) ?? id).join('、') || '无') : '—'}</span>
+              {form.planId && <span>计划允许的组 {outputPreview ? (outputPreview.planGroupIds.map((id) => groupNames.get(id) ?? id).join('、') || '无') : '—'}</span>}
               <span>实际选中的组 {form.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '无'}</span>
               <span>预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
             </div>
@@ -810,10 +914,10 @@ export function SubscriptionsPage() {
           </FormGroup>
           <FormGroup title="额度与限制">
             {([
-              ['trafficGb', '流量 GiB（0 为不限，仅配置额度）', 'any', 1e9],
+              ['trafficGb', '流量 GiB（0 为不限，仅配置额度）', 'any', creatingFromTemplate ? MAX_QUOTA_GIB : 1e9],
               ['speedLimitMbps', '限速 Mbps（0 为不限，适用于支持的协议与客户端）', 1, 1_000_000],
               ['deviceLimit', '设备数（0 为不限，仅配置额度）', 1, 1_000_000],
-            ] as const).map(([field, label, step, max]) => <FormField key={field} label={label} htmlFor={`subscription-${field}`}>
+            ] as const).filter(([field]) => !creatingFromTemplate || field !== 'deviceLimit').map(([field, label, step, max]) => <FormField key={field} label={label} htmlFor={`subscription-${field}`}>
               <Input id={`subscription-${field}`} type="number" min={0} max={max} step={step} required value={form[field]}
                 onChange={event => setForm({ ...form, [field]: Number(event.currentTarget.value) })} />
             </FormField>)}
@@ -834,11 +938,14 @@ export function SubscriptionsPage() {
             <strong>确认</strong>
             <span>{form.name.trim() || '未命名'}</span>
             <span>{users.find((user) => user.id === form.userId)?.username ?? '未分配'}</span>
-            <span>{plans.find((plan) => plan.id === form.planId)?.name ?? '未分配计划'}</span>
+            <span>{creatingFromTemplate && selectedTemplate ? `${selectedTemplate.name} v${selectedTemplate.currentVersion.number}${templateCustomized ? ' · 已自定义' : ''}`
+              : plans.find((plan) => plan.id === form.planId)?.name ?? '未分配计划'}</span>
             <span>{form.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}</span>
+            {form.nodeIds.length > 0 && <span>指定节点 {form.nodeIds.length} 个</span>}
             <span>{form.startsAt || '立即生效'} → {form.durationUnit === 'absolute'
               ? form.expiresAt || '永久有效' : `${form.duration} ${DURATION_UNITS[form.durationUnit]}`}</span>
-            <span>流量 {form.trafficGb ? `${form.trafficGb} GiB` : '不限'} · 限速 {form.speedLimitMbps ? `${form.speedLimitMbps} Mbps` : '不限'} · 设备 {form.deviceLimit || '不限'}</span>
+            {estimatedExpiry !== null && <span>预计到期 {formatExpiryTime(estimatedExpiry)}</span>}
+            <span>流量 {form.trafficGb ? `${form.trafficGb} GiB` : '不限'} · 限速 {form.speedLimitMbps ? `${form.speedLimitMbps} Mbps` : '不限'}{!creatingFromTemplate && ` · 设备 ${form.deviceLimit || '不限'}`}</span>
             <span>{CLIENT_LABELS[form.defaultClient]} · {BINDING_MODE_LABELS[form.templateBinding?.mode ?? 'inherit']}</span>
             <span>{form.enabled ? '已启用' : '已停用'} · 预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
           </section> : null}
@@ -860,6 +967,8 @@ export function SubscriptionsPage() {
       >
         {detailsError ? <StatusMessage tone="error">{detailsError}</StatusMessage> : null}
         {details && !detailsError ? <>
+          {details.entitlementVersionNumber && <p className="drawer-note">来源模板 {details.entitlementTemplateName} v{details.entitlementVersionNumber}（仅追溯）</p>}
+          {!!details.nodeIds?.length && <p className="drawer-note">指定节点 {details.nodeIds.map((id) => catalog?.nodes.find((node) => node.id === id)?.displayName ?? id).join('、')}</p>}
           <SubscriptionDetailRows
             user={details.userId ? userNames.get(details.userId) ?? details.userId : '未分配'}
             groups={details.groupIds.map((id) => groupNames.get(id) ?? id).join('、') || '未选择分组'}

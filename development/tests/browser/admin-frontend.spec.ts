@@ -449,7 +449,7 @@ test.describe.serial('Administrator frontend', () => {
     // Subscriptions sit in a domain that has section tabs. The domain link marks
     // the location; the section tab marks the page.
     await expect(sidebar(page).getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'location')
-    await expect(page.getByRole('navigation', { name: '订阅管理导航' }).getByRole('link', { name: '订阅', exact: true })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByRole('navigation', { name: '订阅管理导航' }).getByRole('link', { name: '订阅列表', exact: true })).toHaveAttribute('aria-current', 'page')
     await expect(page).toHaveURL(url)
     expect(await page.evaluate(() => history.length)).toBe(history)
     expect(await workspace?.evaluate(element => element === document.querySelector('.workspace-content'))).toBe(true)

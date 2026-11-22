@@ -13,6 +13,7 @@ import { catalogRoutes } from './catalog/routes.js'
 import { readAccounts } from './accounts/repository.js'
 import { ApiError } from './platform/api-error.js'
 import { noStore, originGuard, securityHeaders } from './platform/http.js'
+import { entitlementTemplateRoutes } from './delivery/entitlement-template-routes.js'
 import { adminDeliveryRoutes, userDeliveryRoutes } from './delivery/routes.js'
 import { userNodeRoutes } from './delivery/user-nodes.js'
 import { adminAppRoutes, userAppRoutes } from './apps/routes.js'
@@ -86,6 +87,7 @@ app.route('/api/admin', adminKbRoutes)
 app.route('/api/account', userDomainRoutes)
 app.route('/api', publicSystemRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
+app.route('/api/admin/subscription-templates', entitlementTemplateRoutes)
 app.route('/api/admin/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery', adminDeliveryRoutes)

@@ -2,7 +2,7 @@ import { apiError } from '../platform/api-error.js'
 import { bindingWrite, requirePublished, rethrowBindingError, type BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { DELIVERY_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
-import { persistDeliverySnapshot, readDeliveryFromD1 } from './d1-repository.js'
+import { persistDeliverySnapshot, readDeliveryFromD1, type DeliveryCreationRequest, type DeliveryNodePolicyWrite } from './d1-repository.js'
 import { deliverySnapshotSchema, emptyDeliverySnapshot, type DeliverySnapshot } from './schema.js'
 
 export const DELIVERY_KEY = 'state:delivery'
@@ -55,7 +55,8 @@ export async function writeDelivery(
   snapshot: DeliverySnapshot,
   now = new Date().toISOString(),
   mutation?: BindingMutation,
-  request?: { id: string; keyHash: string; fingerprint: string },
+  request?: DeliveryCreationRequest,
+  policy?: DeliveryNodePolicyWrite,
 ): Promise<DeliverySnapshot> {
   const binding = mutation && 'binding' in mutation ? mutation.binding : undefined
   const cleanup = mutation && 'deleteBinding' in mutation
@@ -66,9 +67,10 @@ export async function writeDelivery(
     const accounts = await readAccounts(env)
     if (binding?.mode === 'specific') await requirePublished(env.DB, binding.templateId)
     const statement = binding && mutation ? bindingWrite(env.DB, mutation.id, binding, now, true) : cleanup
-    await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision, request).catch(rethrowBindingError)
+    await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision, request, policy).catch(rethrowBindingError)
     return next
   }
+  if (policy) throw apiError(409, 'SUBSCRIPTION_STORAGE_NOT_READY', '请先完成订阅 D1 迁移')
   if (binding) throw apiError(409, 'TEMPLATE_STORAGE_NOT_READY', '请先完成订阅 D1 迁移，再随订阅保存附加配置')
   const next = await writeDeliveryKv(env.DATA, snapshot, now)
   if (cleanup) await cleanup.run()

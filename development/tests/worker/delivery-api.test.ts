@@ -499,7 +499,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${forever.token}/mihomo`)).status).toBe(200)
   }, 30_000)
 
-  it('previews the plan intersection and invalidates only subscriptions whose ordered selection changes', async () => {
+  it('previews the plan intersection and uses the latest catalog without rewriting per-subscription caches', async () => {
     const admin = await login()
     const affected = await createCatalogGroup(admin, ssLine('Changed', 'changed.example.com'))
     const unaffected = await createCatalogGroup(admin, ssLine('Unchanged', 'unchanged.example.com'))
@@ -514,7 +514,8 @@ describe('Delivery APIs and public subscriptions', () => {
     const changeKey = compiledKey(await hashToken(changed.token), 'mihomo')
     const untouchedKey = compiledKey(await hashToken(untouched.token), 'mihomo')
     const cached = await env.DATA.get(untouchedKey)
-    expect(await env.DATA.get(changeKey)).not.toBeNull()
+    const previous = await env.DATA.get(changeKey)
+    expect(previous).not.toBeNull()
     expect(cached).not.toBeNull()
 
     const input = { name: 'Changed', sourceIds: [], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [] }
@@ -524,7 +525,8 @@ describe('Delivery APIs and public subscriptions', () => {
     const saved = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/groups/${affected.groupId}`,
       jsonRequest(input, { ...withCookie(admin), method: 'PUT' }))
     expect(saved.status).toBe(200)
-    expect(await env.DATA.get(changeKey)).toBeNull()
+    expect(await env.DATA.get(changeKey)).toBe(previous)
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${changed.token}/mihomo`)).status).toBe(422)
     expect(await env.DATA.get(untouchedKey)).toBe(cached)
   })
 

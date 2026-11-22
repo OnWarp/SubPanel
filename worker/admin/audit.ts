@@ -12,7 +12,7 @@ export const auditAdminMutation: MiddlewareHandler<AppEnv> = async (c,next) => {
  await next()
  if (!['POST','PUT','PATCH','DELETE'].includes(c.req.method) || c.res.status >= 400) return
  const path = c.req.path.replace(/^\/api\/admin\//,'')
- if (!/^(subscriptions|delivery|shares|users|invitations|invites|invite-codes|email-domains|share-settings|system|plans|entitlements|tickets|notices|mail-templates|mail-broadcasts|jobs)(\/|$)/.test(path)) return
+ if (!/^(subscriptions|subscription-templates|delivery|shares|users|invitations|invites|invite-codes|email-domains|share-settings|system|plans|entitlements|tickets|notices|mail-templates|mail-broadcasts|jobs)(\/|$)/.test(path)) return
  const parts = path.split('/')
  if (parts[0] === 'entitlements' && parts[1] === 'trial' || parts[0] === 'subscriptions' && parts[1] === 'trial') {
   try { await logAudit(c.env.DB,c.get('principal').id,'put.subscriptions.trial','subscriptions',null,{ method:c.req.method,path,status:c.res.status,...changes }) } catch { /* Best effort. */ }
@@ -26,7 +26,7 @@ export const auditAdminMutation: MiddlewareHandler<AppEnv> = async (c,next) => {
  let targetId = parts[1] ?? null
  if (!targetId && c.res.headers.get('content-type')?.includes('application/json')) {
   const response = await c.res.clone().json() as Record<string,unknown>
-  const entity = response.user ?? response.subscription ?? response.plan ?? response.invite ?? response.invitation ?? response.ticket ?? response.notice ?? response
+  const entity = response.user ?? response.subscription ?? response.plan ?? response.template ?? response.invite ?? response.invitation ?? response.ticket ?? response.notice ?? response
   if (entity && typeof entity === 'object' && 'id' in entity) targetId = String(entity.id)
  }
  try { await logAudit(c.env.DB,c.get('principal').id,`${c.req.method.toLowerCase()}.${parts[0]}${parts.length > 2 ? '.' + parts.slice(2).join('.') : ''}${typeof changes.action === 'string' ? '.' + changes.action : ''}`,parts[0],targetId,{ method:c.req.method,path,status:c.res.status,...changes }) } catch { /* Audit logging is best-effort: a missing or unmigrated audit table must never break the primary admin operation. */ }

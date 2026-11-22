@@ -15,11 +15,18 @@ import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
 
 export type CompileOptions = { now?: string }
 
-export function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: { groupIds: readonly string[] }) {
+export function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: { groupIds: readonly string[]; nodeIds?: readonly string[] }) {
   const byId = new Map<string, (typeof catalog.nodes)[number]>()
   for (const groupId of subscription.groupIds) {
     if (!catalog.groups.some((group) => group.id === groupId)) continue
     for (const node of resolveGroupNodes(catalog, groupId)) if (!byId.has(node.id)) byId.set(node.id, node)
+  }
+  if (subscription.nodeIds?.length) {
+    const enabled = new Map(catalog.nodes.filter((node) => node.enabled).map((node) => [node.id, node]))
+    for (const id of subscription.nodeIds) {
+      const node = enabled.get(id)
+      if (node && !byId.has(node.id)) byId.set(node.id, node)
+    }
   }
   return [...byId.values()]
 }
@@ -36,10 +43,11 @@ export async function previewAuthorizedOutput(
   groupIds: readonly string[],
   client: RenderClient,
   speed: number,
+  nodeIds?: readonly string[],
 ) {
   const allowed = new Set(planGroupIds)
   const authorizedGroupIds = groupIds.filter((id) => allowed.has(id))
-  const nodes = selectedNodes(catalog, { groupIds: authorizedGroupIds })
+  const nodes = selectedNodes(catalog, { groupIds: authorizedGroupIds, nodeIds })
   return {
     authorizedGroupIds,
     outputNodes: (await prepareSubscriptionRender(client, nodes, speed)).outputNodes,
@@ -190,8 +198,9 @@ export async function resolveEntitlement(env: DataEnv, subscription: Subscriptio
     : undefined
   if (subscription.planId && subscription.userId !== null && !plan) return blockedAccess(catalog, 'noPlan')
   const groupIds = plan ? subscription.groupIds.filter(id => plan.groupIds.includes(id)) : subscription.groupIds
-  const nodes = selectedNodes(catalog, { groupIds })
-  const zeroNodeReason: ZeroNodeReason | null = !groupIds.length ? 'noGroupIntersection'
+  const nodeIds = subscription.planId ? undefined : subscription.nodeIds
+  const nodes = selectedNodes(catalog, { groupIds, nodeIds })
+  const zeroNodeReason: ZeroNodeReason | null = !groupIds.length && !nodeIds?.length ? 'noGroupIntersection'
     : nodes.some(node => node.enabled) ? null : 'noEnabledNodes'
   return { catalog, nodes, speed: subscription.speedLimitMbps ?? 0, zeroNodeReason, authorizedGroupIds: groupIds }
 }

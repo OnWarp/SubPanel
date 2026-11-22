@@ -1,0 +1,41 @@
+{
+  "mode": "dry-run",
+  "rows_before": {
+    "subscriptions": 2,
+    "subscription_groups": 2,
+    "subscription_creation": 2,
+    "entitlement_templates": null,
+    "entitlement_template_versions": null,
+    "subscription_template_origins": null,
+    "subscription_nodes": null
+  },
+  "rows_after": {
+    "subscriptions": 2,
+    "subscription_groups": 2,
+    "subscription_creation": 2,
+    "entitlement_templates": 0,
+    "entitlement_template_versions": 0,
+    "subscription_template_origins": 0,
+    "subscription_nodes": 0
+  },
+  "schema_added": [
+    "index idx_subscription_nodes_node",
+    "index idx_subscription_template_origins_version",
+    "table entitlement_template_versions",
+    "table entitlement_templates",
+    "table subscription_nodes",
+    "table subscription_template_origins",
+    "trigger entitlement_group_in_use",
+    "trigger entitlement_origin_can_issue",
+    "trigger entitlement_version_groups_exist",
+    "trigger entitlement_version_no_delete",
+    "trigger entitlement_version_no_update",
+    "trigger entitlement_version_nodes_exist",
+    "trigger subscription_node_enabled"
+  ],
+  "existing_schema_changed": [],
+  "existing_rows_changed": {},
+  "new_foreign_key_violations": 0,
+  "replay_matches": true,
+  "local_matches_dry_run": true
+}

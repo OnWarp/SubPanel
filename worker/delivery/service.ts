@@ -1,7 +1,8 @@
 import type { BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
-import type { DataEnv } from '../db/module-switch.js'
+import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
+import { bytesPerGiB, getIssuableVersion } from './entitlement-templates.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
 import { batch } from '../db/db.js'
 import { apiError } from '../platform/api-error.js'
@@ -29,6 +30,7 @@ export type SubscriptionInput = {
   userId?: string | null
   name: string
   groupIds: string[]
+  nodeIds?: string[]
   enabled?: boolean
   defaultClient?: ClientId
   startsAt?: number | null
@@ -88,12 +90,23 @@ function assertWindow(startsAt: number | null, expiresAt: number | null): void {
   if (startsAt !== null && expiresAt !== null && expiresAt <= startsAt) fail('SUBSCRIPTION_WINDOW_INVALID')
 }
 
-async function assertReferences(env: DataEnv, userId: string | null | undefined, groupIds: string[]): Promise<void> {
+async function assertReferences(env: DataEnv, userId: string | null | undefined, groupIds: string[]) {
   const accounts = await readAccounts(env)
   if (userId != null && !accounts.users.some((user) => user.id === userId && !user.deletedAt)) fail('USER_NOT_FOUND')
-  const groups = new Set((await readCatalog(env)).groups.map((group) => group.id))
+  const catalog = await readCatalog(env)
+  const groups = new Set(catalog.groups.map((group) => group.id))
   if (groupIds.some((groupId) => !groups.has(groupId))) fail('GROUP_NOT_FOUND')
   if (new Set(groupIds).size !== groupIds.length) fail('SUBSCRIPTION_INVALID')
+  return catalog
+}
+
+async function assertDirectNodes(
+  env: DataEnv, catalog: Awaited<ReturnType<typeof readCatalog>>, ids: string[], planId: string | null | undefined,
+) {
+  if (planId) throw apiError(422, 'SUBSCRIPTION_DIRECT_NODES_WITH_PLAN', '关联旧计划的订阅只能通过分组选节点')
+  if (!await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) throw apiError(409, 'CATALOG_STORAGE_NOT_READY', '请先完成目录 D1 迁移')
+  const nodes = new Set(catalog.nodes.filter((node) => node.enabled).map((node) => node.id))
+  if (ids.some((id) => !nodes.has(id))) throw apiError(422, 'SUBSCRIPTION_NODE_UNAVAILABLE', '请选择当前可用的节点')
 }
 
 function findSubscription(snapshot: Awaited<ReturnType<typeof readDelivery>>, id: string): Subscription {
@@ -136,7 +149,7 @@ function subscriptionEntitlementFields(plan: Plan | null, input: Partial<Subscri
 }
 
 async function prepareSubscription(
-  env: DataEnv, input: SubscriptionInput, now: string, sourceType: 'manual' | 'legacy', suppliedToken?: string,
+  env: DataEnv, input: SubscriptionInput, now: string, sourceType: 'manual' | 'legacy' | 'template', suppliedToken?: string,
 ) {
   const startsAt = cleanEpoch(input.startsAt ?? null)
   if (input.duration && input.expiresAt != null) fail('SUBSCRIPTION_WINDOW_INVALID')
@@ -149,6 +162,7 @@ async function prepareSubscription(
     userId: input.userId ?? null,
     name: normalizedName(input.name),
     groupIds: [...input.groupIds],
+    ...(input.nodeIds?.length ? { nodeIds: [...input.nodeIds] } : {}),
     ...await createToken(env.DATA, token),
     ...subscriptionEntitlementFields(null, input),
     sourceType,
@@ -163,14 +177,21 @@ async function prepareSubscription(
   return { subscription, token }
 }
 
+type TemplateSubscriptionInput = Partial<Omit<SubscriptionInput, 'userId' | 'planId' | 'deviceLimit'>> & {
+  userId: string
+  templateVersionId: string
+}
+
 export async function createSubscription(
   env: DataEnv,
-  { idempotencyKey, ...input }: SubscriptionInput,
+  { idempotencyKey, ...request }: SubscriptionInput | TemplateSubscriptionInput,
   options: SubscriptionMutationOptions = {},
 ): Promise<SubscriptionMutationResult> {
   const keyHash = idempotencyKey && await hashToken(JSON.stringify([options.actorUserId, idempotencyKey]))
-  const fingerprint = keyHash ? await hashToken(JSON.stringify(input)) : ''
-  if (keyHash) await requirePlanStorage(env)
+  const fingerprint = keyHash ? await hashToken(JSON.stringify(request)) : ''
+  const origin = 'templateVersionId' in request ? request.templateVersionId : undefined
+  if (origin && options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
+  if (keyHash || origin || request.nodeIds?.length) await requirePlanStorage(env)
   const replay = async () => {
     if (!keyHash) return null
     const row = await env.DB.prepare(`SELECT subscription_id, request_fingerprint FROM subscription_creation
@@ -184,13 +205,42 @@ export async function createSubscription(
   }
   const previous = await replay()
   if (previous) return previous
-  await assertReferences(env, input.userId, input.groupIds)
+  let version: Awaited<ReturnType<typeof getIssuableVersion>> | undefined
+  let input: SubscriptionInput
+  if ('templateVersionId' in request) {
+    version = await getIssuableVersion(env.DB, request.templateVersionId)
+    const { name, config } = version
+    input = {
+      name,
+      duration: request.expiresAt !== undefined ? undefined : config.duration,
+      trafficGb: (config.quotaBytes ?? 0) / bytesPerGiB,
+      speedLimitMbps: config.limits.speedLimitMbps,
+      groupIds: config.groupIds,
+      nodeIds: config.nodeIds,
+      ...request,
+    }
+    if (!input.groupIds.length && !input.nodeIds?.length) fail('SUBSCRIPTION_INVALID')
+    if (request.trafficGb !== undefined) {
+      const quotaBytes = Math.round(request.trafficGb * bytesPerGiB)
+      if (!Number.isSafeInteger(quotaBytes) || (request.trafficGb > 0 && quotaBytes === 0)) fail('SUBSCRIPTION_INVALID')
+      input.trafficGb = quotaBytes / bytesPerGiB
+    }
+  } else {
+    input = request
+  }
+  const catalog = await assertReferences(env, input.userId, input.groupIds)
+  if (input.nodeIds?.length) {
+    if (new Set(input.nodeIds).size !== input.nodeIds.length) fail('SUBSCRIPTION_INVALID')
+    await assertDirectNodes(env, catalog, input.nodeIds, input.planId)
+  }
   const plan = input.planId ? await subscriptionPlanFields(env, input.planId) : undefined
   const snapshot = await readDelivery(env)
   const now = options.now ?? new Date().toISOString()
-  const prepared = await prepareSubscription(env, { ...plan, ...input }, now, 'manual', options.token)
+  const prepared = await prepareSubscription(env, { ...plan, ...input }, now, origin ? 'template' : 'manual', options.token)
   const id = `sub_${snapshot.nextSubscriptionId}` as const
-  const subscription = { ...plan, ...prepared.subscription, id }
+  const subscription = { ...plan, ...prepared.subscription, id, ...(version ? {
+    templateVersionId: version.id, entitlementTemplateName: version.name, entitlementVersionNumber: version.number,
+  } : {}) }
   if (snapshot.subscriptions.some((item) => item.tokenHash === subscription.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
   try {
     await writeDelivery(env, {
@@ -198,7 +248,8 @@ export async function createSubscription(
       nextSubscriptionId: snapshot.nextSubscriptionId + 1,
       subscriptions: [...snapshot.subscriptions, subscription],
     }, now, input.templateBinding ? { id, binding: input.templateBinding } : undefined,
-    keyHash ? { id, keyHash, fingerprint } : undefined)
+    keyHash ? { id, keyHash, fingerprint } : undefined,
+    origin || input.nodeIds?.length ? { id, nodeIds: input.nodeIds, templateVersionId: origin } : undefined)
   } catch (error) {
     const concurrent = await replay()
     if (concurrent) return concurrent
@@ -269,6 +320,7 @@ export async function copySubscription(
     planId: current.planId ?? null,
     name: `${current.name} 副本`.slice(0, 128),
     groupIds: [...current.groupIds],
+    nodeIds: current.planId ? undefined : current.nodeIds,
     enabled: current.enabled,
     defaultClient: current.defaultClient,
     startsAt: current.startsAt,
@@ -294,7 +346,7 @@ export async function getSubscription(env: DataEnv, id: string, ownerUserId?: st
   return subscription
 }
 
-export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding' | 'planId' | 'trafficGb' | 'speedLimitMbps' | 'deviceLimit'>>
+export type UpdateSubscriptionInput = Partial<Pick<SubscriptionInput, 'name' | 'groupIds' | 'nodeIds' | 'enabled' | 'defaultClient' | 'startsAt' | 'expiresAt' | 'templateBinding' | 'planId' | 'trafficGb' | 'speedLimitMbps' | 'deviceLimit'>>
 
 type PlanOperation = {
   action: 'grant' | 'renew' | 'switch' | 'revoke'
@@ -347,7 +399,15 @@ export async function updateSubscription(
     ? undefined : await subscriptionPlanFields(env, input.planId)
   const nextName = input.name === undefined ? current.name : normalizedName(input.name)
   const nextGroups = input.groupIds === undefined ? current.groupIds : [...input.groupIds]
-  await assertReferences(env, current.userId, nextGroups)
+  const catalog = await assertReferences(env, current.userId, nextGroups)
+  const nextNodeIds = input.nodeIds
+  const currentNodeIds = current.nodeIds ?? []
+  if (nextNodeIds) {
+    if (new Set(nextNodeIds).size !== nextNodeIds.length) fail('SUBSCRIPTION_INVALID')
+    const currentNodes = new Set(currentNodeIds)
+    const additions = nextNodeIds.filter((nodeId) => !currentNodes.has(nodeId))
+    if (additions.length) await assertDirectNodes(env, catalog, additions, input.planId === undefined ? current.planId : input.planId)
+  }
   const startsAt = cleanEpoch(input.startsAt === undefined ? current.startsAt : input.startsAt)
   const expiresAt = cleanEpoch(input.expiresAt === undefined ? current.expiresAt : input.expiresAt)
   assertWindow(startsAt, expiresAt)
@@ -360,6 +420,7 @@ export async function updateSubscription(
     deviceLimit: input.deviceLimit ?? plan?.deviceLimit ?? current.deviceLimit,
     name: nextName,
     groupIds: nextGroups as Subscription['groupIds'],
+    ...(input.nodeIds ? { nodeIds: input.nodeIds } : {}),
     enabled: input.enabled ?? current.enabled,
     defaultClient: input.defaultClient === undefined ? current.defaultClient : clientIdSchema.parse(input.defaultClient),
     startsAt,
@@ -367,8 +428,11 @@ export async function updateSubscription(
     revision: current.revision + 1,
     updatedAt: now,
   }
+  const nodePolicyChanged = nextNodeIds && (nextNodeIds.length !== currentNodeIds.length ||
+    nextNodeIds.some((nodeId, index) => nodeId !== currentNodeIds[index]))
   await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map((item) => item.id === id ? updated : item) }, now,
-    input.templateBinding ? { id, binding: input.templateBinding } : undefined)
+    input.templateBinding ? { id, binding: input.templateBinding } : undefined,
+    undefined, nodePolicyChanged ? { id, nodeIds: nextNodeIds } : undefined)
   return updated
 }
 
@@ -463,19 +527,4 @@ export async function decryptSubscriptionToken(env: DataEnv, subscription: Subsc
     throw apiError(409, 'SUBSCRIPTION_CONFLICT', '订阅已被修改，请刷新后重试')
   }
   return decryptSubscriptionToken(env, current)
-}
-
-export async function removeGroupReference(env: DataEnv, groupId: string): Promise<void> {
-  const snapshot = await readDelivery(env)
-  const subscriptions = snapshot.subscriptions.map((subscription) => {
-    if (!subscription.groupIds.includes(groupId)) return subscription
-    return {
-      ...subscription,
-      groupIds: subscription.groupIds.filter((id) => id !== groupId),
-      revision: subscription.revision + 1,
-      updatedAt: new Date().toISOString(),
-    }
-  })
-  if (subscriptions.every((subscription, index) => subscription === snapshot.subscriptions[index])) return
-  await writeDelivery(env, { ...snapshot, subscriptions })
 }

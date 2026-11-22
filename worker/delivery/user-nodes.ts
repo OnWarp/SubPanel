@@ -25,6 +25,7 @@ export type UserNodeSubscription = {
   userId: string | null
   name: string
   groupIds: readonly string[]
+  nodeIds?: readonly string[]
   enabled: boolean
   startsAt: number | null
   expiresAt: number | null
@@ -56,23 +57,30 @@ export function collectUserNodes(
   const groupsById = new Map(catalog.groups.map((group) => [group.id, group]))
   const merged = new Map<string, UserNodeDto>()
 
+  const enabledNodes = new Map(catalog.nodes.filter((node) => node.enabled).map((node) => [node.id, node]))
+  function addNode(node: Node, subscription: UserNodeSubscription, group?: Group) {
+    const current = merged.get(node.id) ?? {
+      id: node.id,
+      name: node.displayName,
+      protocol: protocolOf(node),
+      groups: [],
+      subscriptions: [],
+    }
+    if (group) pushRef(current.groups, { id: group.id, name: group.name })
+    pushRef(current.subscriptions, { id: subscription.id, name: subscription.name })
+    merged.set(node.id, current)
+  }
+
   for (const subscription of subscriptions) {
     if (subscription.userId !== userId || subscriptionRowStatus(subscription, now)) continue
     for (const groupId of subscription.groupIds) {
       const group = groupsById.get(groupId)
       if (!group || !groupIsActive(group)) continue
-      for (const node of resolveGroupNodes(catalog, group.id)) {
-        const current = merged.get(node.id) ?? {
-          id: node.id,
-          name: node.displayName,
-          protocol: protocolOf(node),
-          groups: [],
-          subscriptions: [],
-        }
-        pushRef(current.groups, { id: group.id, name: group.name })
-        pushRef(current.subscriptions, { id: subscription.id, name: subscription.name })
-        merged.set(node.id, current)
-      }
+      for (const node of resolveGroupNodes(catalog, group.id)) addNode(node, subscription, group)
+    }
+    for (const id of subscription.nodeIds ?? []) {
+      const node = enabledNodes.get(id)
+      if (node) addNode(node, subscription)
     }
   }
 
@@ -140,7 +148,7 @@ userNodeRoutes.get('/', async (c) => {
   const eligible = (await Promise.all(assigned.map(async (subscription) => {
     const access = await resolveEntitlement(c.env, subscription, now.toISOString(), snapshot)
     return access.zeroNodeReason && !['noGroupIntersection', 'noEnabledNodes'].includes(access.zeroNodeReason)
-      ? [] : [{ ...subscription, groupIds: access.authorizedGroupIds }]
+      ? [] : [{ ...subscription, groupIds: access.authorizedGroupIds, nodeIds: subscription.planId ? undefined : subscription.nodeIds }]
   }))).flat()
   const nodes = collectUserNodes(eligible, snapshot.catalog, userId, now.getTime())
   const query = c.req.query()

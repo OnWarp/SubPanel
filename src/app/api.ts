@@ -166,6 +166,11 @@ export type SubscriptionFetchSummary = {
 }
 
 export type AdminSubscription = {
+  sourceType?: 'manual' | 'legacy' | 'template'
+  nodeIds?: string[]
+  templateVersionId?: string
+  entitlementTemplateName?: string
+  entitlementVersionNumber?: number
   planId?: string | null
   planName?: string | null
   planState?: 'active' | 'none' | 'expired' | 'revoked' | 'pending' | 'disabled'

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { encryptedValueSchema, type EncryptedValue } from '../platform/crypto.js'
-import { groupIdSchema } from '../catalog/schema.js'
+import { groupIdSchema, nodeIdSchema } from '../catalog/schema.js'
 import { userIdSchema } from '../accounts/schema.js'
 
 export const subscriptionIdSchema = z.string().regex(/^sub_[1-9]\d*$/)
@@ -39,10 +39,14 @@ export const subscriptionSchema = z.object({
   userId: userIdSchema.nullable(),
   name: z.string().trim().min(1).max(128),
   groupIds: uniqueGroupIds,
+  nodeIds: z.array(nodeIdSchema).optional(),
+  templateVersionId: z.uuid().optional(),
+  entitlementTemplateName: z.string().optional(),
+  entitlementVersionNumber: z.number().int().positive().optional(),
   tokenHash: tokenHashSchema,
   tokenPrefix: z.string().regex(/^[A-Za-z0-9_-]{8}$/),
   encryptedToken: encryptedValueSchema.nullable(),
-  sourceType: z.enum(['legacy', 'manual']).optional(),
+  sourceType: z.enum(['legacy', 'manual', 'template']).optional(),
   planId: z.string().nullable().optional(),
   trafficGb: z.number().nonnegative().optional(),
   speedLimitMbps: z.number().int().nonnegative().optional(),

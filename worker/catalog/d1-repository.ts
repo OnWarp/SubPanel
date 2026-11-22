@@ -177,6 +177,7 @@ export async function clearCatalogStorage(db: AppDatabase): Promise<void> {
     db.prepare('DELETE FROM group_sources'),
     db.prepare('DELETE FROM node_raw_variants'),
     db.prepare('DELETE FROM groups'),
+    db.prepare('DELETE FROM subscription_nodes'),
     db.prepare('DELETE FROM nodes'),
     db.prepare('DELETE FROM sources'),
   ])
@@ -435,8 +436,10 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
   const converted = convertCatalog(snapshot)
   const meta = metaFromSnapshot(snapshot)
   const statements: D1PreparedStatement[] = [
-    // A stale revision violates the NOT NULL constraint and rolls back the whole batch.
-    ...(expectedRevision === undefined ? [] : [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+    // A stale revision or a legacy import over P2 assignments aborts the whole batch.
+    ...(expectedRevision === undefined ? [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+      SELECT 'catalog_import_conflict', NULL, ? WHERE EXISTS (SELECT 1 FROM subscription_nodes)
+        OR EXISTS (SELECT 1 FROM entitlement_templates WHERE status <> 'archived')`).bind(meta.updatedAt)] : [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
       SELECT 'catalog_write_conflict', NULL, ?
       WHERE COALESCE((SELECT json_extract(value, '$') FROM system_settings WHERE key = ?), 0) != ?`)
       .bind(meta.updatedAt, CATALOG_SETTING_KEYS.revision, expectedRevision)]),
@@ -448,6 +451,7 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
     deleteMissing(db, 'sources', converted.rows.sources.map((row) => row.id)),
     ...converted.rows.sources.map((row) => sourceInsert(db, row)),
     ...converted.rows.nodes.map((row) => nodeInsert(db, row)),
+    db.prepare('DELETE FROM subscription_nodes WHERE NOT EXISTS (SELECT 1 FROM nodes WHERE id = subscription_nodes.node_id)'),
     ...converted.rows.node_raw_variants.map((row) => variantInsert(db, row)),
     ...converted.rows.groups.map((row) => groupInsert(db, row)),
     ...snapshot.sources.filter((row) => row.sync).map((row) =>

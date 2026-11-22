@@ -73,7 +73,14 @@ async function importCatalog(env: DataEnv, now: string): Promise<MigrationReport
     throw new MigrationError('MIGRATION_SOURCE_INVALID', 'Catalog 快照无法读取')
   }
   const converted = convertCatalog(snapshot)
-  await persistCatalogSnapshot(env.DB, snapshot)
+  try {
+    await persistCatalogSnapshot(env.DB, snapshot)
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
+      throw new MigrationError('MIGRATION_VERIFY_FAILED', 'D1 已包含节点分配或订阅模板，不能用旧 KV 快照覆盖')
+    }
+    throw error
+  }
   let stored
   try {
     stored = await readCatalogFromD1(env.DB)
@@ -146,8 +153,9 @@ async function importDelivery(env: DataEnv, now: string): Promise<MigrationRepor
   } catch {
     throw new MigrationError('MIGRATION_SOURCE_INVALID', '订阅快照无法读取')
   }
-  if ((await readDeliveryFromD1(env.DB)).subscriptions.some(subscription => subscription.planId)) {
-    throw new MigrationError('MIGRATION_VERIFY_FAILED', 'D1 已包含订阅计划，不能用旧 KV 快照覆盖')
+  if ((await readDeliveryFromD1(env.DB)).subscriptions.some(subscription =>
+    subscription.planId || subscription.templateVersionId || subscription.nodeIds?.length)) {
+    throw new MigrationError('MIGRATION_VERIFY_FAILED', 'D1 已包含订阅计划、模板来源或指定节点，不能用旧 KV 快照覆盖')
   }
   const converted = convertDelivery(snapshot)
   const accounts = await readAccounts(env)

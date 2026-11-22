@@ -20,8 +20,8 @@ import { readCatalog, writeCatalog } from './repository.js'
 import { RemoteFetchError } from './remote.js'
 import { detectImport } from '../import/detect.js'
 import type { Subscription } from '../delivery/schema.js'
-import { compiledKey, readDelivery } from '../delivery/repository.js'
-import { removeGroupReference } from '../delivery/service.js'
+import { readDelivery } from '../delivery/repository.js'
+import { countTemplateGroupReferences } from '../delivery/entitlement-templates.js'
 
 import { CLIENT_IDS, prepareClientRender, renderClient } from '../renderers/index.js'
 import { previewCatalogEntitlement, selectedNodes } from '../delivery/compiler.js'
@@ -266,9 +266,13 @@ function affectedGroupSubscriptions(
 ) {
   const planById = new Map(plans.map((plan) => [plan.id, plan]))
   return subscriptions.filter((subscription) => {
-    const plan = subscription.planId ? planById.get(subscription.planId) : undefined
-    if (!subscription.groupIds.includes(groupId) || !plan?.groupIds.includes(groupId)) return false
-    const intersection = { ...subscription, groupIds: subscription.groupIds.filter((id) => plan.groupIds.includes(id)) }
+    if (!subscription.groupIds.includes(groupId)) return false
+    const plan = subscription.planId && subscription.userId !== null ? planById.get(subscription.planId) : undefined
+    if (subscription.planId && subscription.userId !== null && !plan?.groupIds.includes(groupId)) return false
+    const intersection = {
+      groupIds: plan ? subscription.groupIds.filter((id) => plan.groupIds.includes(id)) : subscription.groupIds,
+      nodeIds: subscription.planId ? undefined : subscription.nodeIds,
+    }
     const oldIds = selectedNodes(before, intersection).map(({ id }) => id)
     const newIds = selectedNodes(after, intersection).map(({ id }) => id)
     return oldIds.length !== newIds.length || oldIds.some((id, index) => id !== newIds[index])
@@ -373,18 +377,6 @@ catalogRoutes.post('/groups/preview', async (c) => {
   })
 })
 
-async function invalidateGroupSubscriptions(env: AppEnv['Bindings'], id: string, before: CatalogSnapshot, after: CatalogSnapshot) {
-  try {
-    const [delivery, plans] = await Promise.all([readDelivery(env), listPlans(env.DB)])
-    for (const sub of affectedGroupSubscriptions(before, after, id, delivery.subscriptions, plans)) {
-      await Promise.all(CLIENT_IDS.map((client) => env.DATA.delete(compiledKey(sub.tokenHash, client))))
-    }
-    return undefined
-  } catch {
-    return '分组已保存，订阅缓存未能清理'
-  }
-}
-
 catalogRoutes.post('/groups', async (c) => {
   const input = await readJson(c, groupInputSchema)
   const snapshot = await readCatalog(c.env)
@@ -415,10 +407,7 @@ catalogRoutes.put('/groups/:groupId', async (c) => {
   const candidate = { ...snapshot, groups: snapshot.groups.map((group) => group.id === id.data ? updated : group) }
   if (!catalogSnapshotSchema.safeParse(candidate).success) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
   const saved = await writeCatalog(c.env, candidate, updated.updatedAt)
-  const before = resolveGroupNodes(snapshot, id.data).map(({ id }) => id)
-  const after = resolveGroupNodes(saved, id.data).map(({ id }) => id)
-  const warning = JSON.stringify(before) === JSON.stringify(after) ? undefined : await invalidateGroupSubscriptions(c.env, id.data, snapshot, saved)
-  return c.json({ group: saved.groups.find(({ id: groupId }) => groupId === id.data), ...(warning ? { warning } : {}) })
+  return c.json({ group: saved.groups.find(({ id: groupId }) => groupId === id.data) })
 })
 
 catalogRoutes.delete('/groups/:groupId', async (c) => {
@@ -426,14 +415,16 @@ catalogRoutes.delete('/groups/:groupId', async (c) => {
   if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   const snapshot = await readCatalog(c.env)
   if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
-  const [delivery, plans] = await Promise.all([readDelivery(c.env), listPlans(c.env.DB)])
-  const now = Date.now()
-  if (plans.some((plan) => plan.enabled && plan.groupIds.includes(id.data)) ||
-    delivery.subscriptions.some((sub) => sub.enabled &&
-      (sub.expiresAt === null || sub.expiresAt > now) && sub.groupIds.includes(id.data))) {
-    throw apiError(409, 'GROUP_IN_USE', '请先在计划和订阅中更换或移除此分组')
+  const [delivery, plans, templates] = await Promise.all([
+    readDelivery(c.env), listPlans(c.env.DB), countTemplateGroupReferences(c.env.DB, id.data),
+  ])
+  const subscriptions = delivery.subscriptions.filter((sub) => sub.groupIds.includes(id.data)).length
+  const activePlans = plans.filter((plan) => plan.enabled && plan.groupIds.includes(id.data)).length
+  if (subscriptions || templates || activePlans) {
+    throw apiError(409, 'GROUP_IN_USE', `分组仍被 ${subscriptions} 个订阅、${templates} 个订阅模板和 ${activePlans} 个启用计划引用，请先更换或移除引用`, {
+      subscriptions, templates, activePlans,
+    })
   }
   await writeCatalog(c.env, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })
-  await removeGroupReference(c.env, id.data)
   return c.body(null, 204)
 })

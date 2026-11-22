@@ -1,3 +1,4 @@
+import subscriptionV2P2Sql from '../../../migrations/0022_subscription_v2_p2.sql?raw'
 import subscriptionV2Sql from '../../../migrations/0021_subscription_v2_p1.sql?raw'
 import conversionProfilesSql from '../../../migrations/0020_conversion_profiles.sql?raw'
 import catalogSyncSql from '../../../migrations/0019_catalog_sync.sql?raw'
@@ -39,6 +40,8 @@ export const D1_TABLES = [
   'cron_runs',
   'email_change_requests',
   'email_verifications',
+  'entitlement_template_versions',
+  'entitlement_templates',
   'group_node_order',
   'group_nodes',
   'group_sources',
@@ -64,10 +67,12 @@ export const D1_TABLES = [
   'subscription_creation',
   'subscription_domains',
   'subscription_groups',
+  'subscription_nodes',
   'subscription_plan_migration',
   'subscription_platform_settings',
   'subscription_template_bindings',
   'subscription_template_default',
+  'subscription_template_origins',
   'subscription_template_versions',
   'subscription_templates',
   'subscriptions',
@@ -246,6 +251,10 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0019_catalog_sync.sql', queries: splitSqlStatements(catalogSyncSql) },
     conversionProfilesMigration,
     { name: '0021_subscription_v2_p1.sql', queries: splitSqlStatements(subscriptionV2Sql) },
+    { name: '0022_subscription_v2_p2.sql', queries: [
+      ...splitSqlStatements(subscriptionV2P2Sql.replace(triggerPattern, '')),
+      ...(subscriptionV2P2Sql.match(triggerPattern) ?? []),
+    ] },
   ])
 }
 
