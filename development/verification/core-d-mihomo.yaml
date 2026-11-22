@@ -1,0 +1,53 @@
+mode: rule
+proxies:
+  - name: 亚太 · 东京中继
+    type: ss
+    server: tokyo.example
+    port: 8388
+    cipher: aes-128-gcm
+    password: sample-password
+  - name: 亚太 · 新加坡中继
+    type: ss
+    server: singapore.example
+    port: 8388
+    cipher: aes-128-gcm
+    password: sample-password
+dns:
+  enable: true
+  nameserver:
+    - https://1.1.1.1/dns-query
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - Fast
+      - Backup
+      - Balance
+      - DIRECT
+  - url: https://www.gstatic.com/generate_204
+    interval: 300
+    name: Fast
+    type: url-test
+    tolerance: 50
+    proxies:
+      - 亚太 · 东京中继
+      - 亚太 · 新加坡中继
+  - url: https://www.gstatic.com/generate_204
+    interval: 300
+    name: Backup
+    type: fallback
+    proxies:
+      - 亚太 · 东京中继
+      - 亚太 · 新加坡中继
+  - url: https://www.gstatic.com/generate_204
+    interval: 300
+    name: Balance
+    type: load-balance
+    strategy: round-robin
+    proxies:
+      - 亚太 · 东京中继
+      - 亚太 · 新加坡中继
+rules:
+  - DOMAIN-SUFFIX,example.org,DIRECT
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - MATCH,Proxy
