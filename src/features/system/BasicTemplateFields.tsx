@@ -28,7 +28,7 @@ export function BasicTemplateFields({ yaml, onChange, disabled }: { yaml: string
   useEffect(() => {
     const abort = new AbortController()
     void api<RuleLibraryResponse>(`${subscriptionTemplatesPath}/rule-sources`, { signal: abort.signal })
-      .then(result => setLibrary({ ...result, sources: result.sources.filter(source => source.version && !source.error_code) }))
+      .then(result => setLibrary({ ...result, sources: result.sources.filter(source => source.version && !source.error_code && !source.nativeSingbox) }))
       .catch(() => { /* The full rule library reports fetch errors. */ })
     return () => abort.abort()
   }, [])

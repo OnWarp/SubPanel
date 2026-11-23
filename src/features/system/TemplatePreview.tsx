@@ -16,7 +16,7 @@ const reasons: Record<TemplateZeroNodeReason, string> = {
   noPlan: '订阅没有可用计划',
   noGroupIntersection: '订阅与计划的分组没有交集',
   noEnabledNodes: '授权分组没有启用的节点',
-  incompatible: '授权节点与 Mihomo 不兼容',
+  incompatible: '授权节点与所选平台不兼容',
 }
 
 export function TemplateDiagnostics({ diagnostics, ignored }: { diagnostics: Diagnostic[]; ignored: string[] }) {
@@ -67,7 +67,7 @@ export function TemplatePreview({ value, onChange, onPreview, pending, result, s
     <FormField label="目标平台" htmlFor="template-platform">
       <FormSelect id="template-platform" value={platform} onChange={event => onPlatform(event.currentTarget.value)}>
         <option value="mihomo">Mihomo · 完整规则配置</option>
-        <option value="singbox">sing-box · 完整规则配置</option>
+        <option value="singbox">sing-box 1.14 · 完整规则配置</option>
         <option value="surge">Surge · 仅节点订阅</option>
         <option value="loon">Loon · 仅节点订阅</option>
         <option value="quantumultx">Quantumult X · 仅节点订阅</option>
@@ -107,9 +107,8 @@ function PreviewResult({ result }: { result: TemplatePreviewResponse }) {
   }, { lineWidth: 0 }), [groups, rules, ruleProviders, providers.length])
 
   return <div className="form-stack template-preview-result">
-    {result.diagnostics.some(item => item.severity === 'error')
-      ? <TemplateDiagnostics diagnostics={result.diagnostics} ignored={result.ignored} />
-      : <StatusMessage tone="success">配置预览已生成</StatusMessage>}
+    {!result.diagnostics.some(item => item.severity === 'error') && <StatusMessage tone="success">配置预览已生成</StatusMessage>}
+    <TemplateDiagnostics diagnostics={result.diagnostics} ignored={result.ignored} />
     <p>输入 {result.inputNodes ?? 0} · 授权 {result.authorizedNodes ?? 0} · 输出 {outputNodes ?? '—'} · 跳过 {result.skippedNodes ?? 0}</p>
     <p>配置版本 {result.effectiveVersionId ?? (result.draftRevision ? `草稿修订 ${result.draftRevision}` : '基础配置')} · 渲染器 {result.rendererVersion ?? '—'}</p>
     {result.summary && <p>输出摘要 {result.summary.bytes} 字节 · {result.summary.groups} 个策略组 · {result.summary.rules} 条规则</p>}

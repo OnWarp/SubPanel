@@ -17,7 +17,7 @@ const changed=base.replace(' - MATCH,Proxy',' - IP-CIDR,192.168.0.0/16,DIRECT,no
 const node={id:'nod_1',displayName:'A',enabled:true,protocol:'trojan',server:'secret.example',port:443,credentials:{password:'secret'},rawVariants:[],tls:{},transport:{},plugin:{},extensions:{}} as RenderNode
 beforeEach(()=>{
  const sqlite=new DatabaseSync(':memory:')
- for (const file of ['0001_init.sql', '0015_subscription_templates.sql', '0017_template_enhancements.sql']) {
+ for (const file of ['0001_init.sql', '0015_subscription_templates.sql', '0017_template_enhancements.sql', '0020_conversion_profiles.sql']) {
   sqlite.exec(readFileSync(`migrations/${file}`,'utf8'))
  }
  const prepare=(sql:string)=>{

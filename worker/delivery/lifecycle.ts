@@ -155,6 +155,7 @@ export async function classifySubscription(
   snapshot?: AccessSnapshot,
   template?: Template,
   templateInvalid = false,
+  singboxFull = false,
 ) {
   const access = await resolveEntitlement(env, subscription, now, snapshot)
   const results = new Map<RenderClient, Promise<number>>()
@@ -162,7 +163,7 @@ export async function classifySubscription(
     const existing = results.get(client)
     if (existing) return existing
     const result = prepareSubscriptionRender(client, access.nodes, access.speed)
-      .then((prepared) => client === 'mihomo' && templateInvalid ? 0 : prepared.render(template).outputNodes)
+      .then((prepared) => client === 'mihomo' && templateInvalid ? 0 : prepared.render(client === 'mihomo' ? template : undefined).outputNodes)
       .catch(() => 0)
     results.set(client, result)
     return result
@@ -172,11 +173,12 @@ export async function classifySubscription(
     Promise.all(SUBSCRIPTION_LINK_PLATFORMS.map(async ({ platform, displayName }): Promise<SubscriptionFormatReport> => {
       const client = PLATFORM_RENDER[platform] ?? 'generic'
       const outputNodes = await outputFor(client)
-      const capability = FULL_RULE_PLATFORMS.has(platform) ? 'full' : 'nodes'
+      const capability = (FULL_RULE_PLATFORMS.has(platform) || (client === 'singbox' && singboxFull)) ? 'full' : 'nodes'
       const compatible = outputNodes > 0
       const note = !compatible
         ? client === 'mihomo' && templateInvalid ? '已发布配置校验失败' : '当前格式没有可用节点'
-        : platform === 'auto' ? AUTO_NOTE
+        : platform === 'auto' ? singboxFull ? '识别到 Mihomo 或 sing-box 时输出完整规则配置，识别失败回退为通用节点列表' : AUTO_NOTE
+          : client === 'singbox' && singboxFull ? '适用于 sing-box 1.14'
           : FULL_RULE_PLATFORMS.has(platform) ? '导入后请检查客户端是否使用规则模式，部分客户端会保留本地模式设置' : null
       return {
         platform, displayName, capability, compatible, outputNodes, note,

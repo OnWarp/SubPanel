@@ -30,6 +30,7 @@ const routes = [
 let mode = 'ready'
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ baseURL })
+await page.clock.setFixedTime(now)
 await page.route('**/api/**', async (route) => {
   const path = new URL(route.request().url()).pathname
   if (mode === 'slow' && (path === '/api/account/subscriptions' || path === '/api/user/nodes')) {

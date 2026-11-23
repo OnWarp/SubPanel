@@ -56,7 +56,20 @@ const providerSchema = z.object({
 }).strict()
 
 const templateSchema = z.object({
-  subpanel: z.object({ nodes: nodeLayer.optional(), client: mihomoClientLayer.optional() }).strict().optional(),
+  subpanel: z.object({ nodes: nodeLayer.optional(), client: mihomoClientLayer.optional(), singbox: z.object({
+    fakeIp: z.boolean().optional(), sniff: z.boolean().optional(), autoDetectInterface: z.boolean().optional(),
+    dnsRules: z.array(z.object({
+      domainSuffix: z.string().refine(value => validRuleValue('DOMAIN-SUFFIX', value)),
+      resolver: z.enum(['local', 'remote']),
+    }).strict()).max(100).optional(),
+    localRuleSets: z.array(z.object({
+      name: z.string().min(1).max(80), outbound: z.string().min(1).max(128),
+    }).strict()).max(10).optional(),
+    remoteRuleSets: z.array(z.object({
+      name: z.string().min(1).max(80), outbound: z.string().min(1).max(128),
+      url: z.string().max(2048).refine(isHttpsTemplateUrl),
+    }).strict()).max(10).optional(),
+  }).strict().optional() }).strict().optional(),
   'proxy-groups': z.array(groupSchema).min(1).max(MAX_GROUPS),
   rules: z.array(z.string().min(1)).min(1).max(MAX_RULES),
   'rule-providers': z.record(z.string().regex(/^[^,\s\p{Cc}]{1,100}$/u), providerSchema)

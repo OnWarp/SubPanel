@@ -5,7 +5,9 @@
         "tag": "remote-dns",
         "type": "https",
         "server": "1.1.1.1",
+        "server_port": 443,
         "path": "/dns-query",
+        "domain_resolver": "local-dns",
         "detour": "Proxy"
       },
       {
@@ -13,31 +15,70 @@
         "type": "udp",
         "server": "223.5.5.5",
         "detour": "direct"
+      },
+      {
+        "tag": "fakeip",
+        "type": "fakeip",
+        "inet4_range": "198.18.0.0/15",
+        "inet6_range": "2001:2::/48"
       }
     ],
-    "rules": [],
+    "rules": [
+      {
+        "domain_suffix": [
+          "local.example"
+        ],
+        "action": "route",
+        "server": "local-dns"
+      },
+      {
+        "query_type": [
+          "A",
+          "AAAA"
+        ],
+        "action": "route",
+        "server": "fakeip"
+      }
+    ],
+    "final": "remote-dns",
     "strategy": "prefer_ipv4"
   },
   "route": {
     "auto_detect_interface": true,
-    "default_domain_resolver": "remote-dns",
+    "default_domain_resolver": "local-dns",
     "final": "Proxy",
     "rules": [
       {
+        "action": "sniff"
+      },
+      {
         "protocol": "dns",
         "action": "hijack-dns"
+      },
+      {
+        "rule_set": [
+          "本地分流"
+        ],
+        "outbound": "direct"
       },
       {
         "domain_suffix": [
           "example.org"
         ],
         "outbound": "direct"
-      },
+      }
+    ],
+    "rule_set": [
       {
-        "ip_cidr": [
-          "192.168.0.0/16"
-        ],
-        "outbound": "direct"
+        "type": "inline",
+        "tag": "本地分流",
+        "rules": [
+          {
+            "domain": [
+              "local.example"
+            ]
+          }
+        ]
       }
     ]
   },
@@ -57,50 +98,50 @@
       "type": "urltest",
       "tag": "Fast",
       "outbounds": [
-        "亚太 · 东京中继",
-        "亚太 · 新加坡中继"
+        "东京示例",
+        "新加坡示例"
       ],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "300s",
+      "url": "https://cp.cloudflare.com/generate_204",
+      "interval": "10m",
       "tolerance": 50
     },
     {
       "type": "urltest",
       "tag": "Backup",
       "outbounds": [
-        "亚太 · 东京中继",
-        "亚太 · 新加坡中继"
+        "东京示例",
+        "新加坡示例"
       ],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "300s",
+      "url": "https://cp.cloudflare.com/generate_204",
+      "interval": "10m",
       "tolerance": 0
     },
     {
       "type": "urltest",
       "tag": "Balance",
       "outbounds": [
-        "亚太 · 东京中继",
-        "亚太 · 新加坡中继"
+        "东京示例",
+        "新加坡示例"
       ],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "300s",
+      "url": "https://cp.cloudflare.com/generate_204",
+      "interval": "10m",
       "tolerance": 50
     },
     {
       "type": "shadowsocks",
-      "tag": "亚太 · 东京中继",
+      "tag": "东京示例",
       "server": "tokyo.example",
       "server_port": 8388,
       "method": "aes-128-gcm",
-      "password": "sample-password"
+      "password": "synthetic-password"
     },
     {
       "type": "shadowsocks",
-      "tag": "亚太 · 新加坡中继",
+      "tag": "新加坡示例",
       "server": "singapore.example",
       "server_port": 8388,
       "method": "aes-128-gcm",
-      "password": "sample-password"
+      "password": "synthetic-password"
     },
     {
       "type": "direct",

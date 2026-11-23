@@ -14,6 +14,7 @@ export type RuleSource = {
   version: string | null
   last_success_at: string | null
   error_code: string | null
+  nativeSingbox?: boolean
 }
 
 export type LocalRuleSet = { name: string; rules: string[]; revision: number; updated_at: string }
@@ -91,13 +92,14 @@ export function RuleLibrary() {
             </FormSelect>
           </FormField>
           <p>支持 raw.githubusercontent.com 和 cdn.jsdelivr.net 的公开文件</p>
+          <p>验证 sing-box 原生规则集时，使用固定 GitHub 提交的 JSON 地址，并选择经典规则和文本</p>
           <div><button className="button secondary" disabled={busy} type="submit">{busy ? '正在抓取' : '单次抓取'}</button></div>
         </form>
         {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
         {error && <StatusMessage tone="error">{error}</StatusMessage>}
         {library.sources.map(source => <details key={JSON.stringify([source.url, source.behavior, source.format])}>
           <summary>{source.url}</summary>
-          <p>{source.behavior} · {source.format} · {source.version ? `版本 ${source.version.slice(0, 12)}` : '待验证'}</p>
+          <p>{source.nativeSingbox ? 'sing-box JSON' : `${source.behavior} · ${source.format}`} · {source.version ? `版本 ${source.version.slice(0, 12)}` : '待验证'}</p>
           <p>{source.last_success_at ? `最后成功 ${templateDate(source.last_success_at)}` : '暂无成功记录'}{source.error_code ? ` · ${source.error_code}` : ''}</p>
           <button className="button secondary" type="button" onClick={() => {
             setUrl(source.url); setBehavior(source.behavior); setFormat(source.format)

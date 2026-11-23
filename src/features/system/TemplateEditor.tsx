@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { useBlocker, useSearchParams } from 'react-router-dom'
 import {
   api, peekApi, watchApi, ApiClientError, jsonBody, subscriptionTemplatesPath as ROOT,
   type Diagnostic, type TemplateDetailResponse, type TemplateDraftUpdate, type TemplateDraftWrite,
@@ -52,7 +52,8 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
   const [imported, setImported] = useState<Validation>()
   const [notice, setNotice] = useState('')
   const [subscription, setSubscription] = useState(initialSubscription ?? '')
-  const [platform, setPlatform] = useState('mihomo')
+  const [params] = useSearchParams()
+  const [platform, setPlatform] = useState(params.get('platform') === 'singbox' ? 'singbox' : 'mihomo')
   const [sample, setSample] = useState(false)
   const [editorMode, setEditorMode] = useState('advanced')
   const [publishedYaml, setPublishedYaml] = useState('')
@@ -68,6 +69,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [publishConfirm, setPublishConfirm] = useState(false)
+  const [publishSingbox, setPublishSingbox] = useState(false)
   const previewRequest = useRef<AbortController | null>(null)
   const bypass = useRef(false)
   const toast = useToast()
@@ -247,6 +249,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
         `${path}/versions/${encodeURIComponent(latest.publishedVersionId)}`,
       ) : null
       setPublishedYaml(previous?.yaml ?? '')
+      setPublishSingbox(Boolean(latest.singboxPublished))
       setDetail(latest)
       setPublishConfirm(true)
     })
@@ -260,9 +263,10 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
           expectedRevision: detail.revision,
           draftHash: detail.draftHash,
           ignoredAcknowledged: validation.ignored.length > 0,
+          singbox: publishSingbox,
         }),
       })
-      setDetail({ ...detail, status: 'published', revision: result.revision, publishedVersionId: result.versionId, references: result.references })
+      setDetail({ ...detail, status: 'published', revision: result.revision, publishedVersionId: result.versionId, singboxPublished: result.singboxPublished, references: result.references })
       setPublishConfirm(false)
       setVerificationVersion(result.versionId)
       toast.notify(`已发布 v${result.sequence}，可选择订阅验证发布版本`)
@@ -349,6 +353,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
       <div className="form-stack">
         <p>发布「{detail?.name}」的草稿修订 {detail?.revision}，将影响 {detail ? referenceCount(detail.references) : 0} 条订阅</p>
         <p>如需先灰度，可复制配置并仅将副本绑定到测试订阅</p>
+        <label><input type="checkbox" checked={publishSingbox} onChange={event => setPublishSingbox(event.currentTarget.checked)} /> 同时发布 sing-box 1.14 完整规则配置</label>
         <TemplateDiff previous={publishedYaml} draft={yaml} />
         {validation && validation.ignored.length > 0 && <p>发布将忽略以下字段，请确认：{validation.ignored.join('、')}</p>}
         {publishConfirm && error && <StatusMessage tone="error">{error}</StatusMessage>}

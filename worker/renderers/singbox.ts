@@ -1,4 +1,4 @@
-import type { Template } from '../templates/validation.js'
+import type { Diagnostic, Template } from '../templates/validation.js'
 import { TemplateValidationError } from '../templates/validation.js'
 import type { RenderDiagnostic, RenderNode } from './model.js'
 
@@ -21,7 +21,8 @@ export const SINGBOX_SUPPORTED_PROTOCOLS = [
 ] as const
 
 function text(value: unknown): string | undefined {
-  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   return undefined
 }
 
@@ -30,14 +31,13 @@ function bool(value: unknown): boolean | undefined {
 }
 
 function integer(value: unknown): number | undefined {
-  const parsed = Number.parseInt(String(value), 10)
-  return Number.isFinite(parsed) ? parsed : undefined
+  const result = Number(value)
+  return Number.isInteger(result) && result >= 0 ? result : undefined
 }
 
 function duration(value: unknown): string | undefined {
-  if (typeof value === 'string' && /^\d+(?:[smh]|ms)$/u.test(value.trim())) return value.trim()
-  const seconds = integer(value)
-  return seconds !== undefined && seconds > 0 ? `${seconds}s` : undefined
+  const result = text(value)
+  return result && /^\d+(?:\.\d+)?$/u.test(result) ? `${result}s` : result
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -134,14 +134,6 @@ export function singboxOutbound(node: RenderNode, customTag?: string): Record<st
   } else if (node.protocol === 'http' || node.protocol === 'https' || node.protocol === 'socks5') {
     result.username = c.username
     result.password = c.password
-  } else if (node.protocol === 'wireguard') {
-    result.private_key = c.privateKey
-    result.peer_public_key = c.publicKey
-    result.pre_shared_key = c.preSharedKey
-    const localAddress = node.extensions.localAddress ?? node.extensions.ip
-    result.local_address = Array.isArray(localAddress) ? localAddress : localAddress !== undefined ? [localAddress] : undefined
-    result.mtu = node.extensions.mtu
-    result.reserved = node.extensions.reserved
   } else if (node.protocol === 'hysteria') {
     result.auth_str = c.password
   } else {
@@ -176,6 +168,7 @@ export type SingBoxCompileResult = {
   config: Record<string, unknown>
   json: string
   diagnostics: RenderDiagnostic[]
+  policyDiagnostics: Diagnostic[]
   outputNodes: number
   skippedNodes: number
 }
@@ -185,7 +178,7 @@ function checkRequiredNodeFields(node: RenderNode): string[] {
   const required: string[] = []
   const requireFields = (...names: string[]) => {
     for (const name of names) {
-      if (text(c[name]) === undefined) required.push(`credentials.${name}`)
+      if (typeof c[name] !== 'string' || !c[name].trim()) required.push(`credentials.${name}`)
     }
   }
   if (node.protocol === 'shadowsocks' || node.protocol === 'ss2022') requireFields('method', 'password')
@@ -199,9 +192,13 @@ function checkRequiredNodeFields(node: RenderNode): string[] {
 export function compileSingBoxConfig(
   template: Template | undefined,
   nodes: RenderNode[],
-  options?: { targetVersion?: string },
+  options?: { targetVersion?: string; ruleSets?: Record<string, unknown>[] },
 ): SingBoxCompileResult {
   const targetVersion = options?.targetVersion ?? TARGET_SINGBOX_VERSION
+  const fail = (code: string, path: string, message: string): never => {
+    throw new TemplateValidationError([{ code, path, severity: 'error', message }])
+  }
+  if (targetVersion !== TARGET_SINGBOX_VERSION) fail('INVALID_TARGET_VERSION', 'targetVersion', '仅支持 sing-box 1.14')
   const supportedProtocols = new Set<string>(SINGBOX_SUPPORTED_PROTOCOLS)
 
   const enabledNodes = nodes.filter((node) => node.enabled)
@@ -246,10 +243,11 @@ export function compileSingBoxConfig(
           nodeName: node.displayName,
           protocol: node.protocol,
           code: 'UNSUPPORTED_FIELD',
-          outcome: 'included',
+          outcome: 'skipped',
           fields: unsupported,
-          message: `节点包含 sing-box 未使用的扩展字段：${unsupported.join(', ')}`,
+          message: `sing-box 不支持这些节点扩展字段：${unsupported.join(', ')}`,
         })
+        continue
       }
     }
 
@@ -261,6 +259,9 @@ export function compileSingBoxConfig(
 
   // If no template is provided, generate base configuration
   const groupNames = template ? template['proxy-groups'].map((g) => g.name) : ['Proxy']
+  if (groupNames.some(name => name === 'direct' || name === 'block')) {
+    fail('INVALID_GROUP_REFERENCE', 'proxy-groups', '策略组名称与 sing-box 保留出站冲突')
+  }
   const reserved = new Set([...RESERVED_SINGBOX_TAGS, ...groupNames])
 
   // Disambiguate node tags
@@ -284,6 +285,7 @@ export function compileSingBoxConfig(
 
   // Build policy group outbounds
   const policyOutbounds: Record<string, unknown>[] = []
+  const policyDiagnostics: Diagnostic[] = []
   if (template) {
     for (const group of template['proxy-groups']) {
       const members: string[] = []
@@ -318,7 +320,12 @@ export function compileSingBoxConfig(
           outbounds,
           default: outbounds[0],
         })
-      } else if (group.type === 'url-test' || group.type === 'fallback' || group.type === 'load-balance') {
+      } else {
+        if (group.type !== 'url-test') policyDiagnostics.push({
+          code: 'SINGBOX_POLICY_ADAPTED', severity: 'warning', path: `proxy-groups.${group.name}`,
+          message: group.type === 'fallback' ? 'sing-box 使用延迟测速切换，组成员不按顺序故障转移'
+            : 'sing-box 使用延迟测速选出单一出站，流量不会分摊到多个成员',
+        })
         policyOutbounds.push({
           type: 'urltest',
           tag: group.name,
@@ -368,9 +375,15 @@ export function compileSingBoxConfig(
   }
 
   // Build route.rules & route.final
+  const settings = template?.subpanel?.singbox
   const routeRules: Record<string, unknown>[] = [
+    ...(settings?.sniff === false ? [] : [{ action: 'sniff' }]),
     { protocol: 'dns', action: 'hijack-dns' },
   ]
+  for (const { name, outbound } of [...(settings?.localRuleSets ?? []), ...(settings?.remoteRuleSets ?? [])]) {
+    if (!options?.ruleSets?.some(set => set.tag === name)) fail('RULE_SET_UNVERIFIED', 'subpanel.singbox', '请先在规则库保存或验证规则集')
+    routeRules.push({ rule_set: [name], outbound: mapTarget(outbound, name) })
+  }
   let finalTag = primaryGroupTag
 
   if (template?.rules) {
@@ -399,20 +412,23 @@ export function compileSingBoxConfig(
           routeRules.push({ domain: [payload], outbound: target })
         } else if (type === 'IP-CIDR' || type === 'IP-CIDR6') {
           routeRules.push({ ip_cidr: [payload], outbound: target })
-        } else if (type === 'GEOIP') {
-          routeRules.push({ geoip: [payload.toLowerCase()], outbound: target })
         } else if (type === 'RULE-SET') {
           routeRules.push({ rule_set: [payload], outbound: target })
         } else if (type === 'SRC-IP-CIDR') {
           routeRules.push({ source_ip_cidr: [payload], outbound: target })
-        } else if (type === 'DST-PORT') {
-          const port = Number(payload)
-          if (Number.isFinite(port)) routeRules.push({ port: [port], outbound: target })
-        } else if (type === 'SRC-PORT') {
-          const port = Number(payload)
-          if (Number.isFinite(port)) routeRules.push({ source_port: [port], outbound: target })
-        } else if (type === 'PROCESS-NAME') {
-          routeRules.push({ process_name: [payload], outbound: target })
+        } else if (type === 'DST-PORT' || type === 'SRC-PORT') {
+          const field = type === 'DST-PORT' ? 'port' : 'source_port'
+          const parts = payload.replace(/^\[|\]$/gu, '').split('/')
+          const ports = parts.filter(part => !part.includes('-')).map(Number)
+          const ranges = parts.filter(part => part.includes('-')).map(part => part.replace('-', ':'))
+          routeRules.push({ ...(ports.length && { [field]: ports }),
+            ...(ranges.length && { [`${field}_range`]: ranges }), outbound: target })
+        } else if (type === 'PROCESS-NAME' || type === 'PROCESS-PATH') {
+          routeRules.push({ [type === 'PROCESS-NAME' ? 'process_name' : 'process_path']: [payload], outbound: target })
+        } else if (type === 'NETWORK') {
+          routeRules.push({ network: [payload.toLowerCase()], outbound: target })
+        } else {
+          fail('UNSUPPORTED_RULE', 'rules', `sing-box 1.14 无法转换 ${type}，请改用规则集或显式匹配条件`)
         }
       }
     }
@@ -423,18 +439,10 @@ export function compileSingBoxConfig(
     })
   }
 
-  // Build rule_set
-  const ruleSets: Record<string, unknown>[] = []
-  if (template?.['rule-providers']) {
-    for (const [name, provider] of Object.entries(template['rule-providers'])) {
-      const isBinary = provider.format === 'mrs' || provider.url.endsWith('.srs')
-      ruleSets.push({
-        type: 'remote',
-        tag: name,
-        format: isBinary ? 'binary' : 'source',
-        url: provider.url,
-        download_detour: primaryGroupTag,
-      })
+  const ruleSets = options?.ruleSets ?? []
+  for (const rule of routeRules) {
+    if (Array.isArray(rule.rule_set) && !rule.rule_set.every(tag => ruleSets.some(set => set.tag === tag))) {
+      fail('RULE_SET_UNVERIFIED', 'rules', '请先在规则库验证引用的规则集')
     }
   }
 
@@ -456,40 +464,44 @@ export function compileSingBoxConfig(
   ]
 
   // Optional custom DNS nameserver from subpanel.client.dns
-  const customNameserver = template?.subpanel?.client?.dns?.nameserver?.[0]
+  const customNameserver = template?.subpanel?.client?.dns?.enable
+    ? template.subpanel.client.dns.nameserver?.[0] : undefined
   if (customNameserver) {
-    if (customNameserver.startsWith('https://')) {
-      try {
-        const u = new URL(customNameserver)
-        dnsServers[0] = {
-          tag: 'remote-dns',
-          type: 'https',
-          server: u.hostname,
-          path: u.pathname || '/dns-query',
-          detour: primaryGroupTag,
-        }
-      } catch {
-        // keep default
-      }
-    } else if (customNameserver.includes('.') || customNameserver.includes(':')) {
+    const url = URL.canParse(customNameserver) ? new URL(customNameserver) : null
+    if (url?.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) {
       dnsServers[0] = {
-        tag: 'remote-dns',
-        type: 'udp',
-        server: customNameserver,
-        detour: primaryGroupTag,
+        tag: 'remote-dns', type: 'https', server: url.hostname.replace(/^\[|\]$/gu, ''),
+        server_port: url.port ? Number(url.port) : 443, path: url.pathname,
+        domain_resolver: 'local-dns', detour: primaryGroupTag,
       }
+    } else if (/^[a-z0-9.-]+$/iu.test(customNameserver)) {
+      dnsServers[0] = {
+        tag: 'remote-dns', type: 'udp', server: customNameserver,
+        domain_resolver: 'local-dns', detour: primaryGroupTag,
+      }
+    } else {
+      fail('UNSUPPORTED_DNS', 'subpanel.client.dns.nameserver', 'sing-box DNS 需要 HTTPS 地址或 UDP 主机名')
     }
   }
 
-  const dns: Record<string, unknown> = {
+  if (settings?.fakeIp) dnsServers.push({
+    tag: 'fakeip', type: 'fakeip', inet4_range: '198.18.0.0/15', inet6_range: '2001:2::/48',
+  })
+  const dns = {
     servers: dnsServers,
-    rules: [],
+    rules: [
+      ...(settings?.dnsRules ?? []).map(({ domainSuffix, resolver }) => ({
+        domain_suffix: [domainSuffix], action: 'route', server: `${resolver}-dns`,
+      })),
+      ...(settings?.fakeIp ? [{ query_type: ['A', 'AAAA'], action: 'route', server: 'fakeip' }] : []),
+    ],
+    final: 'remote-dns',
     strategy: 'prefer_ipv4',
   }
 
   const route: Record<string, unknown> = {
-    auto_detect_interface: true,
-    default_domain_resolver: 'remote-dns',
+    auto_detect_interface: settings?.autoDetectInterface ?? true,
+    default_domain_resolver: 'local-dns',
     final: finalTag,
     rules: routeRules,
   }
@@ -509,6 +521,7 @@ export function compileSingBoxConfig(
     config,
     json,
     diagnostics,
+    policyDiagnostics,
     outputNodes,
     skippedNodes,
   }

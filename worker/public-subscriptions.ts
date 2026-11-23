@@ -101,7 +101,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       statusCode = 404
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
-    if (!artifact.available && (client === 'mihomo' || client === 'singbox' || artifact.inputNodes > 0)) {
+    if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
       statusCode = 422
       throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: artifact.zeroNodeReason })
     }

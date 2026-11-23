@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compileSingBoxConfig, TARGET_SINGBOX_VERSION, SINGBOX_SUPPORTED_PROTOCOLS, singboxOutbound } from '../../../worker/renderers/singbox.js'
+import { compileSingBoxConfig, TARGET_SINGBOX_VERSION, SINGBOX_SUPPORTED_PROTOCOLS } from '../../../worker/renderers/singbox.js'
 import { validateTemplate } from '../../../worker/templates/validation.js'
 import type { RenderNode } from '../../../worker/renderers/model.js'
 
@@ -113,12 +113,13 @@ describe('sing-box configuration compiler (CORE-07)', () => {
     const template = validateTemplate(sampleYaml).template
     const nodes = [
       makeNode({ displayName: 'Valid SS', protocol: 'shadowsocks' }),
-      makeNode({ displayName: 'Unsupported Snell', protocol: 'snell' as any }),
-      makeNode({ displayName: 'Unsupported SSR', protocol: 'ssr' as any }),
+      makeNode({ displayName: 'Unsupported Snell', protocol: 'snell' }),
+      makeNode({ displayName: 'Unsupported SSR', protocol: 'ssr' }),
+      makeNode({ displayName: 'Unsupported extension', extensions: { shadowtls: {} } }),
     ]
     const result = compileSingBoxConfig(template, nodes)
     expect(result.outputNodes).toBe(1)
-    expect(result.skippedNodes).toBe(2)
+    expect(result.skippedNodes).toBe(3)
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -131,6 +132,7 @@ describe('sing-box configuration compiler (CORE-07)', () => {
           outcome: 'skipped',
           protocol: 'ssr',
         }),
+        expect.objectContaining({ outcome: 'skipped', fields: ['extensions.shadowtls'] }),
       ]),
     )
   })
@@ -189,14 +191,15 @@ rules:
   - MATCH,Proxy
 `
     const template = validateTemplate(yamlWithRuleset).template
-    const result = compileSingBoxConfig(template, [makeNode({ displayName: 'Node 1' })])
+    expect(() => compileSingBoxConfig(template, [])).toThrow(/验证引用的规则集/)
+    const ruleSets = [{ tag: 'geoip-cn', type: 'inline', rules: [{ domain: ['example.org'] }] }]
+    const result = compileSingBoxConfig(template, [makeNode({ displayName: 'Node 1' })], { ruleSets })
     const route = result.config.route as { rule_set?: Array<Record<string, unknown>> }
     expect(route.rule_set).toBeDefined()
     expect(route.rule_set?.[0]).toMatchObject({
       tag: 'geoip-cn',
-      type: 'remote',
-      format: 'binary',
-      url: 'https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs',
+      type: 'inline',
+      rules: [{ domain: ['example.org'] }],
     })
   })
 })

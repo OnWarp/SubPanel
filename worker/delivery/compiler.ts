@@ -8,6 +8,7 @@ import { readCatalog } from '../catalog/repository.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import { hashToken } from '../platform/crypto.js'
+import type { compileSingBoxConfig } from '../renderers/singbox.js'
 import { RENDERER_VERSION } from '../renderers/model.js'
 import { CLIENT_IDS, prepareClientRender, type RenderClient } from '../renderers/index.js'
 import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from './schema.js'
@@ -93,6 +94,7 @@ async function artifactFor(
   context: Awaited<ReturnType<typeof resolveEntitlement>>,
   now: string,
   previewTemplate?: Template,
+  singboxOptions?: Parameters<typeof compileSingBoxConfig>[2],
 ) {
   const { nodes, catalog, speed, zeroNodeReason } = context
   const prepared = await prepareSubscriptionRender(client, nodes, speed)
@@ -101,6 +103,10 @@ async function artifactFor(
   if ((client === 'mihomo' || client === 'singbox') && prepared.outputNodes > 0 && !template) {
     const effective = await getEffectiveTemplate(env.DB, subscription.id, client)
     templateVersionId = effective.version_id ?? undefined
+    if (client === 'singbox' && effective.compiled_json) {
+      const published = JSON.parse(effective.compiled_json) as { route: { rule_set?: Record<string, unknown>[] } }
+      singboxOptions = { targetVersion: effective.target_version ?? undefined, ruleSets: published.route.rule_set ?? [] }
+    }
     if (effective.yaml !== null) {
       try {
         template = validateTemplate(effective.yaml, isLegacyTemplateVersion(effective.validator_version)).template
@@ -109,7 +115,7 @@ async function artifactFor(
       }
     }
   }
-  const rendered = prepared.render(template)
+  const rendered = prepared.render(template, singboxOptions)
   const digest = await hashToken(rendered.body)
   const artifact = compiledArtifactSchema.parse({
     schemaVersion: 2,
@@ -232,9 +238,10 @@ export async function renderEntitledSubscription(
   now = new Date().toISOString(),
   previewTemplate?: Template,
   preview = false,
+  singboxOptions?: Parameters<typeof compileSingBoxConfig>[2],
 ) {
   const access = await resolveEntitlement(env, subscription, now)
-  const artifact = await artifactFor(env, subscription, client, access, now, previewTemplate)
+  const artifact = await artifactFor(env, subscription, client, access, now, previewTemplate, singboxOptions)
   return {
     ...artifact,
     previewInputNodes: preview ? selectedNodes(access.catalog, subscription).length : undefined,

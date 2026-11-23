@@ -772,7 +772,9 @@ export function SubscriptionsPage() {
 
   const linkEntries = Object.entries(details?.links ?? {})
   const [client = '', link = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
-  const effectiveTemplate = detailsBinding?.effectiveTemplate
+  const singboxClient = client === 'singbox' || client === 'karing'
+  const effectiveTemplate = singboxClient && detailsBinding?.singboxTemplate
+    ? detailsBinding.singboxTemplate : detailsBinding?.effectiveTemplate
 
   return (
     <div className="page-stack resource-pages del-admin-page">
@@ -991,6 +993,7 @@ export function SubscriptionsPage() {
             version={versionLabel(effectiveTemplate?.sequence)}
             versionHref={effectiveTemplate?.templateId && effectiveTemplate.versionId ? `/delivery/conversions?${new URLSearchParams({
               config: effectiveTemplate.templateId, view: 'preview', version: effectiveTemplate.versionId, subscription: details.id,
+              ...(singboxClient && detailsBinding?.singboxTemplate && { platform: 'singbox' }),
             })}` : undefined}
             bindingError={detailsBindingError}
             bindingLoading={!detailsBinding && !detailsBindingError}

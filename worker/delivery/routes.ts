@@ -174,19 +174,13 @@ async function view(
   } catch {
     templateInvalid = true
   }
-  const access = await classifySubscription(c.env, subscription, new Date().toISOString(), viewOptions.snapshot, template, templateInvalid)
+  const singbox = await getEffectiveTemplate(c.env.DB, subscription.id, 'singbox').catch(() => undefined)
+  const access = await classifySubscription(c.env, subscription, new Date().toISOString(), viewOptions.snapshot, template, templateInvalid, Boolean(singbox?.version_id))
   const presented = presentSubscriptionStatus(access.status, audience)
   const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
   const diagnostics: Record<string, unknown> = {}
   for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
-    let effectiveForClient = effective
-    if (name === 'singbox') {
-      try {
-        effectiveForClient = await getEffectiveTemplate(c.env.DB, subscription.id, 'singbox')
-      } catch {
-        effectiveForClient = undefined
-      }
-    }
+    const effectiveForClient = name === 'singbox' ? singbox : name === 'mihomo' ? effective : undefined
     const versionId = effectiveForClient?.version_id
     let raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name, versionId, RENDERER_VERSION))
     if (!raw) raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
@@ -203,6 +197,7 @@ async function view(
       subscription.enabled &&
       artifact.success &&
       artifact.data.rendererVersion === RENDERER_VERSION &&
+      artifact.data.templateVersionId === (versionId ?? undefined) &&
       artifact.data.subscriptionRevision === subscription.revision &&
       artifact.data.catalogRevision === currentCatalogRevision
     ) diagnostics[name] = {

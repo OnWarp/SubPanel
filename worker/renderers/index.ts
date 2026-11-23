@@ -131,7 +131,7 @@ const structuredSupport: Record<RenderClient, readonly Protocol[]> = {
   mihomo: ['shadowsocks', 'ss2022', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria', 'hysteria2', 'tuic', 'wireguard', 'anytls', 'http', 'https', 'socks5'],
   // sing-box 1.13 removed the legacy WireGuard outbound; do not emit an
   // endpoint shape that the target client rejects.
-  singbox: ['shadowsocks', 'ss2022', 'vmess', 'vless', 'trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'naive', 'http', 'https', 'socks5'],
+  singbox: SINGBOX_SUPPORTED_PROTOCOLS,
   surge: ['shadowsocks', 'vmess', 'trojan', 'snell', 'tuic', 'hysteria2', 'anytls', 'http', 'https', 'socks5'],
   loon: ['shadowsocks', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria2', 'wireguard', 'http', 'https'],
   quantumultx: ['shadowsocks', 'ss2022', 'ssr', 'vmess', 'vless', 'trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'naive', 'http', 'https', 'socks5'],
@@ -422,9 +422,6 @@ function renderStructured(client: RenderClient, nodes: RenderNode[], template?: 
     return stringifyYaml({ mode: 'rule', proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
   }
   if (client === 'singbox') {
-    if (template) {
-      return compileSingBoxConfig(template, nodes).json
-    }
     const outbounds = nodes.map((node) => singboxOutbound(node))
     const names = outbounds.map((node) => node.tag as string)
     outbounds.push({ type: 'selector', tag: 'Proxy', outbounds: names.length ? names : ['direct'] }, { type: 'direct', tag: 'direct' })
@@ -648,8 +645,12 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
 
   return {
     outputNodes: candidates.length,
-    render(template?: Template): RenderResult {
-      const output = (client === 'mihomo' || client === 'singbox') ? prepareNodeLayer(candidates, template?.subpanel?.nodes) : candidates
+    render(template?: Template, singboxOptions?: Parameters<typeof compileSingBoxConfig>[2]): RenderResult {
+      const native = client === 'singbox' && template
+      const flagged = new Set(native ? diagnostics.filter(item => item.code === 'UNSUPPORTED_FIELD').map(item => item.nodeId) : [])
+      const eligible = flagged.size ? candidates.filter(node => !flagged.has(node.id)) : candidates
+      const output = (client === 'mihomo' || client === 'singbox') ? prepareNodeLayer(eligible, template?.subpanel?.nodes) : eligible
+      const full = native ? compileSingBoxConfig(template, output, singboxOptions) : undefined
       let body: string
       if (['v2rayn', 'nekobox', 'shadowrocket', 'generic'].includes(client)) {
         const uris = candidates.map((node) => uriForClient(client, node)).filter((uri): uri is string => uri !== null)
@@ -657,17 +658,18 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
         for (const byte of new TextEncoder().encode(uris.join('\n'))) binary += String.fromCharCode(byte)
         body = btoa(binary)
       } else {
-        body = renderStructured(client, output, template)
+        body = full?.json ?? renderStructured(client, output, template)
       }
       const metadata = contentMetadata(client)
       return {
         client,
         body,
         ...metadata,
-        diagnostics,
+        diagnostics: full ? [...diagnostics.map(item => flagged.has(item.nodeId)
+          ? { ...item, outcome: 'skipped' as const } : item), ...full.diagnostics] : diagnostics,
         inputNodes: input.length,
-        outputNodes: output.length,
-        skippedNodes: enabledNodes.length - output.length,
+        outputNodes: full?.outputNodes ?? output.length,
+        skippedNodes: enabledNodes.length - (full?.outputNodes ?? output.length),
       }
     },
   }

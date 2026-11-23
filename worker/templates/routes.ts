@@ -1,6 +1,7 @@
-import { checkRuleSources, listLocalRuleSets, listRuleSources, localRuleSet, refreshRuleSource, ruleSource, saveLocalRuleSet } from './rule-library.js'
+import { checkRuleSources, loadSingBoxRuleSets, listLocalRuleSets, listRuleSources, localRuleSet, refreshRuleSource, ruleSource, saveLocalRuleSet } from './rule-library.js'
 import { stringify } from 'yaml'
-import { renderClient, CLIENT_IDS, type RenderNode } from '../renderers/index.js'
+import { prepareClientRender, CLIENT_IDS, type RenderNode } from '../renderers/index.js'
+import { compileSingBoxConfig, TARGET_SINGBOX_VERSION } from '../renderers/singbox.js'
 import { RENDERER_VERSION } from '../renderers/model.js'
 import { fetchRemoteTextWithMetadata, RemoteFetchError } from '../catalog/remote.js'
 import { Hono } from 'hono'
@@ -36,6 +37,7 @@ const publishSchema = z.object({
   expectedRevision: z.number().int().positive(),
   draftHash: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
   ignoredAcknowledged: z.boolean().optional(),
+  singbox: z.boolean().optional(),
 })
 
 const rollbackSchema = z.object({
@@ -122,12 +124,14 @@ templateRoutes.get('/', async c => {
     db.prepare(`
       SELECT t.id, t.name, t.revision, t.archived, t.published_id, t.updated_at, t.created_at,
         t.draft != v.yaml AS changed, v.sequence, v.created_at AS published_at,
+        EXISTS(SELECT 1 FROM conversion_profile_versions
+               WHERE profile_id=t.id AND id=t.published_id AND platform='singbox') AS singbox_published,
         (SELECT COUNT(*) FROM subscription_template_bindings WHERE mode='specific' AND template_id=t.id) AS direct
       FROM subscription_templates t
       LEFT JOIN subscription_template_versions v ON v.id=t.published_id AND v.template_id=t.id
       ${where}
       ORDER BY t.updated_at DESC, t.id LIMIT ? OFFSET ?
-    `).bind(archived, q, pageSize, offset).all<TemplateRow & { changed: number; sequence: number | null; published_at: string | null; direct: number }>(),
+    `).bind(archived, q, pageSize, offset).all<TemplateRow & { changed: number; sequence: number | null; published_at: string | null; singbox_published: number; direct: number }>(),
     getDefault(db),
     subscriptionIds(c.env),
   ])
@@ -139,6 +143,7 @@ templateRoutes.get('/', async c => {
       ...templateSummary(row, Boolean(row.changed)),
       publishedAt: row.published_at,
       publishedSequence: row.sequence,
+      singboxPublished: Boolean(row.singbox_published),
       references: { isDefault, directBindings: row.direct, inheritedCount: isDefault ? inheritedCount : 0 },
     }
   })
@@ -173,7 +178,7 @@ templateRoutes.post('/', async c => c.json(await createDraft(c.env.DB, await rea
 templateRoutes.get('/rule-sources', async c => {
   c.header('Cache-Control', 'no-store')
   const [sources, localSets] = await Promise.all([listRuleSources(c.env.DB), listLocalRuleSets(c.env.DB)])
-  return c.json({ sources: sources.results, localSets })
+  return c.json({ sources, localSets })
 })
 templateRoutes.post('/rule-sources/local', async c => {
   await saveLocalRuleSet(c.env.DB, await readJson(c, localRuleSet))
@@ -189,6 +194,7 @@ templateRoutes.get('/:id', async c => {
   const version = row.published_id ? await c.env.DB.prepare(
     'SELECT * FROM subscription_template_versions WHERE id=? AND template_id=?'
   ).bind(row.published_id, row.id).first<TemplateVersionRow>() : null
+  const singbox = version ? await publishedSingBox(c.env.DB, row.id, version.id) : null
   return c.json({
     ...templateSummary(row, Boolean(version && version.yaml !== row.draft)),
     draft: row.draft,
@@ -198,6 +204,7 @@ templateRoutes.get('/:id', async c => {
     sourceEtag: row.source_etag,
     sourceLastModified: row.source_last_modified,
     publishedVersion: version && versionSummary(version),
+    singboxPublished: Boolean(singbox),
     references: await getReferencedSummary(c.env, row.id),
   })
 })
@@ -250,16 +257,9 @@ function previewBody(body: string, platform: (typeof CLIENT_IDS)[number]) {
     return stringify({ ...output, proxies: proxies.map(({ name, type }) => ({ name, type })) })
   }
   if (platform === 'singbox') {
-    try {
-      const parsed = JSON.parse(body) as Record<string, unknown>
-      const outbounds = Array.isArray(parsed.outbounds) ? parsed.outbounds.map((ob: Record<string, unknown>) => {
-        const { password: _p, uuid: _u, private_key: _pk, pre_shared_key: _psk, auth_str: _as, username: _un, ...safe } = ob
-        return safe
-      }) : []
-      return JSON.stringify({ ...parsed, outbounds }, null, 2)
-    } catch {
-      return body
-    }
+    const parsed = JSON.parse(body) as { outbounds: { type: string; tag: string; outbounds?: string[] }[] }
+    const outbounds = parsed.outbounds.map(({ type, tag, outbounds }) => ({ type, tag, outbounds }))
+    return JSON.stringify({ ...parsed, outbounds }, null, 2)
   }
   if (platform === 'surge' || platform === 'loon') {
     return body.split('\n').map(line => line.includes(' = ') && !line.startsWith('Proxy = select,')
@@ -268,6 +268,21 @@ function previewBody(body: string, platform: (typeof CLIENT_IDS)[number]) {
   if (platform === 'quantumultx') return body.trim().split('\n').filter(Boolean)
     .map(line => `${line.split('://', 1)[0]}://<已隐藏连接参数>`).join('\n')
   return null
+}
+
+function publishedSingBox(db: D1Database, profileId: string, versionId: string) {
+  return db.prepare(
+    "SELECT compiled_json, target_version FROM conversion_profile_versions WHERE profile_id=? AND id=? AND platform='singbox'",
+  ).bind(profileId, versionId).first<{ compiled_json: string; target_version: string }>()
+}
+
+function singboxValidation<T>(run: () => T): T {
+  try { return run() } catch (error) {
+    if (error instanceof TemplateValidationError) {
+      throw apiError(422, 'TEMPLATE_INVALID', 'sing-box 配置校验失败', { diagnostics: error.diagnostics })
+    }
+    throw error
+  }
 }
 
 templateRoutes.post('/preview', async c => {
@@ -283,19 +298,32 @@ templateRoutes.post('/preview', async c => {
   const yaml = version?.yaml ?? input.yaml
   const validation = yaml === undefined || (input.platform !== 'mihomo' && input.platform !== 'singbox') ? undefined : validateForAdmin(yaml, version ? isLegacyTemplateVersion(version.validator_version) : false)
   const { template, ignored = [], diagnostics = [] } = validation ?? {}
-  const sourceDiagnostics = template && !(version && isLegacyTemplateVersion(version.validator_version))
-    ? await checkRuleSources(c.env.DB, template) : []
   const subscription = input.subscriptionId ? await getTemplateSubscription(c.env, input.subscriptionId) : null
-  const artifact = subscription ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true) : null
-  const rendered = input.sample ? renderClient(input.platform, [previewNode], template) : artifact
+  const published = input.platform === 'singbox' && version ? await publishedSingBox(c.env.DB, version.template_id, version.id) : null
+  const sourceDiagnostics = template && !published && !(version && isLegacyTemplateVersion(version.validator_version))
+    ? await checkRuleSources(c.env.DB, template) : []
+  const options = template && input.platform === 'singbox' ? {
+    targetVersion: published?.target_version ?? TARGET_SINGBOX_VERSION,
+    ruleSets: published ? JSON.parse(published.compiled_json).route.rule_set ?? []
+      : sourceDiagnostics.length ? [] : await loadSingBoxRuleSets(c.env.DB, template),
+  } : undefined
+  const model = options && !sourceDiagnostics.length ? singboxValidation(() => compileSingBoxConfig(template, [], options)) : undefined
+  const artifact = subscription && (!options || model) ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true, options) : null
+  const rendered = input.sample && (!options || model) ? prepareClientRender(input.platform, [previewNode]).render(template, options) : artifact
   const output = (input.platform === 'mihomo' || input.platform === 'singbox') && rendered?.outputNodes
     ? (input.platform === 'mihomo' ? parse(rendered.body) as Record<string, unknown> : template)
     : template
+  const native = input.platform === 'singbox' ? (rendered ? JSON.parse(rendered.body) : model?.config) : undefined
+  const groups = native ? (native.outbounds as { type: string; tag: string; outbounds?: string[] }[])
+    .flatMap(({ type, tag, outbounds }) => outbounds ? [{ name: tag, type, proxies: outbounds }] : [])
+    : output?.['proxy-groups'] ?? []
+  const rules = native ? (native.route?.rules as unknown[] | undefined)?.map(rule => JSON.stringify(rule)) ?? []
+    : output?.rules ?? []
   const body = rendered ? input.sample ? rendered.body : previewBody(rendered.body, input.platform) : null
   return c.json({
-    ignored, diagnostics: [...diagnostics, ...sourceDiagnostics],
-    groups: output?.['proxy-groups'] ?? [],
-    rules: output?.rules ?? [],
+    ignored, diagnostics: [...diagnostics, ...sourceDiagnostics, ...(model?.policyDiagnostics ?? [])],
+    groups,
+    rules,
     ruleProviders: output?.['rule-providers'] ?? {},
     subscriptionName: subscription?.name ?? (input.sample ? '合成节点样本' : null),
     inputNodes: artifact?.previewInputNodes ?? rendered?.inputNodes ?? 0,
@@ -308,9 +336,8 @@ templateRoutes.post('/preview', async c => {
     draftRevision: yaml !== undefined && !version ? row?.revision ?? null : null,
     zeroNodeReason: artifact?.zeroNodeReason ?? null,
     body,
-    capability: (input.platform === 'mihomo' || input.platform === 'singbox') ? 'full' : 'nodes',
-    summary: rendered ? { bytes: new TextEncoder().encode(rendered.body).length, groups: (output?.['proxy-groups'] as unknown[] | undefined)?.length ?? 0,
-      rules: (output?.rules as unknown[] | undefined)?.length ?? 0 } : null,
+    capability: input.platform === 'mihomo' || (input.platform === 'singbox' && (template || native?.route)) ? 'full' : 'nodes',
+    summary: rendered ? { bytes: new TextEncoder().encode(rendered.body).length, groups: Array.isArray(groups) ? groups.length : 0, rules: Array.isArray(rules) ? rules.length : 0 } : null,
   })
 })
 
@@ -390,6 +417,11 @@ templateRoutes.post('/:id/publish', async c => {
   const normalizedJson = JSON.stringify(validation.normalized)
   assertTemplateFitsD1(row.draft, normalizedJson)
   const contentHash = await computeContentHash(validation.normalized)
+  const enableSingBox = input.singbox ?? Boolean(row.published_id && await publishedSingBox(c.env.DB, row.id, row.published_id))
+  const native = enableSingBox ? { ruleSets: await loadSingBoxRuleSets(c.env.DB, validation.template) } : undefined
+  const compiled = native ? singboxValidation(() => compileSingBoxConfig(validation.template, [previewNode], native)) : undefined
+  const compiledDiagnostics = compiled ? JSON.stringify([...compiled.policyDiagnostics, ...compiled.diagnostics]) : undefined
+  if (compiled && compiledDiagnostics) assertTemplateFitsD1(normalizedJson, compiled.json, compiledDiagnostics)
 
   // Atomic batch: create version + update template pointer
   const results = await c.env.DB.batch([
@@ -402,6 +434,11 @@ templateRoutes.post('/:id/publish', async c => {
     c.env.DB.prepare(
       `UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1 WHERE id=? AND revision=? AND archived=0 AND EXISTS (SELECT 1 FROM subscription_template_versions WHERE id=?)`
     ).bind(id, now, row.id, input.expectedRevision, id),
+    ...(compiled && compiledDiagnostics ? [c.env.DB.prepare(`
+      INSERT INTO conversion_profile_versions
+        (profile_id,id,platform,target_version,source_json,compiled_json,diagnostics_json,created_at)
+      SELECT template_id,id,'singbox',?,?,?,?,? FROM subscription_template_versions WHERE id=?
+    `).bind(TARGET_SINGBOX_VERSION, normalizedJson, compiled.json, compiledDiagnostics, now, id)] : []),
   ])
 
   // Check if template update succeeded (condition matched)
@@ -418,6 +455,7 @@ templateRoutes.post('/:id/publish', async c => {
     versionId: id,
     sequence: (await c.env.DB.prepare('SELECT sequence FROM subscription_template_versions WHERE id=?').bind(id).first<{sequence: number}>())?.sequence ?? 1,
     contentHash,
+    singboxPublished: Boolean(compiled),
     references: refs,
     revision: input.expectedRevision + 1,
   })
@@ -508,9 +546,13 @@ templateRoutes.get('/bindings/:id', async c => {
   const id = c.req.param('id')
   await getTemplateSubscription(c.env, id)
   const row = await getEffectiveTemplate(c.env.DB, id)
+  const singbox = await getEffectiveTemplate(c.env.DB, id, 'singbox').catch(() => undefined)
   return c.json({
     subscriptionId: id, mode: row.mode, templateId: row.binding_template_id,
     revision: row.revision, updatedAt: row.updated_at,
+    singboxTemplate: singbox?.version_id ? {
+      templateId: singbox.template_id, templateName: singbox.template_name, versionId: singbox.version_id, sequence: singbox.sequence,
+    } : null,
     effectiveTemplate: row.version_id ? {
       templateId: row.template_id, templateName: row.template_name, versionId: row.version_id, sequence: row.sequence,
     } : null,

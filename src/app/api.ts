@@ -223,6 +223,7 @@ export type SubscriptionTemplate = {
   publishedVersionId: string | null
   publishedAt: string | null
   publishedSequence: number | null
+  singboxPublished?: boolean
   updatedAt: string
   createdAt: string
   references: TemplateReference
@@ -332,6 +333,7 @@ export type TemplateImportResponse = { notModified: true; message: string } | {
 
 export type TemplatePublishResponse = {
   versionId: string
+  singboxPublished?: boolean
   sequence: number
   contentHash: string
   references: TemplateReference
@@ -344,6 +346,7 @@ export type TemplateBinding = {
   templateId: string | null
   revision: number
   updatedAt: string | null
+  singboxTemplate?: TemplateBinding['effectiveTemplate']
   effectiveTemplate: {
     templateId: string
     templateName: string

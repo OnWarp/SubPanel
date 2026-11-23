@@ -28,6 +28,7 @@ const nodeBody = {
 let usage = null
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ baseURL })
+await page.clock.setFixedTime(now)
 await page.route('**/api/**', (route) => {
   const path = new URL(route.request().url()).pathname
   const current = usage ? { ...subscription, usedGb: 42.5, remainingGb: 157.5 } : subscription

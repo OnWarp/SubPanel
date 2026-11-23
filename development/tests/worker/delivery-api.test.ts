@@ -156,6 +156,10 @@ describe('Delivery APIs and public subscriptions', () => {
       const clientResponse = await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/${client}`)
       expect(clientResponse.status, client).toBe(200)
       expect(clientResponse.headers.get('content-disposition'), client).toContain(`filename*=UTF-8''${encodeURIComponent(fileName)}`)
+      const clientEtag = clientResponse.headers.get('etag')
+      expect(clientEtag, client).toBeTruthy()
+      const unchanged = await exports.default.fetch(`${TEST_ORIGIN}/sub/${body.token}/${client}`, { headers: { 'If-None-Match': clientEtag! } })
+      expect(unchanged.status, client).toBe(304)
     }
     const etag = response.headers.get('etag')
     expect(etag).toBeTruthy()
@@ -817,7 +821,7 @@ rules:
     const saved = await mutation(templateRoot, admin, { name: 'Remote rules', yaml: draft })
     expect(saved.status).toBe(201)
     const { id, revision, draftHash } = await saved.json() as { id: string; revision: number; draftHash: string }
-    const publish = () => mutation(`${templateRoot}/${id}/publish`, admin, { expectedRevision: revision, draftHash })
+    const publish = () => mutation(`${templateRoot}/${id}/publish`, admin, { expectedRevision: revision, draftHash, singbox: true })
     expect(await (await publish()).json()).toMatchObject({
       error: { code: 'TEMPLATE_INVALID', details: { diagnostics: [{ code: 'RULE_SOURCE_UNVERIFIED', path: 'rule-providers.privacy' }] } },
     })
@@ -835,11 +839,52 @@ rules:
     const known = await record()
     expect((await refresh(source)).status).toBe(200)
     expect(fetcher.mock.calls[1][1].headers).toMatchObject({ 'If-None-Match': '"one"', 'If-Modified-Since': 'Wed, 01 Jan 2025 00:00:00 GMT' })
-    expect((await publish()).status).toBe(200)
+    const published = await publish()
+    expect(published.status, await published.clone().text()).toBe(200)
+    const version = await env.DB.prepare("SELECT target_version, compiled_json FROM conversion_profile_versions WHERE profile_id=? AND platform='singbox'")
+      .bind(id).first<{ target_version: string; compiled_json: string }>()
+    expect(version?.target_version).toBe('1.14')
+    expect(JSON.parse(version!.compiled_json).route.rule_set).toEqual([
+      { type: 'inline', tag: 'privacy', rules: [{ domain_suffix: ['example.org'] }] },
+    ])
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect((await refresh(source)).status).toBe(422)
     expect(fetcher).toHaveBeenCalledTimes(3)
     expect(await record()).toMatchObject({ version: known!.version, payload: known!.payload, error_code: 'REMOTE_TOO_MANY_REDIRECTS' })
+  })
+
+  it('publishes only verified pinned native sing-box rule sets', async () => {
+    const { admin, token } = await fixture()
+    const url = `https://raw.githubusercontent.com/example/rules/${'a'.repeat(40)}/sample.json`
+    const draft = `subpanel:
+  singbox:
+    remoteRuleSets:
+      - name: native
+        outbound: DIRECT
+        url: ${url}
+` + yaml
+    const saved = await mutation(templateRoot, admin, { name: 'Native rules', yaml: draft })
+    expect(saved.status).toBe(201)
+    const { id, revision, draftHash } = await saved.json() as { id: string; revision: number; draftHash: string }
+    const publish = () => mutation(`${templateRoot}/${id}/publish`, admin, { expectedRevision: revision, draftHash, singbox: true })
+    expect((await publish()).status).toBe(422)
+    const fetcher = vi.fn()
+      .mockImplementationOnce(async () => Response.json({ version: 1, rules: [{ type: 'logical', rules: [{ domain: ['example.org'] }] }] }))
+      .mockImplementationOnce(async () => Response.json({ version: 1, rules: [{ domain: ['example.org'] }] }))
+    vi.stubGlobal('fetch', fetcher)
+    const refresh = () => mutation(templateRoot + '/rule-sources', admin, { url, behavior: 'classical', format: 'text' })
+    expect((await refresh()).status).toBe(422)
+    const verified = await refresh()
+    expect(verified.status, await verified.clone().text()).toBe(200)
+    const published = await publish()
+    expect(published.status, await published.clone().text()).toBe(200)
+    expect((await mutation(templateRoot + '/default', admin, { templateId: id, expectedRevision: 1 }, 'PUT')).status).toBe(200)
+    const publicConfig = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/singbox`)
+    expect(publicConfig.status).toBe(200)
+    expect(await publicConfig.json()).toMatchObject({
+      route: { rule_set: [{ type: 'remote', tag: 'native', format: 'source', url }] },
+    })
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
 
   it('rejects a matching cached ETag after subscription expiry and explains zero nodes', async () => {

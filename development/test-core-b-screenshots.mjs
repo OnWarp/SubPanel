@@ -65,6 +65,7 @@ try {
       if (path === '/api/admin/subscriptions' && route.request().method() === 'GET') {
         return route.fulfill({ json: { subscriptions: [subscription], total: 1, page: 1, pageSize: 20 } })
       }
+      if (path === '/api/admin/subscriptions/sub_1') return route.fulfill({ json: { subscription } })
       if (path === '/api/admin/subscriptions/output-preview') {
         const { planId, groupIds } = route.request().postDataJSON()
         const planGroupIds = planId ? ['grp_1'] : []
@@ -81,6 +82,7 @@ try {
       if (path.includes('/bindings/')) {
         return route.fulfill({ json: { mode: 'inherit', revision: 1, effectiveTemplate: null } })
       }
+      if (path === '/api/admin/subscription-templates') return route.fulfill({ json: { templates: [] } })
       if (path.startsWith('/api/admin/system/subscription-templates')) {
         return route.fulfill({ json: { templates: [], defaultId: null, total: 0 } })
       }

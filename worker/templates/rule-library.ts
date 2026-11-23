@@ -44,6 +44,32 @@ function validEntry(rule: string, behavior: Source['behavior']) {
     && validRuleValue(type, value) && !extra.length && (!option || option === 'no-resolve')
 }
 
+function isNativeRuleSource(source: Pick<Source, 'url' | 'behavior' | 'format'>) {
+  return source.behavior === 'classical' && source.format === 'text'
+    && /^https:\/\/raw\.githubusercontent\.com\/[a-z0-9_.-]+\/[a-z0-9_.-]+\/[a-f0-9]{40}\/[a-z0-9_./-]+\.json$/iu.test(source.url)
+}
+
+function validateNativeRulePayload(text: string) {
+  let value: unknown
+  try { value = JSON.parse(text) } catch { throw new RemoteFetchError('REMOTE_BODY_INVALID') }
+  const fields: Record<string, string> = {
+    domain: 'DOMAIN', domain_suffix: 'DOMAIN-SUFFIX', domain_keyword: 'DOMAIN-KEYWORD',
+    ip_cidr: 'IP-CIDR', source_ip_cidr: 'SRC-IP-CIDR',
+  }
+  const shape = z.strictObject({ version: z.number().int().min(1).max(4),
+    rules: z.array(z.partialRecord(z.enum(['domain', 'domain_suffix', 'domain_keyword', 'ip_cidr', 'source_ip_cidr']),
+      z.array(z.string().min(1).max(1024)).min(1).max(MAX_RULES))).min(1).max(MAX_RULES),
+  }).safeParse(value)
+  let count = 0
+  if (!shape.success || shape.data.rules.some(rule => {
+    const entries = Object.entries(rule)
+    return !entries.length || entries.some(([key, values]) => {
+      count += values.length
+      return count > MAX_RULES || values.some(value => !validRuleValue(fields[key], value))
+    })
+  })) throw new RemoteFetchError('REMOTE_BODY_INVALID')
+}
+
 export function validateRulePayload(text: string, { format, behavior }: Pick<Source, 'format' | 'behavior'>) {
   if (new TextEncoder().encode(text).length > MAX_BYTES) throw new RemoteFetchError('REMOTE_BODY_TOO_LARGE')
   let rules: unknown[]
@@ -86,7 +112,8 @@ export async function refreshRuleSource(db: D1Database, source: Source, fetcher:
       await db.prepare(`UPDATE conversion_rule_sources SET last_success_at=?,error_code=NULL
         WHERE url=? AND behavior=? AND format=? AND attempt_id=?`).bind(now, ...key, attempt).run()
     } else {
-      validateRulePayload(result.text, source)
+      if (isNativeRuleSource({ ...source, url })) validateNativeRulePayload(result.text)
+      else validateRulePayload(result.text, source)
       await db.prepare(`UPDATE conversion_rule_sources SET version=?,payload=?,last_success_at=?,etag=?,last_modified=?,error_code=NULL
         WHERE url=? AND behavior=? AND format=? AND attempt_id=?`).bind(await sha256Base64Url(result.text), result.text, now,
         result.etag?.slice(0, 1024) ?? null, result.lastModified?.slice(0, 128) ?? null, ...key, attempt).run()
@@ -99,9 +126,10 @@ export async function refreshRuleSource(db: D1Database, source: Source, fetcher:
   }
 }
 
-export function listRuleSources(db: D1Database) {
-  return db.prepare(`SELECT url,behavior,format,version,last_success_at,error_code
+export async function listRuleSources(db: D1Database) {
+  const { results } = await db.prepare(`SELECT url,behavior,format,version,last_success_at,error_code
     FROM conversion_rule_sources ORDER BY COALESCE(last_success_at,'') DESC, url LIMIT 100`).all<RuleSourceRow>()
+  return results.map(row => ({ ...row, nativeSingbox: isNativeRuleSource(row) }))
 }
 
 export async function checkRuleSources(db: D1Database, template: Template) {
@@ -110,7 +138,10 @@ export async function checkRuleSources(db: D1Database, template: Template) {
   const providers = template['rule-providers']!
   const requested = names.map(name => {
     const { url, behavior, format } = providers[name]
-    try { return { name, url: ruleSourceUrl(url).href, behavior, format } }
+    try {
+      const normalized = ruleSourceUrl(url).href
+      return { name, url: isNativeRuleSource({ url: normalized, behavior, format: format === 'text' ? 'text' : 'yaml' }) ? null : normalized, behavior, format }
+    }
     catch { return { name, url: null, behavior, format } }
   })
   const records = await db.prepare(`
@@ -144,4 +175,98 @@ export async function listLocalRuleSets(db: D1Database) {
     SELECT name,rules_json,revision,updated_at FROM conversion_local_rule_sets ORDER BY name LIMIT 100
   `).all<{ name: string; rules_json: string; revision: number; updated_at: string }>()
   return results.map(({ rules_json, ...row }) => ({ ...row, rules: JSON.parse(rules_json) as string[] }))
+}
+
+const SINGBOX_MATCH_FIELDS: Record<string, string> = {
+  DOMAIN: 'domain', 'DOMAIN-SUFFIX': 'domain_suffix', 'DOMAIN-KEYWORD': 'domain_keyword',
+  'IP-CIDR': 'ip_cidr', 'IP-CIDR6': 'ip_cidr', 'SRC-IP-CIDR': 'source_ip_cidr',
+}
+
+export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
+  const names = [...new Set(template.rules.filter(rule => rule.startsWith('RULE-SET,')).map(rule => rule.split(',')[1]))]
+  const locals = template.subpanel?.singbox?.localRuleSets ?? []
+  const remotes = template.subpanel?.singbox?.remoteRuleSets ?? []
+  if (names.length === 0 && locals.length === 0 && remotes.length === 0) return []
+  const requested = names.map(name => {
+    const provider = template['rule-providers']![name]
+    return { ...provider, name, url: ruleSourceUrl(provider.url).href }
+  })
+  const { results } = await db.prepare(`
+    SELECT json_extract(j.value,'$.name') AS name, s.url, s.behavior, s.format, s.payload
+    FROM json_each(?) j JOIN conversion_rule_sources s
+      ON s.url=json_extract(j.value,'$.url') AND s.behavior=json_extract(j.value,'$.behavior')
+      AND s.format=json_extract(j.value,'$.format')
+    WHERE s.version IS NOT NULL
+      AND (SELECT SUM(length(CAST(p.payload AS BLOB))) FROM conversion_rule_sources p JOIN json_each(?) k
+           ON p.url=json_extract(k.value,'$.url') AND p.behavior=json_extract(k.value,'$.behavior')
+           AND p.format=json_extract(k.value,'$.format')) <= ?
+  `).bind(JSON.stringify(requested), JSON.stringify(requested), MAX_BYTES).all<Source & { name: string; payload: string }>()
+  const byName = new Map(results.map(row => [row.name, row]))
+  let count = 0
+  const sets: Record<string, unknown>[] = names.map(name => {
+    const row = byName.get(name)
+    const invalid = () => apiError(422, 'TEMPLATE_INVALID', 'sing-box 规则集校验失败', { diagnostics: [{
+      code: 'SINGBOX_RULE_SET_INVALID', severity: 'error', path: `rule-providers.${name}`,
+      message: '规则集未验证、包含不兼容规则或超过合并上限',
+    }] })
+    if (!row) throw invalid()
+    ruleSourceUrl(row.url)
+    validateRulePayload(row.payload, row)
+    const entries: string[] = row.format === 'yaml' ? parseDocument(row.payload).toJS().payload
+      : row.payload.split(/\r?\n/u).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
+    count += entries.length
+    if (count > MAX_RULES) throw invalid()
+    const rules = entries.map(entry => {
+      const [type, value] = row.behavior === 'classical' ? entry.split(',').map(part => part.trim())
+        : [row.behavior === 'ipcidr' ? 'IP-CIDR' : 'DOMAIN-SUFFIX', entry.trim().replace(/^\+\./u, '')]
+      const field = SINGBOX_MATCH_FIELDS[type]
+      if (!field || !validRuleValue(type, value)) throw invalid()
+      return { [field]: [value] }
+    })
+    return { type: 'inline', tag: name, rules }
+  })
+  const tags = new Set(names)
+  if (locals.length) {
+    const { results: records } = await db.prepare(`
+      SELECT name,rules_json FROM conversion_local_rule_sets WHERE name IN (SELECT value FROM json_each(?))
+    `).bind(JSON.stringify(locals.map(({ name }) => name))).all<{ name: string; rules_json: string }>()
+    const stored = new Map(records.map(record => [record.name, record.rules_json]))
+    for (const { name } of locals) {
+      const invalid = () => apiError(422, 'TEMPLATE_INVALID', 'sing-box 本地规则集校验失败', { diagnostics: [{
+        code: 'SINGBOX_RULE_SET_INVALID', severity: 'error', path: 'subpanel.singbox.localRuleSets',
+        message: `规则集「${name}」缺失、重名或包含不兼容规则`,
+      }] })
+      const raw = stored.get(name)
+      if (!raw || tags.has(name)) throw invalid()
+      tags.add(name)
+      const rules = (JSON.parse(raw) as string[]).map(entry => {
+        const [type, value] = entry.split(',').map(part => part.trim())
+        const field = SINGBOX_MATCH_FIELDS[type]
+        if (!field || !value || !validRuleValue(type, value)) throw invalid()
+        return { [field]: [value] }
+      })
+      count += rules.length
+      if (count > MAX_RULES) throw invalid()
+      sets.push({ type: 'inline', tag: name, rules })
+    }
+  }
+  if (remotes.length) {
+    const { results: verified } = await db.prepare(`
+      SELECT url FROM conversion_rule_sources
+      WHERE url IN (SELECT value FROM json_each(?)) AND behavior='classical' AND format='text'
+        AND version IS NOT NULL AND error_code IS NULL AND last_success_at >= ?
+    `).bind(JSON.stringify(remotes.map(({ url }) => url)), new Date(Date.now() - 7 * 86400_000).toISOString()).all<{ url: string }>()
+    const available = new Set(verified.map(({ url }) => url))
+    for (const { name, url } of remotes) {
+      if (tags.has(name) || !isNativeRuleSource({ url, behavior: 'classical', format: 'text' }) || !available.has(url)) {
+        throw apiError(422, 'TEMPLATE_INVALID', 'sing-box 远程规则集校验失败', { diagnostics: [{
+          code: 'SINGBOX_RULE_SET_INVALID', severity: 'error', path: 'subpanel.singbox.remoteRuleSets',
+          message: `规则集「${name}」须使用规则库近七天验证的固定提交 JSON，且名称不能重复`,
+        }] })
+      }
+      tags.add(name)
+      sets.push({ type: 'remote', tag: name, format: 'source', url })
+    }
+  }
+  return sets
 }

@@ -141,7 +141,7 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
         <thead><tr>{['名称', '支持平台', '状态', '当前发布版本', '最近发布', '绑定订阅数', '操作'].map((label) => <th key={label} scope="col">{label}</th>)}</tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id}>
           <th scope="row">{row.name}</th>
-          <td data-label="支持平台">Mihomo</td>
+          <td data-label="支持平台">{row.singboxPublished ? 'Mihomo · sing-box 1.14' : 'Mihomo'}</td>
           <td data-label="状态">{templateStatus[row.status]}</td>
           <td data-label="当前发布版本">{versionLabel(row.publishedSequence)}</td>
           <td data-label="最近发布">{row.publishedAt ? <time dateTime={row.publishedAt}>{templateDate(row.publishedAt)}</time> : '—'}</td>

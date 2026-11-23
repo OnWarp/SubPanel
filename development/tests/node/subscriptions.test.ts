@@ -25,16 +25,18 @@ beforeEach(() => {
 const app = new Hono().route('/', publicSubscriptionRoutes).onError((error, c) => c.json({ error: error.message }, 'status' in error ? error.status as 400 : 500))
 const pull = (token: string) => app.request(`/sub/${token}/generic`, {}, env, { waitUntil() {}, passThroughOnException() {}, props: {} })
 
-it('creates an unavailable pool subscription, rotates on each assignment and preserves all other fields', async () => {
+it('creates a pool subscription with empty generic output, rotates on each assignment and preserves all other fields', async () => {
   const pool = await createSubscription(env, { name: 'Pool', groupIds: [], expiresAt: Date.now() + 86400000 })
   expect(pool.subscription.userId).toBeNull()
-  expect((await pull(pool.token)).status).toBe(404)
+  const initial = await pull(pool.token)
+  expect(initial.status).toBe(200)
+  expect(await initial.text()).toBe('')
   let previous = pool
   for (const userId of ['usr_1', 'usr_2', null]) {
     const result = await transferSubscription(env, pool.subscription.id, userId)
     expect(result.token).not.toBe(previous.token)
     expect((await pull(previous.token)).status).toBe(404)
-    expect((await pull(result.token)).status).toBe(userId ? 200 : 404)
+    expect((await pull(result.token)).status).toBe(200)
     const { userId: _owner, tokenHash: _hash, tokenPrefix: _prefix, encryptedToken: _encrypted, revision: _revision, updatedAt: _updated, ...preserved } = pool.subscription
     expect(result.subscription).toMatchObject(preserved)
     previous = result
@@ -60,10 +62,10 @@ it('retains and disables at exact expiry and restores after extension and enable
   expect((await pull(created.token)).status).toBe(200)
 })
 
-it('public expiry disables and denies even when the owner has no entitlement', async () => {
+it('public expiry denies without mutating the persisted enabled state', async () => {
   const created = await createSubscription(env, { userId: 'usr_1', name: 'Expired', groupIds: [], expiresAt: Date.now() - 1 })
   expect((await pull(created.token)).status).toBe(410)
-  expect((await readDelivery(env)).subscriptions[0].enabled).toBe(false)
+  expect((await readDelivery(env)).subscriptions[0].enabled).toBe(true)
 })
 
 it('uses existing share storage and guards for temporary links and preserves other shares', async () => {
