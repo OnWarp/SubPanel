@@ -1,3 +1,4 @@
+import { compileJobRoutes } from './delivery/compile-jobs.js'
 import { templateRoutes } from './templates/routes.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
@@ -88,6 +89,7 @@ app.route('/api/account', userDomainRoutes)
 app.route('/api', publicSystemRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscription-templates', entitlementTemplateRoutes)
+app.route('/api/admin/compile-jobs', compileJobRoutes)
 app.route('/api/admin/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery/subscriptions', adminDeliveryRoutes)
 app.route('/api/admin/delivery', adminDeliveryRoutes)
@@ -132,6 +134,10 @@ app.onError((error, c) => {
       { error: { code: error.code, message: error.message, details: error.details } },
       error.status,
     )
+  }
+  if (c.req.path.startsWith('/sub/')) {
+    console.error(JSON.stringify({ event: 'subscription_request_error' }))
+    return c.json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } }, 500)
   }
   console.error(JSON.stringify({
     event: 'request_error',

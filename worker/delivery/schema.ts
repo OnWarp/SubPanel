@@ -126,6 +126,7 @@ export const compiledArtifactSchema = z.object({
   lastModified: z.iso.datetime(),
   subscriptionRevision: z.number().int().positive(),
   catalogRevision: z.number().int().nonnegative(),
+  catalogRelevantRevision: z.string().optional(),
   inputNodes: z.number().int().nonnegative(),
   outputNodes: z.number().int().nonnegative(),
   skippedNodes: z.number().int().nonnegative(),

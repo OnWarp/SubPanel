@@ -12,7 +12,7 @@ import { primaryDomainOriginSafe } from '../domains/service.js'
 import { readCatalog } from '../catalog/repository.js'
 import { ApiError, apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { compileAllSubscriptions, compileSubscription, previewAuthorizedOutput, RENDERER_VERSION, type AccessSnapshot } from './compiler.js'
+import { previewAuthorizedOutput, type AccessSnapshot } from './compiler.js'
 import { readFetchSummary } from './fetch-stats.js'
 import { subscriptionLinks } from './links.js'
 import {
@@ -34,9 +34,11 @@ import {
   DeliveryError,
 } from './service.js'
 import { directNodeIdsSchema, durationSchema } from './entitlement-templates.js'
-import { compiledKey, compiledPrefix, deleteCompiledArtifacts } from './repository.js'
+import { readCurrentArtifact } from './artifacts.js'
+import { catalogRelevantRevision } from './dependencies.js'
+import { CLIENT_IDS } from '../renderers/index.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
-import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
+import { epochMillisSchema, type Subscription } from './schema.js'
 import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
 
 const client = z.enum(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
@@ -82,18 +84,7 @@ const updateSchema = z.object({
 }).refine((value) => Object.keys(value).length > 0, 'At least one field is required')
 const emptySchema = z.object({}).default({})
 
-const propagationWarning = 'KV 更新可能需要约 60 秒或更久才能在所有地区生效'
-const compilationWarning = '订阅已保存，但客户端缓存编译失败，将在后续变更时重试'
-
-async function mutationWarning(compile?: () => Promise<unknown>): Promise<string> {
-  if (!compile) return propagationWarning
-  try {
-    await compile()
-    return propagationWarning
-  } catch {
-    return `${propagationWarning}；${compilationWarning}`
-  }
-}
+const deliveryNotice = '下次下载将按当前订阅生成'
 
 function mapError(error: unknown): never {
   if (error instanceof DeliveryError) {
@@ -130,7 +121,6 @@ async function run<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 type ViewOptions = {
-  catalogRevision?: number
   snapshot?: AccessSnapshot
   audience?: 'admin' | 'user'
 }
@@ -138,9 +128,8 @@ type ViewOptions = {
 async function view(
   c: Context<AppEnv>,
   subscription: Awaited<ReturnType<typeof getSubscription>>,
-  options?: number | ViewOptions,
+  viewOptions: ViewOptions = {},
 ) {
-  const viewOptions: ViewOptions = typeof options === 'number' ? { catalogRevision: options } : options ?? {}
   const audience = viewOptions.audience ?? 'admin'
   const token = await decryptSubscriptionToken(c.env, subscription)
   if (!subscription.encryptedToken) {
@@ -151,7 +140,6 @@ async function view(
   const plan = subscription.planId
     ? (viewOptions.snapshot?.plans ?? await listPlans(c.env.DB)).find(item => item.id === subscription.planId) ?? null
     : null
-  const currentCatalogRevision = viewOptions.catalogRevision ?? viewOptions.snapshot?.catalog.revision ?? (await readCatalog(c.env)).revision
   // Subscription links are always generated on the primary subscription
   // domain (plan section 7.1). When no usable primary is configured the
   // links stay empty and linkError tells the UI to prompt for domain
@@ -179,36 +167,22 @@ async function view(
   const presented = presentSubscriptionStatus(access.status, audience)
   const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
   const diagnostics: Record<string, unknown> = {}
-  for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
-    const effectiveForClient = name === 'singbox' ? singbox : name === 'mihomo' ? effective : undefined
-    const versionId = effectiveForClient?.version_id
-    let raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name, versionId, RENDERER_VERSION))
-    if (!raw) raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
-    if (!raw) raw = await c.env.DATA.get(`${compiledPrefix(subscription.tokenHash)}${name}`)
-    if (!raw) continue
-    let value: unknown
-    try {
-      value = JSON.parse(raw)
-    } catch {
-      continue
-    }
-    const artifact = compiledArtifactSchema.safeParse(value)
-    if (
-      subscription.enabled &&
-      artifact.success &&
-      artifact.data.rendererVersion === RENDERER_VERSION &&
-      artifact.data.templateVersionId === (versionId ?? undefined) &&
-      artifact.data.subscriptionRevision === subscription.revision &&
-      artifact.data.catalogRevision === currentCatalogRevision
-    ) diagnostics[name] = {
-      inputNodes: artifact.data.inputNodes,
-      outputNodes: artifact.data.outputNodes,
-      skippedNodes: artifact.data.skippedNodes,
-      diagnostics: artifact.data.diagnostics,
-      available: artifact.data.available,
-      rendererVersion: artifact.data.rendererVersion,
-      templateVersionId: artifact.data.templateVersionId,
-    }
+  if (access.status === 'active' || access.status === 'incompatible') {
+    await Promise.all(CLIENT_IDS.map(async name => {
+      const versionId = name === 'singbox' ? singbox?.version_id : name === 'mihomo' ? effective?.version_id : undefined
+      if ((name === 'mihomo' && templateInvalid) || (name === 'singbox' && !singbox)) return
+      const relevant = await catalogRelevantRevision(access.nodes, access.speed, name)
+      const { artifact } = await readCurrentArtifact(c.env.DATA, subscription, name, relevant, versionId)
+      if (artifact) diagnostics[name] = {
+        inputNodes: artifact.inputNodes,
+        outputNodes: artifact.outputNodes,
+        skippedNodes: artifact.skippedNodes,
+        diagnostics: artifact.diagnostics,
+        available: artifact.available,
+        rendererVersion: artifact.rendererVersion,
+        templateVersionId: artifact.templateVersionId,
+      }
+    }))
   }
   return {
     sourceType: subscription.sourceType ?? 'legacy',
@@ -256,8 +230,8 @@ async function view(
   }
 }
 
-async function userSubscriptionView(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, catalogRevision?: number, snapshot?: AccessSnapshot) {
-  const body = await view(c, subscription, { catalogRevision, snapshot, audience: 'user' })
+async function userSubscriptionView(c: Context<AppEnv>, subscription: Awaited<ReturnType<typeof getSubscription>>, snapshot?: AccessSnapshot) {
+  const body = await view(c, subscription, { snapshot, audience: 'user' })
   return attachTrafficUsage(body, body.trafficGb, measuredTrafficForSubscription(body.id))
 }
 
@@ -337,7 +311,7 @@ adminDeliveryRoutes.get('/', async (c) => {
   await disableExpiredSubscriptions(c.env)
   const [subscriptions, snapshot] = await Promise.all([listAllSubscriptions(c.env), loadAccessSnapshot(c.env)])
   const query = c.req.query()
-  const viewOptions = { catalogRevision: snapshot.catalog.revision, snapshot, audience: 'admin' as const }
+  const viewOptions = { snapshot, audience: 'admin' as const }
   if (!hasAdminSubscriptionParams(query)) {
     return c.json({ subscriptions: await Promise.all(subscriptions.map((subscription) => view(c, subscription, viewOptions))) })
   }
@@ -396,13 +370,7 @@ adminDeliveryRoutes.post('/batch', async (c) => {
                 ? { mode: 'specific' as const, templateId: binding.templateId, expectedRevision: revision }
                 : { mode: binding?.mode === 'base' ? 'base' as const : 'inherit' as const, expectedRevision: revision },
             }
-      const updated = await run(() => updateSubscription(c.env, id, patch, { actorRole: 'admin' }))
-      try {
-        if (updated.enabled) await compileSubscription(c.env, updated)
-        else await deleteCompiledArtifacts(c.env.DATA, updated.tokenHash)
-      } catch {
-        // The subscription row is already saved. Compilation retries on a later change.
-      }
+      await run(() => updateSubscription(c.env, id, patch, { actorRole: 'admin' }))
       ok.push(id)
     } catch (error) {
       const api = error instanceof ApiError ? error : apiError(422, 'SUBSCRIPTION_INVALID', '订阅输入无效')
@@ -444,8 +412,7 @@ adminDeliveryRoutes.post('/', async (c) => {
   const result = await run(() => createSubscription(c.env, { ...input, idempotencyKey: key.data }, {
     actorRole: 'admin', actorUserId: c.get('principal').id,
   }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice }, 201)
 })
 
 adminDeliveryRoutes.get('/:id', async (c) => {
@@ -456,43 +423,37 @@ adminDeliveryRoutes.get('/:id', async (c) => {
 adminDeliveryRoutes.post('/:id/copy', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => copySubscription(c.env, c.req.param('id'), { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning }, 201)
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice }, 201)
 })
 
 adminDeliveryRoutes.post('/:id/transfer', async (c) => {
   const input = await readJson(c, z.object({ userId: z.string().regex(/^usr_[1-9]\d*$/).nullable() }))
   const result = await run(() => transferSubscription(c.env, c.req.param('id'), input.userId))
-  const warning = await mutationWarning(() => compileSubscription(c.env, result.subscription))
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.patch('/:id', async (c) => {
   const input = await readJson(c, updateSchema)
   const subscription = await run(() => updateSubscription(c.env, c.req.param('id'), input, { actorRole: 'admin' }))
-  const warning = await mutationWarning(() => compileAllSubscriptions(c.env))
-  return c.json({ subscription: await view(c, subscription), warning })
+  return c.json({ subscription: await view(c, subscription), warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.put('/:id', async (c) => {
   const input = await readJson(c, updateSchema)
   const subscription = await run(() => updateSubscription(c.env, c.req.param('id'), input, { actorRole: 'admin' }))
-  const warning = await mutationWarning(() => compileAllSubscriptions(c.env))
-  return c.json({ subscription: await view(c, subscription), warning })
+  return c.json({ subscription: await view(c, subscription), warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.post('/:id/token/reset', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
   const result = await run(() => resetSubscriptionToken(c.env, c.req.param('id'), { actorRole: 'admin' }))
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.delete('/:id', async (c) => {
@@ -511,7 +472,7 @@ userDeliveryRoutes.get('/', async (c) => {
   ])
   const { id: userId, role } = c.get('principal')
   const views = await Promise.all(subscriptions.filter(subscription => subscription.userId === userId)
-    .map(subscription => userSubscriptionView(c, subscription, snapshot.catalog.revision, snapshot)))
+    .map(subscription => userSubscriptionView(c, subscription, snapshot)))
   return c.json({ subscriptions: views, shareEnabled: canUseShareFeature(role, shareSettings) })
 })
 
@@ -531,8 +492,7 @@ userDeliveryRoutes.post('/:id/token/reset', async (c) => {
   } catch {
     // Audit is best-effort and must not include the new token.
   }
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning: deliveryNotice })
 })
 
 userDeliveryRoutes.post('/:id/reset-token', async (c) => {
@@ -546,6 +506,5 @@ userDeliveryRoutes.post('/:id/reset-token', async (c) => {
   } catch {
     // Audit is best-effort and must not include the new token.
   }
-  const warning = await mutationWarning(result.subscription.enabled ? () => compileSubscription(c.env, result.subscription) : undefined)
-  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning })
+  return c.json({ subscription: await userSubscriptionView(c, result.subscription), token: result.token, warning: deliveryNotice })
 })

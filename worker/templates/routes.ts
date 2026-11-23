@@ -417,7 +417,8 @@ templateRoutes.post('/:id/publish', async c => {
   const normalizedJson = JSON.stringify(validation.normalized)
   assertTemplateFitsD1(row.draft, normalizedJson)
   const contentHash = await computeContentHash(validation.normalized)
-  const enableSingBox = input.singbox ?? Boolean(row.published_id && await publishedSingBox(c.env.DB, row.id, row.published_id))
+  const previousSingBox = Boolean(row.published_id && await publishedSingBox(c.env.DB, row.id, row.published_id))
+  const enableSingBox = input.singbox ?? previousSingBox
   const native = enableSingBox ? { ruleSets: await loadSingBoxRuleSets(c.env.DB, validation.template) } : undefined
   const compiled = native ? singboxValidation(() => compileSingBoxConfig(validation.template, [previewNode], native)) : undefined
   const compiledDiagnostics = compiled ? JSON.stringify([...compiled.policyDiagnostics, ...compiled.diagnostics]) : undefined
@@ -449,7 +450,9 @@ templateRoutes.post('/:id/publish', async c => {
   // Get reference summary for response
   const refs = await getReferencedSummary(c.env, row.id)
   const actor = c.get('principal')
-  if (actor) await logAudit(c.env.DB, actor.id, 'template.publish', 'subscription_template', row.id, { versionId: id, references: refs }).catch(() => {})
+  if (actor) await logAudit(c.env.DB, actor.id, 'template.publish', 'subscription_template', row.id, { versionId: id, references: refs,
+    platforms: previousSingBox || compiled ? ['mihomo', 'singbox'] : ['mihomo'],
+  }).catch(() => {})
 
   return c.json({
     versionId: id,

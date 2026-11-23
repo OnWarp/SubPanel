@@ -1,3 +1,4 @@
+import compileJobsSql from '../../../migrations/0023_compile_jobs.sql?raw'
 import subscriptionV2P2Sql from '../../../migrations/0022_subscription_v2_p2.sql?raw'
 import subscriptionV2Sql from '../../../migrations/0021_subscription_v2_p1.sql?raw'
 import conversionProfilesSql from '../../../migrations/0020_conversion_profiles.sql?raw'
@@ -32,6 +33,8 @@ export const D1_TABLES = [
   'audit_logs',
   'catalog_sync_leases',
   'catalog_sync_runs',
+  'compile_job_items',
+  'compile_jobs',
   'conversion_bindings',
   'conversion_local_rule_sets',
   'conversion_profile_versions',
@@ -254,6 +257,10 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0022_subscription_v2_p2.sql', queries: [
       ...splitSqlStatements(subscriptionV2P2Sql.replace(triggerPattern, '')),
       ...(subscriptionV2P2Sql.match(triggerPattern) ?? []),
+    ] },
+    { name: '0023_compile_jobs.sql', queries: [
+      ...splitSqlStatements(compileJobsSql.replace(triggerPattern, '')),
+      ...(compileJobsSql.match(triggerPattern) ?? []),
     ] },
   ])
 }

@@ -432,7 +432,7 @@ function groupOrderInsert(db: AppDatabase, row: GroupNodeOrderRow): D1PreparedSt
   ).bind(row.group_id, row.node_id, row.position)
 }
 
-export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogSnapshot, expectedRevision?: number): Promise<void> {
+export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogSnapshot, expectedRevision?: number, audit?: D1PreparedStatement): Promise<void> {
   const converted = convertCatalog(snapshot)
   const meta = metaFromSnapshot(snapshot)
   const statements: D1PreparedStatement[] = [
@@ -443,6 +443,7 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
       SELECT 'catalog_write_conflict', NULL, ?
       WHERE COALESCE((SELECT json_extract(value, '$') FROM system_settings WHERE key = ?), 0) != ?`)
       .bind(meta.updatedAt, CATALOG_SETTING_KEYS.revision, expectedRevision)]),
+    ...(audit ? [audit] : []),
     db.prepare('DELETE FROM group_node_order'),
     db.prepare('DELETE FROM group_nodes'),
     db.prepare('DELETE FROM group_sources'),

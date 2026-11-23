@@ -1,3 +1,4 @@
+import { catalogDependencyChange } from '../delivery/dependencies.js'
 import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
 import { persistCatalogSnapshot, readCatalogFromD1 } from './d1-repository.js'
@@ -64,7 +65,26 @@ export async function writeCatalog(
   // One backend only: the import flag selects D1, and its absence keeps KV.
   if (await isModuleReady(env.DB, CATALOG_D1_READY_KEY)) {
     try {
-      await persistCatalogSnapshot(env.DB, next, snapshot.revision)
+      const current = await readCatalogFromD1(env.DB)
+      const impacts = catalogDependencyChange(current, next)
+      const audit = impacts.groupIds.length || impacts.directNodeIds.length
+        ? env.DB.prepare(`INSERT INTO audit_logs (id, action, target_type, detail, created_at)
+          SELECT ?, 'compile.invalidate.catalog', 'catalog',
+            json_set(?, '$.candidateSubscriptions', (SELECT count(*) FROM (
+              SELECT sg.subscription_id FROM json_each(?) changed
+              JOIN subscription_groups sg ON sg.group_id=changed.value
+              JOIN subscriptions s ON s.id=sg.subscription_id
+              WHERE s.plan_id IS NULL OR EXISTS (
+                SELECT 1 FROM plan_groups pg WHERE pg.plan_id=s.plan_id AND pg.group_id=sg.group_id
+              )
+              UNION
+              SELECT sn.subscription_id FROM json_each(?) changed
+              JOIN subscription_nodes sn ON sn.node_id=changed.value
+              JOIN subscriptions s ON s.id=sn.subscription_id WHERE s.plan_id IS NULL
+            ))), ?`).bind(crypto.randomUUID(), JSON.stringify(impacts),
+              JSON.stringify(impacts.groupIds), JSON.stringify(impacts.directNodeIds), now)
+        : undefined
+      await persistCatalogSnapshot(env.DB, next, snapshot.revision, audit)
     } catch (error) {
       if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
         throw apiError(409, 'CATALOG_WRITE_CONFLICT', '目录已更新，请重新加载后再试')

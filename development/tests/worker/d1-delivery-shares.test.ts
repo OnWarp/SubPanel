@@ -5,7 +5,7 @@ import { readCatalog, writeCatalog } from '../../../worker/catalog/repository'
 import type { CatalogSnapshot } from '../../../worker/catalog/schema'
 import { clearAppsStorage } from '../../../worker/apps/d1-repository'
 import { clearCatalogStorage } from '../../../worker/catalog/d1-repository'
-import { compileSubscription } from '../../../worker/delivery/compiler'
+import { renderEntitledSubscription } from '../../../worker/delivery/compiler'
 import { clearDeliveryStorage } from '../../../worker/delivery/d1-repository'
 import { DELIVERY_KEY, readDelivery, writeDelivery } from '../../../worker/delivery/repository'
 import type { DeliverySnapshot } from '../../../worker/delivery/schema'
@@ -516,7 +516,7 @@ describe('subscription compile on D1 matches KV', () => {
     }, NOW)
     const enabled = saved.subscriptions.find((item) => item.id === 'sub_1')
     expect(enabled?.enabled).toBe(true)
-    const kvArtifacts = await compileSubscription(env, enabled!, { now: COMPILE_NOW })
+    const kvArtifacts = await Promise.all(CLIENT_IDS.map(client => renderEntitledSubscription(env, enabled!, client, COMPILE_NOW)))
     expect(kvArtifacts.map((artifact) => artifact.client)).toEqual([...CLIENT_IDS])
     expect(kvArtifacts.every((artifact) => artifact.outputNodes === 1 && artifact.body.length > 0)).toBe(true)
 
@@ -524,7 +524,7 @@ describe('subscription compile on D1 matches KV', () => {
     await runModuleImport(env, 'delivery', LATER)
     const fromD1 = (await readDelivery(env)).subscriptions.find((item) => item.id === 'sub_1')
     expect(fromD1).toEqual(enabled)
-    const d1Artifacts = await compileSubscription(env, fromD1!, { now: COMPILE_NOW })
+    const d1Artifacts = await Promise.all(CLIENT_IDS.map(client => renderEntitledSubscription(env, fromD1!, client, COMPILE_NOW)))
     expect(d1Artifacts).toEqual(kvArtifacts)
   })
 })

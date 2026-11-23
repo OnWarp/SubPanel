@@ -6,9 +6,10 @@ import { apiError, ApiError } from './platform/api-error.js'
 import { hashToken } from './platform/crypto.js'
 import { noteSubscriptionFetch, stageSubscriptionFetch } from './delivery/fetch-stats.js'
 import { subscriptionRowStatus } from './delivery/expiry.js'
-import { compiledArtifactSchema, type Subscription } from './delivery/schema.js'
-import { renderEntitledSubscription } from './delivery/compiler.js'
-import { compiledKey, compiledPrefix, readDelivery } from './delivery/repository.js'
+import type { Subscription } from './delivery/schema.js'
+import { loadSubscriptionArtifact } from './delivery/artifacts.js'
+import { isPublicSubscriptionCurrent, readDeliverySubscription } from './delivery/d1-repository.js'
+import { allowSubscriptionFetch } from './delivery/public-rate-limit.js'
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
 const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
@@ -40,6 +41,11 @@ const BLOCKED_PUBLIC = new Set(['revoked', 'disabled', 'owner_unavailable'])
 
 async function serve(c: Context<AppEnv>, clientParam?: string) {
   const started = Date.now()
+  const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
+  if (!await allowSubscriptionFetch(c.env.DB, 'address', address)) {
+    c.header('Retry-After', '60')
+    throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+  }
   const token = c.req.param('token') ?? ''
   if (!tokenPattern.test(token)) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   const explicit = clientParam !== undefined
@@ -53,17 +59,14 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   let subscription: Subscription | undefined
   let statusCode = 500
   let ok = false
+  let cache: 'hit' | 'miss' | 'blocked' | undefined
   try {
-    let delivery: Awaited<ReturnType<typeof readDelivery>>
     try {
-      delivery = await readDelivery(c.env)
+      subscription = await readDeliverySubscription(c.env.DB, { tokenHash }) ?? undefined
     } catch {
-      console.error(JSON.stringify({ event: 'subscription_storage_failed' }))
-      statusCode = 500
       throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
     }
 
-    subscription = delivery.subscriptions.find((candidate) => candidate.encryptedToken && candidate.tokenHash === tokenHash)
     if (!subscription) {
       statusCode = 404
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
@@ -84,38 +87,36 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
 
-    let artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>
+    if (!await allowSubscriptionFetch(c.env.DB, 'subscription', subscription.id)) {
+      c.header('Retry-After', '60')
+      throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+    }
+
+    let result: Awaited<ReturnType<typeof loadSubscriptionArtifact>>
     try {
-      artifact = await renderEntitledSubscription(c.env, subscription, client as RenderClient, now)
+      result = await loadSubscriptionArtifact(c.env, subscription, client as RenderClient, now, undefined,
+        write => c.executionCtx.waitUntil(write))
     } catch (error) {
       console.error(JSON.stringify({
         event: 'subscription_render_failed', subscriptionId: subscription.id,
         code: error instanceof ApiError ? error.code : 'SUBSCRIPTION_RENDER_FAILED',
       }))
       if (error instanceof ApiError) throw error
-      statusCode = 500
       throw apiError(500, 'SUBSCRIPTION_RENDER_FAILED', '订阅生成失败')
     }
-
-    if (artifact.zeroNodeReason === 'ownerUnavailable') {
-      statusCode = 404
-      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-    }
+    cache = result.outcome
+    if (result.outcome === 'blocked') throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    const { artifact } = result
     if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
       statusCode = 422
-      throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: artifact.zeroNodeReason })
+      throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: result.reason })
     }
 
-    // Compare the live result against KV only to decide whether the derived
-    // artifact needs refreshing. Authorization and response bytes come from D1
-    // and the current catalog, even if an older request races with this write.
-    if (artifact.available) {
-      const key = compiledKey(tokenHash, client, artifact.templateVersionId, artifact.rendererVersion)
-      c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, key, artifact))
-      const legacyKey = `${compiledPrefix(tokenHash)}${client}`
-      if (key !== legacyKey) {
-        c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, legacyKey, artifact))
-      }
+    if (!await isPublicSubscriptionCurrent(c.env.DB, subscription)) {
+      throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    }
+    if (subscription.expiresAt !== null && subscription.expiresAt <= Date.now()) {
+      throw apiError(410, 'SUB_EXPIRED', '订阅已过期')
     }
 
     c.header('Cache-Control', 'no-store')
@@ -141,6 +142,9 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     if (error instanceof ApiError) statusCode = error.status
     throw error
   } finally {
+    if (cache || statusCode >= 500) console.info(JSON.stringify({
+      event: 'subscription_delivery', platform: client, cache, status: statusCode, durationMs: Date.now() - started,
+    }))
     if (subscription) {
       const sample = {
         at: new Date().toISOString(),
@@ -152,29 +156,6 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       stageSubscriptionFetch(subscription.id, sample)
       c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, subscription.id, sample))
     }
-  }
-}
-
-async function refreshArtifact(kv: KVNamespace, key: string, artifact: Awaited<ReturnType<typeof renderEntitledSubscription>>) {
-  try {
-    const raw = await kv.get(key)
-    if (raw) {
-      let cached: ReturnType<typeof compiledArtifactSchema.safeParse> | undefined
-      try {
-        cached = compiledArtifactSchema.safeParse(JSON.parse(raw))
-      } catch {
-        // Older or malformed entries are replaced.
-      }
-      if (cached?.success && cached.data.client === artifact.client
-        && cached.data.rendererVersion === artifact.rendererVersion
-        && cached.data.subscriptionRevision === artifact.subscriptionRevision
-        && cached.data.catalogRevision === artifact.catalogRevision
-        && cached.data.templateVersionId === artifact.templateVersionId
-        && cached.data.body === artifact.body && cached.data.etag === artifact.etag) return
-    }
-    await kv.put(key, JSON.stringify(artifact))
-  } catch {
-    console.warn(JSON.stringify({ event: 'subscription_cache_refresh_failed', client: artifact.client }))
   }
 }
 

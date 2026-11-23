@@ -26,12 +26,15 @@ type PlanRow = { id: string; name: string; description: string; duration_days: n
 export type PlanAssignment = { id: string; userId: string; planId: string; startsAt: string; expiresAt: string | null; status: 'active' | 'revoked'; source: 'admin' | 'trial'; note: string; createdAt: string; updatedAt: string; plan: Plan }
 export type SubscriptionPlanSummary = { state: 'active' | 'none' | 'expired' | 'revoked' | 'pending' | 'disabled'; current: PlanAssignment | null; latest: PlanAssignment | null }
 
-export async function listPlans(db: D1Database): Promise<Plan[]> {
-  const [plans, groups] = await Promise.all([
-    db.prepare('SELECT * FROM plans ORDER BY sort_order, created_at, id').all<PlanRow>(),
-    db.prepare('SELECT plan_id, group_id FROM plan_groups ORDER BY position').all<{ plan_id: string; group_id: string }>(),
+export async function listPlans(db: D1Database, id?: string): Promise<Plan[]> {
+  const [plans, groups] = await batch(db, [
+    id ? db.prepare('SELECT * FROM plans WHERE id=?').bind(id)
+      : db.prepare('SELECT * FROM plans ORDER BY sort_order, created_at, id'),
+    id ? db.prepare('SELECT plan_id, group_id FROM plan_groups WHERE plan_id=? ORDER BY position').bind(id)
+      : db.prepare('SELECT plan_id, group_id FROM plan_groups ORDER BY position'),
   ])
-  return plans.results.map((p) => ({ id: p.id, name: p.name, description: p.description, durationDays: p.duration_days, trafficGb: p.traffic_gb, speedLimitMbps: p.speed_limit_mbps, deviceLimit: p.device_limit, enabled: p.enabled === 1, sortOrder: p.sort_order, createdAt: p.created_at, updatedAt: p.updated_at, groupIds: groups.results.filter((g) => g.plan_id === p.id).map((g) => g.group_id) }))
+  const planGroups = groups.results as { plan_id: string; group_id: string }[]
+  return (plans.results as PlanRow[]).map((p) => ({ id: p.id, name: p.name, description: p.description, durationDays: p.duration_days, trafficGb: p.traffic_gb, speedLimitMbps: p.speed_limit_mbps, deviceLimit: p.device_limit, enabled: p.enabled === 1, sortOrder: p.sort_order, createdAt: p.created_at, updatedAt: p.updated_at, groupIds: planGroups.filter((g) => g.plan_id === p.id).map((g) => g.group_id) }))
 }
 // Explicit public projection: never expose group membership or management metadata.
 export async function listPublicPlans(db: D1Database) {
@@ -41,7 +44,7 @@ export async function listPublicPlans(db: D1Database) {
     durationDays: p.duration_days, trafficGb: p.traffic_gb, speedLimitMbps: p.speed_limit_mbps, deviceLimit: p.device_limit }))
 }
 export async function getPlan(db: D1Database, id: string): Promise<Plan> {
-  const plan = (await listPlans(db)).find((p) => p.id === id)
+  const plan = (await listPlans(db, id))[0]
   if (!plan) throw apiError(404, 'PLAN_NOT_FOUND', '计划不存在')
   return plan
 }
@@ -59,6 +62,9 @@ export async function savePlan(db: D1Database, input: PlanInput, id?: string): P
     db.prepare('DELETE FROM plan_groups WHERE plan_id = ?').bind(planId),
     db.prepare(`UPDATE subscriptions SET traffic_gb=?, speed_limit_mbps=?, device_limit=?, revision=revision+1
       WHERE plan_id=?`).bind(p.trafficGb,p.speedLimitMbps,p.deviceLimit,planId),
+    ...(id ? [db.prepare(`INSERT INTO audit_logs (id, action, target_type, target_id, detail, created_at)
+      SELECT ?, 'compile.invalidate.plan', 'plan', ?, json_object('subscriptions', count(*)), ?
+      FROM subscriptions WHERE plan_id=?`).bind(crypto.randomUUID(), planId, now, planId)] : []),
     bumpDeliveryRevision(db, now),
     ...p.groupIds.map((g, i) => db.prepare('INSERT INTO plan_groups(plan_id,group_id,position) VALUES(?,?,?)').bind(planId,g,i)),
   ])

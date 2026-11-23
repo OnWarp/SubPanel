@@ -200,7 +200,7 @@ describe('administrator Catalog APIs', () => {
     expect(await response.json()).toMatchObject({ node: { displayName: 'After', enabled: false, retained: true, order: 9 } })
   })
 
-  it('keeps a successful Catalog mutation when derived subscription compilation fails', async () => {
+  it('saves Catalog edits independently of subscription compilation', async () => {
     const cookie = await login()
     await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources`,
@@ -208,7 +208,7 @@ describe('administrator Catalog APIs', () => {
     )
     const catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { nodes: Array<{ id: string }> }
 
-    // A corrupt delivery snapshot makes recompilation fail after the Catalog write.
+    // A corrupt delivery snapshot must never be read during a Catalog write.
     await env.DB.prepare(
       `INSERT INTO system_settings (key, value, updated_at) VALUES ('delivery_revision', '"bad"', '2020-01-01T00:00:00.000Z')
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
@@ -221,13 +221,12 @@ describe('administrator Catalog APIs', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       node: { displayName: 'After compile failure' },
-      warning: expect.stringContaining('订阅'),
     })
     const latest = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { nodes: Array<{ displayName: string }> }
     expect(latest.nodes[0].displayName).toBe('After compile failure')
   })
 
-  it('reports source recompile failures without rolling back saved mutations', async () => {
+  it('creates, updates, removes and refreshes sources without compiling subscriptions', async () => {
     const cookie = await login()
     await env.DB.prepare(
       `INSERT INTO system_settings (key, value, updated_at) VALUES ('delivery_revision', '"bad"', '2020-01-01T00:00:00.000Z')
@@ -240,21 +239,21 @@ describe('administrator Catalog APIs', () => {
     )
     expect(created.status).toBe(201)
     const createdBody = await created.json() as { source: { id: string }; warning?: string }
-    expect(createdBody.warning).toContain('订阅')
+    expect(createdBody.warning).toBeUndefined()
 
     const updated = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources/${createdBody.source.id}`,
       jsonRequest({ name: 'Updated with warning' }, { ...withCookie(cookie), method: 'PUT' }),
     )
     expect(updated.status).toBe(200)
-    expect((await updated.json() as { warning?: string }).warning).toContain('订阅')
+    expect((await updated.json() as { warning?: string }).warning).toBeUndefined()
 
     const deleted = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources/${createdBody.source.id}`,
       jsonRequest({}, { ...withCookie(cookie), method: 'DELETE' }),
     )
     expect(deleted.status).toBe(204)
-    expect(deleted.headers.get('x-catalog-recompile')).toBe('failed')
+    expect(deleted.headers.get('x-catalog-recompile')).toBeNull()
 
     vi.stubGlobal('fetch', async () => new Response(ssLine('Remote warning')))
     const remote = await exports.default.fetch(
@@ -268,7 +267,7 @@ describe('administrator Catalog APIs', () => {
       }, withCookie(cookie)),
     )
     const remoteBody = await remote.json() as { source: { id: string }; warning?: string }
-    expect(remoteBody.warning).toContain('订阅')
+    expect(remoteBody.warning).toBeUndefined()
     const preview = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources/${remoteBody.source.id}/refresh`,
       jsonRequest({}, withCookie(cookie)),
@@ -278,7 +277,7 @@ describe('administrator Catalog APIs', () => {
       `${TEST_ORIGIN}/api/admin/catalog/sources/${remoteBody.source.id}/confirm-sync`,
       jsonRequest({ previewId }, withCookie(cookie)),
     )
-    expect((await refreshed.json() as { warning?: string }).warning).toContain('订阅')
+    expect((await refreshed.json() as { warning?: string }).warning).toBeUndefined()
   })
 
   it('creates, updates, and deletes groups with reference validation', async () => {
