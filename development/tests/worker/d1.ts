@@ -1,3 +1,4 @@
+import coreGSql from '../../../migrations/0025_core_g.sql?raw'
 import subscriptionV2P3Sql from '../../../migrations/0023_subscription_v2_p3.sql?raw'
 import compileJobsSql from '../../../migrations/0024_compile_jobs.sql?raw'
 import subscriptionV2P2Sql from '../../../migrations/0022_subscription_v2_p2.sql?raw'
@@ -41,6 +42,7 @@ export const D1_TABLES = [
   'conversion_profile_versions',
   'conversion_profiles',
   'conversion_rule_sources',
+  'conversion_rule_version_snapshots',
   'cron_runs',
   'email_change_requests',
   'email_verifications',
@@ -270,6 +272,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
       ...splitSqlStatements(compileJobsSql.replace(triggerPattern, '')),
       ...(compileJobsSql.match(triggerPattern) ?? []),
     ] },
+    { name: '0025_core_g.sql', queries: coreGSql.trim().split(/;\s*\n(?=(?:ALTER|DROP|CREATE)|$)/u).filter(Boolean) },
   ])
 }
 

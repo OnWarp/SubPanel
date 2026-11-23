@@ -1,4 +1,4 @@
-import { isAlias, isMap, isScalar, isSeq, parseDocument } from 'yaml'
+import { Lexer, isAlias, isMap, isScalar, isSeq, parseDocument } from 'yaml'
 import { fetchRemoteTextWithMetadata, RemoteFetchError, validateRemoteUrl } from '../catalog/remote.js'
 import { sha256Base64Url } from '../platform/hash.js'
 import { apiError } from '../platform/api-error.js'
@@ -8,6 +8,17 @@ import { z } from 'zod'
 const TRUSTED_ORIGINS = new Set(['https://raw.githubusercontent.com', 'https://cdn.jsdelivr.net'])
 const MAX_BYTES = 256 * 1024
 const MAX_RULES = 10_000
+export const systemRuleSet = {
+  name: '系统私网地址',
+  revision: 1,
+  rules: ['IP-CIDR,10.0.0.0/8', 'IP-CIDR,172.16.0.0/12', 'IP-CIDR,192.168.0.0/16', 'IP-CIDR6,fc00::/7'],
+}
+const matchFields: Record<string, string> = {
+  DOMAIN: 'domain', 'DOMAIN-SUFFIX': 'domain_suffix', 'DOMAIN-KEYWORD': 'domain_keyword',
+  'IP-CIDR': 'ip_cidr', 'IP-CIDR6': 'ip_cidr', 'SRC-IP-CIDR': 'source_ip_cidr',
+}
+export type RuleVersionSnapshot = { type: 'local' | 'remote' | 'system'; key: string; tag: string; version: string }
+
 
 export const ruleSource = z.object({
   url: z.string().max(2048),
@@ -50,6 +61,12 @@ function isNativeRuleSource(source: Pick<Source, 'url' | 'behavior' | 'format'>)
 }
 
 function validateNativeRulePayload(text: string) {
+  // A native source has one root object, a rules array, objects and string arrays.
+  let depth = 0
+  for (const token of text.matchAll(/"(?:[^"\\]|\\[\s\S])*"|[{}[\]]/gu)) {
+    if ((token[0] === '[' || token[0] === '{') && ++depth > 4) throw new RemoteFetchError('REMOTE_BODY_INVALID')
+    if (token[0] === ']' || token[0] === '}') depth--
+  }
   let value: unknown
   try { value = JSON.parse(text) } catch { throw new RemoteFetchError('REMOTE_BODY_INVALID') }
   const fields: Record<string, string> = {
@@ -74,6 +91,13 @@ export function validateRulePayload(text: string, { format, behavior }: Pick<Sou
   if (new TextEncoder().encode(text).length > MAX_BYTES) throw new RemoteFetchError('REMOTE_BODY_TOO_LARGE')
   let rules: unknown[]
   if (format === 'yaml') {
+    // Preflight flow nesting before the recursive YAML composer sees it.
+    let depth = 0
+    for (const token of new Lexer().lex(text, false)) {
+      if ((token === '[' || token === '{') && ++depth > 2) throw new RemoteFetchError('REMOTE_BODY_INVALID')
+      if (token === ']' || token === '}') depth--
+    }
+    if (/^[ \t]{33}|^[ \t]*-[ \t]+[?\-:][ \t]/mu.test(text)) throw new RemoteFetchError('REMOTE_BODY_INVALID')
     let doc
     try { doc = parseDocument(text, { uniqueKeys: true }) } catch { throw new RemoteFetchError('REMOTE_BODY_INVALID') }
     const contents = doc.contents
@@ -126,9 +150,9 @@ export async function refreshRuleSource(db: D1Database, source: Source, fetcher:
   }
 }
 
-export async function listRuleSources(db: D1Database) {
+export async function listRuleSources(db: D1Database, offset = 0) {
   const { results } = await db.prepare(`SELECT url,behavior,format,version,last_success_at,error_code
-    FROM conversion_rule_sources ORDER BY COALESCE(last_success_at,'') DESC, url LIMIT 100`).all<RuleSourceRow>()
+    FROM conversion_rule_sources ORDER BY url,behavior,format LIMIT 101 OFFSET ?`).bind(offset).all<RuleSourceRow>()
   return results.map(row => ({ ...row, nativeSingbox: isNativeRuleSource(row) }))
 }
 
@@ -140,7 +164,7 @@ export async function checkRuleSources(db: D1Database, template: Template) {
     const { url, behavior, format } = providers[name]
     try {
       const normalized = ruleSourceUrl(url).href
-      return { name, url: isNativeRuleSource({ url: normalized, behavior, format: format === 'text' ? 'text' : 'yaml' }) ? null : normalized, behavior, format }
+      return { name, url: isNativeRuleSource({ url: normalized, behavior, format: format === 'text' ? 'text' : 'yaml' }) ? null : normalized, behavior, format: format ?? 'yaml' }
     }
     catch { return { name, url: null, behavior, format } }
   })
@@ -159,8 +183,13 @@ export async function checkRuleSources(db: D1Database, template: Template) {
 }
 
 export const localRuleSet = z.object({
-  name: z.string().trim().min(1).max(80),
-  rules: z.array(z.string().trim().min(1).max(1024).refine(rule => !/^MATCH\s*,/u.test(rule))).min(1).max(100),
+  name: z.string().trim().min(1).max(80).refine(name => name !== systemRuleSet.name),
+  rules: z.array(z.string().trim().min(1).max(1024).refine(rule => {
+    const [type, value, ...extra] = rule.split(',').map(part => part.trim())
+    return /^[A-Z][A-Z0-9-]*$/u.test(type) && !['MATCH', 'RULE-SET'].includes(type) && !!value
+      && !/\p{Cc}/u.test(rule) && validRuleValue(type, value)
+      && (extra.length === 0 ? Object.hasOwn(matchFields, type) : extra.length === 1 || (extra.length === 2 && extra[1] === 'no-resolve'))
+  }, '请填写受支持的匹配类型和值，例如 DOMAIN-SUFFIX,example.com')).min(1).max(100),
 })
 
 export function saveLocalRuleSet(db: D1Database, input: z.infer<typeof localRuleSet>) {
@@ -170,19 +199,14 @@ export function saveLocalRuleSet(db: D1Database, input: z.infer<typeof localRule
   `).bind(input.name, JSON.stringify(input.rules), new Date().toISOString()).run()
 }
 
-export async function listLocalRuleSets(db: D1Database) {
+export async function listLocalRuleSets(db: D1Database, offset = 0) {
   const { results } = await db.prepare(`
-    SELECT name,rules_json,revision,updated_at FROM conversion_local_rule_sets ORDER BY name LIMIT 100
-  `).all<{ name: string; rules_json: string; revision: number; updated_at: string }>()
+    SELECT name,rules_json,revision,updated_at FROM conversion_local_rule_sets ORDER BY name LIMIT 101 OFFSET ?
+  `).bind(offset).all<{ name: string; rules_json: string; revision: number; updated_at: string }>()
   return results.map(({ rules_json, ...row }) => ({ ...row, rules: JSON.parse(rules_json) as string[] }))
 }
 
-const SINGBOX_MATCH_FIELDS: Record<string, string> = {
-  DOMAIN: 'domain', 'DOMAIN-SUFFIX': 'domain_suffix', 'DOMAIN-KEYWORD': 'domain_keyword',
-  'IP-CIDR': 'ip_cidr', 'IP-CIDR6': 'ip_cidr', 'SRC-IP-CIDR': 'source_ip_cidr',
-}
-
-export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
+export async function loadSingBoxRuleSets(db: D1Database, template: Template, snapshots?: RuleVersionSnapshot[]) {
   const names = [...new Set(template.rules.filter(rule => rule.startsWith('RULE-SET,')).map(rule => rule.split(',')[1]))]
   const locals = template.subpanel?.singbox?.localRuleSets ?? []
   const remotes = template.subpanel?.singbox?.remoteRuleSets ?? []
@@ -192,7 +216,7 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
     return { ...provider, name, url: ruleSourceUrl(provider.url).href }
   })
   const { results } = await db.prepare(`
-    SELECT json_extract(j.value,'$.name') AS name, s.url, s.behavior, s.format, s.payload
+    SELECT json_extract(j.value,'$.name') AS name, s.url, s.behavior, s.format, s.payload, s.version
     FROM json_each(?) j JOIN conversion_rule_sources s
       ON s.url=json_extract(j.value,'$.url') AND s.behavior=json_extract(j.value,'$.behavior')
       AND s.format=json_extract(j.value,'$.format')
@@ -200,7 +224,7 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
       AND (SELECT SUM(length(CAST(p.payload AS BLOB))) FROM conversion_rule_sources p JOIN json_each(?) k
            ON p.url=json_extract(k.value,'$.url') AND p.behavior=json_extract(k.value,'$.behavior')
            AND p.format=json_extract(k.value,'$.format')) <= ?
-  `).bind(JSON.stringify(requested), JSON.stringify(requested), MAX_BYTES).all<Source & { name: string; payload: string }>()
+  `).bind(JSON.stringify(requested), JSON.stringify(requested), MAX_BYTES).all<Source & { name: string; payload: string; version: string }>()
   const byName = new Map(results.map(row => [row.name, row]))
   let count = 0
   const sets: Record<string, unknown>[] = names.map(name => {
@@ -211,6 +235,7 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
     }] })
     if (!row) throw invalid()
     ruleSourceUrl(row.url)
+    snapshots?.push({ type: 'remote', key: JSON.stringify([row.url, row.behavior, row.format]), tag: name, version: row.version })
     validateRulePayload(row.payload, row)
     const entries: string[] = row.format === 'yaml' ? parseDocument(row.payload).toJS().payload
       : row.payload.split(/\r?\n/u).map(line => line.trim()).filter(line => line && !line.startsWith('#'))
@@ -219,7 +244,7 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
     const rules = entries.map(entry => {
       const [type, value] = row.behavior === 'classical' ? entry.split(',').map(part => part.trim())
         : [row.behavior === 'ipcidr' ? 'IP-CIDR' : 'DOMAIN-SUFFIX', entry.trim().replace(/^\+\./u, '')]
-      const field = SINGBOX_MATCH_FIELDS[type]
+      const field = Object.hasOwn(matchFields, type) ? matchFields[type] : undefined
       if (!field || !validRuleValue(type, value)) throw invalid()
       return { [field]: [value] }
     })
@@ -228,20 +253,24 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
   const tags = new Set(names)
   if (locals.length) {
     const { results: records } = await db.prepare(`
-      SELECT name,rules_json FROM conversion_local_rule_sets WHERE name IN (SELECT value FROM json_each(?))
-    `).bind(JSON.stringify(locals.map(({ name }) => name))).all<{ name: string; rules_json: string }>()
-    const stored = new Map(records.map(record => [record.name, record.rules_json]))
+      SELECT name,rules_json,revision FROM conversion_local_rule_sets WHERE name IN (SELECT value FROM json_each(?))
+    `).bind(JSON.stringify(locals.map(({ name }) => name))).all<{ name: string; rules_json: string; revision: number }>()
+    const stored = new Map(records.map(record => [record.name, record]))
     for (const { name } of locals) {
       const invalid = () => apiError(422, 'TEMPLATE_INVALID', 'sing-box 本地规则集校验失败', { diagnostics: [{
         code: 'SINGBOX_RULE_SET_INVALID', severity: 'error', path: 'subpanel.singbox.localRuleSets',
         message: `规则集「${name}」缺失、重名或包含不兼容规则`,
       }] })
-      const raw = stored.get(name)
-      if (!raw || tags.has(name)) throw invalid()
+      const system = name === systemRuleSet.name
+      const record = stored.get(name)
+      const entries: string[] | undefined = system ? systemRuleSet.rules : record && JSON.parse(record.rules_json)
+      if (!entries || tags.has(name)) throw invalid()
+      snapshots?.push({ type: system ? 'system' : 'local', key: name, tag: name,
+        version: String(system ? systemRuleSet.revision : record!.revision) })
       tags.add(name)
-      const rules = (JSON.parse(raw) as string[]).map(entry => {
+      const rules = entries.map(entry => {
         const [type, value] = entry.split(',').map(part => part.trim())
-        const field = SINGBOX_MATCH_FIELDS[type]
+        const field = Object.hasOwn(matchFields, type) ? matchFields[type] : undefined
         if (!field || !value || !validRuleValue(type, value)) throw invalid()
         return { [field]: [value] }
       })
@@ -252,11 +281,11 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
   }
   if (remotes.length) {
     const { results: verified } = await db.prepare(`
-      SELECT url FROM conversion_rule_sources
+      SELECT url, version FROM conversion_rule_sources
       WHERE url IN (SELECT value FROM json_each(?)) AND behavior='classical' AND format='text'
         AND version IS NOT NULL AND error_code IS NULL AND last_success_at >= ?
-    `).bind(JSON.stringify(remotes.map(({ url }) => url)), new Date(Date.now() - 7 * 86400_000).toISOString()).all<{ url: string }>()
-    const available = new Set(verified.map(({ url }) => url))
+    `).bind(JSON.stringify(remotes.map(({ url }) => url)), new Date(Date.now() - 7 * 86400_000).toISOString()).all<{ url: string; version: string }>()
+    const available = new Map(verified.map(({ url, version }) => [url, version]))
     for (const { name, url } of remotes) {
       if (tags.has(name) || !isNativeRuleSource({ url, behavior: 'classical', format: 'text' }) || !available.has(url)) {
         throw apiError(422, 'TEMPLATE_INVALID', 'sing-box 远程规则集校验失败', { diagnostics: [{
@@ -265,8 +294,97 @@ export async function loadSingBoxRuleSets(db: D1Database, template: Template) {
         }] })
       }
       tags.add(name)
+      snapshots?.push({ type: 'remote', key: JSON.stringify([url, 'classical', 'text']), tag: name, version: available.get(url)! })
       sets.push({ type: 'remote', tag: name, format: 'source', url })
     }
   }
   return sets
+}
+
+export const ruleUsageQuery = z.object({
+  type: z.enum(['local', 'system', 'remote']),
+  key: z.string().min(1).max(2200),
+  after: z.string().max(128).default(''),
+})
+
+export async function ruleUsage(db: D1Database, input: z.infer<typeof ruleUsageQuery>) {
+  const { type, key, after } = input
+  let source: Pick<Source, 'url' | 'behavior' | 'format'> | undefined
+  let current: string | null = null
+  if (type === 'remote') {
+    let tuple: unknown
+    try { tuple = JSON.parse(key) } catch { throw apiError(422, 'RULE_SOURCE_INVALID', '规则源标识不正确') }
+    const parts = z.tuple([z.string(), ruleSource.shape.behavior, ruleSource.shape.format]).safeParse(tuple)
+    if (!parts.success) throw apiError(422, 'RULE_SOURCE_INVALID', '规则源标识不正确')
+    const [url, behavior, format] = parts.data
+    source = { url, behavior, format }
+    current = (await db.prepare('SELECT version FROM conversion_rule_sources WHERE url=? AND behavior=? AND format=?')
+      .bind(url, behavior, format).first<{ version: string | null }>())?.version ?? null
+  } else if (type === 'system') {
+    if (key !== systemRuleSet.name) throw apiError(404, 'RULE_SOURCE_INVALID', '系统规则集不存在')
+    current = String(systemRuleSet.revision)
+  } else {
+    const row = await db.prepare('SELECT revision FROM conversion_local_rule_sets WHERE name=?')
+      .bind(key).first<{ revision: number }>()
+    current = row ? String(row.revision) : null
+  }
+
+  const { results } = await db.prepare(`
+    WITH profiles AS (
+      SELECT t.id,t.name,t.archived,v.sequence,v.id AS version_id,v.normalized_json AS policy,
+        sv.id IS NOT NULL AS singbox, snapshots.versions_json AS versions
+      FROM subscription_templates t JOIN subscription_template_versions v ON v.id=t.published_id
+      LEFT JOIN conversion_profile_versions sv ON sv.profile_id=t.id AND sv.id=v.id AND sv.platform='singbox'
+      LEFT JOIN conversion_rule_version_snapshots snapshots ON snapshots.version_id=v.id
+      WHERE t.id>?
+    ), usage AS (
+      SELECT p.id,p.name,p.archived,p.sequence,p.version_id,p.versions,'mihomo' AS platform,
+        providers.key AS tag, 'client' AS mode
+      FROM profiles p, json_each(p.policy,'$.rule-providers') providers
+      WHERE ?='remote' AND json_extract(providers.value,'$.url')=?
+        AND json_extract(providers.value,'$.behavior')=? AND coalesce(json_extract(providers.value,'$.format'),'yaml')=?
+        AND EXISTS (SELECT 1 FROM json_each(p.policy,'$.rules') r
+          WHERE substr(r.value,1,length(providers.key)+10)='RULE-SET,' || providers.key || ',')
+      UNION ALL
+      SELECT p.id,p.name,p.archived,p.sequence,p.version_id,p.versions,'singbox',providers.key,'inline'
+      FROM profiles p, json_each(p.policy,'$.rule-providers') providers
+      WHERE p.singbox AND ?='remote' AND json_extract(providers.value,'$.url')=?
+        AND json_extract(providers.value,'$.behavior')=? AND coalesce(json_extract(providers.value,'$.format'),'yaml')=?
+        AND EXISTS (SELECT 1 FROM json_each(p.policy,'$.rules') r
+          WHERE substr(r.value,1,length(providers.key)+10)='RULE-SET,' || providers.key || ',')
+      UNION ALL
+      SELECT p.id,p.name,p.archived,p.sequence,p.version_id,p.versions,'singbox',json_extract(r.value,'$.name'),'client'
+      FROM profiles p, json_each(p.policy,'$.subpanel.singbox.remoteRuleSets') r
+      WHERE p.singbox AND ?='remote' AND ?='classical' AND ?='text' AND json_extract(r.value,'$.url')=?
+      UNION ALL
+      SELECT p.id,p.name,p.archived,p.sequence,p.version_id,p.versions,'mihomo',json_extract(r.value,'$.name'),'inline'
+      FROM profiles p, json_each(p.policy,'$.subpanel.ruleLibrary') r
+      WHERE json_extract(r.value,'$.type')=? AND json_extract(r.value,'$.name')=?
+        AND EXISTS (SELECT 1 FROM json_each(r.value,'$.rules') tracked JOIN json_each(p.policy,'$.rules') active
+          ON tracked.value=active.value)
+      UNION ALL
+      SELECT p.id,p.name,p.archived,p.sequence,p.version_id,p.versions,'singbox',json_extract(r.value,'$.name'),'inline'
+      FROM profiles p, json_each(p.policy,'$.subpanel.singbox.localRuleSets') r
+      WHERE p.singbox AND ? IN ('local','system') AND json_extract(r.value,'$.name')=?
+    ), page AS (SELECT DISTINCT id FROM usage ORDER BY id LIMIT 21)
+    SELECT u.id,u.name,u.archived,u.sequence,u.platform,u.tag,u.mode,
+      CASE WHEN u.platform='mihomo' AND u.mode='inline' THEN (
+        SELECT CAST(json_extract(r.value,'$.revision') AS TEXT) FROM profiles p, json_each(p.policy,'$.subpanel.ruleLibrary') r
+        WHERE p.id=u.id AND json_extract(r.value,'$.name')=u.tag AND json_extract(r.value,'$.type')=? LIMIT 1
+      ) ELSE (SELECT json_extract(v.value,'$.version') FROM json_each(u.versions) v
+        WHERE json_extract(v.value,'$.tag')=u.tag AND json_extract(v.value,'$.key')=? LIMIT 1) END AS version
+    FROM usage u JOIN page USING(id) ORDER BY u.id,u.platform,u.tag
+  `).bind(after,
+    type, source?.url ?? null, source?.behavior ?? null, source?.format ?? null,
+    type, source?.url ?? null, source?.behavior ?? null, source?.format ?? null,
+    type, source?.behavior ?? null, source?.format ?? null, source?.url ?? null, type, key, type, key, type, key,
+  ).all<{ id: string; name: string; archived: number; sequence: number; platform: string; tag: string; mode: string; version: string | null }>()
+  const ids = [...new Set(results.map(row => row.id))]
+  return {
+    references: results.filter(row => row.id !== ids[20]).map(row => ({
+      ...row, version: row.mode === 'client' && row.platform === 'mihomo' ? null : row.version,
+      changed: row.mode === 'inline' && row.version !== null && row.version !== current,
+    })),
+    next: ids.length > 20 ? ids[19] : null,
+  }
 }

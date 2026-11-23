@@ -6,14 +6,12 @@ import { StatusMessage } from '../../ui/StatusMessage'
 import { api, subscriptionTemplatesPath, type TemplateStructure } from '../../app/api'
 import type { RuleLibraryResponse } from './RuleLibrary'
 
-const PRIVATE_RULES = [
-  'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
-  'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
-  'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
-]
-
 type Group = TemplateStructure['proxy-groups'][number]
-type Template = TemplateStructure & { subpanel?: { client?: { dns?: { enable: boolean; nameserver?: string[] } } } }
+type RuleReference = { type: 'system' | 'local'; name: string; revision: number; rules: string[] }
+type Template = TemplateStructure & { subpanel?: {
+  client?: { dns?: { enable: boolean; nameserver?: string[] } }
+  ruleLibrary?: RuleReference[]
+} }
 
 export function BasicTemplateFields({ yaml, onChange, disabled }: { yaml: string; onChange: (value: string) => void; disabled: boolean }) {
   const template = useMemo(() => {
@@ -73,7 +71,7 @@ export function BasicTemplateFields({ yaml, onChange, disabled }: { yaml: string
     }}>添加策略组</button></div>
     <FormField label="规则源" htmlFor="template-rule-source">
       <FormSelect id="template-rule-source" value={ruleSource} onChange={event => setRuleSource(event.currentTarget.value)}>
-        <option value="custom">管理员自建规则</option><option value="default">系统默认私网规则</option>
+        <option value="custom">管理员自建规则</option>{library.system && <option value="default">系统默认私网规则</option>}
         {library.localSets.map((source, index) => <option key={source.name} value={`local:${index}`}>{source.name} · 自建 v{source.revision}</option>)}
         {library.sources.map((source, index) => <option key={JSON.stringify(source)} value={`remote:${index}`}>{source.url.split('/').at(-1)} · 已验证远程来源</option>)}
         {Object.keys(template['rule-providers'] ?? {}).map(name => <option key={name} value={`provider:${name}`}>{name} · 远程</option>)}
@@ -81,7 +79,6 @@ export function BasicTemplateFields({ yaml, onChange, disabled }: { yaml: string
     </FormField>
     {ruleSource !== 'custom' && <div><button className="button secondary" type="button" onClick={() => {
       const rules = [...template.rules]
-      const index = rules.findIndex(rule => /^MATCH\s*,/u.test(rule))
       const providers = { ...template['rule-providers'] }
       let providerName = ruleSource.slice(9)
       if (ruleSource.startsWith('remote:')) {
@@ -94,12 +91,26 @@ export function BasicTemplateFields({ yaml, onChange, disabled }: { yaml: string
         providerName = existing?.[0] ?? `remote-${number}`
         providers[providerName] = { type: 'http', url: source.url, behavior: source.behavior, format: source.format }
       }
-      const additions = ruleSource === 'default' ? PRIVATE_RULES
-        : ruleSource.startsWith('local:') ? library.localSets[Number(ruleSource.slice(6))]?.rules ?? []
-        : [`RULE-SET,${providerName},${groups[0]?.name ?? 'DIRECT'}`]
-      rules.splice(index < 0 ? rules.length : index, 0, ...additions.filter(rule => !rules.includes(rule)))
-      setRuleText(rules.join('\n'))
-      save({ ...template, rules, ...(Object.keys(providers).length && { 'rule-providers': providers }) })
+      const source = ruleSource === 'default' ? library.system
+        : ruleSource.startsWith('local:') ? library.localSets[Number(ruleSource.slice(6))] : undefined
+      const additions = source ? source.rules.map(rule => {
+        const parts = rule.split(',').map(part => part.trim())
+        if (parts.length === 2) parts.push(ruleSource === 'default' ? 'DIRECT' : groups[0]?.name ?? 'DIRECT')
+        return parts.join(',')
+      }) : [`RULE-SET,${providerName},${groups[0]?.name ?? 'DIRECT'}`]
+      const type = ruleSource === 'default' ? 'system' : 'local'
+      const prior = template.subpanel?.ruleLibrary ?? []
+      const track = prior.filter(item => item.name !== source?.name || item.type !== type)
+      const previous = prior.find(item => item.name === source?.name && item.type === type)
+      const retained = rules.filter(rule => !previous?.rules.includes(rule) || track.some(item => item.rules.includes(rule)))
+      const fallback = retained.findIndex(rule => /^MATCH\s*,/u.test(rule))
+      retained.splice(fallback < 0 ? retained.length : fallback, 0, ...additions.filter(rule => !retained.includes(rule)))
+      setRuleText(retained.join('\n'))
+      save({ ...template, rules: retained, ...(Object.keys(providers).length && { 'rule-providers': providers }),
+        ...(source && { subpanel: { ...template.subpanel, ruleLibrary: [
+          ...track, { type, name: source.name, revision: source.revision, rules: additions },
+        ] } }),
+      })
     }}>插入规则</button></div>}
     <FormField label="按优先级排列的规则（每行一条）" htmlFor="template-rules" wide>
       <Textarea id="template-rules" rows={5} value={ruleText} onChange={event => editRules(event.currentTarget.value)} />

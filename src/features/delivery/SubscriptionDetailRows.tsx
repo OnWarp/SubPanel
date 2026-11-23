@@ -1,3 +1,4 @@
+import type { SubscriptionFetchSummary } from '../../app/api'
 import { Link } from 'react-router-dom'
 import { QrCode } from 'lucide-react'
 import type { SubscriptionDiagnostic } from '../../app/api'
@@ -43,7 +44,7 @@ type SubscriptionDetailRowsProps = {
   authorizedNodeCount?: number
   capabilityLabel?: string | null
   formatNote?: string | null
-  fetchSummary?: { lastFetchAt: string | null; lastPlatform: string | null; lastOk: boolean | null; lastStatus: number | null } | null
+  fetchSummary?: SubscriptionFetchSummary | null
   configVersion?: string | null
 }
 
@@ -132,9 +133,21 @@ export function SubscriptionDetailRows({
         {fetchSummary.lastFetchAt ? <dl className="key-value-rows">
           <div><dt>时间</dt><dd>{fetchSummary.lastFetchAt}</dd></div>
           <div><dt>平台</dt><dd>{fetchSummary.lastPlatform ?? '—'}</dd></div>
-          <div><dt>结果</dt><dd>{fetchSummary.lastOk ? '成功' : '失败'} · {fetchSummary.lastStatus}</dd></div>
+          <div><dt>样本结果</dt><dd>成功 {fetchSummary.success} · 失败 {fetchSummary.failure}</dd></div>
+          <div><dt>状态码</dt><dd>{Object.entries(fetchSummary.statuses ?? {}).map(([code, count]) => `${code} × ${count}`).join(' · ') || '—'}</dd></div>
+          {fetchSummary.durationMs && <div><dt>耗时范围</dt><dd>{fetchSummary.durationMs.min}–{fetchSummary.durationMs.max} ms</dd></div>}
+          <div><dt>最近结果</dt><dd>{fetchSummary.lastOk ? '成功' : '失败'} · {fetchSummary.lastStatus}</dd></div>
         </dl> : <p className="drawer-note">还没有拉取记录</p>}
-        <p className="drawer-note">拉取统计不代表设备数量</p>
+        {fetchSummary.unavailable && <p role="status">统计存储暂不可用，请稍后刷新</p>}
+        {Object.keys(fetchSummary.platforms ?? {}).length > 0 && <details>
+          <summary>按平台查看样本</summary>
+          <dl className="key-value-rows">{Object.entries(fetchSummary.platforms).map(([platform, value]) => <div key={platform}>
+            <dt>{platform}</dt><dd>成功 {value.success} · 失败 {value.failure}
+              {value.durationMs && ` · ${value.durationMs.min}–${value.durationMs.max} ms`}
+              {' · '}{Object.entries(value.statuses).map(([code, count]) => `${code} × ${count}`).join(' · ')}</dd>
+          </div>)}</dl>
+        </details>}
+        <p className="drawer-note">仅统计已识别订阅的拉取，304 计为成功。记录按批写入，跨实例或重启时可能遗漏。UA 无法标识设备，拉取次数不能用于计算设备数量或代理流量</p>
       </section> : null}
     </div>
   )

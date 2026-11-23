@@ -293,11 +293,6 @@ export function MySubscriptionsPage() {
             {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <EmptyState title="暂无编译诊断" />}
           </details>
 
-          {selected.fetch ? <section className="data-section" aria-label="最近拉取">
-            <h2>最近拉取</h2>
-            {selected.fetch.lastFetchAt ? <p>{selected.fetch.lastPlatform ?? '未知平台'} · {selected.fetch.lastOk ? '成功' : '失败'} · {selected.fetch.lastStatus}</p> : <p>还没有拉取记录</p>}
-            <p>拉取统计不代表设备数量</p>
-          </section> : null}
 
           <section className="data-section del-reset" aria-labelledby="reset-token-title">
             <h2 id="reset-token-title">重置订阅</h2>

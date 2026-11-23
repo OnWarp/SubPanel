@@ -842,6 +842,8 @@ rules:
       .mockImplementationOnce(async () => new Response('payload: ["+.example.org"]', { headers: { etag: '"one"', 'last-modified': 'Wed, 01 Jan 2025 00:00:00 GMT' } }))
       .mockImplementationOnce(async () => new Response(null, { status: 304 }))
       .mockImplementationOnce(async () => new Response('', { status: 302, headers: { location: 'https://127.0.0.1/private' } }))
+      .mockImplementationOnce(async () => new Response('payload: [[[["nested.example"]]]]'))
+      .mockImplementationOnce(async () => new Response('payload: ["changed.example"]', { headers: { etag: '"two"' } }))
     vi.stubGlobal('fetch', fetcher)
     const refresh = (input: typeof source) => mutation(templateRoot + '/rule-sources', admin, input)
     const record = () => env.DB.prepare('SELECT version,payload,last_success_at,error_code FROM conversion_rule_sources WHERE url=?').bind(url).first()
@@ -864,6 +866,53 @@ rules:
     expect((await refresh(source)).status).toBe(422)
     expect(fetcher).toHaveBeenCalledTimes(3)
     expect(await record()).toMatchObject({ version: known!.version, payload: known!.payload, error_code: 'REMOTE_TOO_MANY_REDIRECTS' })
+    expect((await refresh(source)).status).toBe(422)
+    expect(await record()).toMatchObject({ version: known!.version, error_code: 'REMOTE_BODY_INVALID' })
+    expect((await refresh(source)).status).toBe(200)
+    const query = new URLSearchParams({ type: 'remote', key: JSON.stringify([source.url, source.behavior, source.format]) })
+    const usage = await exports.default.fetch(`${TEST_ORIGIN}${templateRoot}/rule-sources/usage?${query}`, withCookie(admin))
+    expect(await usage.json()).toMatchObject({ references: [
+      { id, platform: 'mihomo', mode: 'client', changed: false },
+      { id, platform: 'singbox', mode: 'inline', version: known!.version, changed: true },
+    ] })
+
+  })
+
+  it('tracks inline system and custom rule revisions in the active configuration', async () => {
+    const { admin } = await fixture()
+    const library = await exports.default.fetch(`${TEST_ORIGIN}${templateRoot}/rule-sources`, withCookie(admin))
+    const { system } = await library.json() as { system: { name: string; revision: number } }
+    expect(system.revision).toBeGreaterThan(0)
+    const save = (rule: string) => mutation(templateRoot + '/rule-sources/local', admin, { name: 'Custom', rules: [rule] })
+    expect((await save('DOMAIN-SUFFIX,example.org')).status).toBe(200)
+    const draft = `subpanel:
+  ruleLibrary:
+    - type: local
+      name: Custom
+      revision: 1
+      rules: ['DOMAIN-SUFFIX,example.org,DIRECT']
+  singbox:
+    localRuleSets:
+      - {name: "${system.name}", outbound: DIRECT}
+      - {name: Custom, outbound: DIRECT}
+` + yaml.replace('  - MATCH,Policy', '  - DOMAIN-SUFFIX,example.org,DIRECT\n  - MATCH,Policy')
+    const created = await mutation(templateRoot, admin, { name: 'Versioned rules', yaml: draft })
+    expect(created.status).toBe(201)
+    const { id, revision, draftHash } = await created.json() as { id: string; revision: number; draftHash: string }
+    const published = await mutation(`${templateRoot}/${id}/publish`, admin, { expectedRevision: revision, draftHash, singbox: true })
+    expect(published.status, await published.clone().text()).toBe(200)
+    expect((await save('DOMAIN-SUFFIX,example.net')).status).toBe(200)
+    const usage = async (type: string, key: string) => {
+      const query = new URLSearchParams({ type, key })
+      return (await exports.default.fetch(`${TEST_ORIGIN}${templateRoot}/rule-sources/usage?${query}`, withCookie(admin))).json()
+    }
+    expect(await usage('system', system.name)).toMatchObject({ references: [
+      { id, platform: 'singbox', version: String(system.revision), changed: false },
+    ] })
+    expect(await usage('local', 'Custom')).toMatchObject({ references: [
+      { id, platform: 'mihomo', version: '1', changed: true },
+      { id, platform: 'singbox', version: '1', changed: true },
+    ] })
   })
 
   it('publishes only verified pinned native sing-box rule sets', async () => {

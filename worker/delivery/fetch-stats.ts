@@ -3,6 +3,8 @@
 
 const SESSION_KEY = 'fetch-stats:session'
 const FLUSH_EVERY = 10
+const MAX_TRACKED = 512
+const pendingFlushes = new WeakSet<StoredStats>()
 
 type FetchSample = {
   at: string
@@ -12,27 +14,36 @@ type FetchSample = {
   durationMs: number
 }
 
-type StoredStats = {
-  lastFetchAt: string | null
-  lastPlatform: string | null
-  lastOk: boolean | null
-  lastStatus: number | null
+type Aggregate = {
   success: number
   failure: number
   byStatus: Record<string, number>
   duration: { min: number; max: number; sum: number; count: number }
-  pendingWrites: number
 }
 
-export type FetchSummary = {
+type StoredStats = Aggregate & {
   lastFetchAt: string | null
   lastPlatform: string | null
   lastOk: boolean | null
   lastStatus: number | null
+  byPlatform?: Record<string, Aggregate>
+  pendingWrites: number
+}
+
+type AggregateSummary = {
   success: number
   failure: number
   statuses: Record<string, number>
   durationMs: { min: number; max: number; avg: number } | null
+}
+
+export type FetchSummary = AggregateSummary & {
+  lastFetchAt: string | null
+  lastPlatform: string | null
+  lastOk: boolean | null
+  lastStatus: number | null
+  platforms: Record<string, AggregateSummary>
+  unavailable?: true
 }
 
 const memory = new Map<string, StoredStats>()
@@ -42,25 +53,32 @@ let sessionPromise: Promise<string> | null = null
 
 const statsKey = (subscriptionId: string) => `fetch-stats:${subscriptionId}`
 
-function emptyStats(): StoredStats {
+function emptyAggregate(): Aggregate {
   return {
-    lastFetchAt: null,
-    lastPlatform: null,
-    lastOk: null,
-    lastStatus: null,
     success: 0,
     failure: 0,
     byStatus: {},
     duration: { min: 0, max: 0, sum: 0, count: 0 },
-    pendingWrites: 0,
   }
 }
 
+function emptyStats(): StoredStats {
+  return { ...emptyAggregate(), lastFetchAt: null, lastPlatform: null, lastOk: null, lastStatus: null, pendingWrites: 0 }
+}
+
 function applySample(stats: StoredStats, sample: FetchSample): void {
-  stats.lastFetchAt = sample.at
-  stats.lastPlatform = sample.platform
-  stats.lastOk = sample.ok
-  stats.lastStatus = sample.status
+  if (stats.lastFetchAt === null || sample.at >= stats.lastFetchAt) {
+    stats.lastFetchAt = sample.at
+    stats.lastPlatform = sample.platform
+    stats.lastOk = sample.ok
+    stats.lastStatus = sample.status
+  }
+  const platforms = stats.byPlatform ??= {}
+  applyAggregate(platforms[sample.platform] ??= emptyAggregate(), sample)
+  applyAggregate(stats, sample)
+}
+
+function applyAggregate(stats: Aggregate, sample: FetchSample): void {
   if (sample.ok) stats.success += 1
   else stats.failure += 1
   const code = String(sample.status)
@@ -72,13 +90,8 @@ function applySample(stats: StoredStats, sample: FetchSample): void {
   stats.duration.count += 1
 }
 
-export function presentFetchSummary(stats: StoredStats | null): FetchSummary {
-  const value = stats ?? emptyStats()
+function presentAggregate(value: Aggregate): AggregateSummary {
   return {
-    lastFetchAt: value.lastFetchAt,
-    lastPlatform: value.lastPlatform,
-    lastOk: value.lastOk,
-    lastStatus: value.lastStatus,
     success: value.success,
     failure: value.failure,
     statuses: { ...value.byStatus },
@@ -87,6 +100,18 @@ export function presentFetchSummary(stats: StoredStats | null): FetchSummary {
       max: value.duration.max,
       avg: Math.round(value.duration.sum / value.duration.count),
     },
+  }
+}
+
+export function presentFetchSummary(stats: StoredStats | null): FetchSummary {
+  const value = stats ?? emptyStats()
+  return {
+    ...presentAggregate(value),
+    lastFetchAt: value.lastFetchAt,
+    lastPlatform: value.lastPlatform,
+    lastOk: value.lastOk,
+    lastStatus: value.lastStatus,
+    platforms: Object.fromEntries(Object.entries(value.byPlatform ?? {}).map(([id, aggregate]) => [id, presentAggregate(aggregate)])),
   }
 }
 
@@ -126,7 +151,9 @@ export function stageSubscriptionFetch(subscriptionId: string, sample: FetchSamp
     current.pendingWrites += 1
     return
   }
+  if (!staged.has(subscriptionId) && staged.size >= MAX_TRACKED) return
   const queue = staged.get(subscriptionId) ?? []
+  if (queue.length >= FLUSH_EVERY) return
   queue.push(sample)
   staged.set(subscriptionId, queue)
 }
@@ -137,13 +164,12 @@ async function materialize(kv: KVNamespace, subscriptionId: string): Promise<Sto
   await ensureSession(kv)
   let stats = memory.get(subscriptionId)
   if (!stats) {
-    let stored: StoredStats | null = null
-    try {
-      stored = await kv.get<StoredStats>(statsKey(subscriptionId), 'json')
-    } catch {
-      stored = null
-    }
+    const stored = await kv.get<StoredStats>(statsKey(subscriptionId), 'json')
     stats = memory.get(subscriptionId) ?? stored ?? emptyStats()
+    if (memory.size >= MAX_TRACKED) {
+      const oldest = memory.keys().next().value
+      if (oldest !== undefined) memory.delete(oldest)
+    }
     memory.set(subscriptionId, stats)
   }
   if (queued.length) {
@@ -153,12 +179,18 @@ async function materialize(kv: KVNamespace, subscriptionId: string): Promise<Sto
   return stats
 }
 
-export async function noteSubscriptionFetch(kv: KVNamespace, subscriptionId: string, sample: FetchSample): Promise<void> {
+export async function noteSubscriptionFetch(kv: KVNamespace, subscriptionId: string): Promise<void> {
   try {
     const stats = await materialize(kv, subscriptionId)
-    if (stats.pendingWrites < FLUSH_EVERY && sample.ok) return
-    stats.pendingWrites = 0
-    await kv.put(statsKey(subscriptionId), JSON.stringify(stats))
+    const pending = stats.pendingWrites
+    if (!pending || pendingFlushes.has(stats) || (pending < FLUSH_EVERY && stats.duration.count > pending)) return
+    pendingFlushes.add(stats)
+    try {
+      await kv.put(statsKey(subscriptionId), JSON.stringify({ ...stats, pendingWrites: 0 }))
+      stats.pendingWrites -= pending
+    } finally {
+      pendingFlushes.delete(stats)
+    }
   } catch {
     // A stats write must never change the subscription response.
   }
@@ -168,7 +200,7 @@ export async function readFetchSummary(kv: KVNamespace, subscriptionId: string):
   try {
     return presentFetchSummary(await materialize(kv, subscriptionId))
   } catch {
-    return presentFetchSummary(memory.get(subscriptionId) ?? null)
+    return { ...presentFetchSummary(memory.get(subscriptionId) ?? null), unavailable: true }
   }
 }
 

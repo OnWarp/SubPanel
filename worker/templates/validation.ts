@@ -56,7 +56,10 @@ const providerSchema = z.object({
 }).strict()
 
 const templateSchema = z.object({
-  subpanel: z.object({ nodes: nodeLayer.optional(), client: mihomoClientLayer.optional(), singbox: z.object({
+  subpanel: z.object({ ruleLibrary: z.array(z.object({
+    type: z.enum(['system', 'local']), name: z.string().min(1).max(80),
+    revision: z.number().int().positive(), rules: z.array(z.string().min(1).max(1200)).min(1).max(100),
+  }).strict()).max(20).optional(), nodes: nodeLayer.optional(), client: mihomoClientLayer.optional(), singbox: z.object({
     fakeIp: z.boolean().optional(), sniff: z.boolean().optional(), autoDetectInterface: z.boolean().optional(),
     dnsRules: z.array(z.object({
       domainSuffix: z.string().refine(value => validRuleValue('DOMAIN-SUFFIX', value)),

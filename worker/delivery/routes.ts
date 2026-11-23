@@ -10,7 +10,7 @@ import type { AppEnv } from '../app-env.js'
 import { logAudit } from '../admin/audit.js'
 import { primaryDomainOriginSafe } from '../domains/service.js'
 import { readCatalog } from '../catalog/repository.js'
-import { ApiError, apiError } from '../platform/api-error.js'
+import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
 import { previewAuthorizedOutput, type AccessSnapshot } from './compiler.js'
 import { readFetchSummary } from './fetch-stats.js'
@@ -165,7 +165,7 @@ async function view(
   const singbox = await getEffectiveTemplate(c.env.DB, subscription.id, 'singbox').catch(() => undefined)
   const access = await classifySubscription(c.env, subscription, new Date().toISOString(), viewOptions.snapshot, template, templateInvalid, Boolean(singbox?.version_id))
   const presented = presentSubscriptionStatus(access.status, audience)
-  const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
+  const fetchSummary = audience === 'admin' ? await readFetchSummary(c.env.DATA, subscription.id) : undefined
   const diagnostics: Record<string, unknown> = {}
   if (access.status === 'active' || access.status === 'incompatible') {
     await Promise.all(CLIENT_IDS.map(async name => {
@@ -332,53 +332,8 @@ adminDeliveryRoutes.get('/', async (c) => {
   })
 })
 
-const batchBindingSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('specific'), templateId: z.string().min(1) }),
-  z.object({ mode: z.enum(['inherit', 'base']) }),
-])
-const batchSchema = z.object({
-  ids: z.array(z.string().regex(/^sub_[1-9]\d*$/u)).min(1).max(100),
-  action: z.enum(['enable', 'disable', 'plan', 'binding']),
-  planId: z.string().min(1).optional(),
-  templateBinding: batchBindingSchema.optional(),
-})
-
-async function bindingRevision(db: D1Database, id: string): Promise<number> {
-  try {
-    const row = await db.prepare('SELECT revision FROM subscription_template_bindings WHERE subscription_id=?').bind(id).first<{ revision: number }>()
-    return row?.revision ?? 1
-  } catch {
-    return 1
-  }
-}
-
-adminDeliveryRoutes.post('/batch', async (c) => {
-  const input = await readJson(c, batchSchema)
-  if (input.action === 'plan' && !input.planId) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
-  if (input.action === 'binding' && !input.templateBinding) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败')
-  const ok: string[] = []
-  const failed: Array<{ id: string; code: string; message: string }> = []
-  for (const id of input.ids) {
-    try {
-      const revision = input.action === 'binding' ? await bindingRevision(c.env.DB, id) : 1
-      const binding = input.templateBinding
-      const patch = input.action === 'enable' || input.action === 'disable'
-        ? { enabled: input.action === 'enable' }
-        : input.action === 'plan'
-          ? { planId: input.planId }
-          : {
-              templateBinding: binding?.mode === 'specific'
-                ? { mode: 'specific' as const, templateId: binding.templateId, expectedRevision: revision }
-                : { mode: binding?.mode === 'base' ? 'base' as const : 'inherit' as const, expectedRevision: revision },
-            }
-      await run(() => updateSubscription(c.env, id, patch, { actorRole: 'admin' }))
-      ok.push(id)
-    } catch (error) {
-      const api = error instanceof ApiError ? error : apiError(422, 'SUBSCRIPTION_INVALID', '订阅输入无效')
-      failed.push({ id, code: api.code, message: api.message })
-    }
-  }
-  return c.json({ ok, failed })
+adminDeliveryRoutes.post('/batch', () => {
+  throw apiError(409, 'BATCH_PREVIEW_REQUIRED', '请先预览批量任务，再确认执行')
 })
 
 adminDeliveryRoutes.post('/output-preview', async (c) => {
