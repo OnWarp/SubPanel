@@ -69,6 +69,9 @@ export async function writeCatalog(
       if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) {
         throw apiError(409, 'CATALOG_WRITE_CONFLICT', '目录已更新，请重新加载后再试')
       }
+      if (error instanceof Error && error.message.includes('REDEMPTION_GROUP_IN_USE')) {
+        throw apiError(409, 'GROUP_IN_USE', '分组仍有可用的兑换码引用，请先停用对应批次')
+      }
       if (error instanceof Error && (error.message.includes('CHECK constraint failed: length(key) > 0') || error.message.includes('ENTITLEMENT_GROUP_IN_USE'))) {
         throw apiError(409, 'GROUP_IN_USE', '请先在计划、订阅和订阅模板中更换或移除此分组')
       }

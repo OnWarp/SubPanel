@@ -64,8 +64,9 @@ export function MySubscriptionsPage() {
       setShareEnabled(result.shareEnabled)
       setSelectedId((current) => {
         if (result.subscriptions.some((subscription) => subscription.id === current)) return current
-        const requested = new URLSearchParams(window.location.search).get('share')
-        if (result.shareEnabled && requested && result.subscriptions.some((subscription) => subscription.id === requested)) return requested
+        const search = new URLSearchParams(window.location.search)
+        const requested = (result.shareEnabled && search.get('share')) || search.get('subscription')
+        if (requested && result.subscriptions.some((subscription) => subscription.id === requested)) return requested
         return result.subscriptions[0]?.id ?? ''
       })
     } catch (cause) {

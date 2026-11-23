@@ -43,13 +43,6 @@ function configFields(config: EntitlementConfig, catalog: CatalogResponse | null
   }
 }
 
-export function RedemptionPlaceholderPage() {
-  return <div className="page-stack del-templates-page">
-    <PageHeader title="兑换码" />
-    <EmptyState title="兑换码功能待上线" />
-  </div>
-}
-
 export function EntitlementTemplatesPage() {
   const [templates, setTemplates] = useState<EntitlementTemplate[]>([])
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null)

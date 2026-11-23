@@ -166,7 +166,8 @@ export type SubscriptionFetchSummary = {
 }
 
 export type AdminSubscription = {
-  sourceType?: 'manual' | 'legacy' | 'template'
+  directNodeCount?: number
+  sourceType?: 'manual' | 'legacy' | 'template' | 'redemption'
   nodeIds?: string[]
   templateVersionId?: string
   entitlementTemplateName?: string

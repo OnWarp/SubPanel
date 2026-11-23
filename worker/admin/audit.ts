@@ -1,10 +1,14 @@
 import type { MiddlewareHandler } from 'hono'
 import type { AppEnv } from '../app-env.js'
+export function auditStatement(db: D1Database, actor: string, action: string, targetType: string, targetId: string | null, detail: Record<string,unknown> = {}, now = new Date().toISOString()) {
+ return db.prepare('INSERT INTO audit_logs(id,actor_user_id,action,target_type,target_id,detail,created_at) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(),actor,action,targetType,targetId,JSON.stringify(detail),now)
+}
 export async function logAudit(db: D1Database, actor: string, action: string, targetType: string, targetId: string | null, detail: Record<string,unknown> = {}) {
- await db.prepare('INSERT INTO audit_logs(id,actor_user_id,action,target_type,target_id,detail,created_at) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(),actor,action,targetType,targetId,JSON.stringify(detail),new Date().toISOString()).run()
+ await auditStatement(db, actor, action, targetType, targetId, detail).run()
 }
 // Only request metadata is recorded: never passwords, tokens, or mail secrets.
 export const auditAdminMutation: MiddlewareHandler<AppEnv> = async (c,next) => {
+ if (/^\/api\/admin\/redemption-(batches|codes|records)(\/|$)/.test(c.req.path)) return next()
  let changes: Record<string,unknown> = {}
  if (c.req.header('content-type')?.includes('application/json')) {
   try { const body = await c.req.raw.clone().json() as Record<string,unknown>; changes = Object.fromEntries(['action','role','enabled','planId','userId'].filter(key => key in body).map(key => [key,body[key]])) } catch { /* Route validates malformed input. */ }

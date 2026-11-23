@@ -1,0 +1,36 @@
+{
+  "mode": "dry-run",
+  "rows_before": {
+    "subscriptions": 1,
+    "subscription_groups": 1,
+    "subscription_creation": 1,
+    "redemption_batches": null,
+    "redemption_codes": null,
+    "redemption_records": null
+  },
+  "rows_after": {
+    "subscriptions": 1,
+    "subscription_groups": 1,
+    "subscription_creation": 1,
+    "redemption_batches": 0,
+    "redemption_codes": 0,
+    "redemption_records": 0
+  },
+  "schema_added": [
+    "index redemption_audit_target",
+    "index redemption_batches_created",
+    "index redemption_batches_version",
+    "index redemption_codes_batch",
+    "index redemption_records_created",
+    "index redemption_records_user",
+    "table redemption_batches",
+    "table redemption_codes",
+    "table redemption_records",
+    "trigger redemption_group_in_use"
+  ],
+  "existing_schema_changed": [],
+  "existing_rows_changed": {},
+  "new_foreign_key_violations": 0,
+  "replay_matches": true,
+  "local_matches_dry_run": true
+}

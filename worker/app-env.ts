@@ -3,6 +3,7 @@ declare global {
     DB: D1Database
     DATA_ENCRYPTION_KEY?: string
     SESSION_KEY?: string
+    REDEMPTION_HMAC_KEYS?: string
     RESEND_API_KEY?: string
     SMTP_URL?: string
     MAIL_FROM?: string
@@ -13,6 +14,7 @@ declare global {
       DB: D1Database
       DATA_ENCRYPTION_KEY?: string
       SESSION_KEY?: string
+      REDEMPTION_HMAC_KEYS?: string
       RESEND_API_KEY?: string
       SMTP_URL?: string
       MAIL_FROM?: string

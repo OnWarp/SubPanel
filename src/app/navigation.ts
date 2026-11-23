@@ -47,7 +47,6 @@ export const adminDomains: AdminDomain[] = [
     section: { label: '订阅管理导航', tabs: [
       { to: '/delivery/subscriptions', label: '订阅列表' },
       { to: '/delivery/templates', label: '订阅模板' },
-      { to: '/delivery/redemptions', label: '兑换码' },
       { to: '/delivery/conversions', label: '转换配置' },
       { to: '/delivery/shares', label: '分享' },
       { to: '/plans', label: '订阅计划' },

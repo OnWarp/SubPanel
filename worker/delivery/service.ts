@@ -2,7 +2,7 @@ import type { BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
-import { bytesPerGiB, getIssuableVersion } from './entitlement-templates.js'
+import { bytesPerGiB, getIssuableVersion, getRedemptionVersion } from './entitlement-templates.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
 import { batch } from '../db/db.js'
 import { apiError } from '../platform/api-error.js'
@@ -48,6 +48,10 @@ export type SubscriptionMutationOptions = {
   token?: string
   actorUserId?: string
   actorRole?: 'admin' | 'user'
+  redemption?: {
+    templateName: string
+    statements: (subscription: Subscription) => D1PreparedStatement[]
+  }
 }
 
 export type SubscriptionMutationResult = {
@@ -149,7 +153,7 @@ function subscriptionEntitlementFields(plan: Plan | null, input: Partial<Subscri
 }
 
 async function prepareSubscription(
-  env: DataEnv, input: SubscriptionInput, now: string, sourceType: 'manual' | 'legacy' | 'template', suppliedToken?: string,
+  env: DataEnv, input: SubscriptionInput, now: string, sourceType: 'manual' | 'legacy' | 'template' | 'redemption', suppliedToken?: string,
 ) {
   const startsAt = cleanEpoch(input.startsAt ?? null)
   if (input.duration && input.expiresAt != null) fail('SUBSCRIPTION_WINDOW_INVALID')
@@ -190,7 +194,9 @@ export async function createSubscription(
   const keyHash = idempotencyKey && await hashToken(JSON.stringify([options.actorUserId, idempotencyKey]))
   const fingerprint = keyHash ? await hashToken(JSON.stringify(request)) : ''
   const origin = 'templateVersionId' in request ? request.templateVersionId : undefined
-  if (origin && options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
+  const redemption = options.redemption
+  if (redemption && (!origin || !options.actorUserId || request.userId !== options.actorUserId)) fail('SUBSCRIPTION_FORBIDDEN')
+  if (origin && !redemption && options.actorRole !== 'admin') fail('SUBSCRIPTION_FORBIDDEN')
   if (keyHash || origin || request.nodeIds?.length) await requirePlanStorage(env)
   const replay = async () => {
     if (!keyHash) return null
@@ -208,7 +214,9 @@ export async function createSubscription(
   let version: Awaited<ReturnType<typeof getIssuableVersion>> | undefined
   let input: SubscriptionInput
   if ('templateVersionId' in request) {
-    version = await getIssuableVersion(env.DB, request.templateVersionId)
+    version = redemption
+      ? await getRedemptionVersion(env.DB, request.templateVersionId, redemption.templateName)
+      : await getIssuableVersion(env.DB, request.templateVersionId)
     const { name, config } = version
     input = {
       name,
@@ -236,7 +244,8 @@ export async function createSubscription(
   const plan = input.planId ? await subscriptionPlanFields(env, input.planId) : undefined
   const snapshot = await readDelivery(env)
   const now = options.now ?? new Date().toISOString()
-  const prepared = await prepareSubscription(env, { ...plan, ...input }, now, origin ? 'template' : 'manual', options.token)
+  const sourceType = redemption ? 'redemption' : origin ? 'template' : 'manual'
+  const prepared = await prepareSubscription(env, { ...plan, ...input }, now, sourceType, options.token)
   const id = `sub_${snapshot.nextSubscriptionId}` as const
   const subscription = { ...plan, ...prepared.subscription, id, ...(version ? {
     templateVersionId: version.id, entitlementTemplateName: version.name, entitlementVersionNumber: version.number,
@@ -249,7 +258,8 @@ export async function createSubscription(
       subscriptions: [...snapshot.subscriptions, subscription],
     }, now, input.templateBinding ? { id, binding: input.templateBinding } : undefined,
     keyHash ? { id, keyHash, fingerprint } : undefined,
-    origin || input.nodeIds?.length ? { id, nodeIds: input.nodeIds, templateVersionId: origin } : undefined)
+    origin || input.nodeIds?.length ? { id, nodeIds: input.nodeIds, templateVersionId: redemption ? undefined : origin } : undefined,
+    redemption?.statements(subscription))
   } catch (error) {
     const concurrent = await replay()
     if (concurrent) return concurrent
