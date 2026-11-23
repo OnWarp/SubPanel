@@ -1,0 +1,73 @@
+{
+  "dns": {
+    "servers": [
+      {
+        "tag": "remote-dns",
+        "type": "https",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "detour": "direct"
+      }
+    ],
+    "rules": [],
+    "strategy": "prefer_ipv4"
+  },
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "remote-dns",
+    "final": "direct",
+    "rules": []
+  },
+  "outbounds": [
+    {
+      "type": "vmess",
+      "tag": "vmess-node",
+      "server": "vmess.example",
+      "server_port": 443,
+      "uuid": "a820dd0e-26ff-4537-8e6f-5dc2c114e912",
+      "security": "auto",
+      "alter_id": 0,
+      "tls": {
+        "enabled": true,
+        "server_name": "vmess.example"
+      }
+    },
+    {
+      "type": "vless",
+      "tag": "vless-node",
+      "server": "vless.example",
+      "server_port": 443,
+      "uuid": "a820dd0e-26ff-4537-8e6f-5dc2c114e912",
+      "tls": {
+        "enabled": true,
+        "server_name": "vless.example"
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "trojan-node",
+      "server": "trojan.example",
+      "server_port": 443,
+      "password": "sample-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "trojan.example"
+      }
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-node",
+      "server": "hy2.example",
+      "server_port": 443,
+      "password": "sample-password",
+      "tls": {
+        "enabled": true,
+        "server_name": "hy2.example"
+      }
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

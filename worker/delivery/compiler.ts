@@ -98,8 +98,8 @@ async function artifactFor(
   const prepared = await prepareSubscriptionRender(client, nodes, speed)
   let template = previewTemplate
   let templateVersionId: string | undefined
-  if (client === 'mihomo' && prepared.outputNodes > 0 && !template) {
-    const effective = await getEffectiveTemplate(env.DB, subscription.id)
+  if ((client === 'mihomo' || client === 'singbox') && prepared.outputNodes > 0 && !template) {
+    const effective = await getEffectiveTemplate(env.DB, subscription.id, client)
     templateVersionId = effective.version_id ?? undefined
     if (effective.yaml !== null) {
       try {
@@ -141,8 +141,16 @@ export async function compileSubscription(
   const now = options.now ?? new Date().toISOString()
   const context = await resolveEntitlement(env, subscription, now)
   const artifacts = await Promise.all(CLIENT_IDS.map(client => artifactFor(env, subscription, client, context, now)))
-  await Promise.all(artifacts.map((artifact) => kv.put(compiledKey(subscription.tokenHash, artifact.client), JSON.stringify(artifact))))
-  const keep = new Set(artifacts.map((artifact) => compiledKey(subscription.tokenHash, artifact.client)))
+  await Promise.all(artifacts.flatMap((artifact) => {
+    const key = compiledKey(subscription.tokenHash, artifact.client, artifact.templateVersionId, artifact.rendererVersion)
+    const legacyKey = `${compiledPrefix(subscription.tokenHash)}${artifact.client}`
+    const payload = JSON.stringify(artifact)
+    return [kv.put(key, payload), kv.put(legacyKey, payload)]
+  }))
+  const keep = new Set(artifacts.flatMap((artifact) => [
+    compiledKey(subscription.tokenHash, artifact.client, artifact.templateVersionId, artifact.rendererVersion),
+    `${compiledPrefix(subscription.tokenHash)}${artifact.client}`,
+  ]))
   const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
   const stale = listed.keys.filter(({ name }: { name: string }) => !keep.has(name))
   if (stale.length > 0) await Promise.all(stale.map(({ name }: { name: string }) => kv.delete(name)))

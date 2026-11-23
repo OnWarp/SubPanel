@@ -5,8 +5,9 @@ import type { JsonValue, Protocol } from '../catalog/schema.js'
 import type { RenderClient, RenderDiagnostic, RenderNode, RenderResult } from './model.js'
 import { CLIENT_IDS } from './model.js'
 import { rawShareUri, serializeShareUri } from './uri.js'
+import { singboxOutbound, compileSingBoxConfig, TARGET_SINGBOX_VERSION, SINGBOX_SUPPORTED_PROTOCOLS } from './singbox.js'
 
-export { CLIENT_IDS, rawShareUri, serializeShareUri }
+export { CLIENT_IDS, rawShareUri, serializeShareUri, TARGET_SINGBOX_VERSION, SINGBOX_SUPPORTED_PROTOCOLS, compileSingBoxConfig }
 export type { RenderClient, RenderDiagnostic, RenderNode, RenderResult }
 
 const protocolNames: Record<Protocol, string> = {
@@ -38,16 +39,6 @@ function booleanAlias(value: JsonValue | undefined): boolean | undefined {
   if (value === 0 || (typeof value === 'string' && ['0', 'false'].includes(value.trim().toLowerCase()))) return false
   if (value === 1 || (typeof value === 'string' && ['1', 'true'].includes(value.trim().toLowerCase()))) return true
   return undefined
-}
-
-function integer(value: JsonValue | undefined): number | undefined {
-  const result = Number(value)
-  return Number.isInteger(result) && result >= 0 ? result : undefined
-}
-
-function duration(value: JsonValue | undefined): string | undefined {
-  const result = text(value)
-  return result && /^\d+(?:\.\d+)?$/u.test(result) ? `${result}s` : result
 }
 
 function loonToken(value: string): string {
@@ -260,121 +251,6 @@ function mihomoProxy(node: RenderNode): Record<string, unknown> {
   return clean(result) as Record<string, unknown>
 }
 
-function singboxTls(node: RenderNode): Record<string, unknown> | undefined {
-  const tls = record(node.tls)
-  const reality = record(tls.reality)
-  const certificate = text(tls.certificate)
-  const pin = text(tls.certificateFingerprint ?? tls.pinSHA256)
-  const enabled = bool(tls.enabled) || ['trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'naive', 'https'].includes(node.protocol)
-  if (!enabled && !certificate && !pin && Object.keys(reality).length === 0) return undefined
-  return clean({
-    enabled: true,
-    server_name: text(tls.serverName),
-    insecure: bool(tls.insecure) ?? bool(tls.allowInsecure),
-    alpn: Array.isArray(tls.alpn) ? tls.alpn : undefined,
-    utls: text(tls.fingerprint) ? { enabled: true, fingerprint: tls.fingerprint } : undefined,
-    certificate,
-    certificate_public_key_sha256: pin ? [pin] : undefined,
-    reality: Object.keys(reality).length > 0 ? {
-      enabled: true,
-      public_key: text(reality.publicKey ?? reality.public_key ?? reality.pbk),
-      short_id: text(reality.shortId ?? reality.short_id ?? reality.sid),
-    } : undefined,
-  }) as Record<string, unknown>
-}
-
-function singboxTransport(node: RenderNode): Record<string, unknown> | undefined {
-  const transport = record(node.transport)
-  const rawType = text(transport.type)?.toLowerCase()
-  if (!rawType || rawType === 'tcp' || rawType === 'raw') return undefined
-  const type = rawType === 'websocket' ? 'ws' : rawType
-  if (type === 'ws') return clean({
-    type,
-    path: text(transport.path),
-    headers: transport.headers,
-    max_early_data: transport.earlyData ?? transport.maxEarlyData,
-    early_data_header_name: text(transport.earlyDataHeaderName),
-  }) as Record<string, unknown>
-  if (type === 'grpc') return clean({ type, service_name: text(transport.serviceName) }) as Record<string, unknown>
-  if (type === 'http' || type === 'httpupgrade') return clean({ type, path: text(transport.path), headers: transport.headers }) as Record<string, unknown>
-  if (type === 'quic') return { type }
-  return undefined
-}
-
-function singboxOutbound(node: RenderNode): Record<string, unknown> {
-  const c = node.credentials
-  const transport = record(node.transport)
-  const plugin = record(node.plugin)
-  const result: Record<string, unknown> = {
-    type: node.protocol === 'socks5' ? 'socks' : node.protocol === 'ss2022' ? 'shadowsocks' : node.protocol === 'https' ? 'http' : node.protocol,
-    tag: node.displayName,
-    server: node.server,
-    server_port: node.port,
-  }
-  if (node.protocol === 'shadowsocks' || node.protocol === 'ss2022') {
-    result.method = c.method
-    result.password = c.password
-    if (text(plugin.name)) result.plugin = text(plugin.name)
-    if (typeof plugin.options === 'string') result.plugin_opts = plugin.options
-    else if (plugin.options !== undefined) {
-      const options = record(plugin.options)
-      result.plugin_opts = Object.entries(options).map(([key, value]) => `${key}=${text(value) ?? JSON.stringify(value)}`).join(';')
-    }
-  } else if (node.protocol === 'vmess') {
-    result.uuid = c.uuid
-    result.alter_id = Number(c.alterId ?? 0)
-    result.security = c.security ?? 'auto'
-  } else if (node.protocol === 'vless') {
-    result.uuid = c.uuid
-    result.flow = c.flow
-  } else if (node.protocol === 'tuic') {
-    result.uuid = c.uuid
-    result.password = c.password
-    result.congestion_control = transport.congestionControl ?? 'bbr'
-    result.udp_relay_mode = transport.udpRelayMode
-  } else if (node.protocol === 'naive') {
-    result.username = c.username
-    result.password = c.password
-    result.quic = node.extensions.quic
-  } else if (node.protocol === 'http' || node.protocol === 'https' || node.protocol === 'socks5') {
-    result.username = c.username
-    result.password = c.password
-  } else if (node.protocol === 'wireguard') {
-    result.private_key = c.privateKey
-    result.peer_public_key = c.publicKey
-    result.pre_shared_key = c.preSharedKey
-    const localAddress = node.extensions.localAddress ?? node.extensions.ip
-    result.local_address = Array.isArray(localAddress) ? localAddress : localAddress !== undefined ? [localAddress] : undefined
-    result.mtu = node.extensions.mtu
-    result.reserved = node.extensions.reserved
-  } else if (node.protocol === 'hysteria') {
-    result.auth_str = c.password
-  } else {
-    result.password = c.password
-  }
-  if (['vmess', 'vless', 'trojan', 'hysteria', 'hysteria2', 'tuic', 'anytls', 'naive', 'http', 'https'].includes(node.protocol)) result.tls = singboxTls(node)
-  if (['vmess', 'vless', 'trojan'].includes(node.protocol)) result.transport = singboxTransport(node)
-  if (node.protocol === 'hysteria2') {
-    const ports = text(transport.mport ?? transport.ports)
-    result.server_ports = ports ? ports.split(/[\s,]+/u).filter(Boolean).map((item) => item.replace('-', ':')) : undefined
-    result.hop_interval = duration(transport.hopInterval)
-    result.up_mbps = integer(transport.upMbps ?? transport.up)
-    result.down_mbps = integer(transport.downMbps ?? transport.down)
-    const obfs = text(transport.obfs)
-    if (obfs) result.obfs = { type: obfs, password: text(transport.obfsPassword) }
-  }
-  if (node.protocol === 'hysteria') {
-    result.up_mbps = integer(transport.upMbps ?? transport.up)
-    result.down_mbps = integer(transport.downMbps ?? transport.down)
-    const ports = text(transport.mport ?? transport.ports)
-    result.server_ports = ports ? ports.split(/[\s,]+/u).filter(Boolean).map((item) => item.replace('-', ':')) : undefined
-    result.hop_interval = duration(transport.hopInterval)
-    const obfs = text(transport.obfs)
-    if (obfs) result.obfs = obfs
-  }
-  return clean(result) as Record<string, unknown>
-}
-
 function surgeLine(node: RenderNode): string | null {
   const c = node.credentials
   const tls = record(node.tls)
@@ -546,7 +422,10 @@ function renderStructured(client: RenderClient, nodes: RenderNode[], template?: 
     return stringifyYaml({ mode: 'rule', proxies, 'proxy-groups': [{ name: 'Proxy', type: 'select', proxies: names.length ? names : ['DIRECT'] }], rules: ['MATCH,Proxy'] })
   }
   if (client === 'singbox') {
-    const outbounds = nodes.map(singboxOutbound)
+    if (template) {
+      return compileSingBoxConfig(template, nodes).json
+    }
+    const outbounds = nodes.map((node) => singboxOutbound(node))
     const names = outbounds.map((node) => node.tag as string)
     outbounds.push({ type: 'selector', tag: 'Proxy', outbounds: names.length ? names : ['direct'] }, { type: 'direct', tag: 'direct' })
     return JSON.stringify({ outbounds }, null, 2) + '\n'
@@ -770,7 +649,7 @@ export function prepareClientRender(client: RenderClient, input: RenderNode[]) {
   return {
     outputNodes: candidates.length,
     render(template?: Template): RenderResult {
-      const output = client === 'mihomo' ? prepareNodeLayer(candidates, template?.subpanel?.nodes) : candidates
+      const output = (client === 'mihomo' || client === 'singbox') ? prepareNodeLayer(candidates, template?.subpanel?.nodes) : candidates
       let body: string
       if (['v2rayn', 'nekobox', 'shadowrocket', 'generic'].includes(client)) {
         const uris = candidates.map((node) => uriForClient(client, node)).filter((uri): uri is string => uri !== null)

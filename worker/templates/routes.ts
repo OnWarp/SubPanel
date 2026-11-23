@@ -250,8 +250,16 @@ function previewBody(body: string, platform: (typeof CLIENT_IDS)[number]) {
     return stringify({ ...output, proxies: proxies.map(({ name, type }) => ({ name, type })) })
   }
   if (platform === 'singbox') {
-    const { outbounds } = JSON.parse(body) as { outbounds: { type: string; tag: string; outbounds?: string[] }[] }
-    return JSON.stringify({ outbounds: outbounds.map(({ type, tag, outbounds }) => ({ type, tag, outbounds })) }, null, 2)
+    try {
+      const parsed = JSON.parse(body) as Record<string, unknown>
+      const outbounds = Array.isArray(parsed.outbounds) ? parsed.outbounds.map((ob: Record<string, unknown>) => {
+        const { password: _p, uuid: _u, private_key: _pk, pre_shared_key: _psk, auth_str: _as, username: _un, ...safe } = ob
+        return safe
+      }) : []
+      return JSON.stringify({ ...parsed, outbounds }, null, 2)
+    } catch {
+      return body
+    }
   }
   if (platform === 'surge' || platform === 'loon') {
     return body.split('\n').map(line => line.includes(' = ') && !line.startsWith('Proxy = select,')
@@ -273,14 +281,16 @@ templateRoutes.post('/preview', async c => {
   ).bind(row.id, input.versionId).first<TemplateVersionRow>() : null
   if (input.versionId && !version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
   const yaml = version?.yaml ?? input.yaml
-  const validation = yaml === undefined || input.platform !== 'mihomo' ? undefined : validateForAdmin(yaml, version ? isLegacyTemplateVersion(version.validator_version) : false)
+  const validation = yaml === undefined || (input.platform !== 'mihomo' && input.platform !== 'singbox') ? undefined : validateForAdmin(yaml, version ? isLegacyTemplateVersion(version.validator_version) : false)
   const { template, ignored = [], diagnostics = [] } = validation ?? {}
   const sourceDiagnostics = template && !(version && isLegacyTemplateVersion(version.validator_version))
     ? await checkRuleSources(c.env.DB, template) : []
   const subscription = input.subscriptionId ? await getTemplateSubscription(c.env, input.subscriptionId) : null
   const artifact = subscription ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true) : null
   const rendered = input.sample ? renderClient(input.platform, [previewNode], template) : artifact
-  const output = input.platform === 'mihomo' && rendered?.outputNodes ? parse(rendered.body) as Record<string, unknown> : template
+  const output = (input.platform === 'mihomo' || input.platform === 'singbox') && rendered?.outputNodes
+    ? (input.platform === 'mihomo' ? parse(rendered.body) as Record<string, unknown> : template)
+    : template
   const body = rendered ? input.sample ? rendered.body : previewBody(rendered.body, input.platform) : null
   return c.json({
     ignored, diagnostics: [...diagnostics, ...sourceDiagnostics],
@@ -294,11 +304,11 @@ templateRoutes.post('/preview', async c => {
     skippedNodes: rendered?.skippedNodes ?? 0,
     nodeDiagnostics: rendered?.diagnostics ?? [],
     rendererVersion: artifact?.rendererVersion ?? RENDERER_VERSION,
-    effectiveVersionId: input.platform === 'mihomo' ? version?.id ?? artifact?.templateVersionId ?? (yaml === undefined ? row?.published_id : null) ?? null : null,
+    effectiveVersionId: (input.platform === 'mihomo' || input.platform === 'singbox') ? version?.id ?? artifact?.templateVersionId ?? (yaml === undefined ? row?.published_id : null) ?? null : null,
     draftRevision: yaml !== undefined && !version ? row?.revision ?? null : null,
     zeroNodeReason: artifact?.zeroNodeReason ?? null,
     body,
-    capability: input.platform === 'mihomo' ? 'full' : 'nodes',
+    capability: (input.platform === 'mihomo' || input.platform === 'singbox') ? 'full' : 'nodes',
     summary: rendered ? { bytes: new TextEncoder().encode(rendered.body).length, groups: (output?.['proxy-groups'] as unknown[] | undefined)?.length ?? 0,
       rules: (output?.rules as unknown[] | undefined)?.length ?? 0 } : null,
   })

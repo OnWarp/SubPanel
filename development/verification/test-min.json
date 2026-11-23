@@ -1,0 +1,42 @@
+{
+  "dns": {
+    "servers": [
+      {
+        "tag": "remote-dns",
+        "type": "https",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "detour": "direct"
+      },
+      {
+        "tag": "local-dns",
+        "type": "udp",
+        "server": "223.5.5.5",
+        "detour": "direct"
+      }
+    ],
+    "rules": [],
+    "strategy": "prefer_ipv4"
+  },
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "remote-dns",
+    "final": "direct",
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ]
+}

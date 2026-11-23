@@ -101,21 +101,41 @@ export async function getDefault(db: D1Database) {
   ).first<TemplateDefaultRow>() ?? { id: 1, template_id: null, revision: 1, updated_at: '1970-01-01T00:00:00.000Z' }
 }
 
-export async function getEffectiveTemplate(db: D1Database, subscriptionId: string) {
+export async function getEffectiveTemplate(db: D1Database, subscriptionId: string, platform: string = 'mihomo') {
   const row = await db.prepare(`
-    SELECT CASE COALESCE(b.mode, 'inherit')
-             WHEN 'specific' THEN b.template_id WHEN 'inherit' THEN d.template_id END AS selected_id,
+    WITH target AS (SELECT ? AS platform, ? AS subscription_id)
+    SELECT CASE WHEN target.platform = 'mihomo' THEN
+             CASE COALESCE(b.mode, 'inherit')
+               WHEN 'specific' THEN b.template_id
+               WHEN 'inherit' THEN d.template_id
+               ELSE NULL END
+           ELSE
+             CASE cb.mode
+               WHEN 'specific' THEN cb.profile_id
+               ELSE NULL END
+           END AS selected_id,
            t.id AS template_id, t.name AS template_name, t.archived,
            v.id AS version_id, v.sequence, v.yaml, v.validator_version,
-           COALESCE(b.mode, 'inherit') AS mode, b.template_id AS binding_template_id,
-           COALESCE(b.revision, 1) AS revision, b.updated_at
-    FROM (SELECT ? AS id) AS subscription
-    LEFT JOIN subscription_template_bindings b ON b.subscription_id = subscription.id
+           CASE WHEN target.platform = 'mihomo' THEN COALESCE(b.mode, 'inherit') ELSE COALESCE(cb.mode, 'base') END AS mode,
+           CASE WHEN target.platform = 'mihomo' THEN b.template_id ELSE cb.profile_id END AS binding_template_id,
+           CASE WHEN target.platform = 'mihomo' THEN COALESCE(b.revision, 1) ELSE COALESCE(cb.revision, 1) END AS revision,
+           CASE WHEN target.platform = 'mihomo' THEN b.updated_at ELSE cb.updated_at END AS updated_at
+    FROM target
+    LEFT JOIN conversion_bindings cb ON cb.subscription_id = target.subscription_id AND cb.platform = target.platform
+    LEFT JOIN subscription_template_bindings b ON b.subscription_id = target.subscription_id
     LEFT JOIN subscription_template_default d ON d.id = 1
-    LEFT JOIN subscription_templates t ON t.id = CASE COALESCE(b.mode, 'inherit')
-      WHEN 'specific' THEN b.template_id WHEN 'inherit' THEN d.template_id END
+    LEFT JOIN subscription_templates t ON t.id = CASE WHEN target.platform = 'mihomo' THEN
+      CASE COALESCE(b.mode, 'inherit')
+        WHEN 'specific' THEN b.template_id
+        WHEN 'inherit' THEN d.template_id
+        ELSE NULL END
+    ELSE
+      CASE cb.mode
+        WHEN 'specific' THEN cb.profile_id
+        ELSE NULL END
+    END
     LEFT JOIN subscription_template_versions v ON v.id = t.published_id AND v.template_id = t.id
-  `).bind(subscriptionId).first<{
+  `).bind(platform, subscriptionId).first<{
     selected_id: string | null
     template_id: string | null
     template_name: string | null
@@ -135,8 +155,8 @@ export async function getEffectiveTemplate(db: D1Database, subscriptionId: strin
   return row
 }
 
-export async function resolvedTemplate(db: D1Database, subscriptionId: string) {
-  const row = await getEffectiveTemplate(db, subscriptionId)
+export async function resolvedTemplate(db: D1Database, subscriptionId: string, platform: string = 'mihomo') {
+  const row = await getEffectiveTemplate(db, subscriptionId, platform)
   return row.yaml === null ? undefined : validateTemplate(row.yaml, isLegacyTemplateVersion(row.validator_version)).template
 }
 

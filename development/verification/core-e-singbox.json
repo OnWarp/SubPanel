@@ -1,0 +1,114 @@
+{
+  "dns": {
+    "servers": [
+      {
+        "tag": "remote-dns",
+        "type": "https",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "detour": "Proxy"
+      },
+      {
+        "tag": "local-dns",
+        "type": "udp",
+        "server": "223.5.5.5",
+        "detour": "direct"
+      }
+    ],
+    "rules": [],
+    "strategy": "prefer_ipv4"
+  },
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "remote-dns",
+    "final": "Proxy",
+    "rules": [
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "domain_suffix": [
+          "example.org"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "ip_cidr": [
+          "192.168.0.0/16"
+        ],
+        "outbound": "direct"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Proxy",
+      "outbounds": [
+        "Fast",
+        "Backup",
+        "Balance",
+        "direct"
+      ],
+      "default": "Fast"
+    },
+    {
+      "type": "urltest",
+      "tag": "Fast",
+      "outbounds": [
+        "亚太 · 东京中继",
+        "亚太 · 新加坡中继"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "300s",
+      "tolerance": 50
+    },
+    {
+      "type": "urltest",
+      "tag": "Backup",
+      "outbounds": [
+        "亚太 · 东京中继",
+        "亚太 · 新加坡中继"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "300s",
+      "tolerance": 0
+    },
+    {
+      "type": "urltest",
+      "tag": "Balance",
+      "outbounds": [
+        "亚太 · 东京中继",
+        "亚太 · 新加坡中继"
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "300s",
+      "tolerance": 50
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "亚太 · 东京中继",
+      "server": "tokyo.example",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "sample-password"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "亚太 · 新加坡中继",
+      "server": "singapore.example",
+      "server_port": 8388,
+      "method": "aes-128-gcm",
+      "password": "sample-password"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ]
+}

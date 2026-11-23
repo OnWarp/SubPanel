@@ -1,3 +1,4 @@
+import { RENDERER_VERSION } from '../renderers/model.js'
 import { apiError } from '../platform/api-error.js'
 import { bindingWrite, requirePublished, rethrowBindingError, type BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
@@ -78,7 +79,15 @@ export async function writeDelivery(
 }
 
 export const compiledPrefix = (tokenHash: string): string => `compiled:${tokenHash}:`
-export const compiledKey = (tokenHash: string, client: string): string => `${compiledPrefix(tokenHash)}${client}`
+export const compiledKey = (
+  tokenHash: string,
+  client: string,
+  profileVersionId?: string | null,
+  rendererVersion: string = RENDERER_VERSION,
+): string => {
+  const versionSegment = profileVersionId ? `v_${profileVersionId}` : 'base'
+  return `${compiledPrefix(tokenHash)}${versionSegment}:r${rendererVersion}:${client}`
+}
 
 export async function deleteCompiledArtifacts(kv: KVNamespace, tokenHash: string): Promise<void> {
   try {

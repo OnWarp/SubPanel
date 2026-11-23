@@ -67,10 +67,14 @@ export function TemplatePreview({ value, onChange, onPreview, pending, result, s
     <FormField label="目标平台" htmlFor="template-platform">
       <FormSelect id="template-platform" value={platform} onChange={event => onPlatform(event.currentTarget.value)}>
         <option value="mihomo">Mihomo · 完整规则配置</option>
-        <option value="singbox">sing-box · 仅节点订阅</option>
+        <option value="singbox">sing-box · 完整规则配置</option>
         <option value="surge">Surge · 仅节点订阅</option>
         <option value="loon">Loon · 仅节点订阅</option>
         <option value="quantumultx">Quantumult X · 仅节点订阅</option>
+        <option value="v2rayn">v2rayN · 仅节点订阅</option>
+        <option value="nekobox">NekoBox · 仅节点订阅</option>
+        <option value="shadowrocket">Shadowrocket · 仅节点订阅</option>
+        <option value="generic">通用 URI · 仅节点订阅</option>
       </FormSelect>
     </FormField>
     <label><input type="checkbox" checked={sample} onChange={event => onSample(event.currentTarget.checked)} /> 使用合成节点样本</label>

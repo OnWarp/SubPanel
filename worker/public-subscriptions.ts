@@ -8,7 +8,7 @@ import { noteSubscriptionFetch, stageSubscriptionFetch } from './delivery/fetch-
 import { subscriptionRowStatus } from './delivery/expiry.js'
 import { compiledArtifactSchema, type Subscription } from './delivery/schema.js'
 import { renderEntitledSubscription } from './delivery/compiler.js'
-import { compiledKey, readDelivery } from './delivery/repository.js'
+import { compiledKey, compiledPrefix, readDelivery } from './delivery/repository.js'
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
 const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
@@ -101,7 +101,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       statusCode = 404
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
-    if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
+    if (!artifact.available && (client === 'mihomo' || client === 'singbox' || artifact.inputNodes > 0)) {
       statusCode = 422
       throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: artifact.zeroNodeReason })
     }
@@ -110,8 +110,12 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     // artifact needs refreshing. Authorization and response bytes come from D1
     // and the current catalog, even if an older request races with this write.
     if (artifact.available) {
-      const key = compiledKey(tokenHash, client)
+      const key = compiledKey(tokenHash, client, artifact.templateVersionId, artifact.rendererVersion)
       c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, key, artifact))
+      const legacyKey = `${compiledPrefix(tokenHash)}${client}`
+      if (key !== legacyKey) {
+        c.executionCtx.waitUntil(refreshArtifact(c.env.DATA, legacyKey, artifact))
+      }
     }
 
     c.header('Cache-Control', 'no-store')

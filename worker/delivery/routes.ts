@@ -34,7 +34,7 @@ import {
   DeliveryError,
 } from './service.js'
 import { directNodeIdsSchema, durationSchema } from './entitlement-templates.js'
-import { compiledKey, deleteCompiledArtifacts } from './repository.js'
+import { compiledKey, compiledPrefix, deleteCompiledArtifacts } from './repository.js'
 import { isWithinExpiryDays, subscriptionExpiryKind, type SubscriptionExpiryKind } from './expiry.js'
 import { compiledArtifactSchema, epochMillisSchema, type Subscription } from './schema.js'
 import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
@@ -164,8 +164,9 @@ async function view(
   let conversionTemplate: string | null = null
   let template: Template | undefined
   let templateInvalid = false
+  let effective: Awaited<ReturnType<typeof getEffectiveTemplate>> | undefined
   try {
-    const effective = await getEffectiveTemplate(c.env.DB, subscription.id)
+    effective = await getEffectiveTemplate(c.env.DB, subscription.id)
     configVersion = effective.sequence
     conversionMode = effective.mode
     conversionTemplate = effective.template_name
@@ -178,7 +179,18 @@ async function view(
   const fetchSummary = await readFetchSummary(c.env.DATA, subscription.id)
   const diagnostics: Record<string, unknown> = {}
   for (const name of ['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic']) {
-    const raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
+    let effectiveForClient = effective
+    if (name === 'singbox') {
+      try {
+        effectiveForClient = await getEffectiveTemplate(c.env.DB, subscription.id, 'singbox')
+      } catch {
+        effectiveForClient = undefined
+      }
+    }
+    const versionId = effectiveForClient?.version_id
+    let raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name, versionId, RENDERER_VERSION))
+    if (!raw) raw = await c.env.DATA.get(compiledKey(subscription.tokenHash, name))
+    if (!raw) raw = await c.env.DATA.get(`${compiledPrefix(subscription.tokenHash)}${name}`)
     if (!raw) continue
     let value: unknown
     try {

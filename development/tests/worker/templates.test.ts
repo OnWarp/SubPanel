@@ -43,8 +43,14 @@ describe('Mihomo policy templates',()=>{
  expect(renderClient('mihomo',[],t).body).toBe(renderClient('mihomo',[]).body)
  expect(renderClient('mihomo',[{...node('x'),enabled:false}],t).body).toBe(renderClient('mihomo',[]).body)
  })
- it.each(['generic','singbox','surge','loon','quantumultx','v2rayn','nekobox','shadowrocket'] as const)('preserves %s output',client=>{
+ it.each(['generic','surge','loon','quantumultx','v2rayn','nekobox','shadowrocket'] as const)('preserves %s output',client=>{
  expect(renderClient(client,[node('x')],validateTemplate(yaml).template).body).toBe(renderClient(client,[node('x')]).body)
+ })
+ it('compiles full singbox config when template is provided',()=>{
+   const result = JSON.parse(renderClient('singbox',[node('x')],validateTemplate(yaml).template).body)
+   expect(result).toHaveProperty('outbounds')
+   expect(result).toHaveProperty('route')
+   expect(result).toHaveProperty('dns')
  })
 })
 

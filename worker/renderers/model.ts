@@ -1,7 +1,7 @@
 import type { Node } from '../catalog/schema.js'
 import type { ClientId } from '../delivery/schema.js'
 
-export const RENDERER_VERSION = '3'
+export const RENDERER_VERSION = '4'
 
 export const CLIENT_IDS = [
   'mihomo',
