@@ -64,7 +64,7 @@ describe('navigation ownership and route compatibility', () => {
 
   it.each([
     ['节点管理导航', '/catalog/nodes', ['/catalog/nodes', '/catalog/sources', '/catalog/groups']],
-    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/templates', '/delivery/redemptions', '/delivery/conversions', '/delivery/shares', '/plans']],
+    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/templates', '/delivery/conversions', '/delivery/shares', '/plans']],
     ['用户管理子页', '/users', ['/users', '/invites', '/users/recycle-bin']],
     ['运营管理导航', '/delivery/tickets', ['/delivery/tickets', '/operations/notices', '/kb/manage', '/catalog/apps']],
     ['系统设置导航', '/system/registration', ['/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs']],
@@ -86,6 +86,13 @@ describe('navigation ownership and route compatibility', () => {
         expect(dock).not.toContain('aria-current')
       }
     }
+  })
+
+  it('keeps redemption management outside the subscription tabs and primary navigation', () => {
+    const html = render('/delivery/redemptions')
+    expect(nav(html, '订阅管理导航')).toBe('')
+    expect(links(nav(html, '主导航'))).not.toContain('/delivery/redemptions')
+    expect(links(mobileDock(html))).not.toContain('/delivery/redemptions')
   })
 
   it('highlights the ticket tab on a ticket detail page', () => {

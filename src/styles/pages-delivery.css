@@ -341,3 +341,61 @@
     padding-inline: var(--space-page-inline);
   }
 }
+
+.redemption-section {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.redemption-admin .redemption-section {
+  padding: var(--space-4);
+}
+
+.redemption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.redemption-admin .redemption-actions + .sp-table-wrap,
+.redemption-admin .redemption-actions + .sp-filter-bar {
+  margin-top: var(--space-3);
+}
+
+.redemption-section .sp-table :is(th, td) {
+  white-space: normal;
+}
+
+@media (width >= 768px) {
+  .admin-layout .workspace-content > .redemption-admin > .redemption-section {
+    flex: 0 0 auto;
+    padding-inline: var(--space-page-inline);
+  }
+
+  .redemption-admin > .redemption-actions {
+    padding-inline: var(--space-page-inline);
+  }
+}
+
+@media (width <= 760px) {
+  .redemption-section .sp-table td {
+    padding-block: var(--space-1);
+  }
+}
+
+.upd-mine .redemption-section a {
+  color: var(--color-text);
+}
+
+.upd-mine .redemption-section a:not(.button) {
+  text-decoration: underline;
+}
+
+.upd-mine .redemption-section form {
+  max-width: 460px;
+}
+
+.redemption-section .sp-badge {
+  justify-self: start;
+}

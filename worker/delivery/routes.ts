@@ -222,6 +222,7 @@ async function view(
     userId: subscription.userId,
     name: subscription.name,
     groupIds: subscription.groupIds,
+    directNodeCount: subscription.nodeIds?.length ?? 0,
     tokenPrefix: subscription.tokenPrefix,
     enabled: subscription.enabled,
     defaultClient: subscription.defaultClient,

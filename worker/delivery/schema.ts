@@ -46,7 +46,7 @@ export const subscriptionSchema = z.object({
   tokenHash: tokenHashSchema,
   tokenPrefix: z.string().regex(/^[A-Za-z0-9_-]{8}$/),
   encryptedToken: encryptedValueSchema.nullable(),
-  sourceType: z.enum(['legacy', 'manual', 'template']).optional(),
+  sourceType: z.enum(['legacy', 'manual', 'template', 'redemption']).optional(),
   planId: z.string().nullable().optional(),
   trafficGb: z.number().nonnegative().optional(),
   speedLimitMbps: z.number().int().nonnegative().optional(),

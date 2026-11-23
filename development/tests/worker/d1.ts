@@ -1,3 +1,4 @@
+import subscriptionV2P3Sql from '../../../migrations/0023_subscription_v2_p3.sql?raw'
 import subscriptionV2P2Sql from '../../../migrations/0022_subscription_v2_p2.sql?raw'
 import subscriptionV2Sql from '../../../migrations/0021_subscription_v2_p1.sql?raw'
 import conversionProfilesSql from '../../../migrations/0020_conversion_profiles.sql?raw'
@@ -62,6 +63,9 @@ export const D1_TABLES = [
   'plan_groups',
   'plans',
   'rate_limits',
+  'redemption_batches',
+  'redemption_codes',
+  'redemption_records',
   'shares',
   'sources',
   'subscription_creation',
@@ -254,6 +258,10 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0022_subscription_v2_p2.sql', queries: [
       ...splitSqlStatements(subscriptionV2P2Sql.replace(triggerPattern, '')),
       ...(subscriptionV2P2Sql.match(triggerPattern) ?? []),
+    ] },
+    { name: '0023_subscription_v2_p3.sql', queries: [
+      ...splitSqlStatements(subscriptionV2P3Sql.replace(triggerPattern, '')),
+      ...(subscriptionV2P3Sql.match(triggerPattern) ?? []),
     ] },
   ])
 }

@@ -58,6 +58,7 @@ export async function writeDelivery(
   mutation?: BindingMutation,
   request?: DeliveryCreationRequest,
   policy?: DeliveryNodePolicyWrite,
+  additionalStatements?: D1PreparedStatement[],
 ): Promise<DeliverySnapshot> {
   const binding = mutation && 'binding' in mutation ? mutation.binding : undefined
   const cleanup = mutation && 'deleteBinding' in mutation
@@ -68,10 +69,10 @@ export async function writeDelivery(
     const accounts = await readAccounts(env)
     if (binding?.mode === 'specific') await requirePublished(env.DB, binding.templateId)
     const statement = binding && mutation ? bindingWrite(env.DB, mutation.id, binding, now, true) : cleanup
-    await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision, request, policy).catch(rethrowBindingError)
+    await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision, request, policy, additionalStatements).catch(rethrowBindingError)
     return next
   }
-  if (policy) throw apiError(409, 'SUBSCRIPTION_STORAGE_NOT_READY', '请先完成订阅 D1 迁移')
+  if (policy || additionalStatements) throw apiError(409, 'SUBSCRIPTION_STORAGE_NOT_READY', '请先完成订阅 D1 迁移')
   if (binding) throw apiError(409, 'TEMPLATE_STORAGE_NOT_READY', '请先完成订阅 D1 迁移，再随订阅保存附加配置')
   const next = await writeDeliveryKv(env.DATA, snapshot, now)
   if (cleanup) await cleanup.run()

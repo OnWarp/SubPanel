@@ -1,3 +1,4 @@
+import { adminRedemptionRoutes, userRedemptionRoutes } from './redemption/routes.js'
 import { templateRoutes } from './templates/routes.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
@@ -54,6 +55,8 @@ app.use('/api/account', requireAuth)
 app.use('/api/account/*', requireAuth)
 app.route('/api/account', accountRoutes)
 app.use('/api/me/subscriptions/*', requireAuth)
+app.use('/api/me/redemptions/*', requireAuth)
+app.route('/api/me/redemptions', userRedemptionRoutes)
 app.use('/api/subscriptions', requireAuth)
 app.use('/api/subscriptions/*', requireAuth)
 app.use('/api/user/subscriptions', requireAuth)
@@ -73,6 +76,7 @@ app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
 app.use('/api/admin/*', auditAdminMutation)
 app.route('/api/admin', adminManagementRoutes)
+app.route('/api/admin', adminRedemptionRoutes)
 app.route('/api/admin', adminAccountRoutes)
 app.route('/api/admin', adminPlanRoutes)
 app.route('/api/account', userPlanRoutes)

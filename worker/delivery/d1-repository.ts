@@ -104,18 +104,21 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
   try {
     const placeholders = DELIVERY_META_KEYS.map(() => '?').join(', ')
     const [subscriptions, groups, metadata, nodes] = await batch(db, [
-      db.prepare(`SELECT s.*, coalesce(sc.source_type, 'legacy') AS source_type,
-        v.id AS entitlement_version_id, v.version_no AS entitlement_version_no, t.name AS entitlement_template_name
+      db.prepare(`SELECT s.*, CASE WHEN r.id IS NOT NULL THEN 'redemption' ELSE coalesce(sc.source_type, 'legacy') END AS source_type,
+        v.id AS entitlement_version_id, v.version_no AS entitlement_version_no, coalesce(rb.template_name, t.name) AS entitlement_template_name
         FROM subscriptions s LEFT JOIN subscription_creation sc ON sc.subscription_id = s.id
         LEFT JOIN subscription_template_origins o ON o.subscription_id = s.id
-        LEFT JOIN entitlement_template_versions v ON v.id = o.version_id
+        LEFT JOIN redemption_records r ON r.subscription_id = s.id
+        LEFT JOIN redemption_codes rc ON rc.id = r.code_id
+        LEFT JOIN redemption_batches rb ON rb.id = rc.batch_id
+        LEFT JOIN entitlement_template_versions v ON v.id = coalesce(o.version_id, rb.template_version_id)
         LEFT JOIN entitlement_templates t ON t.id = v.template_id`),
       db.prepare('SELECT subscription_id, group_id, position FROM subscription_groups ORDER BY subscription_id, position'),
       db.prepare(`SELECT key, value FROM system_settings WHERE key IN (${placeholders})`).bind(...DELIVERY_META_KEYS),
       db.prepare('SELECT subscription_id, node_id FROM subscription_nodes ORDER BY subscription_id, position'),
     ])
     const subscriptionRows = subscriptions.results as (SubscriptionRow & {
-      source_type: 'manual' | 'legacy'
+      source_type: 'manual' | 'legacy' | 'redemption'
       entitlement_version_id: string | null
       entitlement_version_no: number | null
       entitlement_template_name: string | null
@@ -165,7 +168,7 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
         encryptedToken: row.encrypted_token === '{}' ? null : parseJson(row.encrypted_token),
         ...(directIds.has(row.id) ? { nodeIds: directIds.get(row.id) } : {}),
         ...(row.entitlement_version_id ? {
-          sourceType: 'template',
+          sourceType: row.source_type === 'redemption' ? 'redemption' : 'template',
           templateVersionId: row.entitlement_version_id,
           entitlementTemplateName: row.entitlement_template_name,
           entitlementVersionNumber: row.entitlement_version_no,
@@ -263,6 +266,7 @@ export async function persistDeliverySnapshot(
   expectedRevision?: number,
   request?: DeliveryCreationRequest,
   policy?: DeliveryNodePolicyWrite,
+  additionalStatements: D1PreparedStatement[] = [],
 ): Promise<void> {
   const converted = convertDelivery(snapshot)
   const ids = converted.rows.subscriptions.map((row) => row.id)
@@ -270,7 +274,8 @@ export async function persistDeliverySnapshot(
   const statements: D1PreparedStatement[] = [
     ...(expectedRevision === undefined ? [db.prepare(`INSERT INTO system_settings (key, value, updated_at)
       SELECT 'delivery_import_conflict', NULL, ?
-      WHERE EXISTS (SELECT 1 FROM subscription_template_origins) OR EXISTS (SELECT 1 FROM subscription_nodes)`)
+      WHERE EXISTS (SELECT 1 FROM subscription_template_origins) OR EXISTS (SELECT 1 FROM subscription_nodes)
+        OR EXISTS (SELECT 1 FROM redemption_records WHERE subscription_id IS NOT NULL)`)
       .bind(snapshot.updatedAt)] : []),
     ...userAnchorStatements(db, users, converted.rows.subscriptions.flatMap((row) => row.user_id ? [row.user_id] : [])),
     db.prepare('DELETE FROM subscriptions WHERE id NOT IN (SELECT value FROM json_each(?))').bind(idJson),
@@ -309,6 +314,7 @@ export async function persistDeliverySnapshot(
         )`).bind(policy.id, nodes, policy.id),
     )
   }
+  statements.push(...additionalStatements)
   if (expectedRevision !== undefined) {
     // Updating the metadata in this guard would itself overwrite a concurrent
     // writer. A NULL value instead aborts the batch when the snapshot changed.

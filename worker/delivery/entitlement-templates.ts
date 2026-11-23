@@ -70,10 +70,15 @@ const versionColumns = `v.id AS version_id, v.version_no, v.schema_version, v.co
   v.created_by AS version_created_by, v.created_at AS version_created_at`
 const currentVersionJoin = `JOIN entitlement_template_versions v ON v.template_id = t.id
   AND v.version_no = (SELECT max(version_no) FROM entitlement_template_versions WHERE template_id = t.id)`
+const versionSubscriptionCount = `(
+  (SELECT count(*) FROM subscription_template_origins o WHERE o.version_id = v.id)
+  + (SELECT count(*) FROM redemption_batches b
+    JOIN redemption_codes c ON c.batch_id = b.id
+    JOIN redemption_records r ON r.code_id = c.id
+    WHERE b.template_version_id = v.id AND r.subscription_id IS NOT NULL)
+)`
 const templateSelect = `SELECT t.*, ${versionColumns}, (
-  SELECT count(*) FROM entitlement_template_versions history
-  JOIN subscription_template_origins o ON o.version_id = history.id
-  WHERE history.template_id = t.id
+  SELECT sum(${versionSubscriptionCount}) FROM entitlement_template_versions v WHERE v.template_id = t.id
 ) AS subscription_count FROM entitlement_templates t ${currentVersionJoin}`
 
 function versionDto(row: VersionRow) {
@@ -119,7 +124,7 @@ export async function getEntitlementTemplate(db: AppDatabase, id: string) {
 export async function listEntitlementVersions(db: AppDatabase, id: string) {
   await getEntitlementTemplate(db, id)
   const { results } = await db.prepare(`SELECT ${versionColumns},
-    (SELECT count(*) FROM subscription_template_origins WHERE version_id = v.id) AS subscription_count
+    ${versionSubscriptionCount} AS subscription_count
     FROM entitlement_template_versions v WHERE v.template_id = ? ORDER BY v.version_no DESC`)
     .bind(id).all<VersionRow & { subscription_count: number }>()
   return results.map((row) => ({ ...versionDto(row), subscriptionCount: row.subscription_count }))
@@ -134,6 +139,13 @@ export async function getIssuableVersion(db: AppDatabase, id: string) {
     ${currentVersionJoin} WHERE v.id = ? AND t.status = 'enabled'`).bind(id).first<VersionRow & { name: string }>()
   if (!row) versionUnavailable()
   return { ...versionDto(row), name: row.name }
+}
+
+export async function getRedemptionVersion(db: AppDatabase, id: string, name: string) {
+  const row = await db.prepare(`SELECT ${versionColumns}
+    FROM entitlement_template_versions v WHERE v.id = ?`).bind(id).first<VersionRow>()
+  if (!row) versionUnavailable()
+  return { ...versionDto(row), name }
 }
 
 export async function countTemplateGroupReferences(db: AppDatabase, id: string) {

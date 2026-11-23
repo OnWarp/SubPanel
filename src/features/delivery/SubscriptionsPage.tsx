@@ -7,7 +7,7 @@ import { TemplateBinding } from '../system/TemplateBinding'
 import { versionLabel } from '../system/template-display'
 import { CheckCircle2, Plus, Trash2, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { loadAdminUserOptions, peekAdminUserOptions, api, peekApi, readData, watchApi, ApiClientError, jsonBody, loadSubscriptionTemplates, subscriptionTemplatesPath, type SubscriptionTemplate, type SubscriptionTemplateBinding, type TemplateBinding as Binding, type AdminSubscription, type CatalogGroup, type CatalogResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -784,7 +784,7 @@ export function SubscriptionsPage() {
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
 
       <section className="data-section resource-card" aria-label="订阅列表">
-        <div className="section-heading"><span /><div className="data-header-actions"><button className="button primary" type="button" onClick={openCreate} disabled={templateLoading}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
+        <div className="section-heading"><span /><div className="data-header-actions"><Link to="/delivery/redemptions" className="button secondary">兑换码管理</Link><button className="button primary" type="button" onClick={openCreate} disabled={templateLoading}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
         <FilterBar className="resource-card-filters">
           <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="订阅状态" value={activeUnified} onChange={(event) => {
