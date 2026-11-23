@@ -1003,6 +1003,13 @@ export function SubscriptionsPage() {
               available: diagnostic.available,
               summary: `输入 ${diagnostic.inputNodes} · 输出 ${diagnostic.outputNodes} · 跳过 ${diagnostic.skippedNodes}`,
               items: diagnostic.diagnostics,
+              href: (() => {
+                const profile = key === 'singbox' ? detailsBinding?.singboxTemplate : detailsBinding?.effectiveTemplate
+                if (!profile?.templateId || !profile.versionId) return undefined
+                return `/delivery/conversions?${new URLSearchParams({
+                  config: profile.templateId, view: 'preview', version: profile.versionId, subscription: details.id, platform: key,
+                })}`
+              })(),
             }))}
             lifecycle={details.statusLabel ? { label: details.statusLabel, reason: details.statusReason, fix: details.statusFix } : undefined}
             onFix={() => openEdit(details)}

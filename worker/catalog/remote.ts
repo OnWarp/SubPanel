@@ -221,6 +221,7 @@ export async function fetchRemoteTextWithMetadata(
   timeoutMs = REMOTE_TIMEOUT_MS,
   cancellation?: AbortSignal,
   limits = { maxBytes: MAX_REMOTE_BYTES, maxRedirects: MAX_REDIRECTS },
+  egress?: { origins: Set<string>; gateway?: Fetcher },
 ): Promise<RemoteTextResult> {
   let current = validateRemoteUrl(encryptedSafeRequest.url)
   let headers = validateRemoteHeaders(encryptedSafeRequest.headers)
@@ -228,10 +229,16 @@ export async function fetchRemoteTextWithMetadata(
   const signal = cancellation ? AbortSignal.any([deadline, cancellation]) : deadline
 
   for (let redirects = 0; ; redirects += 1) {
+    if (egress && (!egress.gateway || current.protocol !== 'https:' || !egress.origins.has(current.origin))) {
+      console.warn(JSON.stringify({ event: 'remote_fetch_blocked', reason: 'egress_policy' }))
+      fail('REMOTE_FETCH_FAILED')
+    }
     let response: Response
     try {
       if (signal.aborted) fail('REMOTE_TIMEOUT')
-      response = await withDeadline(signal, fetcher(current.href, { headers, redirect: 'manual', signal }))
+      const init = { headers, redirect: 'manual' as const, signal }
+      const pending = egress?.gateway ? egress.gateway.fetch(new Request(current.href, init)) : fetcher(current.href, init)
+      response = await withDeadline(signal, pending)
     } catch (error) {
       if (cancellation?.aborted) fail('REMOTE_CANCELLED')
       if (signal.aborted || isAbortError(error)) fail('REMOTE_TIMEOUT')

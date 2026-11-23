@@ -1,6 +1,9 @@
 import { readCatalogFromD1 } from '../catalog/d1-repository.js'
-import type { DataEnv } from '../db/module-switch.js'
-import { hashToken } from '../platform/crypto.js'
+import type { CatalogSnapshot } from '../catalog/schema.js'
+import { CATALOG_SETTING_KEYS, readSettingMap, type DataEnv } from '../db/module-switch.js'
+import { apiError } from '../platform/api-error.js'
+import { env as workerEnv } from 'cloudflare:workers'
+import { decryptText, encryptText, hashToken, readCryptoMaterial } from '../platform/crypto.js'
 import type { RenderClient } from '../renderers/index.js'
 import { getEffectiveTemplate } from '../templates/repository.js'
 import { renderResolvedSubscription, RENDERER_VERSION, resolveEntitlement, type AccessSnapshot } from './compiler.js'
@@ -11,12 +14,15 @@ import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from
 export async function readCurrentArtifact(
   kv: KVNamespace, subscription: Subscription, client: RenderClient, relevant: string, profile?: string | null,
 ) {
-  const key = compiledKey(subscription.tokenHash, client, {
+  const encrypted = workerEnv.REQUIRE_WORKER_SECRETS === 'true'
+  const baseKey = compiledKey(subscription.tokenHash, client, {
     subscription: subscription.revision, catalogRelevant: relevant, profile,
   })
+  const key = encrypted ? `${baseKey}:encrypted` : baseKey
   try {
     const raw = await kv.get(key)
-    const parsed = raw && compiledArtifactSchema.safeParse(JSON.parse(raw))
+    const json = raw && encrypted ? await decryptText(JSON.parse(raw), (await readCryptoMaterial(kv)).encryptionKey) : raw
+    const parsed = json && compiledArtifactSchema.safeParse(JSON.parse(json))
     if (parsed && parsed.success) {
       const artifact = parsed.data
       if (artifact.client === client && artifact.rendererVersion === RENDERER_VERSION
@@ -30,6 +36,26 @@ export async function readCurrentArtifact(
   return { key }
 }
 
+const catalogCache = new WeakMap<D1Database, CatalogSnapshot>()
+
+async function readArtifactCatalog(env: DataEnv): Promise<CatalogSnapshot> {
+  const keys = [CATALOG_SETTING_KEYS.revision, CATALOG_SETTING_KEYS.updatedAt]
+  const matches = (snapshot: CatalogSnapshot, settings: Map<string, unknown>) =>
+    settings.get(keys[0]) === snapshot.revision && settings.get(keys[1]) === snapshot.updatedAt
+  const before = await readSettingMap(env.DB, keys)
+  const cached = catalogCache.get(env.DB)
+  if (cached && matches(cached, before)) return cached
+
+  const latest = await readCatalogFromD1(env.DB)
+  const after = await readSettingMap(env.DB, keys)
+  if (keys.every(key => before.get(key) === after.get(key))) {
+    if (matches(latest, after)) catalogCache.set(env.DB, latest)
+    return latest
+  }
+  catalogCache.delete(env.DB)
+  throw apiError(503, 'CATALOG_REFRESH_IN_PROGRESS', '目录正在更新，请稍后重试')
+}
+
 export async function inspectSubscriptionArtifact(
   env: DataEnv,
   subscription: Subscription,
@@ -37,7 +63,7 @@ export async function inspectSubscriptionArtifact(
   now: string,
   snapshot?: Partial<AccessSnapshot>,
 ) {
-  const catalog = snapshot?.catalog ?? await readCatalogFromD1(env.DB)
+  const catalog = snapshot?.catalog ?? await readArtifactCatalog(env)
   const access = await resolveEntitlement(env, subscription, now, { ...snapshot, catalog })
   const reason = access.zeroNodeReason
   if (reason === 'disabled' || reason === 'expired' || reason === 'pending' || reason === 'ownerUnavailable' || reason === 'noPlan') {
@@ -69,7 +95,14 @@ export async function loadSubscriptionArtifact(
   const current: CompiledArtifact = {
     ...rendered, catalogRelevantRevision: relevant, templateVersionId: effective?.version_id ?? undefined,
   }
-  const write = env.DATA.put(key, JSON.stringify(current), { expirationTtl: 7 * 86400 })
+  const serialized = JSON.stringify(current)
+  const encrypted = workerEnv.REQUIRE_WORKER_SECRETS === 'true'
+  const write = (async () => {
+    const value = encrypted
+      ? JSON.stringify(await encryptText(serialized, (await readCryptoMaterial(env.DATA)).encryptionKey))
+      : serialized
+    await env.DATA.put(key, value, { expirationTtl: encrypted ? 86400 : 7 * 86400 })
+  })()
   if (persist) persist(write.catch(() => {
     console.warn(JSON.stringify({ event: 'subscription_cache_write_failed', platform: client }))
   }))

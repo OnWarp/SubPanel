@@ -261,3 +261,123 @@ it.skipIf(import.meta.env.VITE_CORE_F_BENCH !== '1')('measures scoped invalidati
   console.info(JSON.stringify({ event: 'core_f_bulk_benchmark', subscriptions: 1000, pages, durationMs: Date.now() - startBulk, maxPageMs }))
 
 }, 360_000)
+
+it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures P4 public fetch and bulk source update', async () => {
+  const fixture = await createFixture('p4-bench')
+  const seed = await createSubscription(fixture)
+  const now = new Date().toISOString()
+  const samples = Array.from({ length: 10_000 }, (_, i) => ({
+    id: `sub_${i + 100}`, token: String(i + 100).padStart(43, '0'),
+  }))
+  const sourceUpdate = (size: number) => adminPost(`${catalog}/sources/${fixture.source.id}`, { content: ss(`update-${size}`) }, 'PUT')
+  const operations: Record<string, number> = {}
+  const increment = (name: string) => { operations[name] = (operations[name] ?? 0) + 1 }
+  const db = new Proxy(env.DB, {
+    get(target, property) {
+      if (property === 'prepare') return (sql: string) => {
+        increment(/^\s*SELECT\b/i.test(sql) ? 'd1ReadStatements' : 'd1WriteStatements')
+        return target.prepare(sql)
+      }
+      if (property === 'batch') return (statements: D1PreparedStatement[]) => {
+        increment('d1Batches')
+        return target.batch(statements)
+      }
+      return Reflect.get(target, property, target)
+    },
+  })
+  const kv = new Proxy(env.DATA, {
+    get(target, property) {
+      if (property === 'get') return (...args: [string]) => { increment('kvGets'); return target.get(...args) }
+      if (property === 'put') return (...args: [string, string, KVNamespacePutOptions?]) => { increment('kvPuts'); return target.put(...args) }
+      return Reflect.get(target, property, target)
+    },
+  })
+  const bindings = { ...env, DB: db, DATA: kv }
+  const logger = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+  try {
+    for (const size of [1, 100, 1_000, 10_000]) {
+      const active = samples.slice(0, size)
+      const writeStart = performance.now()
+      let rowsWritten = 0
+      for (let i = 0; i < active.length; i += 100) {
+        const page = await Promise.all(active.slice(i, i + 100).map(async item => ({ id: item.id, hash: await hashToken(item.token) })))
+        const results = await env.DB.batch([
+          env.DB.prepare(`INSERT OR IGNORE INTO subscriptions
+            (id,name,token_hash,token_prefix,encrypted_token,enabled,default_client,revision,created_at,updated_at,plan_id)
+            SELECT json_extract(value,'$.id'), 'Fixture', json_extract(value,'$.hash'), 'fixture0',
+              (SELECT encrypted_token FROM subscriptions WHERE id=?), 1, 'generic', 1, ?, ?, ?
+              FROM json_each(?)`).bind(seed.subscription.id, now, now, fixture.plan.id, JSON.stringify(page)),
+          env.DB.prepare(`INSERT OR IGNORE INTO subscription_groups (subscription_id, group_id, position)
+            SELECT json_extract(value,'$.id'), ?, 0 FROM json_each(?)`).bind(fixture.group.id, JSON.stringify(page)),
+        ])
+        rowsWritten += results.reduce((n, result) => n + result.meta.rows_written, 0)
+      }
+      const writeMs = Math.round(performance.now() - writeStart)
+      const updateStart = performance.now()
+      const updated = await sourceUpdate(size)
+      expect(updated.status).toBe(200)
+      await updated.json()
+      const updateMs = Math.round(performance.now() - updateStart)
+      for (const pass of ['cold', 'warm']) {
+        for (const key of Object.keys(operations)) delete operations[key]
+        const started = performance.now()
+        const latencies: number[] = []
+        const statuses: Record<number, number> = {}
+        let cursor = 0
+        await Promise.all(Array.from({ length: Math.min(size, 64) }, async () => {
+          while (cursor < active.length) {
+            const i = cursor++
+            const start = performance.now()
+            const ctx = createExecutionContext()
+            const response = await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${active[i].token}/generic`, {
+              headers: { 'CF-Connecting-IP': `2001:db8::${(i + 1).toString(16)}` },
+            }), bindings, ctx)
+            await response.arrayBuffer()
+            latencies.push(performance.now() - start)
+            statuses[response.status] = (statuses[response.status] ?? 0) + 1
+            await waitOnExecutionContext(ctx)
+          }
+        }))
+        latencies.sort((a, b) => a - b)
+        console.warn(JSON.stringify({
+          event: 'p4_benchmark', size, pass, wallMs: Math.round(performance.now() - started),
+          p50: Math.round(latencies[Math.floor(size * 0.5)]),
+          p95: Math.round(latencies[Math.floor(size * 0.95)]), statuses, writeMs, rowsWritten, updateMs, operations,
+        }))
+        expect(statuses[200]).toBe(size)
+        logger.mockClear()
+      }
+    }
+  } finally {
+    logger.mockRestore()
+  }
+}, 300_000)
+
+it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures concurrent P4 source changes', async () => {
+  const sources = []
+  for (let index = 0; index < 20; index++) {
+    const { source } = await createFixture(`p4-source-${index}`)
+    sources.push(source.id)
+  }
+  const update = (id: string, index: number) => adminPost(`${catalog}/sources/${id}`, { content: ss(`p4-change-${index}`) }, 'PUT')
+  const started = performance.now()
+  const responses = await Promise.all(sources.map(update))
+  const statusCounts: Record<number, number> = {}
+  for (const response of responses) {
+    await response.arrayBuffer()
+    statusCounts[response.status] = (statusCounts[response.status] ?? 0) + 1
+  }
+  const concurrentMs = Math.round(performance.now() - started)
+  const retry = performance.now()
+  for (const [index, response] of responses.entries()) {
+    if (response.status === 200) continue
+    expect(response.status).toBe(409)
+    const result = await update(sources[index], index)
+    expect(result.status).toBe(200)
+    await result.arrayBuffer()
+  }
+  console.info(JSON.stringify({
+    event: 'p4_source_batch', sources: sources.length, statuses: statusCounts, concurrentMs,
+    sequentialRetryMs: Math.round(performance.now() - retry),
+  }))
+}, 60_000)

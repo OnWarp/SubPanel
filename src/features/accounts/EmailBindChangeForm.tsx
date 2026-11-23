@@ -18,6 +18,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
   const bound = profile.emailBound
   const base = bound ? '/api/account/email/change' : '/api/account/email/bind'
   const [step, setStep] = useState<'email' | 'code'>('email')
+  const [currentPassword, setCurrentPassword] = useState('')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [message, setMessage] = useState('')
@@ -31,7 +32,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
     setMessage('')
     setError('')
     try {
-      await api(base, { method: 'POST', body: jsonBody({ email }) })
+      await api(base, { method: 'POST', body: jsonBody({ email, ...(bound && { currentPassword }) }) })
       setStep('code')
       setMessage(`验证码已发送至 ${email}`)
     } catch (cause) {
@@ -48,10 +49,11 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
     setMessage('')
     setError('')
     try {
-      await api(`${base}/confirm`, { method: 'POST', body: jsonBody({ code }) })
+      await api(`${base}/confirm`, { method: 'POST', body: jsonBody({ code, ...(bound && { currentPassword }) }) })
       setStep('email')
       setEmail('')
       setCode('')
+      setCurrentPassword('')
       setMessage(bound ? '邮箱已更换' : '邮箱已绑定')
       await onUpdated()
     } catch (cause) {
@@ -105,6 +107,10 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
           onChange={(event) => setEmail(event.target.value)}
         />
       </FormField>
+      {bound ? <FormField label="当前密码" htmlFor="account-email-current-password">
+        <Input id="account-email-current-password" type="password" autoComplete="current-password"
+          value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required />
+      </FormField> : null}
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       <div className="form-actions">

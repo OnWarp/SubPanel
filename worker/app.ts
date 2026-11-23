@@ -12,7 +12,6 @@ import { requireAdmin, requireAuth } from './accounts/auth.js'
 import { publicAccountRoutes } from './accounts/public-routes.js'
 import { adminRegistrationRoutes, registrationRoutes } from './accounts/registration-routes.js'
 import { catalogRoutes } from './catalog/routes.js'
-import { readAccounts } from './accounts/repository.js'
 import { ApiError } from './platform/api-error.js'
 import { noStore, originGuard, securityHeaders } from './platform/http.js'
 import { entitlementTemplateRoutes } from './delivery/entitlement-template-routes.js'
@@ -37,17 +36,7 @@ app.use('/api/*', originGuard)
 app.use('/sub/*', noStore)
 app.use('*', hostGate)
 
-app.get('/api/health', async (c) => {
-  try {
-    const [accounts, cron] = await Promise.all([
-      readAccounts(c.env),
-      readCronStatus(c.env.DATA),
-    ])
-    return c.json({ ok: true, version: '0.1.0' as const, initialized: accounts.users.length > 0, cron })
-  } catch {
-    return c.json({ ok: false, version: '0.1.0' as const, error: { code: 'HEALTH_STATE_INVALID', message: '健康状态不可用' } }, 503)
-  }
-})
+app.get('/api/health', c => c.json({ ok: true }))
 
 app.route('/api', publicAccountRoutes)
 app.route('/api', registrationRoutes)
@@ -76,6 +65,9 @@ app.use('/api/kb/*', requireAuth)
 app.use('/api/admin/*', requireAuth)
 app.use('/api/admin/*', requireAdmin)
 app.use('/api/admin/*', auditAdminMutation)
+app.get('/api/admin/operations/status', async c => {
+  return c.json({ ok: true, cron: await readCronStatus(c.env.DATA) })
+})
 app.route('/api/admin', adminManagementRoutes)
 app.route('/api/admin', adminRedemptionRoutes)
 app.route('/api/admin', adminAccountRoutes)
@@ -143,10 +135,6 @@ app.onError((error, c) => {
     console.error(JSON.stringify({ event: 'subscription_request_error' }))
     return c.json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } }, 500)
   }
-  console.error(JSON.stringify({
-    event: 'request_error',
-    name: error.name,
-    message: error.message.replace(/[A-Za-z0-9_-]{43}/gu, '[redacted]'),
-  }))
+  console.error(JSON.stringify({ event: 'request_error' }))
   return c.json({ error: { code: 'INTERNAL_ERROR', message: '服务器内部错误' } }, 500)
 })

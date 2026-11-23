@@ -127,7 +127,7 @@ export async function persistAccountsSnapshot(db: AppDatabase, snapshot: Account
            password_iterations = excluded.password_iterations,
            password_salt = excluded.password_salt,
            password_hash = excluded.password_hash,
-           session_version = excluded.session_version,
+           session_version = MAX(users.session_version, excluded.session_version),
            deleted_at = excluded.deleted_at,
            created_at = excluded.created_at,
            updated_at = excluded.updated_at`,

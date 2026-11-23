@@ -53,12 +53,13 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
   const [notice, setNotice] = useState('')
   const [subscription, setSubscription] = useState(initialSubscription ?? '')
   const [params] = useSearchParams()
+  const requestedDraft = params.get('draft')
   const [platform, setPlatform] = useState(params.get('platform') === 'singbox' ? 'singbox' : 'mihomo')
   const [sample, setSample] = useState(false)
   const [editorMode, setEditorMode] = useState('advanced')
   const [publishedYaml, setPublishedYaml] = useState('')
   const [verificationVersion, setVerificationVersion] = useState(versionId)
-  const autoPreview = useRef(Boolean(initialSubscription && versionId))
+  const autoPreview = useRef(Boolean(versionId || requestedDraft))
   const [preview, setPreview] = useState<TemplatePreviewResponse>()
   const [previewPending, setPreviewPending] = useState(false)
   const [previewError, setPreviewError] = useState('')
@@ -74,6 +75,12 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
   const bypass = useRef(false)
   const toast = useToast()
 
+  const diagnosticHref = !isNew && detail && (verificationVersion || yaml === detail.draft)
+    ? `/delivery/conversions?${new URLSearchParams({
+      config, view: 'preview', platform,
+      ...(verificationVersion ? { version: verificationVersion } : { draft: String(detail.revision) }),
+      ...(subscription && { subscription }),
+    })}` : undefined
   const archived = detail?.status === 'archived'
   const readOnly = previewOnly || archived
   const dirty = !readOnly && (name !== (detail?.name ?? '') || yaml !== (detail?.draft ?? INITIAL) || Boolean(source))
@@ -167,6 +174,10 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
   useEffect(() => {
     if (!detail || !autoPreview.current) return
     autoPreview.current = false
+    if (requestedDraft && Number(requestedDraft) !== detail.revision) {
+      setPreviewError('草稿已更新，请重新校验')
+      return
+    }
     void runPreview()
     // The version URL triggers a single preview after the profile loads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -321,7 +332,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
           <section className="form-stack template-validation" aria-label="校验结果">
             <h3>校验结果</h3>
             {validation
-              ? <TemplateDiagnostics {...validation} />
+              ? <TemplateDiagnostics {...validation} diagnosticHref={diagnosticHref} />
               : <p className="sys-hint">{previewPending ? '正在校验' : '预览或发布时校验 YAML'}</p>}
             {validation && !validation.diagnostics.length && !validation.ignored.length && <p>草稿结构校验通过</p>}
             {previewError && validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
@@ -332,7 +343,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
           value={subscription} onChange={(id) => { setSubscription(id); setSample(false); clearPreview() }}
           result={preview} pending={previewPending} onPreview={() => void runPreview()} standalone={readOnly} disabled={busy} />
         {readOnly && <>
-          {validation && <TemplateDiagnostics {...validation} />}
+          {validation && !preview && <TemplateDiagnostics {...validation} />}
           {previewError && <StatusMessage tone="error">{previewError}</StatusMessage>}
         </>}
       </div>

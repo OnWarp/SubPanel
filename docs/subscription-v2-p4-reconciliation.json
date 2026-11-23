@@ -1,0 +1,87 @@
+{
+  "tables": {
+    "users": {
+      "before": 1,
+      "after": 1,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "subscriptions": {
+      "before": 1,
+      "after": 1,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "subscription_groups": {
+      "before": 1,
+      "after": 1,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "subscription_nodes": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "subscription_creation": {
+      "before": 1,
+      "after": 1,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "subscription_template_bindings": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "plans": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "plan_groups": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "sources": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "nodes": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    },
+    "node_raw_variants": {
+      "before": 0,
+      "after": 0,
+      "added": 0,
+      "missing": 0,
+      "changed": 0
+    }
+  },
+  "quality": {
+    "duplicate_or_missing_token_hashes": 0,
+    "foreign_key_violations": 0,
+    "assigned_subscriptions": 1,
+    "legacy_quota_gib": 27.5
+  }
+}

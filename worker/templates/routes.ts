@@ -3,7 +3,8 @@ import { stringify } from 'yaml'
 import { prepareClientRender, CLIENT_IDS, type RenderNode } from '../renderers/index.js'
 import { compileSingBoxConfig, TARGET_SINGBOX_VERSION } from '../renderers/singbox.js'
 import { RENDERER_VERSION } from '../renderers/model.js'
-import { fetchRemoteTextWithMetadata, RemoteFetchError } from '../catalog/remote.js'
+import { fetchRemoteTextWithPolicy as fetchRemoteTextWithMetadata } from '../catalog/egress-policy.js'
+import { RemoteFetchError } from '../catalog/remote.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { parse } from 'yaml'
@@ -308,8 +309,8 @@ templateRoutes.post('/preview', async c => {
       : sourceDiagnostics.length ? [] : await loadSingBoxRuleSets(c.env.DB, template),
   } : undefined
   const model = options && !sourceDiagnostics.length ? singboxValidation(() => compileSingBoxConfig(template, [], options)) : undefined
-  const artifact = subscription && (!options || model) ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true, options) : null
-  const rendered = input.sample && (!options || model) ? prepareClientRender(input.platform, [previewNode]).render(template, options) : artifact
+  const artifact = subscription && !sourceDiagnostics.length && (!options || model) ? await renderEntitledSubscription(c.env, subscription, input.platform, undefined, template, true, options) : null
+  const rendered = input.sample && !sourceDiagnostics.length && (!options || model) ? prepareClientRender(input.platform, [previewNode]).render(template, options) : artifact
   const output = (input.platform === 'mihomo' || input.platform === 'singbox') && rendered?.outputNodes
     ? (input.platform === 'mihomo' ? parse(rendered.body) as Record<string, unknown> : template)
     : template
@@ -324,7 +325,7 @@ templateRoutes.post('/preview', async c => {
     ignored, diagnostics: [...diagnostics, ...sourceDiagnostics, ...(model?.policyDiagnostics ?? [])],
     groups,
     rules,
-    ruleProviders: output?.['rule-providers'] ?? {},
+    ruleProviders: sourceDiagnostics.length ? {} : output?.['rule-providers'] ?? {},
     subscriptionName: subscription?.name ?? (input.sample ? '合成节点样本' : null),
     inputNodes: artifact?.previewInputNodes ?? rendered?.inputNodes ?? 0,
     authorizedNodes: artifact?.previewAuthorizedNodes ?? rendered?.inputNodes ?? 0,
@@ -333,7 +334,7 @@ templateRoutes.post('/preview', async c => {
     nodeDiagnostics: rendered?.diagnostics ?? [],
     rendererVersion: artifact?.rendererVersion ?? RENDERER_VERSION,
     effectiveVersionId: (input.platform === 'mihomo' || input.platform === 'singbox') ? version?.id ?? artifact?.templateVersionId ?? (yaml === undefined ? row?.published_id : null) ?? null : null,
-    draftRevision: yaml !== undefined && !version ? row?.revision ?? null : null,
+    draftRevision: yaml !== undefined && !version && row?.draft === yaml ? row.revision : null,
     zeroNodeReason: artifact?.zeroNodeReason ?? null,
     body,
     capability: input.platform === 'mihomo' || (input.platform === 'singbox' && (template || native?.route)) ? 'full' : 'nodes',
@@ -495,9 +496,12 @@ templateRoutes.post('/:id/rollback', async c => {
   const row = await getTemplate(c.env.DB, id)
   if (row.archived || row.revision !== expectedRevision) throw templateConflict()
   const version = await c.env.DB.prepare(
-    'SELECT id FROM subscription_template_versions WHERE id=? AND template_id=?'
-  ).bind(versionId, id).first()
+    'SELECT yaml, validator_version FROM subscription_template_versions WHERE id=? AND template_id=?'
+  ).bind(versionId, id).first<{ yaml: string; validator_version: string | null }>()
   if (!version) throw apiError(404, 'VERSION_NOT_FOUND', '版本不存在')
+  const { normalized } = validateForAdmin(version.yaml, isLegacyTemplateVersion(version.validator_version))
+  const diagnostics = await checkRuleSources(c.env.DB, normalized)
+  if (diagnostics.length) throw apiError(422, 'TEMPLATE_INVALID', '规则集校验失败', { diagnostics })
   const updated = await c.env.DB.prepare(`
     UPDATE subscription_templates SET published_id=?, updated_at=?, revision=revision+1
     WHERE id=? AND revision=? AND archived=0

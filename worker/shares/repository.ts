@@ -30,7 +30,6 @@ const sequenceSchema = z.object({ next: z.number().int().positive() })
 export const shareEntityKey = (tokenHash: string): string => `share:${tokenHash}`
 export const userIndexKey = (userId: string): string => `shareidx:user:${userId}`
 export const subscriptionIndexKey = (subscriptionId: string): string => `shareidx:sub:${subscriptionId}`
-export const shareLimitKey = (tokenHash: string, minuteWindow: number): string => `sharelimit:${tokenHash}:${minuteWindow}`
 export const shareCompiledPrefix = (tokenHash: string): string => `compiled:share:${tokenHash}:`
 export const shareCompiledKey = (tokenHash: string, client: string): string => `${shareCompiledPrefix(tokenHash)}${client}`
 
@@ -295,20 +294,8 @@ export async function deleteShareCompiled(kv: KVNamespace, tokenHash: string): P
   }
 }
 
-const VERIFY_WINDOW_MS = 60_000
-const VERIFY_WINDOW_COUNT = 10
-const VERIFY_LIMIT = 10
-
-export async function consumeVerifySlot(env: DataEnv, tokenHash: string, nowMs: number): Promise<boolean> {
-  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return consumeVerifySlotD1(env.DB, tokenHash, nowMs)
-  const minute = Math.floor(nowMs / VERIFY_WINDOW_MS)
-  const keys = Array.from({ length: VERIFY_WINDOW_COUNT }, (_, index) => shareLimitKey(tokenHash, minute - index))
-  const values = await Promise.all(keys.map((key) => env.DATA.get(key)))
-  const counts = values.map((value) => value !== null && /^\d+$/u.test(value) ? Number(value) : 0)
-  if (counts.reduce((sum, count) => sum + count, 0) >= VERIFY_LIMIT) return false
-  // Minute buckets over the last 10 minutes. The read-modify-write is last-writer-wins.
-  await env.DATA.put(keys[0], String(counts[0] + 1), { expirationTtl: 11 * 60 })
-  return true
+export function consumeVerifySlot(env: DataEnv, tokenHash: string, nowMs: number): Promise<boolean> {
+  return consumeVerifySlotD1(env.DB, tokenHash, nowMs)
 }
 
 export async function claimExportAccess(env: DataEnv, tokenHash: string, nowIso: string): Promise<boolean> {

@@ -15,6 +15,7 @@ export type SubscriptionDetailDiagnostic = {
   label: string
   available: boolean
   summary: string
+  href?: string
   items: SubscriptionDiagnostic['diagnostics']
 }
 
@@ -119,7 +120,7 @@ export function SubscriptionDetailRows({
                       <StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge>
                     </header>
                     <p>{diagnostic.summary}</p>
-                    {diagnostic.items.length ? <DiagnosticList items={diagnostic.items} /> : null}
+                    {diagnostic.items.length ? <DiagnosticList items={diagnostic.items} href={diagnostic.href} /> : null}
                   </article>
                 ))}
               </div>

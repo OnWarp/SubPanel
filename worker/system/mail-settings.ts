@@ -1,3 +1,5 @@
+import { env as workerEnv } from 'cloudflare:workers'
+import { apiError } from '../platform/api-error.js'
 import { z } from 'zod'
 import type { AppDatabase } from '../db/db.js'
 import { decodeSettingJson, getSetting, putSetting } from '../db/settings-repository.js'
@@ -174,6 +176,9 @@ export async function updateMailSettings(
   patch: MailSettingsPatch,
   now = new Date().toISOString(),
 ): Promise<MailSettings> {
+  if (workerEnv.REQUIRE_WORKER_SECRETS === 'true' && (patch.smtpPassword || patch.resendApiKey)) {
+    throw apiError(422, 'MAIL_SECRET_REQUIRED', '请通过部署密钥配置邮件凭据')
+  }
   const current = await readMailSettings(db)
   const { next, changedKeys } = applyMailSettingsPatch(current, patch)
   for (const key of changedKeys) {

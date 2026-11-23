@@ -207,3 +207,34 @@ it('caps batch generation and account-level attempts, including malformed codes 
   for (let index = 0; index < 19; index += 1) await unavailable(await call(`${me}/preview`, holder.cookie, { code: 'wrong' }))
   expect((await call(`${me}/preview`, holder.cookie, { code })).status).toBe(429)
 })
+
+it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures maximum redemption batch write cost', async () => {
+  const { issue } = await fixture()
+  let rowsWritten = 0
+  let rowsRead = 0
+  let statements = 0
+  let calls = 0
+  const db = new Proxy(env.DB, {
+    get(target, property) {
+      if (property === 'batch') return async (queries: D1PreparedStatement[]) => {
+        const results = await target.batch(queries)
+        calls++
+        statements += queries.length
+        rowsWritten += results.reduce((n, result) => n + result.meta.rows_written, 0)
+        rowsRead += results.reduce((n, result) => n + result.meta.rows_read, 0)
+        return results
+      }
+      const value = Reflect.get(target, property, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+  })
+  bindings = { ...bindings, DB: db }
+  const start = performance.now()
+  const batch = await issue({ quantity: 500 })
+  expect(batch.codes).toHaveLength(500)
+  expect(new Set(batch.codes).size).toBe(500)
+  console.info(JSON.stringify({
+    event: 'p4_redemption_generation', quantity: 500, wallMs: Math.round(performance.now() - start),
+    d1BatchSubrequests: calls, statements, rowsWritten, rowsRead,
+  }))
+})

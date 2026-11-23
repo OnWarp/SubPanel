@@ -71,10 +71,10 @@ async function bindEmail(cookie: string, email: string): Promise<void> {
 }
 
 const profileOf = (cookie: string) => fetchApi('/api/account/profile', withCookie(cookie))
-const changeEmail = (cookie: string, email: string) =>
-  fetchApi('/api/account/email/change', withCookie(cookie, jsonRequest({ email })))
-const confirmChange = (cookie: string, code: string) =>
-  fetchApi('/api/account/email/change/confirm', withCookie(cookie, jsonRequest({ code })))
+const changeEmail = (cookie: string, email: string, currentPassword: string) =>
+  fetchApi('/api/account/email/change', withCookie(cookie, jsonRequest({ email, currentPassword })))
+const confirmChange = (cookie: string, code: string, currentPassword: string) =>
+  fetchApi('/api/account/email/change/confirm', withCookie(cookie, jsonRequest({ code, currentPassword })))
 
 interface ProfileBody {
   user: { id: string; username: string; role: string; email: string | null; emailVerifiedAt: string | null; createdAt: string }
@@ -161,21 +161,23 @@ describe('account profile center', () => {
     const cookie = await login('henry', 'henry-password-1')
     await bindEmail(cookie, 'henry.old@example.com')
 
-    const request = await changeEmail(cookie, ' Henry.New@Example.com ')
+    expect((await changeEmail(cookie, 'henry.new@example.com', 'wrong-password')).status).toBe(401)
+    const request = await changeEmail(cookie, ' Henry.New@Example.com ', 'henry-password-1')
     expect(request.status).toBe(200)
     expect(sentCodes.at(-1)?.to).toBe('henry.new@example.com')
     const code = sentCodes.at(-1)?.code as string
     const wrong = code === '000000' ? '000001' : '000000'
-    expect((await confirmChange(cookie, wrong)).status).toBe(401)
+    expect((await confirmChange(cookie, wrong, 'henry-password-1')).status).toBe(401)
 
-    const confirm = await confirmChange(cookie, code)
+    const confirm = await confirmChange(cookie, code, 'henry-password-1')
     expect(confirm.status).toBe(200)
     const confirmed = (await confirm.json()) as { user: { email: string | null } }
     expect(confirmed.user.email).toBe('henry.new@example.com')
 
     expect((await loginRaw({ identifier: 'henry.new@example.com' }, 'henry-password-1')).status).toBe(200)
     expect((await loginRaw({ identifier: 'henry.old@example.com' }, 'henry-password-1')).status).toBe(401)
-    const profile = (await (await profileOf(cookie)).json()) as ProfileBody
+    expect((await profileOf(cookie)).status).toBe(401)
+    const profile = (await (await profileOf(cookieOf(confirm))).json()) as ProfileBody
     expect(profile.user.email).toBe('henry.new@example.com')
     expect(user.id).toBe(profile.user.id)
   })
@@ -188,26 +190,26 @@ describe('account profile center', () => {
     const judyCookie = await login('judy', 'judy-password-12')
 
     // No bound email yet: the change flow refuses and points at binding.
-    expect((await changeEmail(ivanCookie, 'ivan@example.com')).status).toBe(409)
+    expect((await changeEmail(ivanCookie, 'ivan@example.com', 'ivan-password-12')).status).toBe(409)
 
     await bindEmail(ivanCookie, 'ivan@example.com')
     await bindEmail(judyCookie, 'judy@example.com')
 
     // Same address, another account's address: both refused at request time.
-    expect((await changeEmail(ivanCookie, ' IVAN@example.com ')).status).toBe(409)
-    expect((await changeEmail(ivanCookie, 'judy@example.com')).status).toBe(409)
+    expect((await changeEmail(ivanCookie, ' IVAN@example.com ', 'ivan-password-12')).status).toBe(409)
+    expect((await changeEmail(ivanCookie, 'judy@example.com', 'ivan-password-12')).status).toBe(409)
 
     // An address with a pending change by someone else is occupied too.
-    expect((await changeEmail(judyCookie, 'shared@example.com')).status).toBe(200)
-    expect((await changeEmail(ivanCookie, 'shared@example.com')).status).toBe(409)
+    expect((await changeEmail(judyCookie, 'shared@example.com', 'judy-password-12')).status).toBe(200)
+    expect((await changeEmail(ivanCookie, 'shared@example.com', 'ivan-password-12')).status).toBe(409)
 
     // Expired codes cannot confirm a change.
-    expect((await changeEmail(ivanCookie, 'ivan.new@example.com')).status).toBe(200)
+    expect((await changeEmail(ivanCookie, 'ivan.new@example.com', 'ivan-password-12')).status).toBe(200)
     const code = sentCodes.at(-1)?.code as string
     await env.DB
       .prepare("UPDATE email_verifications SET expires_at = '2000-01-01T00:00:00.000Z' WHERE email_normalized = 'ivan.new@example.com'")
       .run()
-    expect((await confirmChange(ivanCookie, code)).status).toBe(410)
+    expect((await confirmChange(ivanCookie, code, 'ivan-password-12')).status).toBe(410)
   })
 
   it('logs out every device by bumping the session version', async () => {

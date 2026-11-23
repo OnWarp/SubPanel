@@ -285,26 +285,14 @@ export async function persistSharesSnapshot(
 export async function consumeVerifySlotD1(db: AppDatabase, tokenHash: string, nowMs: number): Promise<boolean> {
   const minute = Math.floor(nowMs / VERIFY_WINDOW_MS)
   const nowSec = Math.floor(nowMs / 1000)
-  const windows = Array.from({ length: VERIFY_WINDOW_COUNT }, (_, index) => minute - index)
-  const placeholders = windows.map(() => '?').join(', ')
-  const listed = await db.prepare(
-    `SELECT window_start, count, expires_at FROM rate_limits
-     WHERE bucket = ? AND subject = ? AND window_start IN (${placeholders})`,
-  ).bind(VERIFY_BUCKET, tokenHash, ...windows).all<{ window_start: number, count: number, expires_at: number | null }>()
-  const counts = new Map<number, number>()
-  for (const row of listed.results) {
-    if (row.expires_at !== null && row.expires_at <= nowSec) continue
-    counts.set(row.window_start, row.count)
-  }
-  const total = windows.reduce((sum, window) => sum + (counts.get(window) ?? 0), 0)
-  if (total >= VERIFY_LIMIT) return false
-  const nextCount = (counts.get(minute) ?? 0) + 1
-  await db.prepare(
+  const result = await db.prepare(
     `INSERT INTO rate_limits (bucket, subject, window_start, count, expires_at)
-     VALUES (?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, 1, ?
+     WHERE COALESCE((SELECT SUM(count) FROM rate_limits
+       WHERE bucket=? AND subject=? AND window_start BETWEEN ? AND ? AND expires_at>?), 0) < ?
      ON CONFLICT(bucket, subject, window_start) DO UPDATE SET
-       count = excluded.count,
-       expires_at = excluded.expires_at`,
-  ).bind(VERIFY_BUCKET, tokenHash, minute, nextCount, nowSec + 11 * 60).run()
-  return true
+       count=rate_limits.count+1, expires_at=excluded.expires_at`,
+  ).bind(VERIFY_BUCKET, tokenHash, minute, nowSec + 11 * 60,
+    VERIFY_BUCKET, tokenHash, minute - VERIFY_WINDOW_COUNT + 1, minute, nowSec, VERIFY_LIMIT).run()
+  return result.meta.changes === 1
 }

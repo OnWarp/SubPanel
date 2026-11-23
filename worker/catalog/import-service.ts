@@ -10,7 +10,8 @@ import {
 } from './schema.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { MAX_NODES, readCatalog, writeCatalog } from './repository.js'
-import { fetchRemoteTextWithMetadata, RemoteFetchError, validateRemoteHeaders, validateRemoteUrl } from './remote.js'
+import { fetchRemoteTextWithPolicy as fetchRemoteTextWithMetadata } from './egress-policy.js'
+import { RemoteFetchError, validateRemoteHeaders, validateRemoteUrl } from './remote.js'
 import {
   decryptText,
   encryptText,
@@ -142,6 +143,7 @@ function maskRemoteHost(url: string | undefined): string | undefined {
 }
 
 export function summarizeSource(source: Source, remoteUrl?: string): SourceSummary {
+  const { etag: _etag, ...sync } = source.sync ?? {}
   return {
     id: source.id,
     name: source.name,
@@ -150,7 +152,7 @@ export function summarizeSource(source: Source, remoteUrl?: string): SourceSumma
     keepOnFailure: source.keepOnFailure,
     refreshIntervalMinutes: source.refreshIntervalMinutes,
     detectedFormat: source.detectedFormat,
-    sync: source.sync,
+    sync: source.sync ? sync : undefined,
     warnings: source.warnings,
     lastAttemptAt: source.lastAttemptAt,
     lastSuccessAt: source.lastSuccessAt,
@@ -408,7 +410,7 @@ export async function createSource(
       lastSuccessAt: now,
       lastErrorCode: undefined,
       sync: { ...source.sync, consecutiveFailures: 0, httpStatus: result.status,
-        etag: result.etag?.slice(0, 1024), durationMs: Date.now() - started },
+        durationMs: Date.now() - started },
     }
     next = await applyImport(replaceSource(next, source), id, parsed.nodes, now)
     success = true
@@ -552,7 +554,6 @@ type PreparedSync = {
   diff: SyncDiff
   format: ImportFormat
   httpStatus: number
-  etag?: string
   startedAt: string
   durationMs: number
 }
@@ -659,7 +660,6 @@ async function prepareSync(env: DataEnv, snapshot: CatalogSnapshot, source: Sour
     diff,
     format: parsed.format,
     httpStatus: result.status,
-    etag: result.etag?.slice(0, 1024),
     startedAt: options.now ?? new Date(started).toISOString(),
     durationMs: Date.now() - started,
   }
@@ -767,7 +767,6 @@ export async function refreshSource(
         formatOverride: current.sync?.formatOverride,
         consecutiveFailures: 0,
         httpStatus: prepared.httpStatus,
-        etag: prepared.etag,
         durationMs: prepared.durationMs,
       },
     }

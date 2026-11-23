@@ -374,20 +374,20 @@ function MailSection() {
   )
 }
 
-type ServiceHealth = { ok: boolean; version: string; cron: { status: 'idle' | 'success' | 'failed'; ranAt: string; finishedAt: string; errorCode?: string } | null }
+type ServiceHealth = { ok: boolean; cron: { status: 'idle' | 'success' | 'failed'; ranAt: string; finishedAt: string; errorCode?: string } | null }
 
 function HealthSection() {
-  const [health, setHealth] = useState<ServiceHealth | null>(() => peekApi<ServiceHealth>('/api/health') ?? null)
+  const [health, setHealth] = useState<ServiceHealth | null>(() => peekApi<ServiceHealth>('/api/admin/operations/status') ?? null)
   const [error, setError] = useState('')
   const load = useCallback(async () => {
     setError('')
-    try { await watchApi<ServiceHealth>('/api/health', setHealth) }
+    try { await watchApi<ServiceHealth>('/api/admin/operations/status', setHealth) }
     catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
   useEffect(() => { void load() }, [load])
   return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>} />
     <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
-      <p>服务健康：{health.ok ? '正常' : '异常'} · 版本 {health.version}</p>
+      <p>服务健康：{health.ok ? '正常' : '异常'}</p>
       <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hint="每 15 分钟检查需要刷新的来源">
         {health.cron ? <dl className="key-value-rows"><div><dt>最近结果</dt><dd>{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</dd></div><div><dt>开始</dt><dd>{formatDate(health.cron.ranAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</dd></div></dl> : <p className="sys-hint">暂无任务运行记录</p>}
       </FormGroup>

@@ -7,6 +7,10 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
   },
+  "vars": {
+    "REQUIRE_WORKER_SECRETS": "true",
+    "REDEMPTION_ROLLOUT_PERCENT": "100"
+  },
   "kv_namespaces": [
     {
       "binding": "DATA",

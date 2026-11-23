@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { stringify } from 'yaml'
 import { loadTemplateSubscriptions, type Diagnostic, type TemplatePreviewResponse, type TemplateZeroNodeReason } from '../../app/api'
 import { FormSelect, Input } from '../../ui/Controls'
@@ -19,15 +20,28 @@ const reasons: Record<TemplateZeroNodeReason, string> = {
   incompatible: '授权节点与所选平台不兼容',
 }
 
-export function TemplateDiagnostics({ diagnostics, ignored }: { diagnostics: Diagnostic[]; ignored: string[] }) {
+export function TemplateDiagnostics({ diagnostics, ignored, diagnosticHref }: {
+  diagnostics: Diagnostic[]
+  ignored: string[]
+  diagnosticHref?: string
+}) {
+  const { hash } = useLocation()
+  const highlight = hash ? new URLSearchParams('id=' + hash.slice(1)).get('id') : null
+  useEffect(() => {
+    if (highlight?.startsWith('field-diagnostic-')) document.getElementById(highlight)?.focus()
+  }, [diagnostics, highlight])
   return <>
     {ignored.length > 0 && <p>忽略字段：{ignored.join('、')}</p>}
     {diagnostics.length > 0 && <ul className="template-diagnostics">
-      {diagnostics.map((item, index) => <li key={index} data-severity={item.severity}>
+      {diagnostics.map((item, index) => {
+        const id = `field-diagnostic-${item.path}-${item.code}-${index}`
+        return <li key={id} id={highlight === id ? id : undefined} tabIndex={highlight === id ? -1 : undefined} data-severity={item.severity}>
         {item.path && <code>{item.path}</code>}
         {item.line !== undefined && <span>第 {item.line} 行{item.column !== undefined && `第 ${item.column} 列`}</span>}
-        <span>{item.message}</span>
-      </li>)}
+          <span>{item.message}</span>
+          {diagnosticHref && <Link to={`${diagnosticHref}#${encodeURIComponent(id)}`}>打开诊断</Link>}
+        </li>
+      })}
     </ul>}
   </>
 }
@@ -98,6 +112,8 @@ export function TemplatePreview({ value, onChange, onPreview, pending, result, s
 }
 
 function PreviewResult({ result }: { result: TemplatePreviewResponse }) {
+  const { hash } = useLocation()
+  const highlight = hash ? new URLSearchParams('id=' + hash.slice(1)).get('id') ?? undefined : undefined
   const { groups, rules, ruleProviders, outputNodes, zeroNodeReason, subscriptionName } = result
   const providers = Object.entries(ruleProviders)
   const yaml = useMemo(() => stringify({
@@ -112,7 +128,7 @@ function PreviewResult({ result }: { result: TemplatePreviewResponse }) {
     <p>输入 {result.inputNodes ?? 0} · 授权 {result.authorizedNodes ?? 0} · 输出 {outputNodes ?? '—'} · 跳过 {result.skippedNodes ?? 0}</p>
     <p>配置版本 {result.effectiveVersionId ?? (result.draftRevision ? `草稿修订 ${result.draftRevision}` : '基础配置')} · 渲染器 {result.rendererVersion ?? '—'}</p>
     {result.summary && <p>输出摘要 {result.summary.bytes} 字节 · {result.summary.groups} 个策略组 · {result.summary.rules} 条规则</p>}
-    {Boolean(result.nodeDiagnostics?.length) && <DiagnosticList items={result.nodeDiagnostics ?? []} />}
+    {Boolean(result.nodeDiagnostics?.length) && <DiagnosticList items={result.nodeDiagnostics ?? []} highlight={highlight} />}
     {outputNodes === null ? <p>生产下发：选择订阅后核对</p> : <>
       <p>{subscriptionName} · 节点数 {outputNodes}</p>
       {outputNodes === 0

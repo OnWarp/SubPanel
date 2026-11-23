@@ -41,24 +41,39 @@ const BLOCKED_PUBLIC = new Set(['revoked', 'disabled', 'owner_unavailable'])
 
 async function serve(c: Context<AppEnv>, clientParam?: string) {
   const started = Date.now()
+  const token = c.req.param('token') ?? ''
+  if (!tokenPattern.test(token)) {
+    console.info(JSON.stringify({ event: 'subscription_delivery', status: 404, reason: 'invalid_format' }))
+    throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  }
   const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
   if (!await allowSubscriptionFetch(c.env.DB, 'address', address)) {
+    console.info(JSON.stringify({ event: 'subscription_delivery', status: 429, scope: 'address' }))
     c.header('Retry-After', '60')
     throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
   }
-  const token = c.req.param('token') ?? ''
-  if (!tokenPattern.test(token)) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
   const explicit = clientParam !== undefined
   const requestedRaw = explicit ? clientParam : clientFromUserAgent(c.req.header('User-Agent') ?? '')
   const requested = requestedRaw.toLowerCase()
   const client = clientAliases[requested] ?? requested
-  if (!clients.has(client)) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+  if (!clients.has(client)) {
+    console.info(JSON.stringify({ event: 'subscription_delivery', status: 404, reason: 'invalid_client' }))
+    throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+  }
   const detect = explicit ? 'path' : requested === 'generic' ? 'fallback' : 'user-agent'
 
+  const globalLimit = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT ?? 0)
+  if (Number.isSafeInteger(globalLimit) && globalLimit > 0 &&
+    !await allowSubscriptionFetch(c.env.DB, 'global', 'all', globalLimit)) {
+    console.info(JSON.stringify({ event: 'subscription_delivery', status: 429, scope: 'global' }))
+    c.header('Retry-After', '60')
+    throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+  }
   const tokenHash = await hashToken(token)
   let subscription: Subscription | undefined
   let statusCode = 500
   let ok = false
+  let limitedScope: 'subscription' | undefined
   let cache: 'hit' | 'miss' | 'blocked' | undefined
   try {
     try {
@@ -88,6 +103,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     }
 
     if (!await allowSubscriptionFetch(c.env.DB, 'subscription', subscription.id)) {
+      limitedScope = 'subscription'
       c.header('Retry-After', '60')
       throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
     }
@@ -142,10 +158,10 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     if (error instanceof ApiError) statusCode = error.status
     throw error
   } finally {
-    if (cache || statusCode >= 500) console.info(JSON.stringify({
-      event: 'subscription_delivery', platform: client, cache, status: statusCode, durationMs: Date.now() - started,
+    console.info(JSON.stringify({
+      event: 'subscription_delivery', platform: client, cache, status: statusCode, scope: limitedScope, durationMs: Date.now() - started,
     }))
-    if (subscription) {
+    if (subscription && statusCode !== 429) {
       const sample = {
         at: new Date().toISOString(),
         platform: client,

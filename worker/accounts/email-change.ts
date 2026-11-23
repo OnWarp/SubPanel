@@ -1,12 +1,13 @@
 import { type AppDatabase } from '../db/db.js'
 import { ACCOUNTS_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
-import { findUserById, setUserEmail } from './d1-repository.js'
+import { findUserById } from './d1-repository.js'
+import { sendMail } from './email.js'
 import { assertEmailFree } from './email-binding.js'
 import {
   findPendingVerification,
   issueVerificationCode,
-  verifyVerificationCode,
+  verifyPendingVerification,
 } from './email-verification.js'
 import { normalizeEmail, type AccountUser } from './schema.js'
 
@@ -56,25 +57,31 @@ export async function confirmEmailChange(
   if (!pending) throw apiError(400, 'NO_PENDING_CHANGE', '请先获取验证码')
   if (Date.parse(pending.expiresAt) <= Date.now()) throw apiError(410, 'CODE_EXPIRED', '验证码已过期')
 
-  const verified = await verifyVerificationCode(db, {
+  const verified = await verifyPendingVerification(db, {
     email: pending.emailNormalized,
     purpose: 'change_email',
     code,
   })
-  if (!verified) throw apiError(401, 'INVALID_CODE', '验证码错误')
+  if (!verified.ok && verified.reason === 'locked') throw apiError(429, 'TOO_MANY_ATTEMPTS', '验证码尝试次数过多，请重新获取')
+  if (!verified.ok || verified.verification.id !== pending.id) throw apiError(401, 'INVALID_CODE', '验证码错误')
 
   await assertEmailFree(db, pending.emailNormalized, user.id, nowIso)
-  // Drop any other pending verifications of this account; the new address
-  // is bound now and leftovers must not stay usable.
-  await db
-    .prepare('DELETE FROM email_verifications WHERE user_id = ? AND consumed_at IS NULL')
-    .bind(user.id)
-    .run()
-  await setUserEmail(db, user.id, {
-    email: pending.email,
-    emailNormalized: pending.emailNormalized,
-    emailVerifiedAt: nowIso,
-  }, nowIso)
+  const results = await db.batch([
+    db.prepare(`UPDATE users SET email=?, email_normalized=?, email_verified_at=?,
+      updated_at=?, session_version=session_version+1
+      WHERE id=? AND session_version=? AND enabled=1 AND deleted_at IS NULL
+      AND EXISTS (SELECT 1 FROM email_verifications
+        WHERE id=? AND user_id=? AND consumed_at IS NULL AND expires_at>?)`)
+      .bind(pending.email, pending.emailNormalized, nowIso, nowIso, user.id,
+        user.sessionVersion, pending.id, user.id, nowIso),
+    db.prepare(`UPDATE email_verifications SET consumed_at=?
+      WHERE user_id=? AND consumed_at IS NULL AND changes()=1`).bind(nowIso, user.id),
+  ])
+  if (!results[0].meta.changes) throw apiError(409, 'EMAIL_CHANGE_CONFLICT', '账户已更新，请重新登录')
+  if (user.email) {
+    await sendMail({ to: user.email, subject: '账户邮箱已更换', text: '您的 SubPanel 账户邮箱已更换。如非本人操作，请联系管理员', html: '<p>您的 SubPanel 账户邮箱已更换。如非本人操作，请联系管理员</p>' })
+      .catch(() => console.warn(JSON.stringify({ event: 'email_change_notice_failed' })))
+  }
   const updated = await findUserById(db, user.id)
   if (!updated) throw new Error('Accounts snapshot is corrupt')
   return updated
