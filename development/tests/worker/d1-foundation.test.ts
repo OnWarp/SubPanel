@@ -124,6 +124,7 @@ describe('D1 migrations', () => {
       '0021_subscription_v2_p1.sql',
       '0022_subscription_v2_p2.sql',
       '0023_subscription_v2_p3.sql',
+      '0024_compile_jobs.sql',
     ])
 
     await applyMigrations(env.DB)

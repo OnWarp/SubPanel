@@ -11,7 +11,7 @@ import {
 } from '../db/module-switch.js'
 import { decodeSettingJson } from '../db/settings-repository.js'
 import { convertDelivery, type SubscriptionGroupRow, type SubscriptionRow } from '../migration/delivery.js'
-import { deliverySnapshotSchema, emptyDeliverySnapshot, type DeliverySnapshot } from './schema.js'
+import { deliverySnapshotSchema, emptyDeliverySnapshot, subscriptionSchema, type DeliverySnapshot, type Subscription } from './schema.js'
 
 export type DeliveryCounts = {
   subscriptions: number
@@ -199,6 +199,38 @@ export async function readDeliveryFromD1(db: AppDatabase): Promise<DeliverySnaps
     if (error instanceof Error && error.message === 'Delivery snapshot is corrupt') throw error
     throw new Error('Delivery snapshot is corrupt')
   }
+}
+
+export async function readDeliverySubscription(db: AppDatabase, lookup: { tokenHash: string } | { id: string }) {
+  const byToken = 'tokenHash' in lookup
+  const selector = byToken ? 'token_hash' : 'id'
+  const value = byToken ? lookup.tokenHash : lookup.id
+  const [subscriptions, groups, nodes] = await batch(db, [
+    db.prepare(`SELECT * FROM subscriptions WHERE ${selector} = ?`).bind(value),
+    db.prepare(`SELECT group_id FROM subscription_groups
+      WHERE subscription_id = (SELECT id FROM subscriptions WHERE ${selector} = ?) ORDER BY position`).bind(value),
+    db.prepare(`SELECT node_id FROM subscription_nodes
+      WHERE subscription_id = (SELECT id FROM subscriptions WHERE ${selector} = ?) ORDER BY position`).bind(value),
+  ])
+  const row = subscriptions.results[0] as SubscriptionRow | undefined
+  if (!row || row.encrypted_token === '{}') return null
+  return subscriptionSchema.parse({
+    id: row.id, userId: row.user_id, name: row.name,
+    groupIds: (groups.results as { group_id: string }[]).map(row => row.group_id),
+    nodeIds: (nodes.results as { node_id: string }[]).map(row => row.node_id),
+    tokenHash: row.token_hash, tokenPrefix: row.token_prefix, encryptedToken: parseJson(row.encrypted_token),
+    enabled: row.enabled === 1, defaultClient: row.default_client, revision: row.revision,
+    startsAt: row.starts_at, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
+    planId: row.plan_id ?? undefined, planRevoked: row.plan_revoked === 1, speedLimitMbps: row.speed_limit_mbps,
+  })
+}
+
+export async function isPublicSubscriptionCurrent(db: AppDatabase, subscription: Subscription) {
+  return Boolean(await db.prepare(`SELECT 1 FROM subscriptions s WHERE s.id=? AND s.token_hash=? AND s.revision=?
+    AND s.enabled=1 AND s.plan_revoked=0 AND s.encrypted_token <> '{}'
+    AND (s.user_id IS NULL OR EXISTS (SELECT 1 FROM users u WHERE u.id=s.user_id AND u.enabled=1 AND u.deleted_at IS NULL))
+    AND (s.plan_id IS NULL OR EXISTS (SELECT 1 FROM plans p WHERE p.id=s.plan_id AND p.enabled=1))`)
+    .bind(subscription.id, subscription.tokenHash, subscription.revision).first())
 }
 
 export function subscriptionInsert(

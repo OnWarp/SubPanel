@@ -1,5 +1,3 @@
-import { compileAllSubscriptions } from './compiler.js'
-import type { DataEnv } from '../db/module-switch.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
@@ -12,20 +10,15 @@ import { apiError } from '../platform/api-error.js'
 import { deletePlan, getPlan, getSubscriptionPlanSummary, listPlans, listPublicPlans, operateSubscriptionPlan, planSchema, readTrialSettings, savePlan, trialSchema } from './plans.js'
 import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
 
-async function refreshDelivery(env: DataEnv): Promise<{ warning?: string }> {
-  try { await compileAllSubscriptions(env); return {} }
-  catch { return { warning: '订阅计划已保存，缓存更新失败；下载时仍会检查当前订阅' } }
-}
-
 export const adminPlanRoutes = new Hono<AppEnv>()
 adminPlanRoutes.get('/plans', async (c) => c.json({ plans: await listPlans(c.env.DB) }))
 adminPlanRoutes.post('/plans', async (c) => {
   const plan = await savePlan(c.env.DB, await readJson(c,planSchema))
-  return c.json({ plan, ...await refreshDelivery(c.env) },201)
+  return c.json({ plan },201)
 })
 adminPlanRoutes.put('/plans/:id', async (c) => {
   const plan = await savePlan(c.env.DB,await readJson(c,planSchema),c.req.param('id'))
-  return c.json({ plan, ...await refreshDelivery(c.env) })
+  return c.json({ plan })
 })
 adminPlanRoutes.delete('/plans/:id', async (c) => { await deletePlan(c.env.DB,c.req.param('id')); return c.body(null,204) })
 for (const path of ['/subscriptions/trial', '/entitlements/trial'] as const) {
@@ -54,7 +47,7 @@ for (const path of ['/users/:id/subscription-plan', '/users/:id/entitlement'] as
     if (!user || user.deletedAt) throw apiError(404,'USER_NOT_FOUND','用户不存在')
     await userAnchorStatement(c.env.DB,user).run()
     const assignment = await operateSubscriptionPlan(c.env,user.id,input.action,input.planId,input.note)
-    return c.json({ ...assignment, ...await refreshDelivery(c.env) })
+    return c.json(assignment)
   })
 }
 export const userPlanRoutes = new Hono<AppEnv>()

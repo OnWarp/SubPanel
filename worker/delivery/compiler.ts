@@ -1,7 +1,8 @@
-import { readAccounts } from '../accounts/repository.js'
+import { findAccountUserById, readAccounts } from '../accounts/repository.js'
 import { getEffectiveTemplate, isLegacyTemplateVersion } from '../templates/repository.js'
 import { validateTemplate, type Template } from '../templates/validation.js'
 import { apiError } from '../platform/api-error.js'
+import { SPEED_LIMIT_CLIENTS } from './dependencies.js'
 import { subscriptionRowStatus } from './expiry.js'
 import { listPlans } from './plans.js'
 import { readCatalog } from '../catalog/repository.js'
@@ -10,11 +11,8 @@ import { resolveGroupNodes } from '../catalog/groups.js'
 import { hashToken } from '../platform/crypto.js'
 import type { compileSingBoxConfig } from '../renderers/singbox.js'
 import { RENDERER_VERSION } from '../renderers/model.js'
-import { CLIENT_IDS, prepareClientRender, type RenderClient } from '../renderers/index.js'
-import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from './schema.js'
-import { compiledKey, compiledPrefix, readDelivery } from './repository.js'
-
-export type CompileOptions = { now?: string }
+import { prepareClientRender, type RenderClient } from '../renderers/index.js'
+import { compiledArtifactSchema, type Subscription } from './schema.js'
 
 export function selectedNodes(catalog: Awaited<ReturnType<typeof readCatalog>>, subscription: { groupIds: readonly string[]; nodeIds?: readonly string[] }) {
   const byId = new Map<string, (typeof catalog.nodes)[number]>()
@@ -87,7 +85,7 @@ async function nodesForClient(client: RenderClient, nodes: ReturnType<typeof sel
 export { RENDERER_VERSION } from '../renderers/model.js'
 export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' | 'noPlan' | 'noGroupIntersection' | 'noEnabledNodes' | 'incompatible' | 'ownerUnavailable'
 
-async function artifactFor(
+export async function renderResolvedSubscription(
   env: DataEnv,
   subscription: Subscription,
   client: RenderClient,
@@ -95,13 +93,14 @@ async function artifactFor(
   now: string,
   previewTemplate?: Template,
   singboxOptions?: Parameters<typeof compileSingBoxConfig>[2],
+  resolvedTemplate?: Awaited<ReturnType<typeof getEffectiveTemplate>>,
 ) {
   const { nodes, catalog, speed, zeroNodeReason } = context
   const prepared = await prepareSubscriptionRender(client, nodes, speed)
   let template = previewTemplate
   let templateVersionId: string | undefined
   if ((client === 'mihomo' || client === 'singbox') && prepared.outputNodes > 0 && !template) {
-    const effective = await getEffectiveTemplate(env.DB, subscription.id, client)
+    const effective = resolvedTemplate ?? await getEffectiveTemplate(env.DB, subscription.id, client)
     templateVersionId = effective.version_id ?? undefined
     if (client === 'singbox' && effective.compiled_json) {
       const published = JSON.parse(effective.compiled_json) as { route: { rule_set?: Record<string, unknown>[] } }
@@ -138,56 +137,6 @@ async function artifactFor(
   return { ...artifact, zeroNodeReason: artifact.available ? null : zeroNodeReason ?? ('incompatible' satisfies ZeroNodeReason) }
 }
 
-export async function compileSubscription(
-  env: DataEnv,
-  subscription: Subscription,
-  options: CompileOptions = {},
-): Promise<CompiledArtifact[]> {
-  const kv = env.DATA
-  const now = options.now ?? new Date().toISOString()
-  const context = await resolveEntitlement(env, subscription, now)
-  const artifacts = await Promise.all(CLIENT_IDS.map(client => artifactFor(env, subscription, client, context, now)))
-  await Promise.all(artifacts.flatMap((artifact) => {
-    const key = compiledKey(subscription.tokenHash, artifact.client, artifact.templateVersionId, artifact.rendererVersion)
-    const legacyKey = `${compiledPrefix(subscription.tokenHash)}${artifact.client}`
-    const payload = JSON.stringify(artifact)
-    return [kv.put(key, payload), kv.put(legacyKey, payload)]
-  }))
-  const keep = new Set(artifacts.flatMap((artifact) => [
-    compiledKey(subscription.tokenHash, artifact.client, artifact.templateVersionId, artifact.rendererVersion),
-    `${compiledPrefix(subscription.tokenHash)}${artifact.client}`,
-  ]))
-  const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-  const stale = listed.keys.filter(({ name }: { name: string }) => !keep.has(name))
-  if (stale.length > 0) await Promise.all(stale.map(({ name }: { name: string }) => kv.delete(name)))
-  return artifacts
-}
-
-export async function compileAllSubscriptions(env: DataEnv, options: CompileOptions = {}): Promise<void> {
-  const kv = env.DATA
-  const snapshot = await readDelivery(env)
-  for (const subscription of snapshot.subscriptions) {
-    if (subscription.enabled) await compileSubscription(env, subscription, options)
-    else {
-      const listed = await kv.list({ prefix: compiledPrefix(subscription.tokenHash) })
-      if (listed.keys.length > 0) await Promise.all(listed.keys.map(({ name }: { name: string }) => kv.delete(name)))
-    }
-  }
-}
-
-export async function compileSubscriptionById(env: DataEnv, id: string, options: CompileOptions = {}): Promise<CompiledArtifact[]> {
-  const snapshot = await readDelivery(env)
-  const subscription = snapshot.subscriptions.find((candidate) => candidate.id === id)
-  if (!subscription) throw new Error('SUBSCRIPTION_NOT_FOUND')
-  if (!subscription.enabled) return []
-  return compileSubscription(env, subscription, options)
-}
-
-export const recompileAfterCatalogChange = (env: DataEnv, options: CompileOptions = {}) => compileAllSubscriptions(env, options)
-
-// Public requests repeat the live decision even when a cached artifact exists:
-// subscription availability and plan edits can change independently of cached output.
-
 type CatalogNode = ReturnType<typeof selectedNodes>[number]
 
 function blockedAccess(
@@ -203,14 +152,16 @@ export async function resolveEntitlement(env: DataEnv, subscription: Subscriptio
   if (status) return blockedAccess(catalog, status === 'revoked' ? 'disabled' : status)
 
   if (subscription.userId !== null) {
-    const users = snapshot?.users ?? (await readAccounts(env)).users
-    const owner = users.find(user => user.id === subscription.userId)
+    const owner = snapshot?.users
+      ? snapshot.users.find(user => user.id === subscription.userId)
+      : await findAccountUserById(env, subscription.userId)
     if (!owner || owner.deletedAt || !owner.enabled) return blockedAccess(catalog, 'ownerUnavailable')
   }
-  const plan = subscription.planId && subscription.userId !== null
-    ? (snapshot?.plans ?? await listPlans(env.DB)).find(p => p.id === subscription.planId)
+  const plan = subscription.planId
+    ? (snapshot?.plans ?? await listPlans(env.DB, subscription.planId)).find(p => p.id === subscription.planId)
     : undefined
-  if (subscription.planId && subscription.userId !== null && !plan) return blockedAccess(catalog, 'noPlan')
+  if (subscription.planId && !plan) return blockedAccess(catalog, 'noPlan')
+  if (plan && !plan.enabled) return blockedAccess(catalog, 'disabled')
   const groupIds = plan ? subscription.groupIds.filter(id => plan.groupIds.includes(id)) : subscription.groupIds
   const nodeIds = subscription.planId ? undefined : subscription.nodeIds
   const nodes = selectedNodes(catalog, { groupIds, nodeIds })
@@ -221,7 +172,7 @@ export async function resolveEntitlement(env: DataEnv, subscription: Subscriptio
 
 function speedLimitedNodes(nodes: ReturnType<typeof selectedNodes>, client: RenderClient, speed: number) {
   return nodes.map((node) => {
-    if (speed === 0 || !['hysteria','hysteria2'].includes(node.protocol) || !['mihomo','singbox','surge'].includes(client)) return node
+    if (speed === 0 || !['hysteria','hysteria2'].includes(node.protocol) || !SPEED_LIMIT_CLIENTS.has(client)) return node
     const cap = (value: unknown) => typeof value === 'number' && value > 0 ? Math.min(speed,value) : speed
     return { ...node, transport: { ...node.transport, upMbps: cap(node.transport?.upMbps ?? node.transport?.up), downMbps: cap(node.transport?.downMbps ?? node.transport?.down) } }
   })
@@ -241,7 +192,7 @@ export async function renderEntitledSubscription(
   singboxOptions?: Parameters<typeof compileSingBoxConfig>[2],
 ) {
   const access = await resolveEntitlement(env, subscription, now)
-  const artifact = await artifactFor(env, subscription, client, access, now, previewTemplate, singboxOptions)
+  const artifact = await renderResolvedSubscription(env, subscription, client, access, now, previewTemplate, singboxOptions)
   return {
     ...artifact,
     previewInputNodes: preview ? selectedNodes(access.catalog, subscription).length : undefined,
@@ -257,7 +208,7 @@ export async function previewCatalogEntitlement(
 ) {
   const now = new Date().toISOString()
   const context = await resolveEntitlement(env, subscription, now, { catalog })
-  const artifact = await artifactFor(env, subscription, client, context, now)
+  const artifact = await renderResolvedSubscription(env, subscription, client, context, now)
   return {
     authorizedNodeIds: context.nodes.map(({ id }) => id),
     outputNodes: artifact.outputNodes,

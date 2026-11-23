@@ -11,7 +11,6 @@ import {
   previewImportDiff,
   deleteSource,
   refreshSource,
-  recompileDelivery,
   summarizeSources,
   updateSource,
 } from './import-service.js'
@@ -223,8 +222,7 @@ catalogRoutes.put('/sources/:sourceId', async (c) => {
 catalogRoutes.delete('/sources/:sourceId', async (c) => {
   const id = sourceIdSchema.safeParse(c.req.param('sourceId'))
   if (!id.success) throw apiError(404, 'CATALOG_SOURCE_NOT_FOUND', '来源不存在')
-  const warning = await run(() => deleteSource(c.env, id.data))
-  if (warning) c.header('X-Catalog-Recompile', 'failed')
+  await run(() => deleteSource(c.env, id.data))
   return c.body(null, 204)
 })
 
@@ -314,7 +312,7 @@ catalogRoutes.post('/nodes', async (c) => {
   const node = result.data
   requireRenderable(node)
   await writeCatalog(c.env, { ...snapshot, nextNodeId: snapshot.nextNodeId + 1, nodes: [...snapshot.nodes, node] }, now)
-  return c.json({ node: safeNode(node), warning: await recompileDelivery(c.env) }, 201)
+  return c.json({ node: safeNode(node) }, 201)
 })
 
 catalogRoutes.post('/nodes/:nodeId/details', async (c) => {
@@ -343,8 +341,7 @@ catalogRoutes.patch('/nodes/:nodeId', async (c) => {
   const updated = { ...node, ...input, displayNameOverride: input.displayName ?? node.displayNameOverride, updatedAt: new Date().toISOString() }
   if (Object.keys(nodeConnectionSchema.shape).some((key) => key in input)) requireRenderable(updated)
   const saved = await writeCatalog(c.env, { ...snapshot, nodes: snapshot.nodes.map((current) => current.id === id.data ? updated : current) }, updated.updatedAt)
-  const warning = await recompileDelivery(c.env)
-  return c.json({ node: safeNode(saved.nodes.find(({ id: nodeId }) => nodeId === id.data)!), ...(warning ? { warning } : {}) })
+  return c.json({ node: safeNode(saved.nodes.find(({ id: nodeId }) => nodeId === id.data)!) })
 })
 
 catalogRoutes.post('/groups/preview', async (c) => {

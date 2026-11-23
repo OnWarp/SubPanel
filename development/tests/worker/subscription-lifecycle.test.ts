@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
-import { compiledKey } from '../../../worker/delivery/repository'
+import { compiledPrefix } from '../../../worker/delivery/repository'
 import { subscriptionLink } from '../../../worker/delivery/links'
 import { presentSubscriptionStatus } from '../../../worker/delivery/lifecycle'
 import { createDeliveryFixturePlan, createFixtureAccount, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
@@ -147,10 +147,10 @@ describe('subscription lifecycle', () => {
     )
     expect(revoke.status).toBe(200)
     const revokedView = await adminSubscription(admin, revoked.subscription.id)
-    expect(revokedView.status).toBe('active')
+    expect(revokedView.status).toBe('revoked')
     expect(revokedView.planState).toBe('revoked')
-    expect((await userSubscription(revokeOwner.cookie, revoked.subscription.id))?.statusLabel).toBe('有效')
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${revoked.token}/mihomo`)).status).toBe(200)
+    expect((await userSubscription(revokeOwner.cookie, revoked.subscription.id))?.statusLabel).toBe('已停用')
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${revoked.token}/mihomo`)).status).toBe(404)
     // Existing explicitly stopped records retain the previous revoked response.
     await env.DB.prepare('UPDATE subscriptions SET enabled=0 WHERE id=?').bind(revoked.subscription.id).run()
     expect((await adminSubscription(admin, revoked.subscription.id)).status).toBe('revoked')
@@ -219,7 +219,7 @@ describe('subscription lifecycle', () => {
     )
     expect(disabled.status).toBe(200)
     const tokenHash = await hashToken(created.token)
-    await env.DATA.put(compiledKey(tokenHash, 'mihomo'), JSON.stringify({
+    await env.DATA.put(`${compiledPrefix(tokenHash)}mihomo`, JSON.stringify({
       schemaVersion: 2, client: 'mihomo', body: 'proxies: []', contentType: 'text/yaml', fileName: 'sub.yaml',
       etag: '"stale"', lastModified: new Date().toISOString(), subscriptionRevision: 99, catalogRevision: 99,
       inputNodes: 1, outputNodes: 1, skippedNodes: 0, diagnostics: [], available: true, rendererVersion: '2',

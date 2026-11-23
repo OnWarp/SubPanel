@@ -20,7 +20,6 @@ import {
 import { importWithFormat } from '../import/detect.js'
 import { fingerprintNode } from '../import/fingerprint.js'
 import type { ImportResult, ParsedNode } from '../import/model.js'
-import { recompileAfterCatalogChange } from '../delivery/compiler.js'
 
 export type CreateSourceInput =
   | { type: 'manual' | 'file'; name: string; content: string; enabled?: boolean; keepOnFailure?: boolean }
@@ -103,18 +102,6 @@ export class CatalogImportError extends Error {
 
 function fail(code: ImportErrorCode): never {
   throw new CatalogImportError(code)
-}
-
-export const CATALOG_RECOMPILE_WARNING = 'Catalog 已保存，但订阅缓存编译失败，将在后续变更时重试'
-
-export async function recompileDelivery(env: DataEnv): Promise<string | undefined> {
-  try {
-    await recompileAfterCatalogChange(env)
-    return undefined
-  } catch {
-    // Catalog remains the source of truth; a later mutation can retry derived artifacts.
-    return CATALOG_RECOMPILE_WARNING
-  }
 }
 
 function safeImportResult(content: string, format?: ImportFormat): ImportResult {
@@ -372,8 +359,7 @@ export async function createSource(
     }
     const withSource = { ...snapshot, nextSourceId: snapshot.nextSourceId + 1, sources: [...snapshot.sources, source] }
     const saved = await writeCatalog(env, await applyImport(withSource, id, parsed.nodes, now), now)
-    const warning = await recompileDelivery(env)
-    return { success: true, source: summarizeSource(sourceById(saved, id)), ...(warning ? { warning } : {}) }
+    return { success: true, source: summarizeSource(sourceById(saved, id)) }
   }
 
   if (!Number.isInteger(input.refreshIntervalMinutes) || input.refreshIntervalMinutes <= 0 || input.refreshIntervalMinutes % 15 !== 0) {
@@ -401,8 +387,7 @@ export async function createSource(
   if (input.deferSync) {
     delete source.lastAttemptAt
     const saved = await writeCatalog(env, next, now)
-    const warning = await recompileDelivery(env)
-    return { success: true, source: summarizeSource(sourceById(saved, id), safeUrl), ...(warning ? { warning } : {}) }
+    return { success: true, source: summarizeSource(sourceById(saved, id), safeUrl) }
   }
   let success = false
   const started = Date.now()
@@ -440,8 +425,7 @@ export async function createSource(
     ...source.sync, format: source.detectedFormat, errorCode: source.lastErrorCode,
     added: next.nodes.filter((node) => node.sourceIds.includes(id)).length,
   })
-  const warning = await recompileDelivery(env)
-  return { success, source: summarizeSource(sourceById(saved, id), safeUrl), ...(warning ? { warning } : {}) }
+  return { success, source: summarizeSource(sourceById(saved, id), safeUrl) }
 }
 
 export async function replaceSourceContent(
@@ -467,8 +451,7 @@ export async function replaceSourceContent(
     updatedAt: now,
   }
   const saved = await writeCatalog(env, await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now), now)
-  const warning = await recompileDelivery(env)
-  return { success: true, source: summarizeSource(sourceById(saved, current.id)), ...(warning ? { warning } : {}) }
+  return { success: true, source: summarizeSource(sourceById(saved, current.id)) }
 }
 
 export async function updateSource(
@@ -513,7 +496,6 @@ export async function updateSource(
     if (input.refreshIntervalMinutes !== undefined) source = { ...source, refreshIntervalMinutes: input.refreshIntervalMinutes }
     next = replaceSource(snapshot, source)
     const saved = await writeCatalog(env, next, now)
-    const warning = await recompileDelivery(env)
     let remoteUrl: string | undefined
     try {
       const encrypted = source.encryptedUrl
@@ -521,7 +503,7 @@ export async function updateSource(
     } catch {
       remoteUrl = undefined
     }
-    return { success: true, source: summarizeSource(sourceById(saved, current.id), remoteUrl), ...(warning ? { warning } : {}) }
+    return { success: true, source: summarizeSource(sourceById(saved, current.id), remoteUrl) }
   }
 
   if (input.url !== undefined || input.headers !== undefined || input.refreshIntervalMinutes !== undefined) {
@@ -542,8 +524,7 @@ export async function updateSource(
     next = await applyImport(replaceSource(snapshot, source), current.id, parsed.nodes, now)
   }
   const saved = await writeCatalog(env, next, now)
-  const warning = await recompileDelivery(env)
-  return { success: true, source: summarizeSource(sourceById(saved, current.id)), ...(warning ? { warning } : {}) }
+  return { success: true, source: summarizeSource(sourceById(saved, current.id)) }
 }
 
 function parsedHeaders(value: string): Record<string, string> {
@@ -796,8 +777,7 @@ export async function refreshSource(
     const saved = await writeCatalog(env, next, now)
     if (options.previewId) await env.DATA.delete(previewKey(options.previewId))
     await recordRun(env, sourceId, prepared.startedAt, 'success', { ...prepared.diff, format: prepared.format, ...source.sync })
-    const warning = await recompileDelivery(env)
-    return { success: true, source: summarizeSource(sourceById(saved, current.id), url), ...(warning ? { warning } : {}) }
+    return { success: true, source: summarizeSource(sourceById(saved, current.id), url) }
   })
 }
 
@@ -805,7 +785,7 @@ export async function deleteSource(
   env: DataEnv,
   sourceId: string,
   options: ImportServiceOptions = {},
-): Promise<string | undefined> {
+): Promise<void> {
   const now = options.now ?? new Date().toISOString()
   const snapshot = structuredClone(await readCatalog(env))
   const source = sourceById(snapshot, sourceId)
@@ -829,5 +809,4 @@ export async function deleteSource(
     group.updatedAt = now
   }
   await writeCatalog(env, snapshot, now)
-  return recompileDelivery(env)
 }

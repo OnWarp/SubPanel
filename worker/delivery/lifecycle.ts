@@ -191,5 +191,7 @@ export async function classifySubscription(
     authorizedGroupIds: access.authorizedGroupIds,
     authorizedNodeCount: access.nodes.filter((node) => node.enabled).length,
     formats,
+    nodes: access.nodes,
+    speed: access.speed,
   }
 }

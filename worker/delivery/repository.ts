@@ -83,12 +83,8 @@ export const compiledPrefix = (tokenHash: string): string => `compiled:${tokenHa
 export const compiledKey = (
   tokenHash: string,
   client: string,
-  profileVersionId?: string | null,
-  rendererVersion: string = RENDERER_VERSION,
-): string => {
-  const versionSegment = profileVersionId ? `v_${profileVersionId}` : 'base'
-  return `${compiledPrefix(tokenHash)}${versionSegment}:r${rendererVersion}:${client}`
-}
+  revisions: { subscription: number; catalogRelevant: string; profile?: string | null },
+): string => `${compiledPrefix(tokenHash)}f:${revisions.subscription}:${revisions.catalogRelevant}:${revisions.profile ?? 'base'}:r${RENDERER_VERSION}:${client}`
 
 export async function deleteCompiledArtifacts(kv: KVNamespace, tokenHash: string): Promise<void> {
   try {

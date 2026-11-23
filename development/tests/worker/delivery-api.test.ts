@@ -2,7 +2,7 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import worker from '../../../worker/index'
 import { createFixtureAccount } from './helpers'
 import { createShare, exportShare } from '../../../worker/shares/service'
-import { compiledKey } from '../../../worker/delivery/repository'
+import { compiledPrefix } from '../../../worker/delivery/repository'
 import { hashToken } from '../../../worker/platform/crypto'
 import { runCron } from '../../../worker/operations/cron'
 import { env, exports } from 'cloudflare:workers'
@@ -32,6 +32,18 @@ async function createCatalogGroup(cookie: string, content = ssLine('Delivery nod
 async function createUserCookie(_adminCookie: string): Promise<string> {
   await createFixtureAccount('delivery-user', 'delivery user password')
   return login('delivery-user', 'delivery user password')
+}
+
+async function pullAndCache(token: string, platform = 'mihomo') {
+  const ctx = createExecutionContext()
+  const response = await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${token}/${platform}`), env, ctx)
+  await waitOnExecutionContext(ctx)
+  return response
+}
+
+async function findArtifactKey(token: string, platform = 'mihomo') {
+  const prefix = compiledPrefix(await hashToken(token))
+  return (await env.DATA.list({ prefix })).keys.find(({ name }) => name.endsWith(`:${platform}`))!.name
 }
 
 beforeEach(async () => {
@@ -111,7 +123,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)).status).toBe(200)
   })
 
-  it('creates a subscription, precompiles artifacts, and serves conditional responses', async () => {
+  it('creates a subscription, compiles on demand, and serves conditional responses', async () => {
     const admin = await login()
     const { groupId, planId } = await createCatalogGroup(admin)
     const created = await exports.default.fetch(
@@ -135,8 +147,8 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(body.subscription.links.stash).toContain(`/sub/${body.token}/stash`)
     expect(body.subscription.links.karing).toContain(`/sub/${body.token}/karing`)
     expect(JSON.stringify(body)).not.toContain('encryptedToken')
-    expect(body.subscription.diagnostics.mihomo).toMatchObject({ outputNodes: 1, skippedNodes: 0, available: true })
-    expect((await env.DATA.list({ prefix: 'compiled:' })).keys.length).toBeGreaterThanOrEqual(9)
+    expect(body.subscription.diagnostics).toEqual({})
+    expect((await env.DATA.list({ prefix: compiledPrefix(await hashToken(body.token)) })).keys).toHaveLength(0)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/admin/delivery`, withCookie(admin))).status).toBe(200)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/admin/delivery/subscriptions`, withCookie(admin))).status).toBe(200)
 
@@ -221,15 +233,10 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Legacy', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
-    const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
-    const artifact = JSON.parse((await env.DATA.get(artifactKey))!) as Record<string, unknown>
-    artifact.schemaVersion = 1
-    await env.DATA.put(artifactKey, JSON.stringify(artifact))
-
-    const ctx = createExecutionContext()
-    expect((await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${token}/mihomo`), env, ctx)).status).toBe(200)
-    await waitOnExecutionContext(ctx)
-    expect(JSON.parse((await env.DATA.get(artifactKey))!).schemaVersion).toBe(2)
+    const legacyKey = `${compiledPrefix(await hashToken(token))}mihomo`
+    await env.DATA.put(legacyKey, JSON.stringify({ schemaVersion: 1 }))
+    expect((await pullAndCache(token)).status).toBe(200)
+    expect(JSON.parse((await env.DATA.get(await findArtifactKey(token)))!).schemaVersion).toBe(2)
   })
 
   it('rebuilds a corrupt compiled artifact', async () => {
@@ -240,8 +247,9 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Corrupt artifact', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
-    const artifact = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))
-    await env.DATA.put(artifact!.name, '{}')
+    expect((await pullAndCache(token)).status).toBe(200)
+    const key = await findArtifactKey(token)
+    await env.DATA.put(key, '{}')
 
     const response = await exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
     expect(response.status).toBe(200)
@@ -257,7 +265,8 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Authoritative state', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const body = await created.json() as { subscription: { id: string }; token: string }
-    const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
+    expect((await pullAndCache(body.token)).status).toBe(200)
+    const artifactKey = await findArtifactKey(body.token)
     const artifact = JSON.parse((await env.DATA.get(artifactKey))!) as Record<string, unknown>
 
     const disabled = await exports.default.fetch(
@@ -284,7 +293,8 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Old subscription revision', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const body = await created.json() as { subscription: { id: string }; token: string }
-    const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
+    expect((await pullAndCache(body.token)).status).toBe(200)
+    const artifactKey = await findArtifactKey(body.token)
     const staleArtifact = (await env.DATA.get(artifactKey))!
 
     await exports.default.fetch(
@@ -312,7 +322,8 @@ describe('Delivery APIs and public subscriptions', () => {
       jsonRequest({ userId: 'usr_1', name: 'Old Catalog revision', planId, groupIds: [groupId] }, withCookie(admin)),
     )
     const token = (await created.json() as { token: string }).token
-    const artifactKey = (await env.DATA.list({ prefix: 'compiled:' })).keys.find(({ name }) => name.endsWith(':mihomo'))!.name
+    expect((await pullAndCache(token)).status).toBe(200)
+    const artifactKey = await findArtifactKey(token)
     const staleArtifact = (await env.DATA.get(artifactKey))!
     const catalog = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(admin))).json() as { nodes: Array<{ id: string }> }
 
@@ -327,7 +338,7 @@ describe('Delivery APIs and public subscriptions', () => {
     expect(await response.text()).toContain('New Catalog revision')
   })
 
-  it('returns a warning instead of a false failure when initial compilation fails', async () => {
+  it('saves without compilation and serves live output when the KV write fails', async () => {
     const admin = await login()
     const { groupId, planId } = await createCatalogGroup(admin)
     const originalPut = env.DATA.put.bind(env.DATA)
@@ -341,7 +352,11 @@ describe('Delivery APIs and public subscriptions', () => {
         jsonRequest({ userId: 'usr_1', name: 'Compile warning', planId, groupIds: [groupId] }, withCookie(admin)),
       )
       expect(response.status).toBe(201)
-      expect(await response.json()).toMatchObject({ warning: expect.stringContaining('编译') })
+      const { token } = await response.json<{ token: string }>()
+      expect(put.mock.calls.some(([key]) => key.startsWith('compiled:'))).toBe(false)
+      const download = await pullAndCache(token)
+      expect(download.status).toBe(200)
+      expect(await download.text()).toContain('Delivery node')
     } finally {
       put.mockRestore()
     }
@@ -515,8 +530,10 @@ describe('Delivery APIs and public subscriptions', () => {
     }
     const changed = await create('Changed', affected)
     const untouched = await create('Untouched', unaffected)
-    const changeKey = compiledKey(await hashToken(changed.token), 'mihomo')
-    const untouchedKey = compiledKey(await hashToken(untouched.token), 'mihomo')
+    await pullAndCache(changed.token)
+    await pullAndCache(untouched.token)
+    const changeKey = await findArtifactKey(changed.token)
+    const untouchedKey = await findArtifactKey(untouched.token)
     const cached = await env.DATA.get(untouchedKey)
     const previous = await env.DATA.get(changeKey)
     expect(previous).not.toBeNull()
@@ -694,12 +711,9 @@ rules:
     const { versionId } = await firstVersion.json() as { versionId: string }
     expect((await mutation(templateRoot + '/default', admin, { templateId: template.id, expectedRevision: 1 }, 'PUT')).status).toBe(200)
 
-    const { hashToken } = await import('../../../worker/platform/crypto')
-    const key = `compiled:${await hashToken(token)}:mihomo`
     const pull = (etag?: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`, {
       headers: etag ? { 'If-None-Match': etag } : {},
     })
-    await env.DATA.delete(key)
     const ctx = createExecutionContext()
     const first = await worker.fetch(new Request(`${TEST_ORIGIN}/sub/${token}/mihomo`), env, ctx)
     expect(first.status).toBe(200)
@@ -708,12 +722,11 @@ rules:
     const firstBody = await first.text()
     expect(firstBody).toContain('IP-CIDR,10.0.0.0/8,DIRECT,no-resolve')
     await waitOnExecutionContext(ctx)
-    expect(JSON.parse((await env.DATA.get(key))!)).toMatchObject({ templateVersionId: versionId, body: firstBody, etag: firstEtag })
+    expect(JSON.parse((await env.DATA.get(await findArtifactKey(token)))!)).toMatchObject({ templateVersionId: versionId, body: firstBody, etag: firstEtag })
 
-    const { compileSubscriptionById } = await import('../../../worker/delivery/compiler')
-    const compiled = await compileSubscriptionById(env, subscription.id)
-    expect(compiled.find(value => value.client === 'mihomo')).toMatchObject({ templateVersionId: versionId, body: firstBody, etag: firstEtag })
-    expect(compiled.find(value => value.client === 'singbox')?.templateVersionId).toBeUndefined()
+    const singBox = await pullAndCache(token, 'singbox')
+    expect(singBox.status).toBe(200)
+    expect(JSON.parse((await env.DATA.get(await findArtifactKey(token, 'singbox')))!).templateVersionId).toBeUndefined()
 
     const share = await mutation('/api/shares', admin, { subscriptionId: subscription.id })
     expect(share.status).toBe(201)

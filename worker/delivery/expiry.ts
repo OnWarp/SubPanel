@@ -20,7 +20,8 @@ export function subscriptionWindowStatus(subscription: WindowSubscription, now: 
 export function subscriptionRowStatus(subscription: WindowSubscription & Pick<Subscription, 'enabled' | 'planRevoked'>, now: number) {
   const window = subscriptionWindowStatus(subscription, now)
   if (window === 'expired') return window
-  if (!subscription.enabled) return subscription.planRevoked ? 'revoked' : 'disabled'
+  if (subscription.planRevoked) return 'revoked'
+  if (!subscription.enabled) return 'disabled'
   return window
 }
 
