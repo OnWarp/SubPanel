@@ -1,3 +1,7 @@
+import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
+import { expiryFromDuration } from '../../../shared/subscription-duration'
+import { ACCOUNTS_D1_READY_KEY, markModuleReady } from '../../../worker/db/module-switch'
+import { readUserAccess, userSubscriptionPublicReady, userSubscriptionReady } from '../../../worker/delivery/user-access'
 import { env } from 'cloudflare:workers'
 import { formatCode, normalizeCode, redemptionAlphabet } from '../../../shared/redemption-code'
 import { codeDigest, generateCode, matchesCodeTag, readKeyring } from '../../../worker/redemption/credentials'
@@ -24,6 +28,11 @@ beforeEach(async () => {
   await resetData()
   await applyMigrations()
   await env.DB.batch([
+    env.DB.prepare('DELETE FROM binding_redemption_records'),
+    env.DB.prepare('DELETE FROM user_binding_requests'),
+    env.DB.prepare('DELETE FROM user_template_bindings'),
+    env.DB.prepare('DELETE FROM user_subscription_access'),
+    env.DB.prepare("DELETE FROM system_settings WHERE key IN ('unified_subscription_ready','unified_subscription_public_ready','accounts_d1_ready')"),
     env.DB.prepare('DELETE FROM redemption_records'),
     env.DB.prepare('DELETE FROM redemption_codes'),
     env.DB.prepare('DELETE FROM redemption_batches'),
@@ -282,4 +291,59 @@ it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures maximum redemp
     event: 'p4_redemption_generation', quantity: 500, wallMs: Math.round(performance.now() - start),
     d1BatchSubrequests: calls, statements, rowsWritten, rowsRead,
   }))
+})
+
+async function enableUnifiedOperations() {
+  const snapshot = await readAccounts(env)
+  await markModuleReady(env.DB, ACCOUNTS_D1_READY_KEY)
+  await writeAccounts(env, snapshot, new Date().toISOString())
+  await markModuleReady(env.DB, userSubscriptionReady)
+  await markModuleReady(env.DB, userSubscriptionPublicReady)
+}
+
+it('atomically renews one binding across concurrent codes and replays the original receipt', async () => {
+  const { issue, template } = await fixture()
+  const owner = await account(1)
+  await enableUnifiedOperations()
+  const { codes } = await issue()
+  expect(codes.every(code => /^.{4}-.{4}-.{4}$/.test(code))).toBe(true)
+  const initial = await preview(owner.cookie, codes[0])
+  const first = await confirm(owner.cookie, initial)
+  expect(first.status).toBe(200)
+  const original = await first.json<ConfirmOutput>()
+  const tokenHash = (await readUserAccess(env.DB, { userId: owner.id }))?.token_hash
+  const inputs = await Promise.all([preview(owner.cookie, codes[1]), preview(owner.cookie, codes[2])])
+  const responses = await Promise.all([...inputs, inputs[0]].map(input => confirm(owner.cookie, input)))
+  expect(responses.map(response => response.status)).toEqual([200, 200, 200])
+  const receipts = await Promise.all(responses.map(response => response.json<ConfirmOutput>()))
+  expect(receipts[0]).toEqual(receipts[2])
+  expect(await (await confirm(owner.cookie, initial)).json()).toEqual(original)
+  const expiry = (time: number) => expiryFromDuration(time, { value: 1, unit: 'month' })
+  const rows = await env.DB.prepare('SELECT template_id,expires_at FROM user_template_bindings WHERE user_id=?')
+    .bind(owner.id).all()
+  expect(rows.results).toEqual([{ template_id: template.id, expires_at: expiry(expiry(original.subscription.expiresAt)) }])
+  expect((await readUserAccess(env.DB, { userId: owner.id }))?.token_hash).toBe(tokenHash)
+  expect((await readDelivery(bindings)).subscriptions).toHaveLength(0)
+})
+
+it('rolls back the losing claim and refuses an administrator-paused binding', async () => {
+  const { admin, issue, template } = await fixture()
+  const users = [await account(1), await account(2)]
+  await enableUnifiedOperations()
+  const { codes } = await issue()
+  const inputs = await Promise.all(users.map(owner => preview(owner.cookie, codes[0])))
+  const result = await Promise.all(users.map((owner, index) => confirm(owner.cookie, inputs[index])))
+  expect(result.map(response => response.status).sort()).toEqual([200, 422])
+  const winner = users[result.findIndex(response => response.ok)]
+  const loser = users.find(user => user !== winner)!
+  expect((await readUserAccess(env.DB, { userId: loser.id }))?.revision).toBeNull()
+  const next = await preview(winner.cookie, codes[1])
+  const current = await readUserAccess(env.DB, { userId: winner.id })
+  const pause = await call(`/api/admin/users/${winner.id}/template-bindings/${template.id}`, admin, {
+    mode: 'pause', expectedRevision: current?.revision, requestId: crypto.randomUUID(),
+  }, 'PUT')
+  expect(pause.status).toBe(200)
+  await unavailable(await confirm(winner.cookie, next))
+  expect(await env.DB.prepare('SELECT sum(used_count) FROM redemption_codes').first<number>('sum(used_count)')).toBe(1)
+  expect(await env.DB.prepare('SELECT count(*) FROM binding_redemption_records').first<number>('count(*)')).toBe(1)
 })

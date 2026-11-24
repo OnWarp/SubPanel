@@ -12,6 +12,7 @@ import {
   adminShareQuerySchema,
   createShareSchema,
   shareSettingsSchema,
+  shareIdSchema,
   updateShareSchema,
   verifyShareSchema,
 } from './schema.js'
@@ -19,6 +20,7 @@ import {
   adminChangeStatus,
   changeOwnStatus,
   createShare,
+  revokeAllShares,
   exportShare,
   listAdminShares,
   listOwnShares,
@@ -36,7 +38,6 @@ import { issueShareSession, readShareSessionHash } from './session.js'
 // Token shape is checked in the handler. A short or malformed token must stay on this public path so it returns 404 instead of 401.
 const PUBLIC_SHARE_PATH = /^\/api\/shares\/[^/]+\/(meta|verify|export)$/u
 const emptySchema = z.object({}).default({})
-const shareIdPattern = /^shr_[1-9]\d*$/u
 
 function isPublicShareRequest(c: Context<AppEnv>): boolean {
   const path = new URL(c.req.url).pathname
@@ -64,7 +65,7 @@ function requireShareToken(value: string | undefined): string {
 }
 
 function requireShareId(value: string | undefined): string {
-  if (!value || !shareIdPattern.test(value)) throw apiError(404, 'SHARE_NOT_FOUND', '分享不存在')
+  if (!value || !shareIdSchema.safeParse(value).success) throw apiError(404, 'SHARE_NOT_FOUND', '分享不存在')
   return value
 }
 
@@ -99,6 +100,12 @@ shareRoutes.post('/', async (c) => {
   const result = await run(() => createShare(c.env, actor.id, input, undefined, actor.role))
   const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
   return c.json({ ...result, linkBaseUrl }, 201)
+})
+
+shareRoutes.post('/revoke-all', async c => {
+  await readJson(c, emptySchema)
+  await run(() => revokeAllShares(c.env, c.get('principal').id))
+  return c.body(null, 204)
 })
 
 shareRoutes.put('/:id', async (c) => {
@@ -188,6 +195,7 @@ export const adminShareRoutes = new Hono<AppEnv>()
 
 adminShareRoutes.post('/shares', async (c) => {
   const input = await readJson(c, createShareSchema)
+  if (!input.subscriptionId) throw apiError(422, 'SHARE_SCOPE_REQUIRED', '请选择订阅')
   const subscription = await getSubscription(c.env, input.subscriptionId).catch(error => {
     if (error instanceof DeliveryError) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     throw error
@@ -212,13 +220,13 @@ adminShareRoutes.get('/shares', async (c) => {
 
 adminShareRoutes.post('/shares/:id/disable', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'disabled'))
+  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'disabled', undefined, c.get('principal').id))
   return c.json({ share })
 })
 
 adminShareRoutes.post('/shares/:id/revoke', async (c) => {
   await readJson(c, emptySchema)
-  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'revoked'))
+  const share = await run(() => adminChangeStatus(c.env, requireShareId(c.req.param('id')), 'revoked', undefined, c.get('principal').id))
   return c.json({ share })
 })
 

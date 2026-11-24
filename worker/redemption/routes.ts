@@ -65,7 +65,7 @@ async function paginate(db: D1Database, page: number, pageSize: number, sql: str
 
 const batchStatus = `CASE WHEN b.enabled=0 THEN 'disabled'
   WHEN b.redeem_deadline <= unixepoch('subsec') * 1000 THEN 'expired' ELSE 'active' END`
-const batchFields = `b.id, b.name, b.template_name AS templateName, b.template_version_id AS templateVersionId,
+const batchFields = `b.id, b.name, b.template_name AS templateName, b.template_id AS templateId, b.template_version_id AS templateVersionId,
   (SELECT version_no FROM entitlement_template_versions WHERE id=b.template_version_id) AS templateVersion,
   b.quantity, b.max_uses AS maxUses, b.redeem_deadline AS redeemDeadline, ${batchStatus} AS status,
   b.note, b.created_by AS createdBy, b.created_at AS createdAt,
@@ -74,7 +74,7 @@ const batchFields = `b.id, b.name, b.template_name AS templateName, b.template_v
     SELECT sum(max_uses-used_count) FROM redemption_codes WHERE batch_id=b.id AND revoked=0
   ),0) ELSE 0 END AS remaining`
 const recordFields = `r.id, r.issued_subscription_id AS subscriptionId, r.subscription_name AS subscriptionName,
-  r.expires_at AS expiresAt, r.redeemed_at AS redeemedAt`
+  r.template_id AS templateId, r.previous_expires_at AS previousExpiresAt, r.expires_at AS expiresAt, r.redeemed_at AS redeemedAt`
 
 adminRedemptionRoutes.get('/redemption-batches', async (c) => {
   const { page, pageSize, status, q } = query(c)
@@ -113,7 +113,7 @@ adminRedemptionRoutes.get('/redemption-records', async (c) => {
   if (batchId) { filters.push('c.batch_id=?'); params.push(batchId) }
   if (userId) { filters.push('r.user_id=?'); params.push(userId) }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
-  return c.json(await paginate(c.env.DB, page, pageSize, `FROM redemption_records r
+  return c.json(await paginate(c.env.DB, page, pageSize, `FROM all_redemption_records r
     JOIN redemption_codes c ON c.id=r.code_id JOIN redemption_batches b ON b.id=c.batch_id ${where}`,
   `${recordFields}, r.user_id AS userId, b.name AS batchName, c.tail`, 'r.redeemed_at DESC, r.id DESC', params))
 })
@@ -150,7 +150,7 @@ async function auditedChange(db: D1Database, update: D1PreparedStatement, actor:
 userRedemptionRoutes.get('/', async (c) => {
   const { page, pageSize } = query(c)
   return c.json(await paginate(c.env.DB, page, pageSize,
-    'FROM redemption_records r LEFT JOIN subscriptions s ON s.id=r.subscription_id AND s.user_id=r.user_id WHERE r.user_id=?', `${recordFields}, s.id IS NOT NULL AS hasSubscription`,
+    'FROM all_redemption_records r LEFT JOIN subscriptions s ON s.id=r.subscription_id AND s.user_id=r.user_id WHERE r.user_id=?', `${recordFields}, s.id IS NOT NULL AS hasSubscription`,
     'r.redeemed_at DESC, r.id DESC', [c.get('principal').id]))
 })
 

@@ -19,7 +19,17 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
   if (!access) throw subscriptionNotFound()
   const legacy = delivery.subscriptions.filter(subscription => subscription.userId === userId)
   const aggregate = aggregateBindings(access, bindings, now, catalog)
+  const operations = await env.DB.prepare(`SELECT
+    (SELECT count(*) FROM binding_redemption_records WHERE user_id=?) AS bindingRedemptions,
+    (SELECT count(*) FROM user_binding_requests WHERE user_id=? AND request_id LIKE 'batch-%') AS batchBindingRequests,
+    (SELECT count(*) FROM user_subscription_shares WHERE user_id=?
+      AND json_extract(record_json,'$.status')='active' AND json_extract(record_json,'$.expiresAt')>?) AS activeScopedShares,
+    (SELECT count(*) FROM shares WHERE owner_user_id=? AND status='active' AND expires_at>?) AS activeLegacyShares`)
+    .bind(userId, userId, userId, new Date(now).toISOString(), userId, new Date(now).toISOString()).first<{
+      bindingRedemptions: number; batchBindingRequests: number; activeScopedShares: number; activeLegacyShares: number
+    }>()
   const reasons = new Set<string>()
+  if (operations?.activeLegacyShares) reasons.add('LEGACY_SHARE_SCOPE_REVIEW_REQUIRED')
   const formatDifferences: string[] = []
   const nowIso = new Date(now).toISOString()
   const planById = new Map(plans.map(plan => [plan.id, plan]))
@@ -70,14 +80,14 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
     if (Boolean(old.length) !== (nextAggregate.status === 'active') || oldPermanent !== nextAggregate.permanent ||
       (oldPermanent || !Number.isFinite(oldExpiry) ? null : oldExpiry) !== nextAggregate.expiresAt) reasons.add('WINDOW_DIFFERS')
     if (keys(nodesFor(old)) !== keys(nextAggregate.nodes)) reasons.add('NODES_DIFFER')
-    if (nextAggregate.diagnostics.length || nextAggregate.speed > 0) reasons.add('PLAN_POLICY_UNVERIFIED')
+    if (nextAggregate.diagnostics.length || nextAggregate.unverifiedQuota || nextAggregate.speed > 0) reasons.add('PLAN_POLICY_UNVERIFIED')
   }
 
   if (legacyWindows.some(row => {
     const plan = row.planId ? planById.get(row.planId) : undefined
     return [row.trafficGb, row.speedLimitMbps, row.deviceLimit, plan?.trafficGb, plan?.speedLimitMbps, plan?.deviceLimit]
       .some(value => (value ?? 0) > 0)
-  }) || aggregate.diagnostics.length || aggregate.speed > 0) reasons.add('PLAN_POLICY_UNVERIFIED')
+  }) || aggregate.diagnostics.length || aggregate.unverifiedQuota || aggregate.speed > 0) reasons.add('PLAN_POLICY_UNVERIFIED')
 
   const oldOutputs = active.flatMap(subscription => {
     const resolved = legacyOutputs.get(subscription.id)
@@ -112,6 +122,6 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
   if (formatDifferences.length) reasons.add('FORMAT_DIFFERS')
   return {
     userId, matches: reasons.size === 0, reasons: [...reasons], formatDifferences,
-    oldNodes: oldNodes.length, newNodes: aggregate.nodes.length, measuredTraffic: null,
+    oldNodes: oldNodes.length, newNodes: aggregate.nodes.length, measuredTraffic: null, operations,
   }
 }

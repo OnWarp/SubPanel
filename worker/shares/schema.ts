@@ -5,7 +5,7 @@ import { encryptedValueSchema } from '../platform/crypto.js'
 
 export { subscriptionIdSchema, tokenHashSchema, userIdSchema }
 
-export const shareIdSchema = z.string().regex(/^shr_[1-9]\d*$/)
+export const shareIdSchema = z.string().regex(/^shr_(?:[1-9]\d*|[a-f0-9-]{36})$/)
 export const shareStatusSchema = z.enum(['active', 'disabled', 'revoked'])
 
 export function canonicalPublicBaseUrl(value: string): string | null {
@@ -42,11 +42,17 @@ export const shareAccessSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('password'), passwordHash: passwordHashSchema }),
 ])
 
+const unifiedScope = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('unified') }),
+  z.object({ type: z.literal('template'), templateId: z.string().min(1).max(128) }),
+])
+
 export const shareRecordSchema = z.object({
   schemaVersion: z.literal(1),
   id: shareIdSchema,
   ownerUserId: userIdSchema,
-  subscriptionId: subscriptionIdSchema,
+  subscriptionId: subscriptionIdSchema.nullable(),
+  scope: unifiedScope.optional(),
   tokenHash: tokenHashSchema,
   tokenPrefix: z.string().regex(/^[A-Za-z0-9_-]{8}$/),
   tokenEncrypted: encryptedValueSchema,
@@ -70,7 +76,8 @@ export const shareRecordSchema = z.object({
 })
 
 export const createShareSchema = z.object({
-  subscriptionId: subscriptionIdSchema,
+  subscriptionId: subscriptionIdSchema.optional(),
+  scope: unifiedScope.optional(),
   remark: z.string().trim().max(200).optional(),
   expiresAt: z.iso.datetime().optional(),
   allowOriginalLink: z.boolean().optional(),
@@ -83,6 +90,9 @@ export const createShareSchema = z.object({
   accessControl: z.enum(['none', 'password']).optional(),
   password: z.string().min(8).max(128).optional(),
 }).superRefine((value, ctx) => {
+  if (Boolean(value.subscriptionId) === Boolean(value.scope)) {
+    ctx.addIssue({ code: 'custom', path: ['scope'], message: '请选择分享范围' })
+  }
   if (value.accessControl === 'password' && value.password === undefined) {
     ctx.addIssue({ code: 'custom', path: ['password'], message: 'Password is required' })
   }
@@ -138,7 +148,8 @@ export const DEFAULT_SHARE_SETTINGS: ShareSettings = {
 export type ShareView = {
   id: string
   ownerUserId: string
-  subscriptionId: string
+  subscriptionId: string | null
+  scope?: z.infer<typeof unifiedScope>
   tokenPrefix: string
   remark: string
   status: ShareStatus
@@ -162,6 +173,7 @@ export const toShareView = (record: ShareRecord): ShareView => ({
   id: record.id,
   ownerUserId: record.ownerUserId,
   subscriptionId: record.subscriptionId,
+  ...(record.scope ? { scope: record.scope } : {}),
   tokenPrefix: record.tokenPrefix,
   remark: record.remark,
   status: record.status,

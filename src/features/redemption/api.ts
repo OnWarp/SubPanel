@@ -5,7 +5,7 @@ export const batchesPath = '/api/admin/redemption-batches'
 export const recordsPath = '/api/admin/redemption-records'
 export const myRedemptionsPath = '/api/me/redemptions'
 
-export type Receipt = { id: string; name: string; expiresAt: number | null }
+export type Receipt = { id: string; name: string; expiresAt: number | null; templateId?: string }
 export type RedemptionRecord = {
   id: string
   subscriptionId: string

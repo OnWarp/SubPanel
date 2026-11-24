@@ -74,9 +74,11 @@ function ShareToggle({ label, checked, onChange, disabled }: {
   )
 }
 
-export function CreateShareForm({ subscriptionId, onPending, onCreated, onDirtyChange, formId, admin = false }: {
-  subscriptionId: string
+export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, onCreated, onDirtyChange, formId, admin = false }: {
+  subscriptionId?: string
+  scope?: import('./api').ShareScope
   admin?: boolean
+  onCancel?: () => void
   onDirtyChange?: (dirty: boolean) => void
   formId?: string
   onPending: (pending: boolean) => void
@@ -118,7 +120,7 @@ export function CreateShareForm({ subscriptionId, onPending, onCreated, onDirtyC
     onPending(true)
     try {
       const result = await createShare({
-        subscriptionId,
+        subscriptionId, scope,
         remark: remark.trim() || undefined,
         expiresAt,
         allowOriginalLink,
@@ -171,15 +173,19 @@ export function CreateShareForm({ subscriptionId, onPending, onCreated, onDirtyC
           onChange={(event) => setPassword(event.currentTarget.value)}
         />
       </FormField>
-      <ShareToggle label="允许查看原始链接" checked={allowOriginalLink} disabled={submitting} onChange={setAllowOriginalLink} />
+      {!scope && <ShareToggle label="允许查看原始链接" checked={allowOriginalLink} disabled={submitting} onChange={setAllowOriginalLink} />}
       <fieldset className="sh-switches">
         <legend>展示内容</legend>
-        <ShareToggle label="订阅名" checked={showSubscriptionName} disabled={submitting} onChange={setShowSubscriptionName} />
-        <ShareToggle label="分组" checked={showGroups} disabled={submitting} onChange={setShowGroups} />
+        {!scope && <ShareToggle label="订阅名" checked={showSubscriptionName} disabled={submitting} onChange={setShowSubscriptionName} />}
+        {!scope && <ShareToggle label="分组" checked={showGroups} disabled={submitting} onChange={setShowGroups} />}
         <ShareToggle label="到期" checked={showExpiry} disabled={submitting} onChange={setShowExpiry} />
         <ShareToggle label="节点名" checked={showNodeNames} disabled={submitting} onChange={setShowNodeNames} />
       </fieldset>
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
+      {onCancel && <div className="dialog-actions">
+        <button className="button secondary" type="button" onClick={onCancel} disabled={submitting}>取消</button>
+        <button className="button primary" type="submit" disabled={submitting}>{submitting ? '正在创建' : '创建'}</button>
+      </div>}
     </form>
   )
 }

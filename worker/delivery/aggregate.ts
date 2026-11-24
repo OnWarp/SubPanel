@@ -37,7 +37,7 @@ export function uniqueConnections(nodes: Iterable<Node>) {
 export function aggregateBindings(access: UserAccess | null, rows: BindingRow[], now: number, catalog: CatalogSnapshot) {
   const enabled = accountAvailable(access) && access.enabled === 1
   const relevant = rows.filter(row => row.status !== 'revoked')
-  const eligible = enabled ? relevant.filter(row => row.status === 'active' && row.template_status === 'enabled'
+  const eligible = enabled ? relevant.filter(row => row.status === 'active' && row.template_status === 'enabled' && row.plan_enabled !== 0
     && (row.owner_user_id === null || row.owner_user_id === access.user_id)) : []
   const effective = eligible.filter(row => row.starts_at <= now && (row.expires_at === null || now < row.expires_at))
   const future = eligible.filter(row => now < row.starts_at)
@@ -50,12 +50,16 @@ export function aggregateBindings(access: UserAccess | null, rows: BindingRow[],
   const next = Math.min(...expiry, ...future.map(row => row.starts_at))
   const history = relevant.flatMap(row => row.expires_at !== null && row.expires_at <= now ? [row.expires_at] : [])
   const configs = effective.map(bindingConfig)
-  // Quota cannot be evaluated in this data plane. A single renderer speed can
-  // preserve one policy, but applying it to a mixed grant would alter scope.
-  const speeds = new Set(configs.map(config => config.limits.speedLimitMbps))
-  const conflict = configs.some(config => config.quotaBytes !== null)
-    || (configs.length > 1 && [...speeds].some(speed => speed > 0))
-  const nodes = conflict ? [] : uniqueConnections(configs.flatMap(config => selectedNodes(catalog, config)))
+  // With no authoritative meter, quota-controlled grants contribute no nodes.
+  const usable = configs.flatMap((config, index) => {
+    const row = effective[index]
+    return config.quotaBytes !== null || (row.plan_traffic_gb ?? 0) > 0 ? [] : [{ config, row }]
+  })
+  const speeds = new Set(usable.map(({ config }) => config.limits.speedLimitMbps))
+  const conflict = usable.some(({ row }) => (row.plan_device_limit ?? 0) > 0 || (row.plan_speed_mbps ?? 0) > 0)
+    || speeds.size > 1
+
+  const nodes = conflict ? [] : uniqueConnections(usable.flatMap(({ config }) => selectedNodes(catalog, config)))
   if (nodes.length > 2000 || relevant.length > maxBindings) {
     throw apiError(409, 'UNIFIED_RESOURCE_LIMIT', '授权资源数量超出限制')
   }
@@ -66,16 +70,21 @@ export function aggregateBindings(access: UserAccess | null, rows: BindingRow[],
     lastExpiredAt: history.length ? Math.max(...history) : null,
     nextTransitionAt: Number.isFinite(next) ? next : null,
     effectiveTemplateIds: effective.map(row => row.template_id),
-    dependencies: relevant.map(row => [row.template_id, row.revision, row.template_revision, row.template_status, row.version_id]),
-    speed: conflict ? 0 : configs[0]?.limits.speedLimitMbps ?? 0,
-    diagnostics: conflict ? ['PLAN_POLICY_UNVERIFIED'] : [],
+    dependencies: relevant.map(row => [row.template_id, row.revision, row.template_revision, row.template_status, row.version_id,
+      row.plan_enabled, row.plan_traffic_gb, row.plan_speed_mbps, row.plan_device_limit]),
+    speed: conflict ? 0 : [...speeds][0] ?? 0,
+    unverifiedQuota: usable.length !== configs.length,
+    diagnostics: conflict || (effective.length > 0 && usable.length === 0) ? ['PLAN_POLICY_UNVERIFIED'] : [],
     zeroNodeReason,
   }
 }
 
-export async function resolveUserSubscription(db: D1Database, userId: string, now: number, catalog: CatalogSnapshot) {
+export async function resolveUserSubscription(db: D1Database, userId: string, now: number, catalog: CatalogSnapshot, templateId?: string) {
   const [access, rows] = await Promise.all([readUserAccess(db, { userId }), readBindings(db, userId, false)])
-  const resolved = aggregateBindings(access, rows, now, catalog)
+  const all = aggregateBindings(access, rows, now, catalog)
+  const resolved = templateId && !all.diagnostics.length
+    ? aggregateBindings(access, rows.filter(row => row.template_id === templateId), now, catalog)
+    : all
   const templateRevision = await hashToken(JSON.stringify(resolved.dependencies))
   return { ...resolved, access, templateRevision }
 }

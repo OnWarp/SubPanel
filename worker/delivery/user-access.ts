@@ -74,3 +74,7 @@ export async function revealUserToken(env: DataEnv, access: UserAccess | null) {
   if (await hashToken(token) !== access.token_hash) throw subscriptionNotFound()
   return token
 }
+
+export async function unifiedOperationsEnabled(db: D1Database) {
+  return await isModuleReady(db, userSubscriptionReady) && await isModuleReady(db, userSubscriptionPublicReady)
+}

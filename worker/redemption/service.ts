@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { formatCode, normalizeCode } from '../../shared/redemption-code.js'
 import { auditStatement } from '../admin/audit.js'
-import { getRedemptionVersion } from '../delivery/entitlement-templates.js'
+import { mutateBinding } from '../delivery/bindings.js'
+import { readUserAccess, unifiedOperationsEnabled } from '../delivery/user-access.js'
+import { durationSchema, entitlementConfigSchema, getRedemptionVersion } from '../delivery/entitlement-templates.js'
 import { createSubscription, DeliveryError } from '../delivery/service.js'
 import type { Subscription } from '../delivery/schema.js'
 import type { DataEnv } from '../db/module-switch.js'
@@ -11,13 +13,14 @@ import { limitGeneration, recordFailure } from './limits.js'
 
 export const batchInput = z.object({
   name: z.string().trim().min(1).max(128),
-  templateVersionId: z.uuid(),
+  templateVersionId: z.uuid().optional(),
+  templateId: z.uuid().optional(),
   quantity: z.number().int().min(1).max(500),
   maxUses: z.number().int().min(1).max(100).default(1),
   redeemDeadline: z.number().int().positive().max(8.64e15),
   note: z.string().trim().max(1000).default(''),
   idempotencyKey: z.uuid(),
-}).strict()
+}).strict().refine(input => Boolean(input.templateId) !== Boolean(input.templateVersionId), '请选择授权模板')
 
 export const previewInput = z.object({ code: z.string() }).strict()
 export const redeemInput = previewInput.extend({
@@ -33,6 +36,8 @@ type Candidate = {
   code_digest: string
   template_version_id: string
   template_name: string
+  template_id: string | null
+  duration_json: string | null
   available: number
 }
 
@@ -48,17 +53,26 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
   const key = keys.get(active)!
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
+  const unified = await unifiedOperationsEnabled(db)
+  if (input.templateId && !unified) throw apiError(409, 'REDEMPTION_TEMPLATE_UNAVAILABLE', '请选择可发放的模板版本')
+  const versionId = input.templateVersionId ?? await db.prepare(`SELECT id FROM entitlement_template_versions
+    WHERE template_id=? ORDER BY version_no DESC LIMIT 1`).bind(input.templateId).first<string>('id')
+  if (!versionId) throw apiError(409, 'REDEMPTION_TEMPLATE_UNAVAILABLE', '请选择启用且允许兑换发放的模板')
   const codes = new Set<string>()
   const statements = [db.prepare(`INSERT INTO redemption_batches
-    (id, name, template_version_id, template_name, quantity, max_uses, redeem_deadline, note, created_by, created_at, request_key)
+    (id, name, template_version_id, template_name, quantity, max_uses, redeem_deadline, note, created_by, created_at, request_key, template_id, duration_json)
     SELECT ?, ?, ?, (SELECT t.name FROM entitlement_templates t JOIN entitlement_template_versions v ON v.template_id=t.id
       WHERE v.id=? AND t.status='enabled' AND t.allow_redemption=1
+        AND (NOT ? OR v.version_no=(SELECT max(version_no) FROM entitlement_template_versions WHERE template_id=t.id))
         AND NOT EXISTS (SELECT 1 FROM json_each(v.config_json, '$.groupIds') g
           WHERE NOT EXISTS (SELECT 1 FROM groups WHERE id=g.value))
         AND NOT EXISTS (SELECT 1 FROM json_each(v.config_json, '$.nodeIds') n
           WHERE NOT EXISTS (SELECT 1 FROM nodes WHERE id=n.value AND enabled=1))),
-      ?, ?, ?, ?, ?, ?, ?`).bind(id, input.name, input.templateVersionId, input.templateVersionId,
-    input.quantity, input.maxUses, input.redeemDeadline, input.note, actor, now, input.idempotencyKey)]
+      ?, ?, ?, ?, ?, ?, ?,
+      CASE WHEN ? THEN (SELECT template_id FROM entitlement_template_versions WHERE id=?) END,
+      CASE WHEN ? THEN (SELECT json_extract(config_json,'$.duration') FROM entitlement_template_versions WHERE id=?) END`).bind(id, input.name, versionId, versionId, Number(unified),
+    input.quantity, input.maxUses, input.redeemDeadline, input.note, actor, now, input.idempotencyKey,
+    Number(unified), versionId, Number(unified), versionId)]
 
   for (let offset = 0; offset < input.quantity; offset += 50) {
     const persisted = await Promise.all(Array.from({ length: Math.min(50, input.quantity - offset) }, async () => {
@@ -104,8 +118,8 @@ async function findCandidate(env: RedemptionEnv, normalized: string, user: strin
   const digests = await Promise.all([...keys].map(async ([version, key]) => [version, await codeDigest(key, normalized)]))
   const matches = digests.map(() => '(c.digest_key_version=? AND c.code_digest=?)').join(' OR ')
   const code = await env.DB.prepare(`SELECT c.id, c.batch_id, c.digest_key_version, c.code_digest,
-    b.template_version_id, b.template_name, (${codeAvailable} AND NOT EXISTS (
-      SELECT 1 FROM redemption_records WHERE code_id=c.id AND user_id=?
+    b.template_version_id, b.template_name, b.template_id, b.duration_json, (${codeAvailable} AND NOT EXISTS (
+      SELECT 1 FROM all_redemption_records WHERE code_id=c.id AND user_id=?
     )) AS available
     FROM redemption_codes c JOIN redemption_batches b ON b.id=c.batch_id WHERE ${matches}`)
     .bind(user, ...digests.flat()).first<Candidate>()
@@ -123,26 +137,28 @@ export async function previewRedemption(env: RedemptionEnv, user: string, input:
     await recordFailure(env.DB)
     throw invalidCode()
   }
-  const { name, config } = await getRedemptionVersion(env.DB, code.template_version_id, code.template_name)
+  const { name, config } = code.template_id
+    ? await currentRedemptionTemplate(env, user, code.template_id)
+    : await getRedemptionVersion(env.DB, code.template_version_id, code.template_name)
   return {
     name,
-    duration: config.duration,
+    duration: code.duration_json ? durationSchema.parse(JSON.parse(code.duration_json)) : config.duration,
     quotaBytes: config.quotaBytes,
     nodePolicy: config.groupIds.length ? config.nodeIds.length ? 'mixed' : 'groups' : 'nodes',
     previewProof: await issuePreview(key, user, code.code_digest),
   }
 }
 
-const receiptSelect = `issued_subscription_id AS id, subscription_name AS name, expires_at AS expiresAt`
-type Receipt = { id: string; name: string; expiresAt: number | null; codeId: string; verifier: string }
+const receiptSelect = `coalesce(issued_subscription_id,id) AS id, subscription_name AS name, expires_at AS expiresAt`
+type Receipt = { id: string; name: string; expiresAt: number | null; codeId: string; verifier: string; templateId?: string }
 
 function readReceipt(db: D1Database, user: string, requestKey: string) {
-  return db.prepare(`SELECT ${receiptSelect}, code_id AS codeId, replay_verifier AS verifier
-    FROM redemption_records WHERE user_id=? AND idempotency_key=?`).bind(user, requestKey).first<Receipt>()
+  return db.prepare(`SELECT ${receiptSelect}, code_id AS codeId, replay_verifier AS verifier, CASE WHEN issued_subscription_id IS NULL THEN template_id END AS templateId
+    FROM all_redemption_records WHERE user_id=? AND idempotency_key=?`).bind(user, requestKey).first<Receipt>()
 }
 
-function receiptDto({ id, name, expiresAt }: Receipt) {
-  return { id, name, expiresAt }
+function receiptDto({ id, name, expiresAt, templateId }: Receipt) {
+  return { id, name, expiresAt, ...(templateId ? { templateId } : {}) }
 }
 
 function replay(row: Receipt | null, code: Candidate) {
@@ -158,7 +174,8 @@ function redemptionStatements(db: D1Database, code: Candidate, user: string, req
     db.prepare(`UPDATE redemption_codes AS c SET used_count=used_count+1 WHERE c.id=?
       AND EXISTS (SELECT 1 FROM redemption_batches b WHERE b.id=c.batch_id AND ${codeAvailable})
       AND EXISTS (SELECT 1 FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM redemption_records WHERE code_id=c.id AND user_id=?)`).bind(code.id, user, user),
+      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE code_id=c.id AND user_id=?)
+      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE user_id=? AND idempotency_key=?)`).bind(code.id, user, user, user, requestKey),
     // Read the immediately preceding UPDATE's affected rows inside the transaction.
     // A zero-row claim must fail a constraint rather than commit unrelated writes.
     db.prepare(`INSERT INTO redemption_records
@@ -186,6 +203,9 @@ export async function confirmRedemption(env: RedemptionEnv, user: string, input:
   const digest = await verifier.sign()
   for (let attempt = 0; ; attempt += 1) {
     try {
+      if (code.template_id) {
+        return await redeemBinding(env, user, input.idempotencyKey, digest, code)
+      }
       const { subscription } = await createSubscription(env, { userId: user, templateVersionId: code.template_version_id }, {
         actorUserId: user,
         redemption: {
@@ -197,13 +217,13 @@ export async function confirmRedemption(env: RedemptionEnv, user: string, input:
     } catch (error) {
       const concurrent = replay(await previous(), code)
       if (concurrent) return concurrent
-      if (error instanceof ApiError && error.code === 'SUBSCRIPTION_CONFLICT' && attempt < 3) {
+      if (error instanceof ApiError && ['SUBSCRIPTION_CONFLICT', 'BINDING_CONFLICT'].includes(error.code) && attempt < 7) {
         const current = await findCandidate(env, normalized, user)
         if (current.code.available) continue
         await recordFailure(env.DB)
         throw invalidCode()
       }
-      if (error instanceof Error && error.message.includes('NOT NULL constraint failed: redemption_records.code_id')) {
+      if (error instanceof Error && /NOT NULL constraint failed: (binding_)?redemption_records\.code_id/.test(error.message)) {
         await recordFailure(env.DB)
         throw invalidCode()
       }
@@ -214,4 +234,46 @@ export async function confirmRedemption(env: RedemptionEnv, user: string, input:
       throw error
     }
   }
+}
+
+async function currentRedemptionTemplate(env: RedemptionEnv, user: string, templateId: string) {
+  if (!await unifiedOperationsEnabled(env.DB)) throw invalidCode()
+  const row = await env.DB.prepare(`SELECT t.name,v.config_json FROM entitlement_templates t
+    JOIN entitlement_template_versions v ON v.template_id=t.id
+    WHERE t.id=? AND t.status='enabled' AND t.allow_redemption=1 AND v.schema_version=1
+      AND NOT EXISTS (SELECT 1 FROM user_template_bindings WHERE user_id=? AND template_id=t.id AND status<>'active')
+    ORDER BY v.version_no DESC LIMIT 1`).bind(templateId, user).first<{ name: string; config_json: string }>()
+  if (!row) throw invalidCode()
+  return { name: row.name, config: entitlementConfigSchema.parse(JSON.parse(row.config_json)) }
+}
+
+async function redeemBinding(env: RedemptionEnv, user: string, requestKey: string, verifier: string, code: Candidate) {
+  const db = env.DB
+  const templateId = code.template_id!
+  const access = await readUserAccess(db, { userId: user })
+  const { name } = await currentRedemptionTemplate(env, user, templateId)
+  const duration = durationSchema.parse(JSON.parse(code.duration_json!))
+  const id = crypto.randomUUID()
+  await mutateBinding(env, user, templateId, {
+    mode: 'redeem', expectedRevision: access?.revision ?? 0, requestId: `redeem:${id}`,
+    expiry: { type: 'duration', duration },
+  }, user, Date.now(), ([change], timestamp) => [
+    db.prepare(`UPDATE redemption_codes AS c SET used_count=used_count+1 WHERE c.id=?
+      AND EXISTS (SELECT 1 FROM redemption_batches b JOIN entitlement_templates t ON t.id=b.template_id
+        WHERE b.id=c.batch_id AND t.id=? AND t.status='enabled' AND t.allow_redemption=1 AND ${codeAvailable})
+      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE code_id=c.id AND user_id=?)
+      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE user_id=? AND idempotency_key=?)
+      AND (SELECT count(*) FROM system_settings WHERE key IN ('unified_subscription_ready','unified_subscription_public_ready')
+        AND value='true')=2`).bind(code.id, templateId, user, user, requestKey),
+    db.prepare(`INSERT INTO binding_redemption_records
+      (id,code_id,user_id,template_id,subscription_name,previous_expires_at,expires_at,redeemed_at,idempotency_key,replay_verifier)
+      VALUES (?,CASE WHEN changes()=1 THEN ? END,?,?,?,?,?,?,?,?)`)
+      .bind(id, code.id, user, templateId, name, change.before?.expires_at ?? null,
+        change.after.expires_at, timestamp, requestKey, verifier),
+    auditStatement(db, user, 'redemption.confirm', 'redemption_batches', code.batch_id,
+      { recordId: id, requestId: requestKey, userId: user, templateId, ...change }, timestamp),
+  ])
+  const receipt = await readReceipt(db, user, requestKey)
+  if (receipt) return replay(receipt, code)!
+  throw apiError(409, 'REDEMPTION_RECEIPT_UNAVAILABLE', '兑换回执暂不可用')
 }

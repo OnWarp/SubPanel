@@ -1,3 +1,7 @@
+import { expiryFromDuration } from '../../shared/subscription-duration.js'
+import { auditStatement } from '../admin/audit.js'
+import { mutateBinding } from './bindings.js'
+import { prepareUserAccess, unifiedOperationsEnabled } from './user-access.js'
 import { z } from 'zod'
 import { batch } from '../db/db.js'
 import { getSetting, decodeSettingJson } from '../db/settings-repository.js'
@@ -89,6 +93,33 @@ export function subscriptionPlanState(subscription: Pick<Subscription, 'planRevo
 
 // Historical response shape retained for existing API clients.
 export async function getSubscriptionPlanSummary(db: D1Database, userId: string, now = new Date().toISOString()): Promise<SubscriptionPlanSummary> {
+  if (await unifiedOperationsEnabled(db)) {
+    const { results } = await db.prepare(`SELECT b.*, mapping.plan_id,
+      EXISTS (SELECT 1 FROM audit_logs a WHERE a.target_id=b.user_id AND a.action='subscription.trial'
+        AND json_extract(a.detail,'$.templateId')=b.template_id) AS trial
+      FROM user_template_bindings b JOIN entitlement_plan_policies mapping ON mapping.template_id=b.template_id
+      WHERE b.user_id=? ORDER BY b.updated_at DESC,b.template_id`).bind(userId).all<{
+        template_id: string; plan_id: string; starts_at: number; expires_at: number | null;
+        status: 'active' | 'paused' | 'revoked'; created_at: string; updated_at: string; trial: number;
+      }>()
+    const plans = new Map((await listPlans(db)).map(plan => [plan.id, plan]))
+    const candidates = results.flatMap(row => {
+      const plan = plans.get(row.plan_id)
+      if (!plan) return []
+      const state: SubscriptionPlanSummary['state'] = row.status === 'revoked' ? 'revoked'
+        : row.status === 'paused' || !plan.enabled ? 'disabled'
+          : row.starts_at > Date.parse(now) ? 'pending'
+            : row.expires_at !== null && row.expires_at <= Date.parse(now) ? 'expired' : 'active'
+      const latest: PlanAssignment = { id: row.template_id, userId, planId: row.plan_id,
+        startsAt: new Date(row.starts_at).toISOString(),
+        expiresAt: row.expires_at === null ? null : new Date(row.expires_at).toISOString(),
+        status: row.status === 'revoked' ? 'revoked' : 'active', source: row.trial ? 'trial' : 'admin',
+        note: '', createdAt: row.created_at, updatedAt: row.updated_at, plan,
+      }
+      return [{ state, current: state === 'active' ? latest : null, latest }]
+    })
+    return candidates.find(item => item.current) ?? candidates[0] ?? { state: 'none', current: null, latest: null }
+  }
   const [rows, planList, order] = await Promise.all([
     db.prepare(`SELECT id, plan_id AS planId, enabled, starts_at AS startsAt, expires_at AS expiresAt,
       created_at AS createdAt, updated_at AS updatedAt, plan_revoked AS planRevoked,
@@ -141,7 +172,10 @@ export async function requirePlanStorage(env: DataEnv) {
   await markModuleReady(env.DB, DELIVERY_D1_READY_KEY)
 }
 
-export async function operateSubscriptionPlan(env: DataEnv, userId: string, action: 'grant' | 'renew' | 'switch' | 'revoke', planId?: string, note = '', now = new Date().toISOString()) {
+export async function operateSubscriptionPlan(env: DataEnv, userId: string, action: 'grant' | 'renew' | 'switch' | 'revoke', planId?: string, note = '', now = new Date().toISOString(),
+  actor = 'admin', requestId?: string, expectedRevision?: number,
+) {
+  if (await unifiedOperationsEnabled(env.DB)) return operateBoundPlan(env, userId, action, planId, now, actor, requestId, expectedRevision)
   const db = env.DB
   if (!await db.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(userId).first()) throw apiError(404, 'USER_NOT_FOUND', '用户不存在')
   await requirePlanStorage(env)
@@ -177,6 +211,62 @@ export async function trialSubscriptionStatements(env: DataEnv, userId: string, 
   if (!settings.trialPlanId || !settings.trialDays) return []
   const plan = await getPlan(env.DB, settings.trialPlanId)
   if (!plan.enabled) return []
+  if (await unifiedOperationsEnabled(env.DB)) {
+    const db = env.DB
+    const template = await templateForPlan(db, plan.id)
+    const start = Date.parse(now)
+    const expires = expiryFromDuration(start, { unit: 'day', value: settings.trialDays })
+    const requestId = crypto.randomUUID()
+    return [
+      await prepareUserAccess(env, userId, now),
+      db.prepare(`INSERT INTO user_template_bindings
+        (user_id,template_id,starts_at,expires_at,status,created_at,updated_at)
+        VALUES (CASE WHEN changes()=1 AND EXISTS (
+          SELECT 1 FROM entitlement_templates t JOIN entitlement_plan_policies p ON p.template_id=t.id
+          JOIN plans ON plans.id=p.plan_id WHERE t.id=? AND t.revision=? AND t.status='enabled'
+            AND plans.id=? AND plans.enabled=1 AND plans.updated_at=?
+        ) THEN ? END,?,?,?,'active',?,?)`).bind(template.id, template.revision, plan.id, plan.updatedAt,
+        userId, template.id, start, expires, now, now),
+      auditStatement(db, userId, 'subscription.trial', 'user', userId,
+        { userId, templateId: template.id, requestId, before: null, after: { status: 'active', startsAt: start, expiresAt: expires } }, now),
+    ]
+  }
   await requirePlanStorage(env)
   return preparePlanSubscription(env, userId, plan, settings.trialDays, 'trial', '', now)
+}
+
+async function templateForPlan(db: D1Database, planId: string) {
+  const row = await db.prepare(`SELECT t.id,t.revision FROM entitlement_plan_policies p
+    JOIN entitlement_templates t ON t.id=p.template_id
+    WHERE p.plan_id=? AND t.status='enabled'`).bind(planId).first<{ id: string; revision: number }>()
+  if (!row) throw apiError(409, 'PLAN_TEMPLATE_REQUIRED', '请先关联启用的授权模板')
+  return row
+}
+
+async function operateBoundPlan(env: DataEnv, userId: string, action: 'grant' | 'renew' | 'switch' | 'revoke',
+  planId: string | undefined, now: string, actor: string, requestId: string | undefined, expectedRevision: number | undefined,
+) {
+  if (requestId === undefined || expectedRevision === undefined) {
+    throw apiError(422, 'BINDING_REVISION_REQUIRED', '请提供授权版本与请求编号')
+  }
+  const rows = await env.DB.prepare(`SELECT b.template_id,p.plan_id FROM user_template_bindings b
+    JOIN entitlement_plan_policies p ON p.template_id=b.template_id
+    WHERE b.user_id=? AND b.status<>'revoked'`).bind(userId).all<{ template_id: string; plan_id: string }>()
+  const [existing] = rows.results
+  if (rows.results.length > 1 || (action === 'grant' && existing)) {
+    throw apiError(409, 'ENTITLEMENT_EXISTS', '请直接管理用户模板授权')
+  }
+  if (action !== 'grant' && !existing) throw apiError(409, 'ENTITLEMENT_MISSING', '没有可操作的订阅计划')
+  const target = action === 'renew' || action === 'revoke' ? existing.template_id
+    : (await templateForPlan(env.DB, planId ?? '')).id
+  const request = { requestId, expectedRevision }
+  const plan = action === 'revoke' ? null : await getPlan(env.DB, action === 'renew' ? existing.plan_id : planId ?? '')
+  if (plan && !plan.enabled) throw apiError(409, 'PLAN_DISABLED', '计划已停用')
+  const expiry = { type: 'duration', duration: { unit: 'day', value: plan?.durationDays ?? 1 } } as const
+  const operation = action === 'revoke' ? { ...request, mode: 'revoke' } as const
+    : action === 'switch' && target !== existing.template_id
+      ? { ...request, mode: 'replace', oldTemplateId: existing.template_id, newTemplateId: target, expiry } as const
+      : { ...request, mode: action === 'grant' ? 'assign' : 'renew', expiry } as const
+  const binding = await mutateBinding(env, userId, target, operation, actor, Date.parse(now))
+  return { ...(await getSubscriptionPlanSummary(env.DB, userId, now)), subscriptionId: null, binding }
 }
