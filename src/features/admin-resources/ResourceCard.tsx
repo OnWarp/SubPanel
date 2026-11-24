@@ -1,3 +1,4 @@
+import { Button } from '../../ui/Button'
 import { DataHeader } from '../../ui/DataHeader'
 import { Ellipsis } from 'lucide-react'
 import { useId, useRef, type ReactNode } from 'react'
@@ -71,9 +72,9 @@ export function ResourceRowActions({ actions }: { actions: RowAction[] }) {
 
   return (
     <>
-      <button ref={trigger} className="icon-button resource-card-more" type="button" aria-label="更多操作" popoverTarget={unavailable ? undefined : id} aria-disabled={unavailable || undefined}>
+      <Button ref={trigger} size="page" className="resource-card-more" aria-label="更多操作" popoverTarget={unavailable ? undefined : id} aria-disabled={unavailable || undefined}>
         <Ellipsis aria-hidden="true" size={18} />
-      </button>
+      </Button>
       <div className="resource-card-actions" id={id} ref={popup} popover="auto" role="group" aria-label="行操作">
         {actions.map(({ label, accessibleLabel, danger, disabled, checked, onClick }) => (
           <button

@@ -262,11 +262,9 @@
 }
 
 .sp-table-flat .resource-card-select-all > span { display: none; }
-.sp-table-flat .resource-card-more { width: var(--size-touch-target); }
 .resource-card-more[aria-disabled="true"] { opacity: .6; cursor: default; }
 .sp-table-flat .resource-card-name { overflow-wrap: anywhere; }
 
 @media (width < 768px) {
-  .sp-table-flat .resource-card-more { min-height: var(--size-touch-target); }
   .sp-table-flat .sp-badge { padding-inline: 0; border: 0; background: transparent; }
 }

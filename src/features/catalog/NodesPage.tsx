@@ -1,3 +1,4 @@
+import { Button } from '../../ui/Button'
 import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input, Textarea } from '../../ui/Controls'
 import { CheckCircle2, Plus, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
@@ -341,7 +342,7 @@ export function NodesPage() {
           </>}>
           <SearchInput inputRef={searchRef} label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as NodeStatusFilter)}>{NODE_STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
-          <button type="button" className="button primary" onClick={(event) => openCreate(event.currentTarget)}><Plus aria-hidden="true" size={16} />添加节点</button>
+          <Button variant="primary" size="page" onClick={(event) => openCreate(event.currentTarget)}><Plus aria-hidden="true" size={18} />添加节点</Button>
         </FilterBar>
         {error && <ErrorState message={error} onRetry={() => load()} />}
         {batchError && <ErrorState message={batchError} />}

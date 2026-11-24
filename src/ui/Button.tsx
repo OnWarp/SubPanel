@@ -1,19 +1,47 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from 'react'
+import { Link, type LinkProps } from 'react-router-dom'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonStyleProps = {
   variant?: ButtonVariant
-  loading?: boolean
+  size?: 'page'
+  className?: string
   children: ReactNode
 }
 
-export function Button({ variant = 'secondary', loading = false, disabled, type = 'button', className, children, ...rest }: ButtonProps) {
+type NativeButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  as?: 'button'
+  ref?: ComponentPropsWithRef<'button'>['ref']
+  loading?: boolean
+}
+
+type ButtonProps = ButtonStyleProps & (
+  | NativeButtonProps
+  | (LinkProps & { as: 'link' })
+  | (ComponentPropsWithRef<'summary'> & { as: 'summary' })
+)
+
+export function Button(props: ButtonProps) {
+  const { variant = 'secondary', size, className, children, ...elementProps } = props
+  const classes = ['button', variant, size === 'page' && 'button-page', className].filter(Boolean).join(' ')
+
+  if (elementProps.as === 'link') {
+    const { as: _as, ...linkProps } = elementProps
+    return <Link {...linkProps} className={classes}>{children}</Link>
+  }
+
+  if (elementProps.as === 'summary') {
+    const { as: _as, ...summaryProps } = elementProps
+    return <summary {...summaryProps} className={classes}>{children}</summary>
+  }
+
+  const { as: _as, loading = false, disabled, type = 'button', ...rest } = elementProps
   return (
     <button
       {...rest}
       type={type}
-      className={`button ${variant}${className ? ` ${className}` : ''}`}
+      className={classes}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
     >

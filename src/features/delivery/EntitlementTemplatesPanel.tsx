@@ -1,3 +1,4 @@
+import { Button } from '../../ui/Button'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { api, ApiClientError, jsonBody, type CatalogResponse } from '../../app/api'
@@ -177,7 +178,7 @@ export function EntitlementTemplatesPage() {
   const configChanged = !!original && JSON.stringify(config) !== JSON.stringify(original.currentVersion.config)
   const baseDraft = original ? { name: original.name, description: original.description, allowRedemption: original.allowRedemption, config: original.currentVersion.config } : emptyDraft
   const visible = templates.filter((template) => (!status || template.status === status) && template.name.toLowerCase().includes(query.trim().toLowerCase()))
-  const createButton = <button className="button primary" type="button" onClick={() => openEditor()}><Plus aria-hidden size={17} />新建模板</button>
+  const createButton = <Button variant="primary" size="page" onClick={() => openEditor()}><Plus aria-hidden size={18} />新建模板</Button>
 
   return (
     <section className="page-stack del-templates-page" aria-label="订阅模板">
