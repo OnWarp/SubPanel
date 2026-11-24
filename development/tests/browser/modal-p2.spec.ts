@@ -420,27 +420,51 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.getByText('自建规则集已保存').first()).toBeVisible()
     })
 
-    test('plan editor submits the existing plan payload from M', async ({ page }) => {
+    test('entitlement template editor submits resources and duration from L', async ({ page }) => {
+      const name = '测试权益模板'
+      const group = { id: 'group', name: '测试分组' }
+      const config = {
+        groupIds: [group.id], nodeIds: [], duration: { value: 30, unit: 'day' },
+        quotaBytes: null, resetPolicy: 'none', limits: { speedLimitMbps: 0 },
+      }
       let created = false
       await mock(page, {
-        '/api/admin/catalog': { groups: [] },
-        '/api/admin/subscriptions/trial': { trialPlanId: null, trialDays: null },
-        '/api/admin/plans': async (route: Route) => {
-          if (route.request().method() === 'POST') {
-            expect(route.request().postDataJSON()).toMatchObject({ name: '测试计划' })
-            created = true
+        '/api/admin/catalog': { sources: [], nodes: [], groups: [group] },
+        '/api/admin/subscription-templates': async (route: Route) => {
+          const template = {
+            id: 'template', name, description: '', allowRedemption: false, status: 'enabled',
+            revision: 1, ownerUserId: null, boundUserCount: 0, subscriptionCount: 0,
+            currentVersion: { id: 'version', number: 1, config },
           }
-          await route.fulfill({ json: { plans: [] } })
+          if (route.request().method() === 'POST') {
+            expect(route.request().postDataJSON()).toEqual({ name, description: '', allowRedemption: false, config })
+            created = true
+            return route.fulfill({ status: 201, json: { template } })
+          }
+          await route.fulfill({ json: { templates: created ? [template] : [] } })
         },
       })
       await page.goto('/plans')
-      await page.getByRole('button', { name: '新增计划' }).click()
-      const dialog = page.getByRole('dialog', { name: '新增计划' })
-      await verify(dialog, 'm', width, 'plan')
-      await dialog.getByLabel('名称', { exact: true }).fill('测试计划')
-      await dialog.getByRole('button', { name: '保存计划' }).click()
+      await expect(page).toHaveURL(/\/delivery\/templates$/u)
+      await page.getByRole('button', { name: '新建模板' }).click()
+      const dialog = page.getByRole('dialog', { name: '新建权益模板' })
+      await verify(dialog, 'l', width)
+      await dialog.getByLabel('模板名称').fill(name)
+      await dialog.getByLabel('期限', { exact: true }).fill('30')
+      await dialog.getByLabel('单位', { exact: true }).click()
+      await dialog.getByRole('option', { name: '天', exact: true }).click()
+      const save = dialog.getByRole('button', { name: '保存模板' })
+      await save.click()
+      await expect(dialog.getByText('请选择节点或动态分组')).toBeVisible()
+      expect(created).toBe(false)
+      await dialog.getByRole('checkbox', { name: '使用分组 测试分组' }).check()
+      await save.click()
       await expect(dialog).toBeHidden()
-      expect(created).toBe(true)
+      const row = page.getByRole('row').filter({ hasText: name })
+      await expect(row.locator('td[data-label="资源数"]')).toHaveText('1')
+      await expect(row.locator('td[data-label="绑定用户数"]')).toHaveText('0')
+      await expect(row.locator('td[data-label="默认时长"]')).toHaveText('30 天')
+      await expect(row.getByText('已启用')).toBeVisible()
     })
   })
 }

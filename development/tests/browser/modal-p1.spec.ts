@@ -4,10 +4,11 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const directory = 'development/screenshots/sub-modal-p1'
 const user = { id: 'member', username: 'member', role: 'user', enabled: true, email: 'member@example.test' }
-const plan = { id: 'plan', name: '标准计划', enabled: true, durationDays: 30, groupIds: [], trafficGb: 0, speedLimitMbps: 0, deviceLimit: 0 }
 const date = '2026-11-24T00:00:00Z'
 const version = { id: 'version', number: 1, config: { duration: { value: 30, unit: 'day' }, quotaBytes: null, groupIds: [], nodeIds: [], limits: { speedLimitMbps: 0 } } }
-const template = { id: 'template', name: '测试模板', allowRedemption: true, currentVersion: version }
+const template = { id: 'template', name: '测试模板', status: 'enabled', allowRedemption: true, currentVersion: version }
+const bindingsPath = '/api/admin/users/member/template-bindings'
+const subscriptionPath = '/api/admin/users/member/subscription'
 
 async function checkDialog(page: Page, dialog: Locator, size: 'm' | 'l', width: number, screenshot?: string, mask: Locator[] = []) {
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
@@ -47,10 +48,14 @@ async function setup(page: Page) {
     sourceIds: ['source'], enabled: true, retained: false, tags: [], createdAt: date, updatedAt: date,
   }))
   let member = user
-  let subscription: Record<string, unknown> | undefined
+  const binding = { templateId: template.id, templateStatus: 'enabled', status: 'active', startsAt: date, expiresAt: null }
+  let bindings: Array<typeof binding> = []
+  let revision = 1
+  let subscriptionUrl: string | null = null
+  let rotatedUrl: string | null = null
   let failNodePatch = true
   let batchQuantity = 0
-  const job = { id: 'job', action: 'plan', total: 1, processed: 0, failures: 0, status: 'queued', busy: 0 }
+  let job: { id: string; action: string; total: number; processed: number; failures: number; status: string; busy: number } | undefined
   const codes = Array.from({ length: 18 }, (_, index) => `MOCK-CODE-${String(index).padStart(4, '0')}`)
   await page.route('**/api/**', async route => {
     const request = route.request()
@@ -88,33 +93,50 @@ async function setup(page: Page) {
       case '/api/admin/users/options':
       case '/api/admin/users': return json({ users: [member], total: 1 })
       case '/api/admin/users/member':
-        member = { ...member, email: String(body().email) }
+        if (method === 'PATCH') member = { ...member, email: String(body().email) }
         return json({ user: member })
-      case '/api/admin/users/member/subscription-plan':
-        if (method === 'POST') expect(body()).toMatchObject({ action: 'grant', planId: plan.id })
-        return json({ state: 'none', current: null, latest: null })
-      case '/api/admin/plans': return json({ plans: [plan] })
-      case '/api/admin/system/subscription-templates': return json({ templates: [] })
-      case '/api/admin/system/subscription-templates/bindings/sub':
-        return json({ mode: 'inherit', effectiveTemplate: null, revision: 1 })
-      case '/api/admin/subscriptions/output-preview': return json({ outputNodes: 0, planGroupIds: [] })
-      case '/api/admin/subscriptions':
-        if (method === 'GET') return json({ subscriptions: subscription ? [subscription] : [], total: Number(!!subscription) })
-        subscription = { ...body(), id: 'sub', links: {}, diagnostics: {}, createdAt: date, updatedAt: date }
-        return json({ subscription, warning: '' }, 201)
-      case '/api/admin/subscriptions/sub':
-        if (method === 'PATCH') Object.assign(subscription!, body())
-        return json({ subscription, warning: '' })
+      case bindingsPath: return json({ revision, bindings })
+      case `${bindingsPath}/template/preview`:
+        expect(Object.fromEntries(new URL(request.url()).searchParams)).toEqual({
+          expectedRevision: '1', mode: 'assign', expiry: 'permanent',
+        })
+        return json({ changes: [{ before: null, after: binding }] })
+      case `${bindingsPath}/template`:
+        expect(method).toBe('PUT')
+        expect(body()).toEqual({
+          expectedRevision: 1, mode: 'assign', expiry: { type: 'permanent' },
+          startsAt: Date.parse(date), requestId: expect.any(String),
+        })
+        bindings = [binding]
+        subscriptionUrl = `${new URL(request.url()).origin}/s/${randomUUID()}`
+        return json({ revision: ++revision, changes: [{ before: null, after: binding }] })
+      case `${subscriptionPath}/summary`:
+        return json({ expiresAt: null, permanent: bindings.length > 0, nodes: [], subscriptionUrl, logs: [] })
+      case `${subscriptionPath}/reset-token`:
+        expect(method).toBe('POST')
+        expect(body()).toEqual({ expectedRevision: 2 })
+        rotatedUrl = `${new URL(request.url()).origin}/s/${randomUUID()}`
+        subscriptionUrl = rotatedUrl
+        revision += 1
+        return json({ ok: true })
+      case '/api/admin/compile-jobs': return json({ jobs: job ? [job] : [] })
+      case '/api/admin/compile-jobs/batch/capabilities': return json({ unified: true })
       case '/api/admin/compile-jobs/batch/preview':
-        expect(body()).toMatchObject({ ids: ['sub'], operation: { action: 'plan', planId: 'plan' } })
+        expect(body()).toEqual({ ids: [user.id], operation: { action: 'assign', templateId: template.id } })
         return json({ previewId: 'preview', fingerprint: 'fixture', selected: 1, affected: 1, missing: 0, platforms: [] })
-      case '/api/admin/compile-jobs/batch': return json({ job }, 201)
+      case '/api/admin/compile-jobs/batch':
+        expect(body()).toEqual({
+          ids: [user.id], operation: { action: 'assign', templateId: template.id },
+          previewId: 'preview', fingerprint: 'fixture',
+        })
+        job = { id: 'job', action: 'assign', total: 1, processed: 0, failures: 0, status: 'queued', busy: 0 }
+        return json({ job }, 201)
       case '/api/admin/compile-jobs/job/run':
-      case '/api/admin/compile-jobs/job':
-        return json({ job: { ...job, status: 'completed', processed: 1 } })
+        expect(method).toBe('POST')
+        job = { ...job!, status: 'completed', processed: 1 }
+        return json({ job })
+      case '/api/admin/compile-jobs/job': return json({ job })
       case '/api/admin/compile-jobs/job/items': return json({ items: [] })
-      case '/api/admin/shares':
-        return json({ share: { id: 'share' }, token: randomUUID() }, 201)
       case '/api/admin/subscription-templates': return json({ templates: [template] })
       case '/api/admin/subscription-templates/template/versions': return json({ versions: [version] })
       case '/api/admin/redemption-batches':
@@ -129,7 +151,7 @@ async function setup(page: Page) {
       default: return json({}, 404)
     }
   })
-  return { codes }
+  return { codes, rotatedUrl: () => rotatedUrl }
 }
 
 for (const width of [1440, 1024, 390]) {
@@ -198,79 +220,94 @@ for (const width of [1440, 1024, 390]) {
       await expect(page.getByText('已编辑节点')).toBeVisible()
     })
 
-    test('subscription issue, edit, share and user plan assignment', async ({ page }) => {
-      await setup(page)
+    test('user authorization binds a template, resets the link and runs a batch job', async ({ page }) => {
+      const { rotatedUrl } = await setup(page)
       await page.goto('/delivery/subscriptions')
-      const add = page.getByRole('button', { name: '添加订阅' }).first()
-      await add.click()
-      const create = page.getByRole('dialog', { name: '添加订阅' })
-      await choose(create, '订阅模板', '测试模板 · v1 · 30 天')
-      await choose(create, '所属用户', 'member')
-      await checkDialog(page, create, 'l', width, 'subscription-issue')
-      await create.getByRole('button', { name: '保存订阅' }).click()
-      const details = page.getByRole('dialog', { name: '测试模板' })
-      await expect(details).toBeVisible()
-      await expect(page.locator('dialog:modal')).toHaveCount(1)
-      await details.getByRole('button', { name: '关闭', exact: true }).click()
-      await expect(add).toBeFocused()
-      await rowAction(page, '测试模板', '编辑')
-      const edit = page.getByRole('dialog', { name: '编辑订阅' })
-      await edit.getByLabel('订阅名称').fill('已编辑订阅')
-      await edit.getByRole('button', { name: '取消' }).click()
-      await edit.getByRole('button', { name: '继续编辑' }).click()
-      await edit.getByRole('button', { name: '保存修改' }).click()
-      await expect(edit).toBeHidden()
-
-      await rowAction(page, '已编辑订阅', '临时分享')
-      const share = page.getByRole('dialog', { name: '临时分享' })
-      await share.getByLabel('备注').fill('本地回归')
-      await page.keyboard.press('Escape')
-      await share.getByRole('button', { name: '继续编辑' }).click()
-      await checkDialog(page, share, 'm', width, 'subscription-share')
-      await share.getByRole('button', { name: '创建', exact: true }).click()
-      const result = page.getByRole('dialog', { name: '分享已创建' })
-      await expect(result.getByLabel('分享链接')).toBeFocused()
-      await page.mouse.click(3, 3)
-      await expect(result).toBeVisible()
-      await result.getByRole('button', { name: '完成' }).click()
-      await expect(page.getByLabel('分享链接', { exact: true })).toHaveCount(0)
-
-      await page.getByLabel('选择订阅 已编辑订阅').check()
-      const moreBatch = page.getByRole('button', { name: '更多批量操作' })
-      if (await moreBatch.isVisible()) await moreBatch.click()
-      await page.getByRole('button', { name: '更换计划', exact: true }).click()
-      const planDialog = page.getByRole('dialog', { name: '更换计划' })
-      await choose(planDialog, '目标计划', '标准计划')
-      await checkDialog(page, planDialog, 'm', width, 'subscription-plan')
-      const planWindow = await planDialog.elementHandle()
-      await planDialog.getByRole('button', { name: '预览影响' }).click()
-      await expect(planDialog.getByText('已选 1 个 · 预计影响 1 个')).toBeVisible()
-      expect(await planDialog.evaluate((element, previous) => element === previous, planWindow)).toBe(true)
-      await planDialog.getByRole('button', { name: '确认并创建任务' }).click()
-      const job = page.getByRole('dialog', { name: '订阅批量任务' })
-      await job.getByRole('button', { name: '执行任务' }).click()
-      await expect(job.getByText(/已完成.*已处理 1\/1/)).toBeVisible()
-      await job.getByRole('button', { name: '关闭', exact: true }).click()
-
-      await page.goto('/users')
+      await expect(page).toHaveURL(/\/users$/u)
       const menu = page.getByLabel('member 的操作')
       await menu.click()
       await page.getByRole('menuitem', { name: '改邮箱' }).click()
       const userEdit = page.getByRole('dialog', { name: '编辑用户' })
       await userEdit.getByLabel('邮箱').fill('updated@example.test')
-      await checkDialog(page, userEdit, 'm', width, 'user-edit')
+      await checkDialog(page, userEdit, 'm', width)
       await userEdit.getByRole('button', { name: '保存' }).click()
       await expect(userEdit).toBeHidden()
       await expect(menu).toBeFocused()
       await menu.click()
-      await page.getByRole('menuitem', { name: '管理订阅计划' }).click()
-      const rights = page.getByRole('dialog', { name: 'member · 订阅计划' })
-      await expect(rights.getByRole('button', { name: '确认开通' })).toBeEnabled()
-      await rights.getByLabel('备注').fill('开通测试')
-      await checkDialog(page, rights, 'l', width, 'user-entitlement')
-      await rights.getByRole('button', { name: '确认开通' }).click()
-      await expect(rights).toBeHidden()
-      await expect(menu).toBeFocused()
+      await page.getByRole('menuitem', { name: '订阅授权' }).click()
+      await expect(page).toHaveURL(/\/users\/member\?tab=subscription$/u)
+      await expect(page.getByText('暂无绑定模板')).toBeVisible()
+      const bind = page.getByRole('button', { name: '绑定模板', exact: true })
+      await bind.click()
+      const editor = page.getByRole('dialog', { name: '绑定模板' })
+      await checkDialog(page, editor, 'l', width)
+      const preview = editor.getByRole('button', { name: '预览影响' })
+      await expect(preview).toBeDisabled()
+      await editor.getByLabel('搜索模板').fill('无匹配结果')
+      const selectTemplate = editor.getByLabel('模板', { exact: true })
+      await selectTemplate.click()
+      await expect(editor.getByRole('option', { name: '选择模板' })).toBeVisible()
+      await expect(editor.getByRole('option', { name: template.name })).toHaveCount(0)
+      await selectTemplate.click()
+      await editor.getByLabel('搜索模板').fill(template.name)
+      await choose(editor, '模板', template.name)
+      await choose(editor, '有效期', '永久')
+      await page.keyboard.press('Escape')
+      await editor.getByRole('button', { name: '继续编辑' }).click()
+      await expect(editor.getByLabel('有效期')).toHaveText('永久')
+      const editorWindow = await editor.elementHandle()
+      await preview.click()
+      await expect(editor.getByText('有效 · 长期有效')).toBeVisible()
+      expect(await editor.evaluate((element, previous) => element === previous, editorWindow)).toBe(true)
+      await editor.getByRole('button', { name: '保存', exact: true }).click()
+      await expect(editor).toBeHidden()
+      await expect(bind).toBeFocused()
+      const row = page.getByRole('row').filter({ hasText: template.name })
+      await expect(row.getByText('有效', { exact: true })).toBeVisible()
+      await expect(row.getByText('长期有效')).toBeVisible()
+      const update = row.getByRole('button', { name: '更新', exact: true })
+      await update.click()
+      const updateDialog = page.getByRole('dialog', { name: '更新绑定' })
+      await expect(updateDialog.getByLabel('操作')).toHaveText('更新现有绑定')
+      await page.keyboard.press('Escape')
+      await expect(update).toBeFocused()
+
+      const reset = page.getByRole('button', { name: '重置链接' })
+      await reset.click()
+      const confirmation = page.getByRole('dialog', { name: '重置订阅链接' })
+      await expect(confirmation).toHaveAttribute('data-size', 's')
+      await expect(confirmation.getByText('旧链接将立即失效')).toBeVisible()
+      const cancel = confirmation.getByRole('button', { name: '取消' })
+      await expect(cancel).toBeFocused()
+      await cancel.click()
+      await expect(reset).toBeFocused()
+      expect(rotatedUrl()).toBeNull()
+      await reset.click()
+      await confirmation.getByRole('button', { name: '确认', exact: true }).click()
+      await expect(confirmation).toBeHidden()
+      expect(rotatedUrl()).not.toBeNull()
+      await page.getByRole('button', { name: '复制统一订阅链接' }).click()
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(rotatedUrl())
+
+      await page.goto('/users')
+      const batch = page.getByRole('button', { name: '批量任务' })
+      await batch.click()
+      const job = page.getByRole('dialog', { name: '订阅批量任务' })
+      await expect(job).toHaveAttribute('data-size', 'xl')
+      await job.getByLabel('用户编号').fill(user.id)
+      await job.getByLabel('授权模板编号').fill(template.id)
+      await job.getByRole('button', { name: '预览授权' }).click()
+      const review = page.getByRole('dialog', { name: '绑定模板' })
+      await expect(review.getByText('已选 1 个 · 预计影响 1 个 · 0 个已不存在')).toBeVisible()
+      await review.getByRole('button', { name: '确认并创建任务' }).click()
+      await expect(review).toBeHidden()
+      await expect(job).toBeHidden()
+      await batch.click()
+      await job.getByRole('button', { name: '绑定模板 · 待执行 · 0/1' }).click()
+      await job.getByRole('button', { name: '执行任务' }).click()
+      await expect(job.getByText(/已完成.*已处理 1\/1/)).toBeVisible()
+      await job.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect(job).toBeHidden()
     })
 
     test('single and batch redemption results preserve one-time presentation', async ({ page }) => {

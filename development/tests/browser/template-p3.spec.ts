@@ -11,6 +11,10 @@ const groups = [{ name: 'Proxy', type: 'select', proxies: ['$SUBPANEL_NODES', 'D
 const rules = ['IP-CIDR,192.168.0.0/16,DIRECT,no-resolve', 'MATCH,Proxy']
 const draft = `proxy-groups:\n  - name: Proxy\n    type: select\n    proxies: ["$SUBPANEL_NODES", DIRECT]\nrules:\n  - ${rules.join('\n  - ')}\n`
 const providers = { local: { type: 'http', behavior: 'domain', format: 'yaml', url: 'https://example.test/rules.yaml', path: './rule-providers/local.yaml' } }
+const entitlementPath = '/api/admin/subscription-templates'
+const member = { id: 'usr_member', username: 'member', role: 'user', enabled: true }
+const userPath = `/api/admin/users/${member.id}`
+const resourceGroup = { id: 'private-group', name: '专属模板测试分组' }
 const revision = 4
 const version = { id: 'v3', sequence: 3, createdAt: now, contentHash: 'normalized', validatorVersion: '1', createdBy: null }
 const base = { id: 'office', name: '办公分流', revision, status: 'modified', publishedVersionId: version.id, publishedSequence: 3, publishedAt: now,
@@ -18,7 +22,7 @@ const base = { id: 'office', name: '办公分流', revision, status: 'modified',
 const subscription = { id: 'sub_1', name: '办公室订阅', userId: 'usr_1', groupIds: [], enabled: true, defaultClient: 'mihomo',
   startsAt: null, expiresAt: null, tokenPreview: '******', subscriptionUrl: 'https://example.test/sub/redacted', links: {}, diagnostics: [] }
 
-async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boolean } = {}) {
+async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boolean; serverOrigin?: string } = {}) {
   let savedYaml = draft
   let savedName = base.name
   let savedRevision = revision
@@ -28,15 +32,17 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
   let published = version
   let fetchedAt: string | null = null
   let sourceUrl: string | null = null
+  let privateTemplate: Record<string, unknown> | undefined
   let archived = false
   let failImport = false
   const calls: { method: string; path: string; body: Record<string, unknown> | null }[] = []
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.route(`${origin}/**`, async (route) => {
+  await page.route(`${options.serverOrigin ?? origin}/**`, async (route) => {
     const request = route.request()
     const { pathname: path, searchParams } = new URL(request.url())
     if (!path.startsWith('/api/')) {
+      if (options.serverOrigin) return route.fallback()
       const file = path.startsWith('/assets/') || path === '/theme-init.js' ? path : '/index.html'
       return route.fulfill({
         body: await readFile(resolve('dist/client' + file)),
@@ -54,16 +60,23 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
       case '/api/admin/system/domains': return json({ panel: [], subscription: [], primaryPanelDomainId: null, primarySubscriptionDomainId: null, restrictionEnabled: false })
       case '/api/admin/system/subscription-platforms': return json({ platforms: [] })
       case '/api/admin/share-settings': return json({ settings: { enabled: true, createAllowed: true, maxSharesPerSubscription: 10, maxActiveSharesPerUser: 10, maxValidityDays: 30, defaultAllowOriginalLink: false, defaultAccessControl: 'none', requireLoginDefault: false, publicBaseUrl: '' } })
-      case '/api/admin/users': return json({ users: [{ id: 'usr_1', username: 'admin' }], total: 1 })
-      case '/api/admin/catalog': return json({ sources: [], nodes: [], groups: [] })
-      case '/api/admin/plans': return json({ plans: [] })
+      case userPath: return json({ user: member })
+      case `${userPath}/template-bindings`: return json({ revision: 0, bindings: [] })
+      case `${userPath}/subscription/summary`: return json({ expiresAt: null, permanent: false, nodes: [], subscriptionUrl: null, logs: [] })
+      case entitlementPath: return json({ templates: privateTemplate ? [privateTemplate] : [] })
+      case `${userPath}/template-bindings/private-template`:
+        privateTemplate = {
+          id: 'private', name: body?.name, description: body?.description, allowRedemption: false,
+          status: 'enabled', revision: 1, boundUserCount: 0, ownerUserId: member.id,
+          currentVersion: { id: 'private-version', number: 1, config: body?.config },
+        }
+        return json({ template: privateTemplate }, 201)
+      case '/api/admin/catalog': return json({ sources: [], nodes: [], groups: [resourceGroup] })
       case '/api/admin/subscriptions':
-        if (method === 'POST') return json({ subscription, token: 'mock-token', warning: '' }, 201)
         if (searchParams.get('pageSize') !== '100') return json({ subscriptions: [subscription], total: 1 })
         if (options.baseDefault) return json({ subscriptions: [subscription], total: 1 })
         return json({ subscriptions: searchParams.get('page') === '2' ? [{ id: 'sub_101', name: '第二页测试订阅' }] :
           [subscription, ...Array.from({ length: 99 }, (_, i) => ({ id: `other-${i}`, name: `测试订阅 ${i + 1}` }))], total: 101 })
-      case '/api/admin/subscriptions/sub_1': return json({ subscription, warning: '' })
       case root:
         if (method === 'POST') {
           savedYaml = String(body?.yaml)
@@ -89,8 +102,7 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
           sourceUrl, sourceFetchedAt: fetchedAt, sourceEtag: null, sourceLastModified: null })
       case `${root}/default`:
         defaultId = body?.templateId as string | null
-        return json({ ok: true, revision: ++defaultRevision, references: row.references, inheritedCount: options.baseDefault ? 1 : 8 })
-      case `${root}/office/versions/v3`: return json({ yaml: draft })
+        return json({ ok: true, revision: ++defaultRevision, references: row.references, inheritedCount: defaultId ? (options.baseDefault ? 1 : 8) : 0 })
       case `${root}/office/versions`:
         return json({ versions: [version, { ...version, id: 'v2', sequence: 2 }], total: 2, page: 1, pageSize: 20 })
       case `${root}/office/rollback`:
@@ -175,32 +187,26 @@ test('未保存时禁用发布，浏览器返回可继续、保存或放弃', as
   expect(calls.filter(({ method }) => method === 'PUT')).toHaveLength(1)
 })
 
-test('取消抽屉保留原绑定，再保存时与订阅同一请求提交', async ({ page }) => {
+test('取消更改转换默认配置保留原值，确认后按修订号保存', async ({ page }) => {
   const { calls } = await mockApp(page)
-  await page.goto(`${origin}/delivery/subscriptions`)
-  const open = async () => {
-    await page.getByRole('button', { name: '更多操作' }).click()
-    await page.getByRole('button', { name: '编辑', exact: true }).click()
-    await expect(page.getByLabel('附加配置', { exact: true })).toBeEnabled()
-  }
-  await open()
-  const mode = page.getByLabel('附加配置', { exact: true })
-  await expect(page.getByText('当前生效：办公分流 · v3')).toBeVisible()
-  await expect(page.getByLabel('指定模板', { exact: true })).toHaveCount(0)
-  await choose(mode, page, '指定模板')
-  await choose(page.getByLabel('指定模板', { exact: true }), page, '办公分流 · v3')
-  await page.getByRole('button', { name: '取消', exact: true }).click()
-  await page.getByRole('button', { name: '放弃更改' }).click()
-  expect(calls.filter(({ method, path }) => method !== 'GET' && !path.endsWith('/output-preview'))).toHaveLength(0)
-  await open()
-  await expect(mode).toHaveText('继承默认')
-  await choose(mode, page, '指定模板')
-  await choose(page.getByLabel('指定模板', { exact: true }), page, '办公分流 · v3')
-  await page.getByRole('button', { name: '保存修改' }).click()
-  await expect(page.getByText('订阅已更新。')).toBeVisible()
-  expect(calls.filter(({ method, path }) => method !== 'GET' && !path.endsWith('/output-preview'))).toMatchObject([{
-    method: 'PATCH', path: '/api/admin/subscriptions/sub_1',
-    body: { templateBinding: { mode: 'specific', templateId: 'office', expectedRevision: 2 } },
+  await page.goto(`${origin}/delivery/conversions`)
+  const select = templates(page).getByLabel('默认配置', { exact: true })
+  await expect(select).toHaveText('办公分流 · v3')
+  await choose(select, page, '基础配置')
+  const dialog = page.getByRole('dialog', { name: '更改默认配置' })
+  await expect(dialog.getByText('将默认配置更改为 基础配置。')).toBeVisible()
+  await expect(dialog.getByText('将影响 8 条继承默认的订阅。')).toBeVisible()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(select).toHaveText('办公分流 · v3')
+  expect(calls.filter(({ method }) => method !== 'GET')).toHaveLength(0)
+  await choose(select, page, '基础配置')
+  await dialog.getByRole('button', { name: '更改默认配置' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(select).toHaveText('基础配置')
+  await expect(page.getByText('默认配置已保存')).toBeVisible()
+  expect(calls.filter(({ method }) => method !== 'GET')).toEqual([{
+    method: 'PUT', path: `${root}/default`, body: { templateId: null, expectedRevision: 3 },
   }])
 })
 
@@ -282,26 +288,40 @@ test('校验错误定位到编辑器下方，修改 YAML 清除结果', async ({
   await expect(result.getByText('规则无效')).toHaveCount(0)
 })
 
-test('创建订阅时同一请求携带绑定，普通创建沿用继承默认', async ({ page }) => {
-  const { calls } = await mockApp(page)
-  await page.goto(`${origin}/delivery/subscriptions`)
-  await page.getByRole('button', { name: '添加订阅' }).click()
-  await page.getByRole('button', { name: '手动创建' }).click()
-  await page.getByLabel('订阅名称').fill('带绑定的订阅')
-  await choose(page.getByLabel('附加配置', { exact: true }), page, '基础配置')
-  await page.getByRole('button', { name: '保存订阅' }).click()
-  await expect(page.getByText('订阅已添加')).toBeVisible()
-  const writes = () => calls.filter(({ method, path }) => method === 'POST' && path === '/api/admin/subscriptions')
-  expect(writes()).toMatchObject([{ method: 'POST', path: '/api/admin/subscriptions',
-    body: { templateBinding: { mode: 'base', expectedRevision: 1 } } }])
-  await page.getByRole('dialog', { name: '办公室订阅' }).getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('button', { name: '添加订阅' }).click()
-  await page.getByRole('button', { name: '手动创建' }).click()
-  await page.getByLabel('订阅名称').fill('继承默认的订阅')
-  await page.getByRole('button', { name: '保存订阅' }).click()
-  await expect(page.getByLabel('订阅名称')).toBeHidden()
-  expect(writes()).toHaveLength(2)
-  expect(writes()[1]?.body).not.toHaveProperty('templateBinding')
+test('创建专属权益模板保持转换默认配置和用户绑定不变', async ({ page, baseURL }) => {
+  const serverOrigin = new URL('/', baseURL).origin
+  const { calls } = await mockApp(page, { serverOrigin })
+  const detail = `${serverOrigin}/users/${member.id}`
+  await page.goto(detail)
+  await page.getByRole('link', { name: '订阅授权', exact: true }).click()
+  await expect(page.getByText('暂无绑定模板')).toBeVisible()
+  await page.getByRole('link', { name: '新建专属模板' }).click()
+  const dialog = page.getByRole('dialog', { name: '新建专属模板' })
+  await expect(dialog).toHaveAttribute('data-size', 'l')
+  const name = '专属权益'
+  await dialog.getByLabel('模板名称').fill(name)
+  await dialog.getByRole('checkbox', { name: `使用分组 ${resourceGroup.name}` }).check()
+  await dialog.getByRole('button', { name: '保存模板' }).click()
+  await expect(page).toHaveURL(`${detail}?tab=subscription`)
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('暂无绑定模板')).toBeVisible()
+  await page.getByRole('button', { name: '绑定模板', exact: true }).click()
+  const binding = page.getByRole('dialog', { name: '绑定模板' })
+  await binding.getByLabel('模板', { exact: true }).click()
+  await expect(binding.getByRole('option', { name, exact: true })).toBeVisible()
+
+  await page.goto(`${serverOrigin}/delivery/conversions`)
+  await expect(templates(page).getByLabel('默认配置', { exact: true })).toHaveText('办公分流 · v3')
+  expect(calls.filter(({ method }) => method !== 'GET')).toEqual([{
+    method: 'POST', path: `${userPath}/template-bindings/private-template`,
+    body: {
+      name, description: '', allowRedemption: false,
+      config: {
+        groupIds: [resourceGroup.id], nodeIds: [], duration: { value: 1, unit: 'month' },
+        quotaBytes: null, resetPolicy: 'none', limits: { speedLimitMbps: 0 },
+      },
+    },
+  }])
 })
 
 test('版本回退、复制和归档使用列表操作', async ({ page }) => {
