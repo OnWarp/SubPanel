@@ -12,6 +12,12 @@ import { accountAvailable, readUserAccess, requireUnifiedSubscription, subscript
 const ttl = 60_000
 const maxOutputBytes = 2 * 1024 * 1024
 
+export function enforceUnifiedOutputLimit(body: string) {
+  if (new TextEncoder().encode(body).length > maxOutputBytes) {
+    throw apiError(422, 'UNIFIED_RESOURCE_LIMIT', '订阅输出过大')
+  }
+}
+
 async function loadInputs(env: DataEnv, userId: string, tokenHash: string, client: RenderClient, now: number) {
   const catalog = await readArtifactCatalog(env)
   const aggregate = await resolveUserSubscription(env.DB, userId, now, catalog)
@@ -36,9 +42,7 @@ async function compile(env: DataEnv, inputs: Awaited<ReturnType<typeof loadInput
   const revision = aggregate.access!.revision!
   const result = await renderResolvedSubscription(env, { id: null, revision }, client,
     aggregate, new Date(now).toISOString(), undefined, undefined, conversion)
-  if (new TextEncoder().encode(result.body).length > maxOutputBytes) {
-    throw apiError(422, 'UNIFIED_RESOURCE_LIMIT', '订阅输出过大')
-  }
+  enforceUnifiedOutputLimit(result.body)
   const { subscriptionRevision: userRevision, ...rendered } = result
   return {
     ...rendered, schemaVersion: 3 as const, userRevision, conversionVersion,
@@ -51,6 +55,8 @@ export type UnifiedCompiledArtifact = Awaited<ReturnType<typeof compile>>
 
 // Bounded per-isolate storage avoids persisting credential-bearing payloads.
 const artifacts = new WeakMap<D1Database, Map<string, UnifiedCompiledArtifact>>()
+// Compilation uses the authorized snapshot and preloaded conversion, with no request-owned DB or KV reads.
+const compiles = new WeakMap<D1Database, Map<string, Promise<UnifiedCompiledArtifact>>>()
 let activeCompiles = 0
 
 export async function loadUnifiedArtifact(env: DataEnv, userId: string, tokenHash: string, client: RenderClient) {
@@ -62,13 +68,23 @@ export async function loadUnifiedArtifact(env: DataEnv, userId: string, tokenHas
   const cached = cache.get(key)
   let artifact = cached
   if (!artifact || now >= artifact.validUntil) {
-    if (activeCompiles >= 4) throw apiError(503, 'SUBSCRIPTION_COMPILE_BUSY', '订阅生成繁忙，请稍后重试')
-    activeCompiles++
-    try {
-      artifact = await compile(env, inputs, client, now)
-    } finally {
-      activeCompiles--
+    let pending = compiles.get(env.DB)
+    if (!pending) {
+      pending = new Map()
+      compiles.set(env.DB, pending)
     }
+    let job = pending.get(key)
+    if (!job) {
+      if (activeCompiles >= 4) throw apiError(503, 'SUBSCRIPTION_COMPILE_BUSY', '订阅生成繁忙，请稍后重试')
+      activeCompiles++
+      const queue = pending
+      job = compile(env, inputs, client, now).finally(() => {
+        activeCompiles--
+        queue.delete(key)
+      })
+      queue.set(key, job)
+    }
+    artifact = await job
   }
 
   await requireUnifiedSubscription(env.DB, true)

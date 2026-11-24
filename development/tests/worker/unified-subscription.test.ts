@@ -1,3 +1,5 @@
+import { executeBackfill, previewBackfill, reconcileBackfill } from '../../../worker/delivery/backfill'
+import { cutoverSetting } from '../../../worker/delivery/legacy-compatibility'
 import { createShare, readShareMeta } from '../../../worker/shares/service'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, expect, it } from 'vitest'
@@ -5,13 +7,13 @@ import { markModuleReady, ACCOUNTS_D1_READY_KEY } from '../../../worker/db/modul
 import { readCatalog, writeCatalog } from '../../../worker/catalog/repository'
 import { createEntitlementTemplate, updateEntitlementTemplate } from '../../../worker/delivery/entitlement-templates'
 import { mutateBinding, mutateBindingsByUser, readBindings } from '../../../worker/delivery/bindings'
-import { resolveUserSubscription, uniqueConnections } from '../../../worker/delivery/aggregate'
-import { createSubscription } from '../../../worker/delivery/service'
+import { aggregateBindings, resolveUserSubscription, uniqueConnections } from '../../../worker/delivery/aggregate'
+import { createSubscription, resetSubscriptionToken } from '../../../worker/delivery/service'
 import { savePlan } from '../../../worker/delivery/plans'
 import { readUserAccess, userSubscriptionPublicReady, userSubscriptionReady } from '../../../worker/delivery/user-access'
-import { loadUnifiedArtifact } from '../../../worker/delivery/unified-artifacts'
+import { enforceUnifiedOutputLimit, loadUnifiedArtifact } from '../../../worker/delivery/unified-artifacts'
 import { verifyShadowUser } from '../../../worker/delivery/shadow'
-import { applyMigrations, applyUnifiedMigration } from './d1'
+import { applyBackfillMigration, applyMigrations, applyUnifiedMigration } from './d1'
 import { createFixtureAccount, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const userId = 'usr_1'
@@ -40,6 +42,12 @@ beforeEach(async () => {
   await resetData()
   await applyMigrations()
   await applyUnifiedMigration()
+  await applyBackfillMigration()
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM unified_subscription_mappings'),
+    env.DB.prepare('DELETE FROM unified_subscription_checkpoints'),
+    env.DB.prepare('DELETE FROM system_settings WHERE key=?').bind(cutoverSetting),
+  ])
   await env.DB.batch(['user_binding_requests', 'user_template_bindings', 'user_subscription_access'].map(table =>
     env.DB.prepare(`DELETE FROM ${table}`)))
   await env.DB.prepare("UPDATE entitlement_templates SET status='archived' WHERE status<>'archived'").run()
@@ -289,4 +297,90 @@ it('returns a binding conflict when a reviewed revision is stale', async () => {
   await mutateBinding(env, userId, templateId, input, userId, now)
   const stale = await invoke(path, withCookie(cookie, jsonRequest({ ...input, requestId: crypto.randomUUID() }, { method: 'PUT' })))
   expect(stale.status).toBe(409)
+})
+
+it('backfills private templates atomically and keeps old tokens scoped through the grace period', async () => {
+  await applyBackfillMigration()
+  const startsAt = Date.now() - 1_000
+  const first = await createSubscription(env, {
+    userId, name: 'Legacy scoped test', groupIds: [], nodeIds: [nodeId], startsAt, expiresAt: null, enabled: true,
+  })
+  const second = await createSubscription(env, {
+    userId, name: 'Other legacy scope', groupIds: [], nodeIds: [otherNodeId], startsAt, expiresAt: null, enabled: true,
+  })
+  const preview = await previewBackfill(env, userId, userId)
+  expect(preview.blockers).toEqual([])
+  expect(await readBindings(env.DB, userId)).toHaveLength(0)
+  expect(JSON.stringify(preview)).not.toContain(first.token)
+  await expect(executeBackfill(env, userId, userId, 'stale')).rejects.toMatchObject({ status: 409 })
+  const attempts = await Promise.allSettled([
+    executeBackfill(env, userId, userId, preview.digest), executeBackfill(env, userId, userId, preview.digest),
+  ])
+  expect(attempts.some(result => result.status === 'fulfilled')).toBe(true)
+  for (const attempt of attempts) if (attempt.status === 'rejected') expect(attempt.reason).toMatchObject({ status: 409 })
+  const before = await readUserAccess(env.DB, { userId })
+  await executeBackfill(env, userId, userId, preview.digest)
+  expect(await readUserAccess(env.DB, { userId })).toEqual(before)
+  expect(await readBindings(env.DB, userId)).toHaveLength(2)
+  expect(await reconcileBackfill(env, userId)).toMatchObject({ matches: true, oldNodes: 2, newNodes: 2 })
+  expect((await invoke(`/sub/${first.token}`)).status).toBe(200)
+  await markModuleReady(env.DB, userSubscriptionPublicReady)
+  const setCutover = (instant: number) => env.DB.prepare('INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,?,?)')
+    .bind(cutoverSetting, String(instant), new Date().toISOString()).run()
+  await setCutover(Date.now() - 100)
+  const response = await invoke(`/sub/${first.token}`, { headers: { 'If-None-Match': '*' } })
+  expect(response.status).toBe(200)
+  expect(response.headers.get('cache-control')).toBe('private, no-store')
+  const contents = atob(await response.text())
+  expect(contents).toContain('one.example')
+  expect(contents).not.toContain('two.example')
+  const mapping = (await reconcileBackfill(env, userId)).mappings.find(item => item.legacyId === first.subscription.id)!
+  await mutateBinding(env, userId, mapping.templateId, { mode: 'pause', expectedRevision: before!.revision!, requestId: crypto.randomUUID() }, userId)
+  expect((await invoke(`/sub/${first.token}`)).status).toBe(404)
+  expect((await invoke(`/sub/${second.token}`)).status).toBe(200)
+  await setCutover(Date.now() - 90 * 86_400_000)
+  expect((await invoke(`/sub/${second.token}`)).status).toBe(404)
+  await setCutover(Date.now() - 100)
+  const rotated = await resetSubscriptionToken(env, second.subscription.id, { actorUserId: userId, actorRole: 'admin' })
+  expect((await invoke(`/sub/${second.token}`, { headers: { 'If-None-Match': '*' } })).status).toBe(404)
+  expect((await invoke(`/sub/${rotated.token}`)).status).toBe(404)
+  expect(await reconcileBackfill(env, userId)).toMatchObject({ matches: false, reasons: expect.arrayContaining(['SOURCE_CHANGED']) })
+})
+
+it('reports legacy plan limits and blocks shadow writes', async () => {
+  await applyBackfillMigration()
+  await createSubscription(env, {
+    userId, name: 'Limited test', groupIds: [], nodeIds: [nodeId], expiresAt: null, enabled: true, deviceLimit: 1,
+  })
+  const preview = await previewBackfill(env, userId, userId)
+  expect(preview.blockers).toContain('PLAN_POLICY_UNVERIFIED')
+  await expect(executeBackfill(env, userId, userId, preview.digest)).rejects.toMatchObject({ status: 409 })
+  expect(await readBindings(env.DB, userId)).toHaveLength(0)
+})
+
+it('bounds a synthetic 32-binding aggregate, rejects the next binding and node, and rejects oversized output', async () => {
+  const current = await readCatalog(env)
+  const template = await createEntitlementTemplate(env.DB, {
+    name: 'Load fixture', description: '', allowRedemption: false,
+    config: { ...config([]), groupIds: [groupId] },
+  }, userId)
+  const now = Date.now()
+  await mutateBinding(env, userId, template.id, assign(0, now - 1000, null), userId, now)
+  const [base] = await readBindings(env.DB, userId)
+  const access = await readUserAccess(env.DB, { userId })
+  const bindings = Array.from({ length: 32 }, (_, index) => ({ ...base, template_id: `synthetic-${index}` }))
+  const nodes = Array.from({ length: 2001 }, (_, index) => ({
+    ...current.nodes[0], id: `node_${index + 1}`, server: `node-${index + 1}.example.test`, order: index,
+  }))
+  const start = performance.now()
+  const result = aggregateBindings(access, bindings, now, { ...current, nodes: nodes.slice(0, 2000) })
+  const duration = performance.now() - start
+  expect(result.nodes).toHaveLength(2000)
+  console.info(JSON.stringify({ event: 'pr5_aggregate_load', bindings: bindings.length, nodes: result.nodes.length, wallMs: duration }))
+  expect(() => aggregateBindings(access, [...bindings, base], now, { ...current, nodes }))
+    .toThrow('授权资源数量超出限制')
+  expect(() => aggregateBindings(access, bindings, now, { ...current, nodes }))
+    .toThrow('授权资源数量超出限制')
+  expect(() => enforceUnifiedOutputLimit('x'.repeat(2 * 1024 * 1024))).not.toThrow()
+  expect(() => enforceUnifiedOutputLimit('x'.repeat(2 * 1024 * 1024) + '界')).toThrow('订阅输出过大')
 })

@@ -1,3 +1,4 @@
+import { MigrationPage } from '../features/delivery/MigrationPage'
 import { AdminRedemptionsPage } from '../features/redemption/AdminRedemptionsPage'
 import { AuditLogsPage } from '../features/admin/AuditLogsPage'
 import { UserDetailPage } from '../features/accounts/UserDetailPage'
@@ -84,6 +85,7 @@ export function AppRouter() {
       <Route path="/delivery/conversions" element={user?.role === 'admin' ? shell(<ConversionPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/subscriptions/*" element={user?.role === 'admin' ? <Navigate to="/users" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/templates" element={user?.role === 'admin' ? shell(<EntitlementTemplatesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/migration" element={user?.role === 'admin' ? shell(<MigrationPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/redemptions" element={user?.role === 'admin' ? shell(<AdminRedemptionsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/plans" element={user?.role === 'admin' ? <Navigate to="/delivery/templates" replace /> : <Navigate to={user ? home : signedOut} replace />} />

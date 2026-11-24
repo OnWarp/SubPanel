@@ -3,21 +3,24 @@ import type { CatalogSnapshot } from '../catalog/schema.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { getEffectiveTemplate } from '../templates/repository.js'
 import { aggregateBindings, connectionIdentity, uniqueConnections } from './aggregate.js'
-import { readBindings } from './bindings.js'
+import { maxBindings, readBindings } from './bindings.js'
 import { renderResolvedSubscription, resolveEntitlement } from './compiler.js'
-import { readDeliveryFromD1 } from './d1-repository.js'
+import { readDeliveryForUser } from './d1-repository.js'
 import { effectiveStartsAt } from './expiry.js'
 import { listPlans } from './plans.js'
 import { clientIdSchema } from './schema.js'
 import { accountAvailable, readUserAccess, subscriptionNotFound } from './user-access.js'
 
 export async function verifyShadowUser(env: DataEnv, userId: string, now: number, catalog: CatalogSnapshot) {
-  const [delivery, plans, access, bindings, owner] = await Promise.all([
-    readDeliveryFromD1(env.DB), listPlans(env.DB), readUserAccess(env.DB, { userId }), readBindings(env.DB, userId),
+  const [legacy, plans, access, bindings, owner] = await Promise.all([
+    readDeliveryForUser(env.DB, userId, maxBindings + 1), listPlans(env.DB), readUserAccess(env.DB, { userId }), readBindings(env.DB, userId),
     findAccountUserById(env, userId),
   ])
   if (!access) throw subscriptionNotFound()
-  const legacy = delivery.subscriptions.filter(subscription => subscription.userId === userId)
+  if (legacy.length > maxBindings) return {
+    userId, matches: false, reasons: ['BINDING_LIMIT'], formatDifferences: [], oldNodes: 0, newNodes: 0,
+    measuredTraffic: null, operations: null,
+  }
   const aggregate = aggregateBindings(access, bindings, now, catalog)
   const operations = await env.DB.prepare(`SELECT
     (SELECT count(*) FROM binding_redemption_records WHERE user_id=?) AS bindingRedemptions,
@@ -96,6 +99,13 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
   const oldNodes = nodesFor(active)
   if (keys(oldNodes) !== keys(aggregate.nodes)) reasons.add('NODES_DIFFER')
 
+  const overrides = await env.DB.prepare(`SELECT subscription_id AS id FROM subscription_template_bindings
+    WHERE mode<>'inherit' AND subscription_id IN (SELECT id FROM subscriptions WHERE user_id=?)
+    UNION SELECT subscription_id AS id FROM conversion_bindings
+    WHERE mode<>'inherit' AND subscription_id IN (SELECT id FROM subscriptions WHERE user_id=?)`)
+    .bind(userId, userId).all<{ id: string }>()
+  const overridesById = new Set(overrides.results.map(row => row.id))
+  if (overridesById.size) reasons.add('CONVERSION_OVERRIDE')
   for (const client of clientIdSchema.options) {
     const convert = client === 'mihomo' || client === 'singbox'
     const conversion = convert ? await getEffectiveTemplate(env.DB, null, client) : undefined
@@ -104,17 +114,15 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
     const diag = (artifact: typeof current) => artifact.diagnostics.map(({ code, outcome, nodeId }) =>
       JSON.stringify([code, outcome, nodeId]))
     const oldDiagnostics = new Set<string>()
-    let incompatibleProfile = false
     for (const { subscription, resolved } of oldOutputs) {
-      const legacyConversion = convert ? await getEffectiveTemplate(env.DB, subscription.id, client) : undefined
-      if (legacyConversion?.version_id !== conversion?.version_id) incompatibleProfile = true
+      const legacyConversion = conversion
       const output = await renderResolvedSubscription(env, subscription, client, resolved, nowIso, undefined, undefined, legacyConversion)
       for (const item of diag(output)) oldDiagnostics.add(item)
     }
     const union = await renderResolvedSubscription(env, { id: null, revision: 1 }, client,
       { catalog, nodes: oldNodes, speed: oldOutputs[0]?.resolved.speed ?? 0, zeroNodeReason: null },
       nowIso, undefined, undefined, conversion)
-    if (incompatibleProfile || current.outputNodes !== union.outputNodes || current.skippedNodes !== union.skippedNodes ||
+    if (current.outputNodes !== union.outputNodes || current.skippedNodes !== union.skippedNodes ||
       JSON.stringify([...new Set(diag(current))].sort()) !== JSON.stringify([...oldDiagnostics].sort())) {
       formatDifferences.push(client)
     }

@@ -214,15 +214,31 @@ export async function readDeliverySubscription(db: AppDatabase, lookup: { tokenH
   ])
   const row = subscriptions.results[0] as SubscriptionRow | undefined
   if (!row || row.encrypted_token === '{}') return null
+  return parseDeliveryRow(row, (groups.results as { group_id: string }[]).map(row => row.group_id),
+    (nodes.results as { node_id: string }[]).map(row => row.node_id))
+}
+
+export const subscriptionSelections = `
+  (SELECT json_group_array(group_id) FROM (SELECT group_id FROM subscription_groups WHERE subscription_id=s.id ORDER BY position)) AS group_ids,
+  (SELECT json_group_array(node_id) FROM (SELECT node_id FROM subscription_nodes WHERE subscription_id=s.id ORDER BY position)) AS node_ids`
+
+export function parseDeliveryRow(row: SubscriptionRow, groupIds: string[], nodeIds: string[]) {
   return subscriptionSchema.parse({
-    id: row.id, userId: row.user_id, name: row.name,
-    groupIds: (groups.results as { group_id: string }[]).map(row => row.group_id),
-    nodeIds: (nodes.results as { node_id: string }[]).map(row => row.node_id),
-    tokenHash: row.token_hash, tokenPrefix: row.token_prefix, encryptedToken: parseJson(row.encrypted_token),
+    id: row.id, userId: row.user_id, name: row.name, groupIds, nodeIds,
+    tokenHash: row.token_hash, tokenPrefix: row.token_prefix,
+    encryptedToken: row.encrypted_token === '{}' ? null : parseJson(row.encrypted_token),
     enabled: row.enabled === 1, defaultClient: row.default_client, revision: row.revision,
     startsAt: row.starts_at, expiresAt: row.expires_at, createdAt: row.created_at, updatedAt: row.updated_at,
-    planId: row.plan_id ?? undefined, planRevoked: row.plan_revoked === 1, speedLimitMbps: row.speed_limit_mbps,
+    planId: row.plan_id ?? undefined, planRevoked: row.plan_revoked === 1,
+    speedLimitMbps: row.speed_limit_mbps, trafficGb: row.traffic_gb, deviceLimit: row.device_limit,
   })
+}
+
+export async function readDeliveryForUser(db: AppDatabase, userId: string, limit: number) {
+  const { results } = await db.prepare(`SELECT s.*, ${subscriptionSelections}
+    FROM subscriptions s WHERE s.user_id=? ORDER BY s.id LIMIT ?`)
+    .bind(userId, limit).all<SubscriptionRow & { group_ids: string; node_ids: string }>()
+  return results.map(row => parseDeliveryRow(row, JSON.parse(row.group_ids), JSON.parse(row.node_ids)))
 }
 
 export async function isPublicSubscriptionCurrent(db: AppDatabase, subscription: Subscription) {
