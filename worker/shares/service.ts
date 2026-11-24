@@ -13,6 +13,7 @@ import { resolveEntitlement, renderEntitledSubscription } from '../delivery/comp
 import { subscriptionLink } from '../delivery/links.js'
 import { readDelivery } from '../delivery/repository.js'
 import { clientIdSchema, type ClientId, type Subscription } from '../delivery/schema.js'
+import { readCutover } from '../delivery/legacy-compatibility.js'
 import { assertSubscriptionAvailable, subscriptionRowStatus } from '../delivery/expiry.js'
 import { decryptSubscriptionToken } from '../delivery/service.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken } from '../platform/crypto.js'
@@ -203,7 +204,7 @@ async function guard(
   }
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
   if (share.scope) return { share, settings, aggregate: await resolveShareScope(env, share, now.getTime()) }
-  if (await unifiedOperationsEnabled(env.DB)) {
+  if (await readCutover(env.DB) !== null || await unifiedOperationsEnabled(env.DB)) {
     throw shareError(404, 'SHARE_LEGACY_SCOPE_REVIEW', '旧分享已暂停，请联系分享者重新创建')
   }
   const subscription = await liveSubscription(env, share)

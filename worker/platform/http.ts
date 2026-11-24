@@ -29,7 +29,10 @@ export const noStore: MiddlewareHandler<AppEnv> = async (c, next) => {
   try {
     await next()
   } finally {
-    c.header('Cache-Control', 'no-store')
+    const existing = c.res.headers.get('Cache-Control')
+    if (!existing?.split(',').some(directive => directive.trim().toLowerCase() === 'no-store')) {
+      c.header('Cache-Control', 'no-store')
+    }
   }
 }
 

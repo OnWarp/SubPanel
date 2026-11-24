@@ -223,37 +223,39 @@ unifiedPublicRoutes.all('/s', c => {
   c.header('Cache-Control', 'private, no-store')
   throw subscriptionNotFound()
 })
-unifiedPublicRoutes.get('/s/:token', async (c, next) => {
-  const token = c.req.param('token')
-  if (c.req.header('Accept')?.includes('text/html') && tokenPattern.test(token) &&
-    await readShare(c.env, await hashToken(token))) {
+function publicRateLimited(c: Context<AppEnv>) {
+  c.header('Retry-After', '60')
+  return apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+}
+
+unifiedPublicRoutes.use('/s/*', async (c, next) => {
+  c.header('Cache-Control', 'private, no-store')
+  c.header('Referrer-Policy', 'no-referrer')
+  const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
+  if (!await allowSubscriptionFetch(c.env.DB, 'address', address, undefined, 'unified_subscription')) throw publicRateLimited(c)
+  const configured = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT)
+  const globalLimit = Number.isSafeInteger(configured) && configured > 0 ? configured : 2400
+  if (!await allowSubscriptionFetch(c.env.DB, 'global', 'all', globalLimit, 'unified_subscription')) throw publicRateLimited(c)
+  await next()
+})
+
+unifiedPublicRoutes.get('/s/:token/:client?', async c => {
+  const started = Date.now()
+  const raw = c.req.param('token')
+  if (!tokenPattern.test(raw)) throw subscriptionNotFound()
+  const tokenHash = await hashToken(raw)
+  if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${tokenHash}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
+  if (!c.req.param('client') && c.req.header('Accept')?.includes('text/html') && await readShare(c.env, tokenHash)) {
     const shell = await c.env.ASSETS.fetch(new URL('/', c.req.url))
     const headers = new Headers(shell.headers)
     headers.set('Cache-Control', 'private, no-store')
     headers.set('Referrer-Policy', 'no-referrer')
     return new Response(shell.body, { status: shell.status, headers })
   }
-  await next()
-})
-unifiedPublicRoutes.use('/s/*', (c, next) => privateResponse(c, next, true))
-unifiedPublicRoutes.get('/s/:token/:client?', async c => {
-  const limited = () => {
-    c.header('Retry-After', '60')
-    return apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
-  }
-  const started = Date.now()
-  const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
-  if (!await allowSubscriptionFetch(c.env.DB, 'address', address, undefined, 'unified_subscription')) throw limited()
-  const configured = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT)
-  const globalLimit = Number.isSafeInteger(configured) && configured > 0 ? configured : 2400
-  if (!await allowSubscriptionFetch(c.env.DB, 'global', 'all', globalLimit, 'unified_subscription')) throw limited()
-  const raw = c.req.param('token')
-  if (!tokenPattern.test(raw)) throw subscriptionNotFound()
-  const tokenHash = await hashToken(raw)
-  if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${tokenHash}`, undefined, 'unified_subscription')) throw limited()
+  await requireUnifiedSubscription(c.env.DB, true)
   const access = await readUserAccess(c.env.DB, { tokenHash })
   if (!accountAvailable(access) || access.enabled !== 1) throw subscriptionNotFound()
-  if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${access.user_id}`, undefined, 'unified_subscription')) throw limited()
+  if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${access.user_id}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
 
   const detected = clientFromUserAgent(c.req.header('User-Agent') ?? '')
   const requested = (c.req.param('client') ?? c.req.query('format') ??

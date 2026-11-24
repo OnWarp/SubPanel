@@ -31,8 +31,5 @@
     "logs": { "invocation_logs": false }
   },
   "routes": [{ "pattern": "sub.warp.dpdns.org", "custom_domain": true }],
-  "triggers": {
-    "crons": ["*/15 * * * *"]
-  },
   "upload_source_maps": true
 }

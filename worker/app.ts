@@ -25,6 +25,7 @@ import { adminSystemRoutes } from './system/routes.js'
 import { hostGate } from './domains/host-gate.js'
 import { adminDomainRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
 import { publicSubscriptionRoutes } from './public-subscriptions.js'
+import { backfillRoutes } from './delivery/backfill-routes.js'
 import { unifiedAdminRoutes, unifiedPublicRoutes, unifiedUserRoutes } from './delivery/unified-routes.js'
 import { adminNoticeRoutes, adminTicketRoutes, noticeRoutes, userTicketRoutes } from './tickets/routes.js'
 import { adminKbRoutes, userKbRoutes } from './kb/routes.js'
@@ -107,6 +108,7 @@ app.route('/api/kb', userKbRoutes)
 app.route('/', publicSubscriptionRoutes)
 app.route('/api/user/subscription', unifiedUserRoutes)
 app.route('/api/admin', unifiedAdminRoutes)
+app.route('/api/admin', backfillRoutes)
 app.route('/', unifiedPublicRoutes)
 
 // SPA fallback: browser navigations (GET/HEAD, non-API path, Accept

@@ -1,3 +1,4 @@
+import backfillSql from '../../../migrations/0028_unified_subscription_backfill.sql?raw'
 import operationsSql from '../../../migrations/0027_unified_subscription_operations.sql?raw'
 import unifiedSql from '../../../migrations/0026_unified_subscription.sql?raw'
 import coreGSql from '../../../migrations/0025_core_g.sql?raw'
@@ -317,4 +318,11 @@ export async function applyUnifiedMigration(db: D1Database = env.DB) {
       ...(unifiedSql.match(triggerPattern) ?? []),
     ],
   }, { name: '0027_unified_subscription_operations.sql', queries: splitSqlStatements(operationsSql) }])
+}
+
+export async function applyBackfillMigration(db: D1Database = env.DB) {
+  await applyD1Migrations(db, [{ name: '0028_unified_subscription_backfill.sql', queries: [
+    ...splitSqlStatements(backfillSql.replace(triggerPattern, '')),
+    ...(backfillSql.match(triggerPattern) ?? []),
+  ] }])
 }

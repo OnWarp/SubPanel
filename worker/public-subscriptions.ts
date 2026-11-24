@@ -9,6 +9,7 @@ import { subscriptionRowStatus } from './delivery/expiry.js'
 import type { Subscription } from './delivery/schema.js'
 import { loadSubscriptionArtifact } from './delivery/artifacts.js'
 import { isPublicSubscriptionCurrent, readDeliverySubscription } from './delivery/d1-repository.js'
+import { readCutover, renderLegacyCompatibility } from './delivery/legacy-compatibility.js'
 import { allowSubscriptionFetch } from './delivery/public-rate-limit.js'
 
 export const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
@@ -39,6 +40,15 @@ export function clientFromUserAgent(userAgent: string): string {
 
 const BLOCKED_PUBLIC = new Set(['revoked', 'disabled', 'owner_unavailable'])
 
+function deliveryHeaders(c: Context<AppEnv>, fileName: string, name: string, client: string, detect: string) {
+  const extension = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : ''
+  c.header('Content-Disposition', `attachment; filename="${fileName.replaceAll('"', '')}"; filename*=UTF-8''${encodeURIComponent(`${name}${extension}`)}`)
+  c.header('profile-title', encodeURIComponent(name))
+  c.header('x-subscription-client', client)
+  c.header('x-subscription-detect', detect)
+  if (detect === 'fallback') c.header('x-subscription-notice', 'generic-import-differs')
+}
+
 async function serve(c: Context<AppEnv>, clientParam?: string) {
   const started = Date.now()
   const token = c.req.param('token') ?? ''
@@ -62,14 +72,20 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
   }
   const detect = explicit ? 'path' : requested === 'generic' ? 'fallback' : 'user-agent'
 
-  const globalLimit = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT ?? 0)
-  if (Number.isSafeInteger(globalLimit) && globalLimit > 0 &&
+  const cutover = await readCutover(c.env.DB)
+  const configured = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT ?? 0)
+  const globalLimit = Number.isSafeInteger(configured) && configured > 0 ? configured : cutover === null ? 0 : 2400
+  if (globalLimit > 0 &&
     !await allowSubscriptionFetch(c.env.DB, 'global', 'all', globalLimit)) {
     console.info(JSON.stringify({ event: 'subscription_delivery', status: 429, scope: 'global' }))
     c.header('Retry-After', '60')
     throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
   }
   const tokenHash = await hashToken(token)
+  if (cutover !== null && !await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${tokenHash}`)) {
+    c.header('Retry-After', '60')
+    throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+  }
   let subscription: Subscription | undefined
   let statusCode = 500
   let ok = false
@@ -108,6 +124,22 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
     }
 
+    if (cutover !== null) {
+      if (!subscription.userId || !await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${subscription.userId}`)) {
+        if (!subscription.userId) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+        c.header('Retry-After', '60')
+        throw apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
+      }
+      const artifact = await renderLegacyCompatibility(c.env, subscription, client as RenderClient, cutover)
+      if (!artifact.available) throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
+      c.header('Cache-Control', 'private, no-store')
+      c.header('Referrer-Policy', 'no-referrer')
+      c.header('Content-Type', artifact.contentType)
+      deliveryHeaders(c, artifact.fileName, subscription.name, client, detect)
+      statusCode = 200
+      ok = true
+      return c.body(artifact.body)
+    }
     let result: Awaited<ReturnType<typeof loadSubscriptionArtifact>>
     try {
       result = await loadSubscriptionArtifact(c.env, subscription, client as RenderClient, now, undefined,
@@ -128,7 +160,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
       throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点', { reason: result.reason })
     }
 
-    if (!await isPublicSubscriptionCurrent(c.env.DB, subscription)) {
+    if (await readCutover(c.env.DB) !== null || !await isPublicSubscriptionCurrent(c.env.DB, subscription)) {
       throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
     }
     if (subscription.expiresAt !== null && subscription.expiresAt <= Date.now()) {
@@ -138,12 +170,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
     c.header('Cache-Control', 'no-store')
     c.header('ETag', artifact.etag)
     c.header('Content-Type', artifact.contentType)
-    const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
-    c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"; filename*=UTF-8''${encodeURIComponent(`${subscription.name}${extension}`)}`)
-    c.header('profile-title', encodeURIComponent(subscription.name))
-    c.header('x-subscription-client', client)
-    c.header('x-subscription-detect', detect)
-    if (detect === 'fallback') c.header('x-subscription-notice', 'generic-import-differs')
+    deliveryHeaders(c, artifact.fileName, subscription.name, client, detect)
 
     const ifNoneMatch = c.req.header('If-None-Match')
     if (artifact.available && ifNoneMatch?.split(',').some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) {

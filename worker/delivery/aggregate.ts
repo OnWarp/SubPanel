@@ -37,6 +37,7 @@ export function uniqueConnections(nodes: Iterable<Node>) {
 export function aggregateBindings(access: UserAccess | null, rows: BindingRow[], now: number, catalog: CatalogSnapshot) {
   const enabled = accountAvailable(access) && access.enabled === 1
   const relevant = rows.filter(row => row.status !== 'revoked')
+  if (relevant.length > maxBindings) throw apiError(409, 'UNIFIED_RESOURCE_LIMIT', '授权资源数量超出限制')
   const eligible = enabled ? relevant.filter(row => row.status === 'active' && row.template_status === 'enabled' && row.plan_enabled !== 0
     && (row.owner_user_id === null || row.owner_user_id === access.user_id)) : []
   const effective = eligible.filter(row => row.starts_at <= now && (row.expires_at === null || now < row.expires_at))
@@ -59,8 +60,14 @@ export function aggregateBindings(access: UserAccess | null, rows: BindingRow[],
   const conflict = usable.some(({ row }) => (row.plan_device_limit ?? 0) > 0 || (row.plan_speed_mbps ?? 0) > 0)
     || speeds.size > 1
 
-  const nodes = conflict ? [] : uniqueConnections(usable.flatMap(({ config }) => selectedNodes(catalog, config)))
-  if (nodes.length > 2000 || relevant.length > maxBindings) {
+  const selections = new Set<string>()
+  const nodes = conflict ? [] : uniqueConnections(usable.flatMap(({ config }) => {
+    const key = JSON.stringify([config.groupIds, config.nodeIds])
+    if (selections.has(key)) return []
+    selections.add(key)
+    return selectedNodes(catalog, config)
+  }))
+  if (nodes.length > 2000) {
     throw apiError(409, 'UNIFIED_RESOURCE_LIMIT', '授权资源数量超出限制')
   }
   const zeroNodeReason: ZeroNodeReason | null = status === 'expired' || status === 'pending' || status === 'disabled'
