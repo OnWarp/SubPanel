@@ -163,9 +163,9 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
         : row) })
       void load().catch((cause) => toast.notifyError(templateError(cause)))
     }} />}
-    <Dialog open={Boolean(action && action.kind !== 'history')} title={dialogTitle} onClose={() => { if (!busy) setAction(undefined) }}
-      footer={<>
-        <button className="button secondary" type="button" disabled={busy} onClick={() => setAction(undefined)}>取消</button>
+    <Dialog open={Boolean(action && action.kind !== 'history')} title={dialogTitle} busy={busy} size={action?.kind === 'copy' ? 'm' : 's'} onClose={() => setAction(undefined)}
+      footer={(requestClose) => <>
+        <button className="button secondary" type="button" disabled={busy} onClick={requestClose} data-dialog-initial-focus={action?.kind === 'archive' ? '' : undefined}>取消</button>
         <button className="button primary" type="button" disabled={busy || (action?.kind === 'default' && action.impact === null) || (action?.kind === 'copy' && !copyName.trim())} onClick={submit}>
           {busy ? '处理中' : dialogTitle}
         </button>
@@ -219,7 +219,7 @@ function TemplateHistory({ row, onClose, onRollback }: {
     finally { setBusy(false) }
   }
 
-  return <Dialog open title={`${row.name} · 版本历史`} onClose={() => { if (!busy) onClose() }}
+  return <Dialog open title={`${row.name} · 版本历史`} busy={busy} size="xl" onClose={onClose}
     footer={selected && <>
       <button className="button secondary" type="button" disabled={busy} onClick={() => setSelected(undefined)}>取消回退</button>
       <button className="button primary" type="button" disabled={busy} onClick={() => void rollback()}>确认回退至 {versionLabel(selected.sequence)}</button>

@@ -356,9 +356,9 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
       {!readOnly && previewError && !validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
       {error && !publishConfirm && blocker.state !== 'blocked' && <StatusMessage tone="error">{error}</StatusMessage>}
     </>}
-    <Dialog open={publishConfirm} onClose={() => { if (!busy) { setPublishConfirm(false); setError('') } }} title="发布配置"
-      footer={<>
-        <button className="button secondary" type="button" disabled={busy} onClick={() => { setPublishConfirm(false); setError('') }}>取消</button>
+    <Dialog open={publishConfirm} busy={busy} size="xl" onClose={() => { setPublishConfirm(false); setError('') }} title="发布配置"
+      footer={(requestClose) => <>
+        <button className="button secondary" type="button" disabled={busy} onClick={requestClose} data-dialog-initial-focus>取消</button>
         <button className="button primary" type="button" disabled={busy} onClick={publish}>{busy ? '正在发布' : '确认发布'}</button>
       </>}>
       <div className="form-stack">
@@ -370,9 +370,9 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
         {publishConfirm && error && <StatusMessage tone="error">{error}</StatusMessage>}
       </div>
     </Dialog>
-    <Dialog open={blocker.state === 'blocked'} title="有未保存更改" onClose={() => { if (!busy) blocker.reset?.() }}
-      footer={<>
-        <button className="button secondary" type="button" disabled={busy} onClick={() => blocker.reset?.()}>继续编辑</button>
+    <Dialog open={blocker.state === 'blocked'} title="有未保存更改" size="s" busy={busy} closeOnBackdrop={false} onClose={() => blocker.reset?.()}
+      footer={(requestClose) => <>
+        <button className="button secondary" type="button" disabled={busy} onClick={requestClose} data-dialog-initial-focus>继续编辑</button>
         <button className="button secondary" type="button" disabled={busy} onClick={() => blocker.proceed?.()}>放弃更改</button>
         <button className="button primary" type="button" disabled={busy || !dirty || !name.trim()} onClick={() => void save(true).then((saved) => { if (saved) blocker.proceed?.() })}>
           {busy ? '处理中' : '保存并离开'}
