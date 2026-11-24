@@ -1,20 +1,25 @@
 import { ArrowLeft, Bell, ChevronRight, Gift, LifeBuoy, Monitor, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
-import { api, ApiClientError, type AdminSubscription } from '../../app/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
 import { MobileBarOptions } from '../../app/MobileBarOptions'
 import { useSession } from '../../app/session'
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { CopyButton } from '../../ui/CopyButton'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHero } from '../../ui/PageHero'
 import { StatusBadge } from '../../ui/StatusBadge'
+import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
 import { AccountPage } from '../accounts/AccountPage'
 import { useAccountProfile } from '../accounts/profile'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { formatExpiryTime } from '../delivery/expiry'
 import { subscriptionPlanLabels } from '../delivery/plan-types'
-import { PersonalRedemptions, PersonalSubscriptionList } from '../redemption/PersonalRedemptions'
+import { orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
+import { PersonalRedemptions } from '../redemption/PersonalRedemptions'
+import { clientImportLink } from './client-import'
 import { formatTrafficGb } from './home-traffic'
 import { reminderEnabled, reminderKey } from './reminder'
 
@@ -66,10 +71,12 @@ const mineSettings = [
   { path: 'support', label: '帮助与支持', icon: LifeBuoy, Content: SupportSettings },
 ] as const
 
-const mineSubscriptions = { path: 'subscriptions', label: '我的订阅', Content: PersonalSubscriptionList }
+const mineSubscriptions = { path: 'subscription', label: '订阅信息', Content: SubscriptionInfo }
 
 export function MineSettingsPage() {
   const { section } = useParams()
+  const { search, hash } = useLocation()
+  if (section === 'subscriptions') return <Navigate to={{ pathname: '/me/subscription', search, hash }} replace />
   const setting = section === mineSubscriptions.path ? mineSubscriptions : mineSettings.find(item => item.path === section)
   if (!setting) return <Navigate to="/home" replace />
   const { label, Content } = setting
@@ -85,7 +92,7 @@ function isActive(subscription: AdminSubscription) {
     : subscription.planState ? subscription.planState === 'active' : subscription.enabled
 }
 
-function SubscriptionOverview() {
+function SubscriptionOverview({ details = false }: { details?: boolean }) {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
   const [error, setError] = useState('')
   const load = useCallback((signal?: AbortSignal) => {
@@ -106,10 +113,10 @@ function SubscriptionOverview() {
 
   const current = subscriptions?.find(isActive) ?? subscriptions?.[0]
   return <section className="upd-mine-panel" aria-label="订阅">
-    <div className="upd-mine-subscription-heading">
+    {details ? null : <div className="upd-mine-subscription-heading">
       <h2>订阅</h2>
-      <Link to="/me/subscriptions">全部订阅<ChevronRight size={16} aria-hidden="true" /></Link>
-    </div>
+      <Link to="/me/subscription">订阅信息<ChevronRight size={16} aria-hidden="true" /></Link>
+    </div>}
     {error ? <ErrorState message={error} onRetry={() => { setError(''); load() }} />
       : !subscriptions ? <LoadingState label="正在加载订阅" />
       : !current ? <p>暂无订阅</p>
@@ -127,8 +134,75 @@ function SubscriptionOverview() {
             ? `${formatTrafficGb(current.remainingGb)} GB`
             : current.remainingGb === null || current.trafficGb === 0 ? '不限' : '暂无数据'}</dd></div>
         </dl>
+        {details ? <SubscriptionLink key={current.id} subscription={current}
+          onReset={(updated) => setSubscriptions(rows => rows?.map(row => row.id === updated.id ? updated : row))} /> : null}
       </>}
   </section>
+}
+
+function SubscriptionLink({ subscription, onReset }: {
+  subscription: AdminSubscription
+  onReset: (subscription: AdminSubscription) => void
+}) {
+  const platforms = useEnabledPlatforms()
+  const [resetOpen, setResetOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetDone, setResetDone] = useState(false)
+  const resetButton = useRef<HTMLButtonElement>(null)
+  const link = pickPrimaryLink(subscription.links, subscription.defaultClient, platforms)
+  const entries = orderLinkEntries(Object.entries(subscription.links), platforms)
+  const primaryEntry = entries.find(([, url]) => url === link)
+  const primaryImport = primaryEntry ? clientImportLink(...primaryEntry) : null
+  const clientImport = primaryImport ?? entries.map(entry => clientImportLink(...entry)).find(Boolean)
+
+  async function resetLink() {
+    if (busy) return
+    setBusy(true)
+    setResetError('')
+    try {
+      const result = await api<{ subscription: AdminSubscription }>(
+        `/api/account/subscriptions/${subscription.id}/token/reset`,
+        { method: 'POST', body: jsonBody({}) },
+      )
+      onReset(result.subscription)
+      setResetOpen(false)
+      setResetDone(true)
+    } catch (cause) {
+      setResetError(cause instanceof ApiClientError ? cause.message : '重置链接失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <section className="upd-mine-subscription-link" aria-labelledby="mine-subscription-link">
+    <div className="upd-mine-subscription-heading"><h2 id="mine-subscription-link">订阅链接</h2></div>
+    {link ? <div className="del-link-line">
+      <p className="del-link-text">{link}</p>
+      <CopyButton key={link} value={link} label="复制链接" />
+    </div> : <p>暂无可用链接</p>}
+    <div className="upd-link-row">
+      {link ? <a className="button secondary" href={clientImport ?? `/subscriptions?subscription=${encodeURIComponent(subscription.id)}`}>导入客户端</a> : null}
+      <button ref={resetButton} className="button ghost" type="button" onClick={() => {
+        setResetError('')
+        setResetDone(false)
+        setResetOpen(true)
+      }}>重置链接</button>
+    </div>
+    {resetDone ? <StatusMessage tone="success">订阅链接已重置</StatusMessage> : null}
+    <ConfirmDialog open={resetOpen} title="重置订阅链接" description="重置后旧链接会立即失效，请将新链接重新添加到客户端"
+      confirmLabel="确认重置" danger busy={busy} returnFocusRef={resetButton}
+      onClose={() => setResetOpen(false)} onConfirm={() => { void resetLink() }}>
+      {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
+    </ConfirmDialog>
+  </section>
+}
+
+function SubscriptionInfo() {
+  return <>
+    <SubscriptionOverview details />
+    <div className="upd-link-row"><Link className="button secondary" to="/me/redemption">兑换订阅</Link></div>
+  </>
 }
 
 export function MinePage() {

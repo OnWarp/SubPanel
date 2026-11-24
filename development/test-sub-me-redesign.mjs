@@ -30,11 +30,19 @@ try {
   let redemptionError = false
   let profileError = false
   let subscriptionError = false
+  let resetError = false
+  const resetPath = `/api/account/subscriptions/${subscription.id}/token/reset`
+  const updatedSubscription = { ...subscription, links: { clash: 'https://example.com/new/clash' } }
   await page.route('**/api/**', async route => {
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname
     if (request.method() === 'POST') mutations.push({ path, body: request.postDataJSON() })
+    if (path === resetPath) {
+      if (resetError) return route.fulfill({ status: 500, json: {} })
+      subscriptions = [updatedSubscription]
+      return route.fulfill({ json: { subscription: updatedSubscription } })
+    }
     const fixtures = {
       '/api/bootstrap': { initialized: true, user: signedIn ? user : null },
       '/api/account/profile': { user, emailBound: Boolean(user.email), avatar: { url: '/logo.png' }, session: { issuedAt: iso, expiresAt: iso } },
@@ -81,7 +89,15 @@ try {
       await expect(page.getByRole('navigation', { name: '设置' })).toBeInViewport({ ratio: 1 })
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
     }
-    await page.screenshot({ path: `${output}/${width}-${before ? 'before' : 'after'}.png`, animations: 'disabled', fullPage: true })
+    if (!before) {
+      await page.getByRole('link', { name: '订阅信息' }).click()
+      await expect(page).toHaveURL('/me/subscription')
+      await expect(page.getByText(subscription.links.clash, { exact: true })).toBeVisible()
+      await expect(page.getByRole('link', { name: '兑换订阅', exact: true })).toBeInViewport({ ratio: 1 })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    }
+    await page.screenshot({ path: `${output}/${width}-${before ? 'before' : 'subscription-info'}.png`, animations: 'disabled', fullPage: true })
+    if (!before) await page.getByRole('link', { name: '个人中心', exact: true }).click()
   }
   if (!before) {
     const heading = (name) => page.getByRole('heading', { name, level: 1, exact: true })
@@ -136,18 +152,43 @@ try {
     await expect(link('客户端下载')).toHaveCount(0)
     await back()
 
-    await open('全部订阅', '/me/subscriptions', '我的订阅')
-    await expect(page.getByText('200 GiB', { exact: true })).toBeVisible()
-    await expect(page.getByText('1 个动态组', { exact: true })).toBeVisible()
+    await open('订阅信息', '/me/subscription')
+    await page.goto('/me/subscriptions?from=bookmark#info')
+    await expect(page).toHaveURL('/me/subscription?from=bookmark#info')
+    await expect(heading('订阅信息')).toBeVisible()
+    for (const value of ['主订阅', '标准计划', '有效', '176 GB', '2026/12/6 08:00:00']) {
+      await expect(page.getByText(value, { exact: true })).toBeVisible()
+    }
+    await expect(page.getByRole('table')).toHaveCount(0)
     await button('复制链接').click()
     await expect(button('已复制')).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(subscription.links.clash)
-    await expect(link('管理订阅')).toHaveAttribute('href', '/subscriptions')
-    await link('管理').click()
-    await expect(page).toHaveURL('/subscriptions?subscription=example-sub')
-    await page.goBack()
-    await link('管理订阅').click()
-    await expect(page).toHaveURL('/subscriptions')
+    const importLink = link('导入客户端')
+    await expect(importLink).toHaveAttribute('href', `clash://install-config?url=${encodeURIComponent(subscription.links.clash)}`)
+    await importLink.evaluate(element => element.addEventListener('click', event => {
+      event.preventDefault()
+      element.dataset.clickedHref = element.href
+    }, { once: true }))
+    await importLink.click()
+    await expect(importLink).toHaveAttribute('data-clicked-href', /^clash:\/\/install-config/)
+    const resetDialog = page.getByRole('dialog', { name: '重置订阅链接' })
+    await button('重置链接').click()
+    await expect(resetDialog.getByText('重置后旧链接会立即失效，请将新链接重新添加到客户端')).toBeVisible()
+    await resetDialog.getByRole('button', { name: '取消' }).click()
+    expect(mutations.filter(mutation => mutation.path === resetPath)).toHaveLength(0)
+    resetError = true
+    await button('重置链接').click()
+    await resetDialog.getByRole('button', { name: '确认重置' }).click()
+    await expect(resetDialog.getByRole('alert')).toBeVisible()
+    resetError = false
+    await resetDialog.getByRole('button', { name: '确认重置' }).click()
+    await expect(resetDialog).toBeHidden()
+    await expect(page.getByText('订阅链接已重置')).toBeVisible()
+    await expect(page.getByText(subscription.links.clash, { exact: true })).toHaveCount(0)
+    await expect(importLink).toHaveAttribute('href', `clash://install-config?url=${encodeURIComponent(updatedSubscription.links.clash)}`)
+    await button('复制链接').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(updatedSubscription.links.clash)
+    await open('兑换订阅', '/me/redemption')
     await page.goBack()
     subscriptionError = true
     await page.reload()
@@ -244,6 +285,7 @@ try {
     await expect(page).toHaveURL('/login')
 
     expect(mutations.map(({ path }) => path)).toEqual([
+      resetPath, resetPath,
       '/api/me/redemptions/preview', '/api/me/redemptions/preview', '/api/me/redemptions',
       '/api/account/password', '/api/account/email/change', '/api/account/email/change',
       '/api/account/email/change/confirm', '/api/account/email/bind', '/api/account/email/bind',

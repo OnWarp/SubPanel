@@ -69,4 +69,12 @@
 - 回滚时在集成分支对本次交付提交执行 `git revert <交付提交>`，然后重跑检查、构建和测试。此次交付仅含前端、验证和报告，回滚无需数据操作。
 - 交付的 Git bundle 位于 `/data/tmp/sub-me-redesign.bundle`。此次未推送、未部署、未连接生产 D1。
 
+## 2026-11-24 补充交付
+
+- 个人中心订阅卡入口由「全部订阅」改为「订阅信息」。新路由为 `/me/subscription`，旧路由 `/me/subscriptions` 重定向并保留查询参数与片段。
+- 移除二级页的按份订阅表及其总额度、节点策略、逐份复制、单份和全部管理入口。新页和 `/me` 首屏共用订阅摘要与数据来源，显示当前订阅名称、计划、状态、到期时间和剩余流量。新页提供订阅链接、复制、导入客户端、重置链接和兑换入口。重置前提示旧链接立即失效，确认后调用现有接口并刷新链接。其余五个二级页及后端沿用原实现。
+- `npm run check` 通过，0 错误、77 条既有警告。`npm run build` 通过。`CI=1 npm test` 通过，66 个文件、559 项通过，4 项可选性能基准按默认配置跳过。
+- Chromium 点按验证新旧路由、订阅摘要、剪贴板、导入链接的客户端协议、重置的取消和失败重试、重置后的新链接，以及跳转兑换。外部客户端启动未覆盖。隔离本地 Worker 验证兑换前后 18 条旧订阅路径输出一致，并验证主动重置测试订阅后新链接返回 200、旧链接返回 404。
+- 视觉回归覆盖 [1440 × 900](development/screenshots/sub-me-redesign/1440-subscription-info.png)、[1024 × 768](development/screenshots/sub-me-redesign/1024-subscription-info.png) 和 [390 × 844](development/screenshots/sub-me-redesign/390-subscription-info.png)。三个视口均无横向溢出，主要操作位于首屏。
+
 SUB_ME_REDESIGN_DONE
