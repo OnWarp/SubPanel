@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useBlocker, useSearchParams } from 'react-router-dom'
 import {
   api, peekApi, watchApi, ApiClientError, jsonBody, subscriptionTemplatesPath as ROOT,
@@ -6,7 +6,6 @@ import {
   type TemplateImportResponse, type TemplatePreviewResponse, type TemplatePublishResponse, type TemplateSource, type TemplateValidateResponse,
 } from '../../app/api'
 import { FormSelect, Input, Textarea } from '../../ui/Controls'
-import { DataHeader } from '../../ui/DataHeader'
 import { Dialog } from '../../ui/Dialog'
 import { FormField } from '../../ui/FormField'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -33,13 +32,14 @@ type EditorProps = {
   previewOnly: boolean
   versionId?: string
   initialSubscription?: string
+  returnFocusRef?: RefObject<HTMLElement | null>
   onReturn: () => void
   onCreated: (id: string) => void
 }
 
 type Validation = { diagnostics: Diagnostic[]; ignored: string[] }
 
-export default function TemplateEditor({ config, previewOnly, versionId, initialSubscription, onReturn, onCreated }: EditorProps) {
+export default function TemplateEditor({ config, previewOnly, versionId, initialSubscription, onReturn, onCreated, returnFocusRef }: EditorProps) {
   const isNew = config === 'new'
   const path = `${ROOT}/${encodeURIComponent(config)}`
   const [initial] = useState(() => isNew ? undefined : peekApi<TemplateDetailResponse>(path))
@@ -285,78 +285,83 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
     })
   }
 
+  const closeEditor = () => {
+    bypass.current = true
+    onReturn()
+  }
+  const editorActions = !readOnly && <>
+    <button className="button secondary" type="button" disabled={busy} onClick={onReturn}>返回列表</button>
+    <button className="button secondary" type="button" disabled={busy || !name.trim() || (!dirty && !isNew)} onClick={() => void save()}>保存草稿</button>
+    <button className="button secondary" type="button" disabled={busy || previewPending} onClick={() => void runPreview()}>预览</button>
+    <button className="button primary" type="button" disabled={busy || previewPending || !detail || dirty} onClick={preparePublish}>发布</button>
+  </>
   return <>
-    <DataHeader title={previewOnly ? `${detail?.name ?? '附加配置'} · 预览` : name.trim() || (isNew ? '新增配置' : '编辑配置')}
-      actions={<button className="button secondary" type="button" onClick={onReturn}>返回列表</button>} />
-    {(!isNew && !detail) ? (loadError
-      ? <div className="template-actions"><StatusMessage tone="error">{loadError}</StatusMessage>
-        <button className="button secondary" type="button" onClick={() => setLoadAttempt(loadAttempt + 1)}>重试</button></div>
-      : <p role="status">正在加载配置</p>) : <>
-      <p className="template-editor-status">{templateStatus[detail?.status ?? 'draft']}{dirty && ' · 有未保存更改'}</p>
-      {!readOnly && <div className="template-actions template-tabs" role="group" aria-label="编辑和预览">
-        <button className="button secondary" type="button" aria-pressed={pane === 'edit'} onClick={() => setPane('edit')}>编辑</button>
-        <button className="button secondary" type="button" aria-pressed={pane === 'preview'} onClick={() => setPane('preview')}>预览</button>
-      </div>}
-      <div className={readOnly ? 'template-standalone' : 'template-editor-grid'} data-pane={pane}>
-        {!readOnly && <div className="form-stack sp-form-stack template-edit-fields">
-          <FormField label="配置名称" htmlFor="template-name">
-            <Input id="template-name" value={name} maxLength={128} disabled={busy} onChange={(event) => setName(event.currentTarget.value)} />
-          </FormField>
-          <FormField label="来源" htmlFor="template-source-mode">
-            <FormSelect id="template-source-mode" value={mode} disabled={busy} onChange={(event) => setMode(event.currentTarget.value)}>
-              <option value="direct">直接编辑</option><option value="remote">远程地址</option>
-            </FormSelect>
-          </FormField>
-          {mode === 'remote' && <div className="form-stack">
-            <FormField label="HTTPS 地址" htmlFor="template-source-url">
-              <Input id="template-source-url" type="password" autoComplete="off" value={url} disabled={busy} maxLength={4096}
-                placeholder={source || detail?.sourceUrl ? '已保存地址隐藏，可重新输入' : undefined}
-                onChange={(event) => setUrl(event.currentTarget.value)} />
-            </FormField>
-            {isNew ? <>
-              <p className="sys-hint">填写 HTTPS 地址后抓取一次，确认预览再保存</p>
-              <div><button className="button secondary" type="button" disabled={busy || !url.trim()} onClick={fetchOnce}>抓取预览</button></div>
-            </> : <div><button className="button secondary" type="button" disabled={busy || !(url.trim() || source || detail?.sourceUrl)} onClick={importRemote}>导入／重新导入</button></div>}
-            {(source?.fetchedAt || detail?.sourceFetchedAt) && <p>获取时间 {templateDate(source?.fetchedAt ?? detail?.sourceFetchedAt ?? '')}</p>}
-            {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
-            {imported && imported.ignored.length > 0 && <p>导入时发现忽略字段：{imported.ignored.join('、')}</p>}
-          </div>}
-          <div role="group" aria-label="编辑模式" className="template-actions">
-            <button className="button secondary" type="button" aria-pressed={editorMode === 'basic'} onClick={() => setEditorMode('basic')}>基础模式</button>
-            <button className="button secondary" type="button" aria-pressed={editorMode === 'advanced'} onClick={() => setEditorMode('advanced')}>高级模式</button>
-          </div>
-          {editorMode === 'basic' ? <BasicTemplateFields yaml={yaml} onChange={changeYaml} disabled={busy} /> : <FormField label="YAML" htmlFor="template-yaml" wide>
-            <Textarea id="template-yaml" rows={17} wrap="off" spellCheck={false} disabled={busy} value={yaml}
-              onChange={(event) => changeYaml(event.currentTarget.value)} />
-          </FormField>}
-          <section className="form-stack template-validation" aria-label="校验结果">
-            <h3>校验结果</h3>
-            {validation
-              ? <TemplateDiagnostics {...validation} diagnosticHref={diagnosticHref} />
-              : <p className="sys-hint">{previewPending ? '正在校验' : '预览或发布时校验 YAML'}</p>}
-            {validation && !validation.diagnostics.length && !validation.ignored.length && <p>草稿结构校验通过</p>}
-            {previewError && validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
-          </section>
+    <Dialog open={!publishConfirm && blocker.state !== 'blocked'} title={previewOnly ? '预览附加配置' : isNew ? '新增配置' : '编辑配置'}
+      size="xl" busy={busy} dirty={dirty} onClose={closeEditor} returnFocusRef={returnFocusRef} footer={editorActions}>
+      {(!isNew && !detail) ? (loadError
+        ? <div className="template-actions"><StatusMessage tone="error">{loadError}</StatusMessage>
+          <button className="button secondary" type="button" onClick={() => setLoadAttempt(loadAttempt + 1)}>重试</button></div>
+        : <p role="status">正在加载配置</p>) : <>
+        <p className="template-editor-status">{templateStatus[detail?.status ?? 'draft']}{dirty && ' · 有未保存更改'}</p>
+        {!readOnly && <div className="template-actions template-tabs" role="group" aria-label="编辑和预览">
+          <button className="button secondary" type="button" aria-pressed={pane === 'edit'} onClick={() => setPane('edit')}>编辑</button>
+          <button className="button secondary" type="button" aria-pressed={pane === 'preview'} onClick={() => setPane('preview')}>预览</button>
         </div>}
-        <TemplatePreview platform={platform} onPlatform={value => { setPlatform(value); clearPreview() }}
-          sample={sample} onSample={value => { setSample(value); if (value) setSubscription(''); clearPreview() }}
-          value={subscription} onChange={(id) => { setSubscription(id); setSample(false); clearPreview() }}
-          result={preview} pending={previewPending} onPreview={() => void runPreview()} standalone={readOnly} disabled={busy} />
-        {readOnly && <>
-          {validation && !preview && <TemplateDiagnostics {...validation} />}
-          {previewError && <StatusMessage tone="error">{previewError}</StatusMessage>}
-        </>}
-      </div>
-      {!readOnly && <div className="template-actions template-editor-footer">
-        <button className="button secondary" type="button" disabled={busy || !name.trim() || (!dirty && !isNew)} onClick={() => void save()}>保存草稿</button>
-        <button className="button secondary" type="button" disabled={busy || previewPending} onClick={() => void runPreview()}>预览</button>
-        <button className="button primary" type="button" disabled={busy || previewPending || !detail || dirty} onClick={preparePublish}>发布</button>
-        {(!detail || dirty) && <span className="sys-hint">先保存草稿</span>}
-      </div>}
-      {!readOnly && previewError && !validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
-      {error && !publishConfirm && blocker.state !== 'blocked' && <StatusMessage tone="error">{error}</StatusMessage>}
-    </>}
-    <Dialog open={publishConfirm} busy={busy} size="xl" onClose={() => { setPublishConfirm(false); setError('') }} title="发布配置"
+        <div className={readOnly ? 'template-standalone' : 'template-editor-grid'} data-pane={pane}>
+          {!readOnly && <div className="form-stack sp-form-stack template-edit-fields">
+            <FormField label="配置名称" htmlFor="template-name">
+              <Input id="template-name" value={name} maxLength={128} disabled={busy} onChange={(event) => setName(event.currentTarget.value)} />
+            </FormField>
+            <FormField label="来源" htmlFor="template-source-mode">
+              <FormSelect id="template-source-mode" value={mode} disabled={busy} onChange={(event) => setMode(event.currentTarget.value)}>
+                <option value="direct">直接编辑</option><option value="remote">远程地址</option>
+              </FormSelect>
+            </FormField>
+            {mode === 'remote' && <div className="form-stack">
+              <FormField label="HTTPS 地址" htmlFor="template-source-url">
+                <Input id="template-source-url" type="password" autoComplete="off" value={url} disabled={busy} maxLength={4096}
+                  placeholder={source || detail?.sourceUrl ? '已保存地址隐藏，可重新输入' : undefined}
+                  onChange={(event) => setUrl(event.currentTarget.value)} />
+              </FormField>
+              {isNew ? <>
+                <p className="sys-hint">填写 HTTPS 地址后抓取一次，确认预览再保存</p>
+                <div><button className="button secondary" type="button" disabled={busy || !url.trim()} onClick={fetchOnce}>抓取预览</button></div>
+              </> : <div><button className="button secondary" type="button" disabled={busy || !(url.trim() || source || detail?.sourceUrl)} onClick={importRemote}>导入／重新导入</button></div>}
+              {(source?.fetchedAt || detail?.sourceFetchedAt) && <p>获取时间 {templateDate(source?.fetchedAt ?? detail?.sourceFetchedAt ?? '')}</p>}
+              {notice && <StatusMessage tone="success">{notice}</StatusMessage>}
+              {imported && imported.ignored.length > 0 && <p>导入时发现忽略字段：{imported.ignored.join('、')}</p>}
+            </div>}
+            <div role="group" aria-label="编辑模式" className="template-actions">
+              <button className="button secondary" type="button" aria-pressed={editorMode === 'basic'} onClick={() => setEditorMode('basic')}>基础模式</button>
+              <button className="button secondary" type="button" aria-pressed={editorMode === 'advanced'} onClick={() => setEditorMode('advanced')}>高级模式</button>
+            </div>
+            {editorMode === 'basic' ? <BasicTemplateFields yaml={yaml} onChange={changeYaml} disabled={busy} /> : <FormField label="YAML" htmlFor="template-yaml" wide>
+              <Textarea id="template-yaml" rows={17} wrap="off" spellCheck={false} disabled={busy} value={yaml}
+                onChange={(event) => changeYaml(event.currentTarget.value)} />
+            </FormField>}
+            <section className="form-stack template-validation" aria-label="校验结果">
+              <h3>校验结果</h3>
+              {validation
+                ? <TemplateDiagnostics {...validation} diagnosticHref={diagnosticHref} />
+                : <p className="sys-hint">{previewPending ? '正在校验' : '预览或发布时校验 YAML'}</p>}
+              {validation && !validation.diagnostics.length && !validation.ignored.length && <p>草稿结构校验通过</p>}
+              {previewError && validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
+            </section>
+          </div>}
+          <TemplatePreview platform={platform} onPlatform={value => { setPlatform(value); clearPreview() }}
+            sample={sample} onSample={value => { setSample(value); if (value) setSubscription(''); clearPreview() }}
+            value={subscription} onChange={(id) => { setSubscription(id); setSample(false); clearPreview() }}
+            result={preview} pending={previewPending} onPreview={() => void runPreview()} standalone={readOnly} disabled={busy} />
+          {readOnly && <>
+            {validation && !preview && <TemplateDiagnostics {...validation} />}
+            {previewError && <StatusMessage tone="error">{previewError}</StatusMessage>}
+          </>}
+        </div>
+        {!readOnly && previewError && !validation && <StatusMessage tone="error">{previewError}</StatusMessage>}
+        {error && !publishConfirm && blocker.state !== 'blocked' && <StatusMessage tone="error">{error}</StatusMessage>}
+      </>}
+    </Dialog>
+    {publishConfirm && <Dialog open={blocker.state !== 'blocked'} busy={busy} size="xl" onClose={() => { setPublishConfirm(false); setError('') }} title="发布配置"
       footer={(requestClose) => <>
         <button className="button secondary" type="button" disabled={busy} onClick={requestClose} data-dialog-initial-focus>取消</button>
         <button className="button primary" type="button" disabled={busy} onClick={publish}>{busy ? '正在发布' : '确认发布'}</button>
@@ -369,7 +374,7 @@ export default function TemplateEditor({ config, previewOnly, versionId, initial
         {validation && validation.ignored.length > 0 && <p>发布将忽略以下字段，请确认：{validation.ignored.join('、')}</p>}
         {publishConfirm && error && <StatusMessage tone="error">{error}</StatusMessage>}
       </div>
-    </Dialog>
+    </Dialog>}
     <Dialog open={blocker.state === 'blocked'} title="有未保存更改" size="s" busy={busy} closeOnBackdrop={false} onClose={() => blocker.reset?.()}
       footer={(requestClose) => <>
         <button className="button secondary" type="button" disabled={busy} onClick={requestClose} data-dialog-initial-focus>继续编辑</button>

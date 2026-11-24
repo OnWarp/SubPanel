@@ -9,7 +9,7 @@ import { Link } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
@@ -142,6 +142,7 @@ export function AppsPage() {
   const [page, setPage] = useState(1)
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [form, setForm] = useState<AppForm>(emptyForm)
+  const [baseline, setBaseline] = useState(form)
   const [drawerError, setDrawerError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<AdminApp | null>(null)
   const [busy, setBusy] = useState(false)
@@ -184,13 +185,17 @@ export function AppsPage() {
   useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
 
   const openCreate = () => {
-    setForm(emptyForm())
+    const draft = emptyForm()
+    setBaseline(draft)
+    setForm(draft)
     setDrawerError('')
     setDrawer({ mode: 'create' })
   }
 
   const openEdit = (app: AdminApp) => {
-    setForm(formFromApp(app))
+    const draft = formFromApp(app)
+    setBaseline(draft)
+    setForm(draft)
     setDrawerError('')
     setDrawer({ mode: 'edit', app })
   }
@@ -223,6 +228,7 @@ export function AppsPage() {
 
   const saveApp = async (event: FormEvent) => {
     event.preventDefault()
+    if (busy || !drawer) return
     const problem = validateForm(form)
     if (problem) {
       setDrawerError(problem)
@@ -371,8 +377,14 @@ export function AppsPage() {
 
       <AppDownloadsSection />
 
-      <EditDrawer open={drawer !== null} title={drawer?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="large" onClose={closeDrawer} returnFocusRef={createButton}>
-        <form className="app-form" autoComplete="off" onSubmit={saveApp}>
+      <Dialog open={drawer !== null} title={drawer?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="l" onClose={closeDrawer}
+        dirty={JSON.stringify(form) !== JSON.stringify(baseline)}
+        footer={(cancel) => <>
+          <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
+          <button className="button primary" form="app-editor" type="submit" disabled={busy}>{busy ? '保存中' : drawer?.mode === 'create' ? '保存 APP' : '保存修改'}</button>
+        </>}
+      >
+        <form id="app-editor" className="app-form" autoComplete="off" onSubmit={saveApp}>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
           <div className="app-form-grid">
             <FormField label="名称" htmlFor="app-name">
@@ -395,7 +407,7 @@ export function AppsPage() {
             <p className="app-note">每个平台配置一个下载链接，文档链接可选；下载与文档链接都必须是 https 链接</p>
             <div className="app-platform-list">
               {form.platforms.map((row, index) => (
-                <div className="app-platform-card" key={index}>
+                <div className="app-platform-card app-platform-fields" key={index}>
                   <FormField label="平台" htmlFor={`app-platform-${index}`}>
                     <FormSelect id={`app-platform-${index}`} value={row.platform} disabled={busy} onChange={(event) => updateRow(index, { platform: event.currentTarget.value as PlatformName })}>
                       {PLATFORM_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -416,13 +428,8 @@ export function AppsPage() {
               {form.platforms.length === 0 ? <p className="app-note">尚未配置平台，保存前至少添加一个平台</p> : null}
             </div>
           </div>
-
-          <div className="app-form-actions">
-            <button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button>
-            <button className="button primary" type="submit" disabled={busy}>{busy ? '保存中' : drawer?.mode === 'create' ? '保存 APP' : '保存修改'}</button>
-          </div>
         </form>
-      </EditDrawer>
+      </Dialog>
 
       <ConfirmDialog
         open={pendingDelete !== null}

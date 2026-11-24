@@ -1,6 +1,6 @@
 import { PageHeader } from '../../ui/PageHeader'
 import { RuleLibrary } from './RuleLibrary'
-import { lazy, Suspense, useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useRef } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { TemplateList } from './TemplateList'
 
@@ -15,16 +15,13 @@ export function ConversionPage() {
   const versionId = params.get('version') ?? undefined
   const subscriptionId = params.get('subscription') ?? undefined
   const archived = params.get('archived') === 'true'
-  const section = useRef<HTMLElement>(null)
-  const previousConfig = useRef(config)
+  const editTrigger = useRef<HTMLElement>(null)
   const openedFromList = location.state?.openedFromTemplateList === true
 
-  useLayoutEffect(() => {
-    if (previousConfig.current && !config) section.current?.scrollIntoView({ block: 'start' })
-    previousConfig.current = config
-  }, [config])
-
   const open = (id: string | null, showPreview = false, replace = false) => {
+    if (id && !config && document.activeElement instanceof HTMLElement) {
+      editTrigger.current = document.activeElement
+    }
     const next = new URLSearchParams(params)
     if (id) next.set('config', id)
     else next.delete('config')
@@ -47,21 +44,18 @@ export function ConversionPage() {
   return (
     <div className="page-stack ops-page conversion-page">
       <PageHeader title="转换配置" />
-      <section ref={section} className="data-section sys-section ops-template" aria-label="附加配置">
-        {config ? (
-          <Suspense fallback={<p role="status">正在加载配置</p>}>
-            <TemplateEditor key={JSON.stringify([config, preview, versionId])} config={config} previewOnly={preview}
-              versionId={versionId} initialSubscription={subscriptionId} onReturn={returnToList}
-              onCreated={(id) => open(id, false, true)} />
-          </Suspense>
-        ) : (
-          <TemplateList archived={archived} onOpen={open} onArchived={(show) => {
-            const next = new URLSearchParams(params)
-            if (show) next.set('archived', 'true')
-            else next.delete('archived')
-            setParams(next, { replace: true, preventScrollReset: true })
-          }} />
-        )}
+      <section className="data-section sys-section ops-template" aria-label="附加配置">
+        {(!config || openedFromList) && <TemplateList archived={archived} editorOpen={config !== null} onOpen={open} onArchived={(show) => {
+          const next = new URLSearchParams(params)
+          if (show) next.set('archived', 'true')
+          else next.delete('archived')
+          setParams(next, { replace: true, preventScrollReset: true })
+        }} />}
+        {config && <Suspense fallback={<p role="status">正在加载配置</p>}>
+          <TemplateEditor key={JSON.stringify([config, preview, versionId])} config={config} previewOnly={preview}
+            versionId={versionId} initialSubscription={subscriptionId} onReturn={returnToList}
+            returnFocusRef={editTrigger} onCreated={(id) => open(id, false, true)} />
+        </Suspense>}
       </section>
       {!config && <RuleLibrary />}
     </div>

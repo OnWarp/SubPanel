@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
@@ -9,6 +10,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
+import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
 import { OperationsActions, OperationsFooter } from '../admin/OperationsCard'
 
@@ -61,9 +63,10 @@ const VERIFICATION_LABEL: Record<VerificationStatus, string> = {
   failed: '验证失败',
 }
 
-function DomainNote({ item, busy, onSave }: {
+function DomainNote({ item, busy, error, onSave }: {
   item: DomainItem
   busy: boolean
+  error?: string
   onSave: (note: string) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -84,35 +87,27 @@ function DomainNote({ item, busy, onSave }: {
     }
   }
 
-  return draft === null ? (
+  return <>
     <button className="sys-domain-note" type="button" disabled={busy} aria-label={`编辑 ${item.hostname} 备注`} onClick={() => setDraft(item.note)}>
       {item.note || '添加备注'}
     </button>
-  ) : (
-    <form className="sys-domain-note-edit" onSubmit={submit}>
-      <Input
-        autoFocus
-        aria-label={`${item.hostname} 备注`}
-        aria-description="回车保存，Esc 取消"
-        value={draft}
-        maxLength={200}
-        placeholder="回车保存，Esc 取消"
-        title="回车保存，Esc 取消"
-        enterKeyHint="done"
-        readOnly={busy || saving}
-        onChange={(event) => setDraft(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && !event.nativeEvent.isComposing && !saving) {
-            event.preventDefault()
-            setDraft(null)
-          }
-        }}
-      />
-    </form>
-  )
+    <Dialog open={draft !== null} title="编辑域名备注" size="m" busy={saving} dirty={draft !== null && draft !== item.note} onClose={() => setDraft(null)}
+      footer={cancel => <>
+        <button className="button secondary" type="button" disabled={saving} onClick={cancel}>取消</button>
+        <button className="button primary" form={`domain-note-${item.id}`} type="submit" disabled={saving}>保存备注</button>
+      </>}>
+      <form id={`domain-note-${item.id}`} className="form-stack" onSubmit={submit}>
+        <FormField label="备注" htmlFor={`domain-note-input-${item.id}`}>
+          <Input id={`domain-note-input-${item.id}`} value={draft ?? ''} maxLength={200} readOnly={saving}
+            onChange={(event) => setDraft(event.currentTarget.value)} />
+        </FormField>
+        {error && <StatusMessage tone="error">{error}</StatusMessage>}
+      </form>
+    </Dialog>
+  </>
 }
 
-function DomainCard({ kind, title, description, items, primaryId, busyId, onVerify, onSetPrimary, onToggleEnabled, onSaveNote, onDelete, onAdd }: {
+function DomainCard({ kind, title, description, items, primaryId, busyId, onVerify, onSetPrimary, onToggleEnabled, onSaveNote, onDelete, onAdd, operationError }: {
   kind: DomainKind
   title: string
   description: string
@@ -124,8 +119,10 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   onToggleEnabled: (kind: DomainKind, item: DomainItem, enabled: boolean) => void
   onSaveNote: (kind: DomainKind, item: DomainItem, note: string) => Promise<boolean>
   onDelete: (kind: DomainKind, item: DomainItem) => void
+  operationError?: string
   onAdd: (kind: DomainKind, hostname: string, note: string) => Promise<boolean>
 }) {
+  const [addError, setAddError] = useState('')
   const [hostname, setHostname] = useState('')
   const [note, setNote] = useState('')
   const [adding, setAdding] = useState(false)
@@ -134,6 +131,8 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (adding) return
+    setAddError('')
     setAdding(true)
     try {
       if (await onAdd(kind, hostname, note)) {
@@ -141,6 +140,8 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
         setNote('')
         setExpanded(false)
       }
+    } catch (cause) {
+      setAddError(errorMessage(cause, '添加域名失败'))
     } finally {
       setAdding(false)
     }
@@ -148,19 +149,26 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
 
   return (
     <section className="data-section" aria-labelledby={`${idPrefix}-title`}>
-      <DataHeader id={`${idPrefix}-title`} title={title} actions={<button className="button primary" type="button" aria-expanded={expanded} aria-controls={`${idPrefix}-add`} disabled={adding} onClick={() => setExpanded(!expanded)}>
+      <DataHeader id={`${idPrefix}-title`} title={title} actions={<button className="button primary" type="button" disabled={adding} onClick={() => setExpanded(true)}>
           <Plus aria-hidden="true" size={16} />添加域名
         </button>} />
       <p className="sys-hint">{description}</p>
-      <form id={`${idPrefix}-add`} className="sys-domain-add" hidden={!expanded} onSubmit={submit}>
+      <Dialog open={expanded} title="添加域名" size="m" busy={adding} dirty={Boolean(hostname || note)}
+        onClose={() => { setHostname(''); setNote(''); setAddError(''); setExpanded(false) }}
+        footer={(cancel) => <>
+          <button className="button secondary" type="button" onClick={cancel}>取消</button>
+          <button className="button primary" form={`${idPrefix}-add`} type="submit" disabled={adding || hostname.trim() === ''}>添加</button>
+        </>}>
+      <form id={`${idPrefix}-add`} className="form-stack" onSubmit={submit}>
         <FormField label="域名" htmlFor={`${idPrefix}-hostname`}>
           <Input id={`${idPrefix}-hostname`} value={hostname} placeholder="例如 panel.example.com" autoComplete="off" disabled={adding} onChange={(event) => setHostname(event.currentTarget.value)} />
         </FormField>
         <FormField label="备注" htmlFor={`${idPrefix}-note`}>
           <Input id={`${idPrefix}-note`} value={note} maxLength={200} autoComplete="off" disabled={adding} onChange={(event) => setNote(event.currentTarget.value)} />
         </FormField>
-        <button className="button primary" type="submit" disabled={adding || hostname.trim() === ''}>添加</button>
+        {addError && <StatusMessage tone="error">{addError}</StatusMessage>}
       </form>
+      </Dialog>
       {items.length === 0 ? <EmptyState title="暂无域名" /> : (
         <ul className="sys-domain-rows">
           {items.map((item) => {
@@ -176,7 +184,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
                     {isPrimary ? <span className="sys-domain-primary">主域名</span> : null}
                   </div>
                   <div className="sys-domain-meta">
-                    <DomainNote item={item} busy={busy} onSave={(next) => onSaveNote(kind, item, next)} />
+                    <DomainNote error={operationError} item={item} busy={busy} onSave={(next) => onSaveNote(kind, item, next)} />
                     <span>{item.lastCheckAt ? `最近验证 ${formatTime(item.lastCheckAt)}` : formatTime(null)}</span>
                     {item.lastCheckError ? <span className="sys-domain-error">{item.lastCheckError}</span> : null}
                   </div>
@@ -253,15 +261,10 @@ export function DomainSettingsSection() {
 
   const addDomain = async (kind: DomainKind, hostname: string, note: string): Promise<boolean> => {
     setFeedback(null)
-    try {
-      await api(`/api/admin/system/domains/${kind}`, { method: 'POST', body: jsonBody({ hostname, note: note || undefined }) })
-      await reloadDomains()
-      setFeedback({ tone: 'success', text: '域名已添加，验证通过后才能启用' })
-      return true
-    } catch (cause) {
-      setFeedback({ tone: 'error', text: errorMessage(cause, '添加域名失败') })
-      return false
-    }
+    await api(`/api/admin/system/domains/${kind}`, { method: 'POST', body: jsonBody({ hostname, note: note || undefined }) })
+    await reloadDomains()
+    setFeedback({ tone: 'success', text: '域名已添加，验证通过后才能启用' })
+    return true
   }
 
   const savePlatforms = async (next: PlatformItem[]) => {
@@ -352,6 +355,7 @@ export function DomainSettingsSection() {
             onToggleEnabled={(kind, item, enabled) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ enabled }) }), enabled ? '域名已启用' : '域名已停用').catch(() => undefined) }}
             onSaveNote={(kind, item, note) => actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存')}
             onDelete={(kind, item) => setPendingDelete({ kind, item })}
+            operationError={feedback?.tone === 'error' ? feedback.text : undefined}
             onAdd={addDomain}
           />
           <DomainCard
@@ -366,6 +370,7 @@ export function DomainSettingsSection() {
             onToggleEnabled={(kind, item, enabled) => { actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ enabled }) }), enabled ? '域名已启用' : '域名已停用').catch(() => undefined) }}
             onSaveNote={(kind, item, note) => actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'PATCH', body: jsonBody({ note }) }), '备注已保存')}
             onDelete={(kind, item) => setPendingDelete({ kind, item })}
+            operationError={feedback?.tone === 'error' ? feedback.text : undefined}
             onAdd={addDomain}
           />
         </div>

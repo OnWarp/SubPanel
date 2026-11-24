@@ -6,7 +6,7 @@ import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
@@ -14,6 +14,7 @@ import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
+import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 import { formatKbTime, type KbArticle, type KbArticleSummary, type KbCategory } from './types'
@@ -84,6 +85,8 @@ export function AdminKbPage() {
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [articleForm, setArticleForm] = useState<ArticleForm>(EMPTY_ARTICLE_FORM)
+  const [baseline, setBaseline] = useState(articleForm)
+  const [articleError, setArticleError] = useState('')
   const [formBusy, setFormBusy] = useState(false)
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
@@ -161,7 +164,10 @@ export function AdminKbPage() {
       toast.notifyError('请先创建分类')
       return
     }
-    setArticleForm({ ...EMPTY_ARTICLE_FORM, categoryId: String(first.id) })
+    const draft = { ...EMPTY_ARTICLE_FORM, categoryId: String(first.id) }
+    setBaseline(draft)
+    setArticleForm(draft)
+    setArticleError('')
     setDrawerOpen(true)
   }
 
@@ -170,14 +176,17 @@ export function AdminKbPage() {
     setFormBusy(true)
     try {
       const result = await api<{ article: KbArticle }>(`/api/admin/kb/articles/${article.id}`)
-      setArticleForm({
+      const draft = {
         id: result.article.id,
         categoryId: String(result.article.categoryId),
         title: result.article.title,
         content: result.article.content,
         published: result.article.published,
         sort: String(result.article.sort),
-      })
+      }
+      setBaseline(draft)
+      setArticleForm(draft)
+      setArticleError('')
       setDrawerOpen(true)
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '加载文章失败'))
@@ -193,11 +202,11 @@ export function AdminKbPage() {
     const content = articleForm.content.trim()
     const categoryId = Number.parseInt(articleForm.categoryId, 10)
     if (!Number.isSafeInteger(categoryId) || categoryId <= 0) {
-      toast.notifyError('请选择分类')
+      setArticleError('请选择分类')
       return
     }
     if (!title || !content) {
-      toast.notifyError('请填写标题和正文')
+      setArticleError('请填写标题和正文')
       return
     }
     setFormBusy(true)
@@ -220,7 +229,7 @@ export function AdminKbPage() {
       setArticleForm(EMPTY_ARTICLE_FORM)
       await loadArticles()
     } catch (cause) {
-      toast.notifyError(errorMessage(cause, '保存文章失败'))
+      setArticleError(errorMessage(cause, '保存文章失败'))
     } finally {
       setFormBusy(false)
     }
@@ -427,14 +436,20 @@ export function AdminKbPage() {
         ) : null}
       </section>
 
-      <EditDrawer
+      <Dialog
         open={drawerOpen}
         title={articleForm.id === null ? '新建文章' : '编辑文章'}
-        size="large"
+        size="xl"
         busy={formBusy}
         onClose={() => setDrawerOpen(false)}
+
+        dirty={JSON.stringify(articleForm) !== JSON.stringify(baseline)}
+        footer={(cancel) => <>
+          <button className="button secondary" type="button" disabled={formBusy} onClick={cancel}>取消</button>
+          <button className="button primary" form="kb-article-editor" type="submit" disabled={formBusy}>{formBusy ? '保存中' : articleForm.id === null ? '创建文章' : '保存修改'}</button>
+        </>}
       >
-        <form className="kb-form" onSubmit={saveArticle} noValidate>
+        <form id="kb-article-editor" className="kb-form" onSubmit={saveArticle} noValidate>
           <FormField label="分类">
             <FormSelect aria-label="文章分类" value={articleForm.categoryId} disabled={formBusy}
               onChange={(event) => setArticleForm({ ...articleForm, categoryId: event.currentTarget.value })}>
@@ -486,15 +501,9 @@ export function AdminKbPage() {
               />
             </FormField>
           </div>
-          <p className="kb-hint">正文支持 Markdown：标题、列表、链接、代码块与粗体；草稿不会出现在用户端</p>
-          <div className="kb-form-actions">
-            <button className="button ghost" type="button" disabled={formBusy} onClick={() => setDrawerOpen(false)}>取消</button>
-            <button className="button primary" type="submit" disabled={formBusy}>
-              {formBusy ? '保存中' : articleForm.id === null ? '创建文章' : '保存修改'}
-            </button>
-          </div>
+          {articleError && <StatusMessage tone="error">{articleError}</StatusMessage>}
         </form>
-      </EditDrawer>
+      </Dialog>
 
       <ConfirmDialog
         open={pendingDelete !== null}

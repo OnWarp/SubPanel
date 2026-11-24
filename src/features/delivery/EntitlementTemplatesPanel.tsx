@@ -5,7 +5,7 @@ import { api, ApiClientError, jsonBody, type CatalogResponse } from '../../app/a
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -196,7 +196,7 @@ export function EntitlementTemplatesPage() {
           </FilterBar>
           <DataTable columns={columns} rows={visible} rowKey={({ id }) => id} empty="没有匹配的订阅模板" className="del-template-table" />
         </>}
-      <EditDrawer open={!!editor} title={original ? '编辑订阅模板' : '新建订阅模板'} busy={busy}
+      <Dialog size="xl" open={!!editor} title={original ? '编辑订阅模板' : '新建订阅模板'} busy={busy}
         dirty={!!draft && JSON.stringify(draft) !== JSON.stringify(baseDraft)} onClose={() => setEditor(null)}
         footer={<>
           {configChanged && <span className="drawer-note" role="status">{`将创建 v${original.currentVersion.number + 1}，新版本仅影响后续发放`}</span>}
@@ -249,8 +249,8 @@ export function EntitlementTemplatesPage() {
           <p className="drawer-note">{termLabel(config)} · {quotaLabel(config)} · {nodePolicyLabel(config)}</p>
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
         </form>}
-      </EditDrawer>
-      <EditDrawer open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
+      </Dialog>
+      <Dialog size="xl" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
         {history?.error && <ErrorState message={history.error} onRetry={() => { void openHistory(history.template) }} />}
         {history && !history.versions && !history.error && <LoadingState label="正在加载版本" />}
         {history?.versions?.map((version, index, versions) => {
@@ -264,7 +264,7 @@ export function EntitlementTemplatesPage() {
             </div>)}</dl>
           </details>
         })}
-      </EditDrawer>
+      </Dialog>
       <ConfirmDialog open={!!pending} title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
         description={error || '此后无法用该模板创建订阅。已创建订阅继续按原配置使用'}
         confirmLabel={pending?.action === 'archive' ? '确认归档' : '确认停用'} danger busy={busy}

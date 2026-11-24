@@ -352,7 +352,7 @@
 @media (width >= 768px) {
   .admin-layout .workspace-content > .conversion-page > .data-section { flex-grow: 0; }
 
-  .conversion-page .ops-template > :not(.data-header, .template-table) {
+  .conversion-page .ops-template > :not(.data-header, .template-table, .sp-dialog) {
     margin-inline: var(--space-page-inline);
   }
 

@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { ArrowUpRight } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CopyButton } from '../../ui/CopyButton'
@@ -6,8 +7,9 @@ import { clientImportLink, detectImportDevice, prefersClientImport } from '../us
 
 export type SubscriptionImport = { client: string; label: string; link: string }
 
-export function SubscriptionImports({ entries, children }: { entries: SubscriptionImport[]; children?: ReactNode }) {
+export function SubscriptionImports({ entries, children, modal = false }: { entries: SubscriptionImport[]; children?: ReactNode; modal?: boolean }) {
   const device = detectImportDevice(navigator.userAgent, navigator.maxTouchPoints)
+  const [open, setOpen] = useState(false)
   const [feedback, setFeedback] = useState('')
   const cancelAttempt = useRef<(() => void) | undefined>(undefined)
   useEffect(() => () => cancelAttempt.current?.(), [])
@@ -50,6 +52,18 @@ export function SubscriptionImports({ entries, children }: { entries: Subscripti
   )
 
   if (!imports.length && !children) return null
+  if (modal) return <>
+    <button className="button secondary" type="button" onClick={() => setOpen(true)}>导入客户端</button>
+    <Dialog open={open} title="导入客户端" size="m" onClose={() => { cancelAttempt.current?.(); setFeedback(''); setOpen(false) }}>
+      <div className="form-stack">
+        {[...preferred, ...more].map(entry => <div className="upd-import-actions" key={entry.client}>
+          {entry.href ? <>{importLink(entry.label, entry.href)}{copy(entry, true)}</> : copy(entry)}
+        </div>)}
+        {children}
+        {feedback && <StatusMessage tone="warning">{feedback}</StatusMessage>}
+      </div>
+    </Dialog>
+  </>
   return (
     <div className="subscription-imports">
       {preferred.length > 0 && <div className="upd-import-actions">
