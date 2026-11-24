@@ -33,11 +33,9 @@
 .sources-toolbar .sources-create { justify-self: end; white-space: nowrap; }
 .sources-toolbar .sp-filter-reset { grid-column: 1 / -1; justify-self: start; }
 
-.sources-advanced, .sources-page .source-preview {
-  padding: var(--space-3);
-  border: var(--size-divider) solid var(--color-border);
-  border-radius: var(--radius-page-panel);
-  background: var(--color-surface-subtle);
+.sources-advanced {
+  padding-block: var(--space-2);
+  border-block-start: var(--size-divider) solid var(--color-border);
 }
 
 .sources-advanced > summary {

@@ -16,7 +16,8 @@ import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
 import { CopyButton } from '../../ui/CopyButton'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
+import { focusFirstField } from '../../ui/focus-field'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
@@ -166,6 +167,11 @@ export function SubscriptionsPage() {
   const [total, setTotal] = useState(0)
   const listRequestSeq = useRef(0)
   const creationRequest = useRef<{ body: string; key: string } | null>(null)
+  const shareTrigger = useRef<HTMLButtonElement>(null)
+  const [shareDirty, setShareDirty] = useState(false)
+  const shareResult = useRef<HTMLInputElement>(null)
+  const detailsSummary = useRef<HTMLDivElement>(null)
+  const editForm = useRef<HTMLFormElement>(null)
   const detailsTrigger = useRef<HTMLButtonElement>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
@@ -177,6 +183,7 @@ export function SubscriptionsPage() {
   const [templateLoading, setTemplateLoading] = useState(true)
   const [templateLoadError, setTemplateLoadError] = useState('')
   const [creationMode, setCreationMode] = useState<CreationMode>('manual')
+  const [pendingTemplateVersion, setPendingTemplateVersion] = useState<string | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<EntitlementTemplate>()
   const draftByMode = useRef<Partial<Record<CreationMode, SubscriptionForm>>>({})
   const [form, setForm] = useState<SubscriptionForm>(EMPTY_FORM)
@@ -248,7 +255,6 @@ export function SubscriptionsPage() {
 
   const [resetTarget, setResetTarget] = useState<AdminSubscription | null>(null)
   const [batchPlanOpen, setBatchPlanOpen] = useState(false)
-  const [batchPlanId, setBatchPlanId] = useState('')
   const [batchBindingOpen, setBatchBindingOpen] = useState(false)
   const [batchBindingValue, setBatchBindingValue] = useState('inherit')
   const [batchTemplates, setBatchTemplates] = useState<SubscriptionTemplate[]>([])
@@ -269,6 +275,7 @@ export function SubscriptionsPage() {
   const [progress, setProgress] = useState('')
   const [sharing, setSharing] = useState<AdminSubscription | null>(null)
   const [shareUrl, setShareUrl] = useState('')
+  useEffect(() => { if (shareUrl) shareResult.current?.focus({ preventScroll: true }) }, [shareUrl])
   const [qr, setQr] = useState<{ client: string; link: string; dataUrl: string; loading: boolean } | null>(null)
 
   const loadList = useCallback(async () => {
@@ -407,6 +414,7 @@ export function SubscriptionsPage() {
 
   const changeCreationMode = (mode: CreationMode) => {
     if (mode === creationMode) return
+    setPendingTemplateVersion(null)
     draftByMode.current[creationMode] = form
     setCreationMode(mode)
     setForm(draftByMode.current[mode] ?? { ...EMPTY_FORM, userId: form.userId })
@@ -429,10 +437,14 @@ export function SubscriptionsPage() {
     ? expiryFromDuration(fromDatetimeLocal(form.startsAt) ?? Date.now(), { value: durationValue, unit: form.durationUnit })
     : null
 
-  const selectEntitlementTemplate = (versionId: string) => {
+  const selectEntitlementTemplate = (versionId: string, confirmed = false) => {
     const template = issuableTemplates.find((item) => item.currentVersion.id === versionId)
     if (template?.currentVersion.id === selectedTemplate?.currentVersion.id) return
-    if (selectedTemplate && templateCustomized && !window.confirm('更换模板将覆盖已自定义的模板字段，是否继续？')) return
+    if (selectedTemplate && templateCustomized && !confirmed) {
+      setPendingTemplateVersion(versionId)
+      return
+    }
+    setPendingTemplateVersion(null)
     setSelectedTemplate(template)
     if (template) {
       const { config } = template.currentVersion
@@ -455,6 +467,7 @@ export function SubscriptionsPage() {
   const closeDrawer = () => {
     if (!busy) {
       setDrawer(null)
+      setPendingTemplateVersion(null)
       setQr(null)
       setDrawerError('')
       setFieldErrors({})
@@ -475,7 +488,7 @@ export function SubscriptionsPage() {
 
   const saveSubscription = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!drawer) return
+    if (!drawer || busy || pendingTemplateVersion !== null) return
     setDrawerError('')
     if (creatingFromTemplate && (!selectedTemplate || !form.userId)) {
       setDrawerError(!selectedTemplate ? '请选择订阅模板' : '请选择所属用户')
@@ -596,7 +609,7 @@ export function SubscriptionsPage() {
 
   const previewBatch = (operation: BatchOperation) => {
     if (!selected.size) return
-    setBatchPlanOpen(false)
+    if (operation.action !== 'plan') setBatchPlanOpen(false)
     setBatchBindingOpen(false)
     setBatchRequest({ ids: [...selected], operation })
   }
@@ -604,7 +617,7 @@ export function SubscriptionsPage() {
   const actions: BatchAction[] = [
     { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => previewBatch({ action: 'enable' }) },
     { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => previewBatch({ action: 'disable' }) },
-    { key: 'plan', label: '更换计划', onClick: () => { setBatchPlanId(''); setBatchPlanOpen(true) } },
+    { key: 'plan', label: '更换计划', onClick: () => setBatchPlanOpen(true) },
     { key: 'binding', label: '更换配置', onClick: openBatchBinding },
     { key: 'delete', label: '删除', icon: Trash2, tone: 'danger', onClick: () => setConfirmAction('delete') },
   ]
@@ -717,8 +730,8 @@ export function SubscriptionsPage() {
             setDetailsBindingError('')
             setDrawer({ kind: 'details', subscription })
           } },
-          { label: '编辑', onClick: () => openEdit(subscription) },
-          { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: () => { setSharing(subscription); setShareUrl('') } },
+          { label: '编辑', onClick: (trigger) => { detailsTrigger.current = trigger; openEdit(subscription) } },
+          { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: (trigger) => { shareTrigger.current = trigger; setSharing(subscription); setShareDirty(false); setShareUrl('') } },
         ]} />
       ),
     },
@@ -751,6 +764,11 @@ export function SubscriptionsPage() {
 
   const linkEntries = Object.entries(details?.links ?? {})
   const [client = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
+  const showingDetails = details !== null
+  useEffect(() => {
+    if (showingDetails) detailsSummary.current?.focus({ preventScroll: true })
+    if (editing && editForm.current) focusFirstField(editForm.current)
+  }, [showingDetails, editing])
   const singboxClient = client === 'singbox' || client === 'karing'
   const effectiveTemplate = singboxClient && detailsBinding?.singboxTemplate
     ? detailsBinding.singboxTemplate : detailsBinding?.effectiveTemplate
@@ -768,7 +786,7 @@ export function SubscriptionsPage() {
           <div className="data-header-actions">
             <Button size="page" onClick={() => setBatchHistory(true)}>批量任务</Button>
             <Button as="link" size="page" to="/delivery/redemptions">兑换码管理</Button>
-            <Button variant="primary" size="page" onClick={openCreate} disabled={templateLoading}>
+            <Button variant="primary" size="page" onClick={(event) => { detailsTrigger.current = event.currentTarget; openCreate() }} disabled={templateLoading}>
               <Plus aria-hidden="true" size={18} />添加订阅
             </Button>
           </div>
@@ -791,11 +809,16 @@ export function SubscriptionsPage() {
         <ResourceFooter count={total} unit="个订阅" pagination={{ page, pageCount, onPageChange: setPage }} />
       </section>
 
-      <EditDrawer open={editing} title={drawer === 'create' ? '添加订阅' : '编辑订阅'} busy={busy} dirty={editing && [form, ...Object.values(draftByMode.current)].some((draft) => JSON.stringify(draft) !== JSON.stringify(formBaseline))} onClose={closeDrawer} footer={<>
-        <button className="button secondary" type="button" onClick={closeDrawer} disabled={busy}>取消</button>
-        <button className="button primary" type="submit" form="subscription-edit-form" disabled={busy}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button>
-      </>}>
-        <form id="subscription-edit-form" className="form-stack sp-form-stack" onSubmit={saveSubscription}>
+      <Dialog size="l" open={drawer !== null} returnFocusRef={detailsTrigger}
+        title={details?.name ?? (drawer === 'create' ? '添加订阅' : '编辑订阅')}
+        busy={busy} onClose={closeDrawer}
+        dirty={editing && [form, ...Object.values(draftByMode.current)].some((draft) => JSON.stringify(draft) !== JSON.stringify(formBaseline))}
+        footer={editing ? (requestClose) => <>
+          <button className="button secondary" type="button" onClick={requestClose} disabled={busy}>取消</button>
+          <button className="button primary" type="submit" form="subscription-edit-form" disabled={busy || pendingTemplateVersion !== null}>{busy ? '保存中' : drawer === 'create' ? '保存订阅' : '保存修改'}</button>
+        </> : undefined}
+      >
+        {editing && <form ref={editForm} id="subscription-edit-form" className="form-stack sp-form-stack" onSubmit={saveSubscription}>
           {drawer === 'create' && <FormGroup title="创建方式">
             <SegmentedControl label="创建方式" value={creationMode} options={[
               { value: 'template', label: '使用模板' }, { value: 'manual', label: '手动创建' },
@@ -808,6 +831,13 @@ export function SubscriptionsPage() {
                   {item.name} · v{item.currentVersion.number} · {termLabel(item.currentVersion.config)}
                 </option>)}
               </FormSelect>
+              {pendingTemplateVersion !== null && <div className="form-stack">
+                <p role="status">更换模板将覆盖已自定义的模板字段</p>
+                <div className="dialog-actions">
+                  <button className="button secondary" type="button" onClick={() => setPendingTemplateVersion(null)}>保留当前模板</button>
+                  <button className="button primary" type="button" onClick={() => selectEntitlementTemplate(pendingTemplateVersion, true)}>更换模板</button>
+                </div>
+              </div>}
               {selectedTemplate && templateConfig && <p className="drawer-note">v{selectedTemplate.currentVersion.number} · {termLabel(templateConfig)} · {quotaLabel(templateConfig)} · {nodePolicyLabel(templateConfig)}{templateCustomized && ' · 已自定义'}</p>}
             </FormField>}
             {!issuableTemplates.length && !templateLoadError && <p className="drawer-note">可在「订阅模板」页创建可复用的模板</p>}
@@ -940,21 +970,13 @@ export function SubscriptionsPage() {
             <span>{form.enabled ? '已启用' : '已停用'} · 预计输出节点数 {outputPreview ? outputPreview.outputNodes : '—'}</span>
           </section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-        </form>
-      </EditDrawer>
-
-      <EditDrawer
-        open={details !== null}
-        title={details?.name ?? '订阅详情'}
-        headerStatus={details && <StatusBadge tone={(details.status ? details.status === 'active' : details.enabled) ? 'success' : 'muted'} size="sm">{details.statusLabel ?? (details.enabled ? '正常' : '已停用')}</StatusBadge>}
-        headerActions={details && <ResourceRowActions actions={[
-          { label: '重置令牌', disabled: busy, onClick: () => setResetTarget(details) },
-        ]} />}
-        busy={busy}
-        size="wide"
-        onClose={closeDrawer}
-        returnFocusRef={detailsTrigger}
-      >
+        </form>}
+        {details && <div ref={detailsSummary} tabIndex={-1} className="drawer-heading-title">
+          <StatusBadge tone={(details.status ? details.status === 'active' : details.enabled) ? 'success' : 'muted'} size="sm">{details.statusLabel ?? (details.enabled ? '正常' : '已停用')}</StatusBadge>
+          <ResourceRowActions actions={[
+            { label: '重置令牌', disabled: busy, onClick: () => setResetTarget(details) },
+          ]} />
+        </div>}
         {detailsError ? <StatusMessage tone="error">{detailsError}</StatusMessage> : null}
         {details && !detailsError ? <>
           {details.entitlementVersionNumber && <p className="drawer-note">来源模板 {details.entitlementTemplateName} v{details.entitlementVersionNumber}（仅追溯）</p>}
@@ -1010,28 +1032,34 @@ export function SubscriptionsPage() {
           />
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
         </> : null}
-      </EditDrawer>
+      </Dialog>
 
-      <EditDrawer open={sharing !== null} title="临时分享" busy={busy} onClose={() => setSharing(null)}>
-        {sharing ? <CreateShareForm key={sharing.id} admin subscriptionId={sharing.id} onCancel={() => setSharing(null)} onPending={setBusy} onCreated={(_share, url) => setShareUrl(url)} /> : null}
-        {shareUrl ? <label className="field"><span>分享链接</span><Input aria-label="分享链接" readOnly value={shareUrl} /><CopyButton value={shareUrl} label="复制分享链接" /></label> : null}
-      </EditDrawer>
+      <Dialog open={sharing !== null} title={shareUrl ? '分享已创建' : '临时分享'} size="m"
+        busy={busy} dirty={!shareUrl && shareDirty} sensitive={!!shareUrl} returnFocusRef={shareTrigger}
+        onClose={() => { setSharing(null); setShareDirty(false); setShareUrl('') }}
+        footer={(requestClose) => shareUrl ? <>
+          <CopyButton value={shareUrl} label="复制分享链接" variant="secondary" />
+          <button className="button primary" type="button" onClick={requestClose}>完成</button>
+        </> : <>
+          <button className="button secondary" type="button" onClick={requestClose} disabled={busy}>取消</button>
+          <button className="button primary" type="submit" form="admin-create-share" disabled={busy}>{busy ? '正在创建' : '创建'}</button>
+        </>}
+      >
+        {shareUrl ? <label className="field"><span>分享链接</span><Input ref={shareResult} aria-label="分享链接" readOnly value={shareUrl} /></label>
+          : sharing && <CreateShareForm key={sharing.id} admin subscriptionId={sharing.id} formId="admin-create-share"
+            onDirtyChange={setShareDirty} onPending={setBusy} onCreated={(_share, url) => setShareUrl(url)} />}
+      </Dialog>
 
       <ConfirmDialog open={qr !== null} title={qr ? `${CLIENT_LABELS[qr.client] ?? qr.client} 二维码` : '订阅二维码'} description={details?.name ?? ''} confirmLabel="复制链接" onClose={() => setQr(null)} onConfirm={() => { if (qr) { const link = qr.link; setQr(null); void copyToClipboard(link).then(() => setMessage('链接已复制')).catch(() => setError('浏览器未允许复制，请手动选择内容')) } }}>
         {qr?.loading ? <p className="qr-loading" role="status">正在生成二维码</p> : qr?.dataUrl ? <img className="qr-image" src={qr.dataUrl} alt={`${CLIENT_LABELS[qr.client] ?? qr.client} 订阅二维码`} /> : null}
       </ConfirmDialog>
 
-      <SubscriptionBatchJobs request={batchRequest} onClear={() => setBatchRequest(null)} historyOpen={batchHistory}
+      <SubscriptionBatchJobs request={batchRequest} onClear={() => { setBatchRequest(null); setBatchPlanOpen(false) }} historyOpen={batchHistory}
+        choosingPlan={batchPlanOpen} plans={plans} onPreviewPlan={(planId) => previewBatch({ action: 'plan', planId })}
         onCloseHistory={() => setBatchHistory(false)} onChanged={() => { void load(); setSelected(new Set()) }} platforms={CLIENT_LABELS} />
       <ConfirmDialog open={confirmAction !== null} title="删除订阅" description={`将删除选中的 ${selected.size} 个订阅及所有平台产物`}
         confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmAction(null)} onConfirm={() => void executeDelete()} />
       <ConfirmDialog open={resetTarget !== null} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} onClose={() => setResetTarget(null)} onConfirm={() => { const target = resetTarget; setResetTarget(null); if (target) void resetToken(target) }} />
-      <ConfirmDialog open={batchPlanOpen} title="更换计划" description="选中的订阅将改用同一计划" confirmLabel="预览影响" confirmDisabled={!batchPlanId} busy={busy} onClose={() => setBatchPlanOpen(false)} onConfirm={() => previewBatch({ action: 'plan', planId: batchPlanId })}>
-        <FormSelect aria-label="目标计划" value={batchPlanId} onChange={(event) => setBatchPlanId(event.currentTarget.value)}>
-          <option value="">选择计划</option>
-          {plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
-        </FormSelect>
-      </ConfirmDialog>
       <ConfirmDialog open={batchBindingOpen} title="更换配置" description="选中的订阅将改用同一转换配置绑定" confirmLabel="预览影响" busy={busy} onClose={() => setBatchBindingOpen(false)} onConfirm={() => { previewBatch({ action: 'binding', templateBinding: batchBindingValue === 'inherit' || batchBindingValue === 'base' ? { mode: batchBindingValue } : { mode: 'specific', templateId: batchBindingValue } }) }}>
         <FormSelect aria-label="配置绑定" value={batchBindingValue} onChange={(event) => setBatchBindingValue(event.currentTarget.value)}>
           <option value="inherit">继承默认</option>

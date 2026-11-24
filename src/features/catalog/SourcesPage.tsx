@@ -14,7 +14,7 @@ import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { useToast } from '../../ui/Toast'
 import { formatDate, formatLabel, matchesText, sourceStatus, sourceTypeLabel } from './catalog-utils'
 
@@ -167,6 +167,7 @@ export function SourcesPage() {
     if (busy || previewBusy) return
     setDrawer(null)
     setPreview(null)
+    setPreviewContent('')
     setDrawerError('')
   }
 
@@ -174,6 +175,7 @@ export function SourcesPage() {
     drawerTrigger.current = event.currentTarget
     setForm(emptyForm())
     setPreview(null)
+    setPreviewContent('')
     setDrawerError('')
     setDrawer('create')
   }
@@ -182,6 +184,7 @@ export function SourcesPage() {
     drawerTrigger.current = trigger ?? createButton.current
     setForm(sourceForm(source))
     setPreview(null)
+    setPreviewContent('')
     setDrawerError('')
     setDrawer(source)
     setSyncRuns(null)
@@ -213,6 +216,7 @@ export function SourcesPage() {
   }
 
   const previewSource = async () => {
+    if (busy || previewBusy) return
     if (!form.content.trim()) {
       setDrawerError('请先填写来源内容')
       return
@@ -236,6 +240,7 @@ export function SourcesPage() {
 
   const saveSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (!drawer || busy || previewBusy) return
     setDrawerError('')
     if (!form.name.trim()) {
       setDrawerError('请输入来源名称')
@@ -417,10 +422,16 @@ export function SourcesPage() {
         </ResourceFooter>
       </section>
 
-      <EditDrawer open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={drawerTrigger}>
-        {drawer && <form className="form-stack" onSubmit={saveSource}>
+      <Dialog open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} size="l" busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={drawerTrigger}
+        dirty={drawer !== null && JSON.stringify(form) !== JSON.stringify(drawer === 'create' ? emptyForm() : sourceForm(drawer))}
+        footer={(requestClose) => <>
+          <button className="button secondary" type="button" onClick={requestClose} disabled={busy || previewBusy}>取消</button>
+          <button className="button primary" type="submit" form="source-editor-form" disabled={busy || previewBusy}>{busy ? '保存中' : drawer === 'create' ? '保存来源' : '保存修改'}</button>
+        </>}
+      >
+        {drawer && <form id="source-editor-form" className="form-stack" onSubmit={saveSource}>
           <label className="field"><span>来源名称</span><Input aria-label="来源名称" value={form.name} maxLength={128} onChange={(event) => updateForm('name', event.currentTarget.value)} required /></label>
-          {drawer === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="drawer-note">类型：{sourceTypeLabel(form.type)} · 编辑时只更新可安全修改的字段</p>}
+          {drawer === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="drawer-note">类型：{sourceTypeLabel(form.type)}</p>}
           {form.type === 'remote' ? <>
             <label className="field"><span>远程 URL</span><Input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={drawer === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={drawer === 'create'} /></label>
             <details className="sources-advanced" onInvalidCapture={(event) => { event.currentTarget.open = true }}>
@@ -433,7 +444,7 @@ export function SourcesPage() {
           </> : <>
             {form.type === 'file' ? <label className="field"><span>来源文件</span><FileInput aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setDrawerError('读取文件失败')) }} /></label> : null}
             <label className="field"><span>来源内容</span><Textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
-            <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button><span className="drawer-note">保存前会先验证可解析节点</span></div>
+            <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button></div>
           </>}
           {drawer !== 'create' && <details className="sources-advanced">
             <summary onClick={() => {
@@ -449,27 +460,27 @@ export function SourcesPage() {
             </li>)}</ul>
           </details>}
           <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />
-          {preview ? <section className="source-preview" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.diff && <DiffCounts diff={preview.diff} />}{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
+          {preview ? <section className="form-stack" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.diff && <DiffCounts diff={preview.diff} />}{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeDrawer} disabled={busy || previewBusy}>取消</button><button className="button primary" type="submit" disabled={busy || previewBusy}>{busy ? '保存中' : drawer === 'create' ? '保存来源' : '保存修改'}</button></div>
         </form>}
-      </EditDrawer>
+      </Dialog>
 
-      <EditDrawer open={syncSource !== null} title="同步差异预览" busy={busy} onClose={closeSync} returnFocusRef={drawerTrigger}>
+      <Dialog open={syncSource !== null} title="同步差异预览" size="l" busy={busy} onClose={closeSync} returnFocusRef={drawerTrigger}
+        footer={(requestClose) => <>
+            <button className="button secondary" type="button" disabled={busy} onClick={requestClose}>取消</button>
+            <button className="button primary" type="button" disabled={!syncPreview || busy} onClick={confirmSync}>确认同步</button>
+        </>}
+      >
         <div className="form-stack catalog-sync-form">
           <strong>{syncSource?.name}</strong>
           {syncError && <StatusMessage tone="error">{syncError}</StatusMessage>}
-          {syncPreview ? <section className="source-preview" aria-label="同步差异">
+          {syncPreview ? <section className="form-stack" aria-label="同步差异">
             <span>识别格式 {formatLabel(syncPreview.format)}</span>
             <DiffCounts diff={syncPreview.diff} />
             <span>失效节点会保留 24 小时，在后续成功同步时清理</span>
           </section> : !syncError && <p role="status">正在获取差异</p>}
-          <div className="dialog-actions">
-            <button className="button secondary" type="button" disabled={busy} onClick={closeSync}>取消</button>
-            <button className="button primary" type="button" disabled={!syncPreview || busy} onClick={confirmSync}>确认同步</button>
-          </div>
         </div>
-      </EditDrawer>
+      </Dialog>
 
       <ConfirmDialog open={pendingBatch !== null} title={pendingBatch === 'delete' ? '删除来源' : '停用来源'} description={pendingBatch === 'delete' ? `将删除选中的 ${selected.size} 个来源，并清理不再关联的节点` : `将停用选中的 ${selected.size} 个来源`} confirmLabel={pendingBatch === 'delete' ? '确认删除' : '确认停用'} danger busy={busy} onClose={() => setPendingBatch(null)} onConfirm={() => executeBatch(pendingBatch ?? 'delete')} />
     </div>
@@ -503,7 +514,7 @@ export function SourcesPage() {
   }
 
   async function confirmSync() {
-    if (!syncSource || !syncPreview) return
+    if (busy || !syncSource || !syncPreview) return
     setBusy(true)
     setSyncError('')
     try {

@@ -74,10 +74,12 @@ function ShareToggle({ label, checked, onChange, disabled }: {
   )
 }
 
-export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated, admin = false }: {
+export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated, onDirtyChange, formId, admin = false }: {
   subscriptionId: string
   admin?: boolean
-  onCancel: () => void
+  onCancel?: () => void
+  onDirtyChange?: (dirty: boolean) => void
+  formId?: string
   onPending: (pending: boolean) => void
   onCreated: (share: ShareView, url: string) => void
 }) {
@@ -91,6 +93,9 @@ export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated
   const [showNodeNames, setShowNodeNames] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const dirty = !!(remark || days || password || allowOriginalLink || showSubscriptionName || showGroups || showExpiry || showNodeNames)
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -136,7 +141,7 @@ export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated
   }
 
   return (
-    <form className="form-stack sh-form" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
+    <form id={formId} className="form-stack sh-form" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
       <FormField label="备注" htmlFor="share-remark">
         <Input id="share-remark" value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
       </FormField>
@@ -176,10 +181,10 @@ export function CreateShareForm({ subscriptionId, onCancel, onPending, onCreated
         <ShareToggle label="节点名" checked={showNodeNames} disabled={submitting} onChange={setShowNodeNames} />
       </fieldset>
       {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-      <div className="dialog-actions">
+      {onCancel && <div className="dialog-actions">
         <button className="button secondary" type="button" onClick={onCancel} disabled={submitting}>取消</button>
         <button className="button primary" type="submit" disabled={submitting}>{submitting ? '正在创建' : '创建'}</button>
-      </div>
+      </div>}
     </form>
   )
 }

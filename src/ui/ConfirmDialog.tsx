@@ -1,5 +1,5 @@
 import type { RefObject, ReactNode } from 'react'
-import { Dialog } from './Dialog'
+import { Dialog, type DialogSize } from './Dialog'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -7,6 +7,8 @@ type ConfirmDialogProps = {
   description: string
   confirmLabel: string
   danger?: boolean
+  size?: DialogSize
+  dirty?: boolean
   busy?: boolean
   confirmDisabled?: boolean
   onClose: () => void
@@ -21,6 +23,8 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   danger = false,
+  size = 's',
+  dirty = false,
   busy = false,
   confirmDisabled = false,
   onClose,
@@ -33,7 +37,8 @@ export function ConfirmDialog({
       open={open}
       title={title}
       description={description}
-      size="s"
+      size={size}
+      dirty={dirty}
       busy={busy}
       closeOnBackdrop={false}
       onClose={onClose}

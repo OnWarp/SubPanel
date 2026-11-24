@@ -73,7 +73,7 @@ function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
   return items
 }
 
-function RowMenu({ label, disabled, items, onSelect }: { label: string; disabled?: boolean; items: MenuItem[]; onSelect: (key: RowAction) => void }) {
+function RowMenu({ label, disabled, items, onSelect }: { label: string; disabled?: boolean; items: MenuItem[]; onSelect: (key: RowAction, trigger: HTMLElement | null) => void }) {
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDetailsElement>) => {
     if (event.key !== 'Escape') return
     event.currentTarget.open = false
@@ -81,12 +81,18 @@ function RowMenu({ label, disabled, items, onSelect }: { label: string; disabled
   }
   const choose = (event: ReactMouseEvent<HTMLButtonElement>, key: RowAction) => {
     const menu = event.currentTarget.closest('details')
+    const trigger = menu?.querySelector('summary') ?? null
     if (menu) menu.open = false
-    onSelect(key)
+    trigger?.focus()
+    onSelect(key, trigger)
   }
   return (
     <details className="usr-menu" onKeyDown={onKeyDown} onToggle={(event) => { if (disabled) event.currentTarget.open = false }}>
-      <Button as="summary" size="page" aria-label={label} aria-haspopup="menu" aria-disabled={disabled || undefined} title="操作" onClick={(event) => { if (disabled) event.preventDefault() }}>
+      <Button as="summary" size="page" tabIndex={0} aria-label={label} aria-haspopup="menu" aria-disabled={disabled || undefined} title="操作" onClick={(event) => {
+        event.preventDefault()
+        const menu = event.currentTarget.closest('details')
+        if (menu && !disabled) menu.open = !menu.open
+      }}>
         <Ellipsis aria-hidden="true" size={18} />
       </Button>
       <div className="usr-menu-panel" role="menu">
@@ -139,7 +145,7 @@ export function UsersDirectory({
   onPage: (page: number) => void
   onToggle: (id: string) => void
   onToggleAll: (checked: boolean) => void
-  onRowAction: (action: RowAction, user: UserSummary) => void
+  onRowAction: (action: RowAction, user: UserSummary, trigger: HTMLElement | null) => void
   onBatch: (action: BatchKind) => void
   batchProgress?: string
 }) {
@@ -208,7 +214,7 @@ export function UsersDirectory({
           label={`${user.username} 的操作`}
           disabled={mutating}
           items={menuItems(user, view)}
-          onSelect={(action) => onRowAction(action, user)}
+          onSelect={(action, trigger) => onRowAction(action, user, trigger)}
         />
       ),
     },
@@ -311,6 +317,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [subscriptionPlanUser, setSubscriptionPlanUser] = useState<UserSummary | null>(null)
   const toast = useToast()
   const usersRequestSeq = useRef(0)
+  const dialogTrigger = useRef<HTMLElement>(null)
 
   const loadUsers = useCallback(async () => {
     const seq = ++usersRequestSeq.current
@@ -555,7 +562,8 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     }
   }
 
-  const onRowAction = (action: RowAction, user: UserSummary) => {
+  const onRowAction = (action: RowAction, user: UserSummary, trigger: HTMLElement | null) => {
+    dialogTrigger.current = trigger
     if (mutating) return
     if (action === 'edit-email') {
       setEditUser(user)
@@ -640,6 +648,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
           username={subscriptionPlanUser.username}
           showSummary={false}
           active
+          returnFocusRef={dialogTrigger}
           onSave={() => { void load() }}
           onActiveChange={(next) => { if (!next) setSubscriptionPlanUser(null) }}
         />
@@ -647,10 +656,12 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
 
       <Dialog
         open={editUser !== null}
+        returnFocusRef={dialogTrigger}
         busy={mutating}
         dirty={editUser !== null && editEmail !== (editUser.email ?? '')}
         onClose={() => { if (!mutating) setEditUser(null) }}
         title="编辑用户"
+        size="m"
         footer={(requestClose) => <>
           <button className="button secondary" type="button" disabled={mutating} onClick={requestClose}>取消</button>
           <button className="button primary" type="submit" form="edit-user-form" disabled={mutating}>保存</button>
@@ -668,6 +679,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
 
       <Dialog
         open={resetUser !== null}
+        returnFocusRef={dialogTrigger}
         busy={mutating}
         dirty={passwordDirty && !tempPassword}
         sensitive={!!tempPassword}
