@@ -21,9 +21,7 @@ import {
   presentSubscriptionStatus,
 } from './lifecycle.js'
 import {
-  copySubscription,
   createSubscription,
-  transferSubscription,
   disableExpiredSubscriptions,
   decryptSubscriptionToken,
   deleteSubscription,
@@ -374,18 +372,6 @@ adminDeliveryRoutes.post('/', async (c) => {
 adminDeliveryRoutes.get('/:id', async (c) => {
   const subscription = await run(() => getSubscription(c.env, c.req.param('id')))
   return c.json({ subscription: await view(c, subscription) })
-})
-
-adminDeliveryRoutes.post('/:id/copy', async (c) => {
-  await readJson(c, emptySchema)
-  const result = await run(() => copySubscription(c.env, c.req.param('id'), { actorRole: 'admin' }))
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice }, 201)
-})
-
-adminDeliveryRoutes.post('/:id/transfer', async (c) => {
-  const input = await readJson(c, z.object({ userId: z.string().regex(/^usr_[1-9]\d*$/).nullable() }))
-  const result = await run(() => transferSubscription(c.env, c.req.param('id'), input.userId))
-  return c.json({ subscription: await view(c, result.subscription), token: result.token, warning: deliveryNotice })
 })
 
 adminDeliveryRoutes.patch('/:id', async (c) => {

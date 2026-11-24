@@ -328,16 +328,17 @@ describe('subscription lifecycle', () => {
     const stored = await env.DATA.get(`fetch-stats:${created.subscription.id}`)
     expect(stored ?? '').not.toContain('curl')
 
-    const copied = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/subscriptions/${created.subscription.id}/copy`,
-      jsonRequest({}, withCookie(admin)),
-    )
-    expect(copied.status).toBe(201)
-    const copyBody = await copied.json() as { subscription: SubscriptionView; token: string }
-    expect(copyBody.subscription.name).toBe('Links 副本')
-    expect(copyBody.token).not.toBe(created.token)
+    for (const prefix of ['/api/admin/subscriptions', '/api/admin/delivery/subscriptions', '/api/admin/delivery']) {
+      for (const action of ['copy', 'transfer']) {
+        const response = await exports.default.fetch(
+          `${TEST_ORIGIN}${prefix}/${created.subscription.id}/${action}`,
+          jsonRequest(action === 'transfer' ? { userId: null } : {}, withCookie(admin)),
+        )
+        expect(response.status).toBe(404)
+      }
+    }
+    expect((await adminSubscription(admin, created.subscription.id)).links).toEqual(after.links)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${created.token}/mihomo`)).status).toBe(200)
-    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${copyBody.token}/mihomo`)).status).toBe(200)
 
     const jobPath = '/api/admin/compile-jobs'
     const request = (path: string, body?: unknown) => exports.default.fetch(
@@ -368,17 +369,29 @@ describe('subscription lifecycle', () => {
     const bindingId = await enqueue(bindingReview)
     expect(await (await request(`/${bindingId}/run`, {})).json()).toMatchObject({ job: { status: 'completed', processed: 1 } })
 
-    const copyReview = await inspect({ ids: [created.subscription.id, 'sub_999999'], operation: { action: 'copy' } })
-    expect(copyReview).toMatchObject({ affected: 1, missing: 1, platforms: [] })
-    const copyId = await enqueue(copyReview)
-    expect(await (await request(`/${copyId}/run`, {})).json()).toMatchObject({ job: { status: 'failed', processed: 2, failures: 1 } })
-    const outcomes = await (await request(`/${copyId}/items`)).json() as { items: Array<{ id: string; outcome: string; copyId: string }> }
-    const copiedId = outcomes.items.find(item => item.id === created.subscription.id)?.copyId
-    expect(copiedId).toMatch(/^sub_/u)
-    const copiedView = await adminSubscription(admin, copiedId!)
-    expect(copiedView.links.mihomo).not.toBe(after.links.mihomo)
-    const retry = await (await request(`/${copyId}/retry`, {})).json()
-    expect(retry).toMatchObject({ input: { ids: ['sub_999999'], operation: { action: 'copy' } }, affected: 0 })
+    const retiredInput = { ids, operation: { action: 'copy' } }
+    expect((await request('/batch/preview', retiredInput)).status).toBe(422)
+    expect((await request('/batch', {
+      ...retiredInput, previewId: planReview.previewId, fingerprint: planReview.fingerprint,
+    })).status).toBe(422)
+
+    const legacyJob = crypto.randomUUID()
+    const now = new Date().toISOString()
+    await env.DB.prepare(`INSERT INTO compile_jobs
+      (id,actor_user_id,platform,total,compiled,operation_json,created_at,updated_at)
+      VALUES (?,'usr_1','generic',2,1,?,?,?)`)
+      .bind(legacyJob, JSON.stringify({ input: retiredInput.operation, target: null }), now, now).run()
+    await env.DB.prepare(`INSERT INTO compile_job_items (job_id,subscription_id,outcome,copy_id)
+      VALUES (?,?,'applied','sub_999999'),(?,?,NULL,NULL)`)
+      .bind(legacyJob, ids[0], legacyJob, ids[1]).run()
+    expect((await request(`/${legacyJob}/run`, {})).status).toBe(410)
+    expect(await (await request(`/${legacyJob}`)).json()).toMatchObject({ job: { status: 'queued', processed: 1 } })
+    expect((await request(`/${legacyJob}/cancel`, {})).status).toBe(200)
+    expect((await request(`/${legacyJob}/retry`, {})).status).toBe(410)
+    expect(await (await request(`/${legacyJob}/items`)).json()).toMatchObject({
+      items: expect.arrayContaining([{ id: ids[0], outcome: 'applied', errorCode: null, copyId: 'sub_999999' }]),
+    })
+    expect(await env.DB.prepare('SELECT COUNT(*) AS total FROM subscriptions').first('total')).toBe(2)
 
     const disableReview = await inspect({ ids, operation: { action: 'disable' } })
     const disableId = await enqueue(disableReview)
@@ -386,11 +399,10 @@ describe('subscription lifecycle', () => {
     expect((await request(`/${disableId}/run`, {})).status).toBe(409)
     expect((await adminSubscription(admin, created.subscription.id)).enabled).toBe(true)
     const audit = await env.DB.prepare("SELECT action, target_id, detail FROM audit_logs WHERE action LIKE 'subscription_batch.%' AND action<>'subscription_batch.created'").all()
-    expect(audit.results).toHaveLength(5)
-    expect(audit.results).toEqual(expect.arrayContaining([
-      expect.objectContaining({ action: 'subscription_batch.copy', target_id: created.subscription.id, detail: expect.stringContaining(copiedId!) }),
-      expect.objectContaining({ action: 'subscription_batch.copy', target_id: 'sub_999999', detail: expect.stringContaining('SUBSCRIPTION_NOT_FOUND') }),
-    ]))
+    expect(audit.results).toHaveLength(3)
+    expect(audit.results.map(row => row.action).sort()).toEqual([
+      'subscription_batch.binding', 'subscription_batch.plan', 'subscription_batch.plan',
+    ])
     expect(JSON.stringify(audit.results)).not.toContain(created.token)
 
     const allIds = [...ids]

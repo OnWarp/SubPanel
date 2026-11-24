@@ -6,16 +6,16 @@ import { StatusMessage } from '../../ui/StatusMessage'
 
 const path = '/api/admin/compile-jobs'
 export type BatchOperation =
-  | { action: 'copy' | 'enable' | 'disable' }
+  | { action: 'enable' | 'disable' }
   | { action: 'plan'; planId: string }
   | { action: 'binding'; templateBinding: { mode: 'inherit' | 'base' } | { mode: 'specific'; templateId: string } }
 type BatchInput = { ids: string[]; operation: BatchOperation }
 type Preview = {
   previewId: string; fingerprint: string; selected: number; affected: number; missing: number
-  platforms: string[]; generatedPlatforms: string[]
+  platforms: string[]
 }
 type Job = {
-  id: string; action: BatchOperation['action'] | null; total: number; processed: number; failures: number
+  id: string; action: BatchOperation['action'] | 'copy' | null; total: number; processed: number; failures: number
   status: 'queued' | 'running' | 'failed' | 'cancelled' | 'completed'; busy: number
   errorCode: string | null
 }
@@ -125,13 +125,13 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
           {job ? <>
             <p role="status">{job.action && label[job.action]} · {status[job.status]} · 已处理 {job.processed}/{job.total} · 失败 {job.failures}</p>
-            {job.errorCode && <StatusMessage tone="error">{`${job.errorCode} · 可重新预览未完成项`}</StatusMessage>}
+            {job.errorCode && <StatusMessage tone="error">{job.action === 'copy' ? job.errorCode : `${job.errorCode} · 可重新预览未完成项`}</StatusMessage>}
             <div className="data-header-actions">
               {(job.status === 'queued' || job.status === 'running') ? <>
-                <button className="button primary" type="button" disabled={busy || Boolean(job.busy)} onClick={() => advance('run')}>执行任务</button>
-                {busy && <button className="button secondary" type="button" onClick={() => { advancing.current = false }}>处理完本页后暂停</button>}
+                {job.action !== 'copy' && <button className="button primary" type="button" disabled={busy || Boolean(job.busy)} onClick={() => advance('run')}>执行任务</button>}
+                {busy && job.action !== 'copy' && <button className="button secondary" type="button" onClick={() => { advancing.current = false }}>处理完本页后暂停</button>}
                 <button className="button secondary" type="button" disabled={busy} onClick={() => advance('cancel')}>取消剩余项目</button>
-              </> : (job.status === 'cancelled' || job.status === 'failed') && job.processed - job.failures < job.total &&
+              </> : job.action !== 'copy' && (job.status === 'cancelled' || job.status === 'failed') && job.processed - job.failures < job.total &&
                 <button className="button primary" type="button" disabled={busy} onClick={retry}>重新预览未完成项</button>}
               <button className="button secondary" type="button" disabled={busy} onClick={() => void perform(() => viewJob(job.id))}>刷新进度</button>
             </div>
@@ -157,9 +157,7 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
       {review && <div>
         <p>{review.preview.platforms.length
           ? `可能失效的平台产物：${review.preview.platforms.map(id => platforms[id]).join('、')}`
-          : review.input.operation.action === 'copy' ? '现有平台产物保留，副本使用新令牌' : '预计无平台产物失效'}</p>
-        {review.preview.generatedPlatforms.length > 0 &&
-          <p>副本平台：{review.preview.generatedPlatforms.map(id => platforms[id]).join('、')}</p>}
+          : '预计无平台产物失效'}</p>
         {review.input.operation.action === 'binding' && <p>sing-box 独立绑定优先于共享配置</p>}
         {review.input.operation.action === 'plan' && <p>会应用目标计划的分组权限和额度，保留订阅已有有效期</p>}
       </div>}

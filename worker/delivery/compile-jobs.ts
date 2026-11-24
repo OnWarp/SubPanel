@@ -71,15 +71,21 @@ async function createJob(env: DataEnv, scope: Scope, actor: string) {
   return getJob(env.DB, id)
 }
 
+function rejectRetiredAction(action: unknown) {
+  if (action === 'copy') throw apiError(410, 'SUBSCRIPTION_BATCH_ACTION_REMOVED', '订阅批量操作已移除')
+}
+
 async function runPage(env: DataEnv, id: string) {
   const db = env.DB
   const started = Date.now()
   const lease = crypto.randomUUID()
   const job = await db.prepare(`UPDATE compile_jobs SET lease=?, lease_until=?, status='running', updated_at=?
-    WHERE id=? AND status IN ('queued','running') AND (lease_until IS NULL OR lease_until <= ?)
+    WHERE id=? AND status IN ('queued','running')
+      AND json_extract(operation_json,'$.input.action') IS NOT 'copy' AND (lease_until IS NULL OR lease_until <= ?)
     RETURNING *`).bind(lease, started + leaseMs, new Date(started).toISOString(), id, started).first<Job>()
   if (!job) {
-    await getJob(db, id)
+    const existing = await getJob(db, id)
+    rejectRetiredAction(existing.action)
     throw apiError(409, 'COMPILE_JOB_UNAVAILABLE', '任务正在执行或已结束')
   }
 
@@ -230,6 +236,7 @@ compileJobRoutes.post('/:id/cancel', async c => {
 })
 compileJobRoutes.post('/:id/retry', async c => {
   const job = await getJob(c.env.DB, c.req.param('id'))
+  rejectRetiredAction(job.action)
   if (!['failed', 'cancelled', 'completed'].includes(String(job.status))) {
     throw apiError(409, 'COMPILE_JOB_UNAVAILABLE', '任务尚未结束')
   }

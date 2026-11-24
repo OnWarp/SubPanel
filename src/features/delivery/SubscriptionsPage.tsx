@@ -266,8 +266,6 @@ export function SubscriptionsPage() {
   const [batchHistory, setBatchHistory] = useState(false)
   const [batchRequest, setBatchRequest] = useState<{ ids: string[]; operation: BatchOperation } | null>(null)
   const [progress, setProgress] = useState('')
-  const [transfer, setTransfer] = useState<AdminSubscription | null>(null)
-  const [targetUser, setTargetUser] = useState('')
   const [sharing, setSharing] = useState<AdminSubscription | null>(null)
   const [shareUrl, setShareUrl] = useState('')
   const [qr, setQr] = useState<{ client: string; link: string; dataUrl: string; loading: boolean } | null>(null)
@@ -547,22 +545,6 @@ export function SubscriptionsPage() {
     }
   }
 
-  const copySubscription = useCallback(async (subscription: AdminSubscription) => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    try {
-      const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>(`/api/admin/subscriptions/${subscription.id}/copy`, { method: 'POST', body: '{}' })
-      setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
-      setMessage('订阅已复制')
-      await load()
-    } catch (cause) {
-      setError(errorMessage(cause, '复制订阅失败'))
-    } finally {
-      setBusy(false)
-    }
-  }, [busy, load])
-
   const resetToken = async (subscription: AdminSubscription) => {
     if (busy) return
     setBusy(true)
@@ -619,7 +601,6 @@ export function SubscriptionsPage() {
   }
 
   const actions: BatchAction[] = [
-    { key: 'copy', label: '复制', onClick: () => previewBatch({ action: 'copy' }) },
     { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => previewBatch({ action: 'enable' }) },
     { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => previewBatch({ action: 'disable' }) },
     { key: 'plan', label: '更换计划', onClick: () => { setBatchPlanId(''); setBatchPlanOpen(true) } },
@@ -736,13 +717,11 @@ export function SubscriptionsPage() {
             setDrawer({ kind: 'details', subscription })
           } },
           { label: '编辑', onClick: () => openEdit(subscription) },
-          { label: '复制订阅', disabled: busy, onClick: () => { void copySubscription(subscription) } },
-          { label: '转移', onClick: () => { setTargetUser(subscription.userId ?? ''); setTransfer(subscription); setDrawerError('') } },
           { label: '临时分享', disabled: !subscription.userId || !subscription.enabled, onClick: () => { setSharing(subscription); setShareUrl('') } },
         ]} />
       ),
     },
-  ], [busy, copySubscription, groupNames, selectPage, selected, subscriptions, userNames])
+  ], [busy, groupNames, selectPage, selected, subscriptions, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
   const detailsId = details?.id
@@ -1023,25 +1002,6 @@ export function SubscriptionsPage() {
         </> : null}
       </EditDrawer>
 
-      <EditDrawer open={transfer !== null} title="转移订阅" busy={busy} dirty={transfer !== null && targetUser !== (transfer.userId ?? '')} onClose={() => setTransfer(null)} footer={<button className="button primary" type="submit" form="subscription-transfer-form" disabled={busy}>确认转移</button>}>
-        <form id="subscription-transfer-form" className="form-stack sp-form-stack" onSubmit={async event => {
-          event.preventDefault()
-          if (!transfer || busy) return
-          setBusy(true)
-          try {
-            const result = await api<{ subscription: AdminSubscription; token: string; warning: string }>(`/api/admin/subscriptions/${transfer.id}/transfer`, { method: 'POST', body: jsonBody({ userId: targetUser || null }) })
-            setTokenNotice({ name: result.subscription.name, token: result.token, warning: result.warning })
-            setTransfer(null)
-            await load()
-          } catch (cause) { setDrawerError(errorMessage(cause, '转移失败')) } finally { setBusy(false) }
-        }}>
-          <FormField label="目标用户" htmlFor="subscription-transfer-user">
-            <FormSelect id="subscription-transfer-user" aria-label="目标用户" value={targetUser} onChange={event => setTargetUser(event.currentTarget.value)}><option value="">未分配（回收进池）</option>{users.map(user => <option key={user.id} value={user.id}>{user.username}</option>)}</FormSelect>
-          </FormField>
-          <p>转移将轮换令牌，旧链接立即失效</p>
-          {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-        </form>
-      </EditDrawer>
       <EditDrawer open={sharing !== null} title="临时分享" busy={busy} onClose={() => setSharing(null)}>
         {sharing ? <CreateShareForm key={sharing.id} admin subscriptionId={sharing.id} onCancel={() => setSharing(null)} onPending={setBusy} onCreated={(_share, url) => setShareUrl(url)} /> : null}
         {shareUrl ? <label className="field"><span>分享链接</span><Input aria-label="分享链接" readOnly value={shareUrl} /><CopyButton value={shareUrl} label="复制分享链接" /></label> : null}
