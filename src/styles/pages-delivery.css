@@ -399,3 +399,17 @@
 .redemption-section .sp-badge {
   justify-self: start;
 }
+
+.subscription-imports {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.subscription-imports details[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+.subscription-imports details > .upd-import-actions + * {
+  margin-top: var(--space-2);
+}

@@ -5,11 +5,10 @@ import type { SubscriptionDiagnostic } from '../../app/api'
 import { CopyButton } from '../../ui/CopyButton'
 import { Select } from '../../ui/Select'
 import { StatusBadge } from '../../ui/StatusBadge'
+import { SubscriptionImports, type SubscriptionImport } from './SubscriptionImports'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { DiagnosticList } from './DiagnosticList'
 import { DIAGNOSTIC_HELP } from './diagnostics'
-
-export type SubscriptionDetailLink = { value: string; label: string }
 
 export type SubscriptionDetailDiagnostic = {
   key: string
@@ -24,14 +23,14 @@ type SubscriptionDetailRowsProps = {
   user: string
   groups: string
   plan: { name: string; traffic: string; speed: string; devices: string } | null
-  links: SubscriptionDetailLink[]
+  links: SubscriptionImport[]
+  primaryLink: string
   client: string
-  link: string
   linkError: string
   onClient: (value: string) => void
   onCopied: () => void
   onCopyError: () => void
-  onShowQr: () => void
+  onShowQr: (client: string, link: string) => void
   bindingLabel: string
   templateName: string
   version: string
@@ -50,11 +49,12 @@ type SubscriptionDetailRowsProps = {
 }
 
 export function SubscriptionDetailRows({
-  user, groups, plan, links, client, link, linkError, onClient, onCopied, onCopyError, onShowQr,
+  user, groups, plan, links, primaryLink, client, linkError, onClient, onCopied, onCopyError, onShowQr,
   bindingLabel, templateName, version, versionHref, bindingError, bindingLoading, diagnostics,
   lifecycle, onFix, expiry, authorizedNodeCount, capabilityLabel, formatNote, fetchSummary, configVersion,
 }: SubscriptionDetailRowsProps) {
-  const clientLabel = links.find((entry) => entry.value === client)?.label ?? client
+  const selectedLink = links.find((entry) => entry.client === client)
+  const primaryClient = links.find((entry) => entry.link === primaryLink)?.client ?? 'auto'
   return (
     <div className="subscription-details">
       <section>
@@ -78,25 +78,23 @@ export function SubscriptionDetailRows({
       <section>
         <h3 className="drawer-section-title">客户端链接</h3>
         <dl className="key-value-rows">
-          {links.length ? <>
-            <div>
-              <dt>格式</dt>
-              <dd>
-                <Select label="格式" value={client} onChange={onClient} options={links} />
-              </dd>
-            </div>
-            <div>
-              <dt>链接</dt>
-              <dd className="subscription-link-row">
-                <span className="link-url" title={link}>{link}</span>
-                {capabilityLabel ? <StatusBadge tone={capabilityLabel === '完整规则配置' ? 'info' : 'muted'} size="sm">{capabilityLabel}</StatusBadge> : null}
-                <CopyButton key={client} value={link} iconOnly label={`复制 ${clientLabel} 链接`} copiedLabel="链接已复制" onCopied={onCopied} onError={onCopyError} />
-                <button className="icon-button" type="button" aria-label={`显示 ${clientLabel} 二维码`} title="显示二维码" onClick={onShowQr}><QrCode aria-hidden="true" size={16} /></button>
-              </dd>
-            </div>
-          </> : <div className="key-value-note"><dt>链接</dt><dd>{linkError || '暂无客户端链接'}</dd></div>}
+          {primaryLink ? <div>
+            <dt>链接</dt>
+            <dd className="subscription-link-row">
+              <span className="link-url del-link-text" title={primaryLink}>{primaryLink}</span>
+              <CopyButton key={primaryLink} value={primaryLink} iconOnly label="复制订阅链接" copiedLabel="链接已复制" onCopied={onCopied} onError={onCopyError} />
+              <button className="icon-button" type="button" aria-label="显示订阅二维码" title="显示二维码" onClick={() => onShowQr(primaryClient, primaryLink)}><QrCode aria-hidden="true" size={16} /></button>
+            </dd>
+          </div> : <div className="key-value-note"><dt>链接</dt><dd>{linkError || '暂无客户端链接'}</dd></div>}
         </dl>
-        {formatNote ? <p className="drawer-note">{formatNote}</p> : null}
+        <SubscriptionImports entries={links.filter(entry => entry.client !== 'auto')}>
+          {selectedLink && <div className="upd-import-actions">
+            <Select label="查看格式" value={client} onChange={onClient} options={links.map(entry => ({ value: entry.client, label: entry.label }))} />
+            <button className="icon-button" type="button" aria-label={`显示 ${selectedLink.label} 二维码`} title="显示二维码" onClick={() => onShowQr(client, selectedLink.link)}><QrCode aria-hidden="true" size={16} /></button>
+            {capabilityLabel && <StatusBadge tone={capabilityLabel === '完整规则配置' ? 'info' : 'muted'} size="sm">{capabilityLabel}</StatusBadge>}
+          </div>}
+          {formatNote && <p className="drawer-note">{formatNote}</p>}
+        </SubscriptionImports>
       </section>
       <section>
         <h3 className="drawer-section-title">附加配置</h3>

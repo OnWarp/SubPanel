@@ -770,7 +770,7 @@ export function SubscriptionsPage() {
   }, [detailsId])
 
   const linkEntries = Object.entries(details?.links ?? {})
-  const [client = '', link = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
+  const [client = ''] = linkEntries.find(([key]) => key === selectedClient) ?? linkEntries[0] ?? []
   const singboxClient = client === 'singbox' || client === 'karing'
   const effectiveTemplate = singboxClient && detailsBinding?.singboxTemplate
     ? detailsBinding.singboxTemplate : detailsBinding?.effectiveTemplate
@@ -979,14 +979,14 @@ export function SubscriptionsPage() {
               speed: details.speedLimitMbps ? `${details.speedLimitMbps} Mbps` : '不限',
               devices: String(details.deviceLimit || '不限'),
             }}
-            links={linkEntries.map(([key]) => ({ value: key, label: CLIENT_LABELS[key] ?? key }))}
+            links={linkEntries.map(([key, link]) => ({ client: key, link, label: CLIENT_LABELS[key] ?? key }))}
+            primaryLink={details.links.auto || details.links[details.defaultClient] || linkEntries[0]?.[1] || ''}
             client={client}
-            link={link}
             linkError={details.linkError || ''}
             onClient={setSelectedClient}
             onCopied={() => setError('')}
             onCopyError={() => setError('浏览器未允许复制，请手动选择内容')}
-            onShowQr={() => { void showQr(client, link) }}
+            onShowQr={(qrClient, qrLink) => { void showQr(qrClient, qrLink) }}
             bindingLabel={detailsBinding ? BINDING_MODE_LABELS[detailsBinding.mode] : '—'}
             templateName={effectiveTemplate?.templateName ?? '—'}
             version={versionLabel(effectiveTemplate?.sequence)}

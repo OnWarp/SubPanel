@@ -13,7 +13,6 @@ import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHero } from '../../ui/PageHero'
-import { SegmentedControl } from '../../ui/SegmentedControl'
 import { Select } from '../../ui/Select'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { StatusBadge } from '../../ui/StatusBadge'
@@ -22,7 +21,7 @@ import { DiagnosticList } from './DiagnosticList'
 import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from './platforms'
 import { DIAGNOSTIC_HELP } from './diagnostics'
 import { EXPIRY_BADGE, formatExpiryTime, formatRemaining, getExpiryState } from './expiry'
-import { clientImportLink } from '../user/client-import'
+import { SubscriptionImports } from './SubscriptionImports'
 
 const EMPTY_SUBSCRIPTIONS: AdminSubscription[] = []
 
@@ -49,7 +48,6 @@ export function MySubscriptionsPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [tokenNotice, setTokenNotice] = useState<{ name: string; token: string; warning: string } | null>(null)
-  const [client, setClient] = useState('')
   const [linkQr, setLinkQr] = useState<{ dataUrl: string; loading: boolean } | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const resetButtonRef = useRef<HTMLButtonElement>(null)
@@ -135,26 +133,18 @@ export function MySubscriptionsPage() {
     : []
   const diagnostics = selected ? Object.entries(selected.diagnostics) : []
   const primaryLink = selected ? pickPrimaryLink(selected.links, selected.defaultClient, platforms) : ''
-  const primaryClient = linkEntries.find(([, link]) => link === primaryLink)?.[0] ?? ''
-  const activeClient = linkEntries.some(([entryClient]) => entryClient === client)
-    ? client
-    : primaryClient || linkEntries[0]?.[0] || ''
-  const activeLink = linkEntries.find(([entryClient]) => entryClient === activeClient)?.[1] ?? ''
-  const importHref = activeLink
-    ? clientImportLink(activeClient, activeLink) ?? linkEntries.reduce<string | null>((found, [entryClient, link]) => found ?? clientImportLink(entryClient, link), null)
-    : null
   const expiry = selected ? getExpiryState(selected) : null
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
   useEffect(() => {
-    if (!activeLink) {
+    if (!primaryLink) {
       setLinkQr(null)
       return
     }
     let cancelled = false
     setLinkQr({ dataUrl: '', loading: true })
     void import('qrcode')
-      .then(({ default: QRCode }) => QRCode.toDataURL(activeLink, { width: 240, margin: 2, errorCorrectionLevel: 'M' }))
+      .then(({ default: QRCode }) => QRCode.toDataURL(primaryLink, { width: 240, margin: 2, errorCorrectionLevel: 'M' }))
       .then((dataUrl) => {
         if (!cancelled) setLinkQr({ dataUrl, loading: false })
       })
@@ -165,7 +155,7 @@ export function MySubscriptionsPage() {
         setError('二维码生成失败')
       })
     return () => { cancelled = true }
-  }, [activeLink])
+  }, [primaryLink])
 
   const resetToken = async () => {
     if (!selected || busy) return
@@ -238,22 +228,13 @@ export function MySubscriptionsPage() {
             {selected.linkError ? <StatusMessage tone="warning">订阅域名尚未配置，链接暂不可用，请联系管理员在系统设置中完成配置</StatusMessage> : null}
             <div className="subscription-link-section">
               <h2 id="subscription-link-title">订阅链接</h2>
-              {linkEntries.length ? (
+              {primaryLink ? (
                 <>
                   <div className="del-link-line">
-                    <p className="del-link-text">{activeLink}</p>
+                    <p className="del-link-text">{primaryLink}</p>
                     <div className="upd-import-actions">
-                      <CopyButton className="upd-copy-primary" value={activeLink} />
-                      {importHref ? <a className="button secondary" href={importHref}>导入到客户端</a> : null}
+                      <CopyButton className="upd-copy-primary" value={primaryLink} />
                     </div>
-                  </div>
-                  <div className="del-seg-scroll">
-                    <SegmentedControl
-                      label="客户端平台"
-                      value={activeClient}
-                      options={linkEntries.map(([entryClient]) => ({ value: entryClient, label: platforms.names[entryClient] ?? CLIENT_LABELS[entryClient] ?? entryClient }))}
-                      onChange={setClient}
-                    />
                   </div>
                   <div className="del-qr-slot">
                     {linkQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
@@ -268,14 +249,9 @@ export function MySubscriptionsPage() {
             </div>
           </section>
 
-          <section className="ui3-platform-list" aria-label="各平台订阅链接">
-            <h2>各平台链接</h2>
-            {linkEntries.map(([platform, link]) => {
-              const name = platforms.names[platform] ?? CLIENT_LABELS[platform] ?? platform
-              const format = selected.formats?.find((item) => item.platform === platform)
-              return <article key={platform} className="ui3-platform-row"><div className="upd-twoline"><h3>{name}</h3><code>{link}</code>{format ? <StatusBadge tone={format.capability === 'full' ? 'info' : 'muted'} size="sm">{format.capabilityLabel}</StatusBadge> : null}{format?.note ? <p>{format.note}</p> : null}</div><CopyButton value={link} label={`复制 ${name} 链接`} /></article>
-            })}
-          </section>
+          <SubscriptionImports key={selected.id} entries={linkEntries
+            .filter(([client]) => client !== 'auto')
+            .map(([client, link]) => ({ client, link, label: platforms.names[client] ?? CLIENT_LABELS[client] ?? client }))} />
 
           <section className="user-subscription-overview" aria-label="订阅计划">
             <h2>订阅计划</h2>
@@ -290,6 +266,11 @@ export function MySubscriptionsPage() {
 
           <details className="data-section user-subscription-section diagnostic-disclosure del-diagnostics">
             <summary id="diagnostics-title">兼容诊断</summary>
+            {selected.formats?.length ? <dl className="key-value-rows">
+              {selected.formats.filter(format => linkEntries.some(([client]) => client === format.platform)).map(format => (
+                <div key={format.platform}><dt>{format.displayName}</dt><dd>{format.capabilityLabel}{format.note && ` · ${format.note}`}</dd></div>
+              ))}
+            </dl> : null}
             {diagnostics.length ? <div className="diagnostic-list user-diagnostic-list"><p className="diagnostic-help">{DIAGNOSTIC_HELP}</p>{diagnostics.map(([entryClient, diagnostic]) => <article key={entryClient}><header><strong>{CLIENT_LABELS[entryClient] ?? entryClient}</strong><StatusBadge tone={diagnostic.available ? 'success' : 'warning'} size="sm">{diagnostic.available ? '可用' : '不可用'}</StatusBadge></header><p>输入 {diagnostic.inputNodes} · 输出 {diagnostic.outputNodes} · 跳过 {diagnostic.skippedNodes}</p>{diagnostic.diagnostics.length ? <DiagnosticList items={diagnostic.diagnostics} /> : null}</article>)}</div> : <EmptyState title="暂无编译诊断" />}
           </details>
 
