@@ -15,7 +15,7 @@ import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { Link } from 'react-router-dom'
 import { useToast } from '../../ui/Toast'
 import { groupNodeIds } from './catalog-counts'
@@ -81,6 +81,7 @@ export function NodesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState<CatalogNode | null>(null)
   const [nodeForm, setNodeForm] = useState<NodeForm>({ displayName: '', enabled: true, retained: false, protocol: '', server: '', port: '', tags: '', region: '' })
+  const [nodeBaseline, setNodeBaseline] = useState<NodeForm>(nodeForm)
   const [adding, setAdding] = useState(false)
   const [connection, setConnection] = useState<NodeDetails | null>(null)
   const [invalidFields, setInvalidFields] = useState<string[]>([])
@@ -144,8 +145,10 @@ export function NodesPage() {
     setConnection(null)
     setConnectionDirty(false)
     setInvalidFields([])
-    setNodeForm({ displayName: node.displayName, enabled: node.enabled, retained: node.retained,
-      protocol: node.protocol, server: node.server, port: String(node.port), tags: node.tags?.join(', ') ?? '', region: node.region ?? '' })
+    const baseline = { displayName: node.displayName, enabled: node.enabled, retained: node.retained,
+      protocol: node.protocol, server: node.server, port: String(node.port), tags: node.tags?.join(', ') ?? '', region: node.region ?? '' }
+    setNodeBaseline(baseline)
+    setNodeForm(baseline)
     setDrawerError('')
   }
 
@@ -166,7 +169,9 @@ export function NodesPage() {
     setConnectionDirty(true)
     setInvalidFields([])
     setConnection({ credentials: {}, extensions: {}, rawVariants: [] })
-    setNodeForm({ displayName: '', enabled: true, retained: true, protocol: '', server: '', port: '', tags: '', region: '' })
+    const baseline = { displayName: '', enabled: true, retained: true, protocol: '', server: '', port: '', tags: '', region: '' }
+    setNodeBaseline(baseline)
+    setNodeForm(baseline)
   }
 
   const closeEdit = () => {
@@ -181,7 +186,7 @@ export function NodesPage() {
 
   const saveNode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editing && !adding) return
+    if (busy || invalidFields.length || (!editing && !adding)) return
     setDrawerError('')
     if (!nodeForm.displayName.trim()) {
       setDrawerError('请输入节点名称')
@@ -358,8 +363,14 @@ export function NodesPage() {
         </ResourceFooter>
       </section>
 
-      <EditDrawer open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="compact" onClose={closeEdit} returnFocusRef={drawerTrigger}>
-        {(editing || adding) && <form className="form-stack" onSubmit={saveNode}>
+      <Dialog open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="l" onClose={closeEdit} returnFocusRef={drawerTrigger}
+        dirty={invalidFields.length > 0 || (!adding && connectionDirty) || JSON.stringify(nodeForm) !== JSON.stringify(nodeBaseline)}
+        footer={(requestClose) => <>
+          <button className="button secondary" type="button" onClick={requestClose} disabled={busy}>取消</button>
+          <button className="button primary" type="submit" form="node-editor-form" disabled={busy || invalidFields.length > 0}>{busy ? '保存中' : adding ? '保存节点' : '保存修改'}</button>
+        </>}
+      >
+        {(editing || adding) && <form id="node-editor-form" className="form-stack" onSubmit={saveNode}>
           <fieldset className="choice-section catalog-node-fields"><legend>基础信息</legend>
             <label className="field"><span>节点名称</span><Input aria-label="节点名称" value={nodeForm.displayName} maxLength={256} onChange={(event) => { const displayName = event.currentTarget.value; setNodeForm((current) => ({ ...current, displayName })) }} required /></label>
             <label className="field"><span>标签（逗号分隔）</span><Input value={nodeForm.tags} onChange={(event) => setNodeForm({ ...nodeForm, tags: event.currentTarget.value })} /></label>
@@ -368,7 +379,7 @@ export function NodesPage() {
             <Switch label="无来源时保留" checked={nodeForm.retained} onChange={(retained) => setNodeForm((current) => ({ ...current, retained }))} />
           </fieldset>
           <fieldset className="choice-section catalog-node-fields"><legend>连接参数</legend>
-            <label className="field"><span>协议</span><FormSelect value={nodeForm.protocol} onChange={(event) => {
+            <label className="field"><span>协议</span><FormSelect aria-label="协议" value={nodeForm.protocol} onChange={(event) => {
               setNodeForm({ ...nodeForm, protocol: event.currentTarget.value })
               setConnection((current) => current && { ...current, credentials: {} })
               setConnectionDirty(true)
@@ -410,15 +421,14 @@ export function NodesPage() {
             </FormSelect></label>
             <button className="button secondary" type="button" onClick={testOutput}>测试转换输出</button>
             {connectionDirty && <p className="drawer-note">转换测试使用已保存的连接参数</p>}
-            {testResult && <section className="source-preview"><p>可输出 {testResult.outputNodes} 个节点</p>
+            {testResult && <section className="form-stack"><p>可输出 {testResult.outputNodes} 个节点</p>
               {testResult.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.message}</p>)}
               {testResult.outputNodes > 0 && <Textarea aria-label="转换结果" readOnly value={testResult.body} />}
             </section>}
           </div>}
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeEdit} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy || invalidFields.length > 0}>{busy ? '保存中' : adding ? '保存节点' : '保存修改'}</button></div>
         </form>}
-      </EditDrawer>
+      </Dialog>
 
       <ConfirmDialog open={pending !== null} title={pending === 'retain' ? '保留节点' : '停用节点'} description={pending === 'retain' ? `将保留选中的 ${selected.size} 个节点，即使来源后续移除它们` : `将停用选中的 ${selected.size} 个节点，它们不会出现在后续订阅中`} confirmLabel={pending === 'retain' ? '确认保留' : '确认停用'} danger={pending === 'disable'} busy={busy} onClose={() => setPending(null)} onConfirm={() => executeBatch(pending ?? 'disable')} />
     </div>

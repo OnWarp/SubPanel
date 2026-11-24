@@ -1,11 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DateTimeInput, FormSelect, FormStack, Input, Textarea } from '../../ui/Controls'
 import { CopyButton } from '../../ui/CopyButton'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FormField } from '../../ui/FormField'
@@ -36,6 +36,25 @@ const auditActions: Record<string, string> = {
 function date(value: string | number) { return new Date(value).toLocaleString() }
 
 function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (result: Release) => void }) {
+  const [release, setRelease] = useState<Release>()
+  const [resultFeedback, setResultFeedback] = useState('')
+  const resultIntro = useRef<HTMLParagraphElement>(null)
+  useLayoutEffect(() => {
+    if (release) resultIntro.current?.focus({ preventScroll: true })
+  }, [release])
+
+  function download(result: Release) {
+    const blob = new Blob([`code\r\n${result.codes.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `redemption-${result.id}.csv`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setResultFeedback('已发起 CSV 下载')
+  }
+
+  const copyError = () => setResultFeedback('复制失败，请手动选择兑换码')
   const [templates, setTemplates] = useState<EntitlementTemplate[]>()
   const [templateId, setTemplateId] = useState('')
   const [selection, setSelection] = useState<{ templateId: string; versions: EntitlementVersion[] }>()
@@ -80,10 +99,12 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
     setBusy(true)
     setError('')
     try {
-      onRelease(await api<Release>(batchesPath, { method: 'POST', body: jsonBody({
+      const result = await api<Release>(batchesPath, { method: 'POST', body: jsonBody({
         name, note, templateVersionId: versionId, quantity: Number(quantity), maxUses: Number(uses),
         redeemDeadline: Date.parse(deadline), idempotencyKey: requestKey,
-      }) }))
+      }) })
+      setRelease(result)
+      onRelease(result)
     } catch (cause) {
       setError(errorText(cause))
     } finally {
@@ -91,12 +112,30 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
     }
   }
 
-  return <EditDrawer open title="生成兑换码" busy={busy} dirty={!!(name || note || deadline || templateId || quantity !== '1' || uses !== '1')}
-    onClose={onClose} footer={<>
-      <button className="button secondary" type="button" disabled={busy} onClick={onClose}>取消</button>
+  return <Dialog open title={release ? '兑换码已生成' : '生成兑换码'} size={release ? 'm' : 'l'} busy={busy}
+    dirty={!!(release || name || note || deadline || templateId || quantity !== '1' || uses !== '1')}
+    sensitive={!!release}
+    discardCopy={release ? { message: '关闭后仅显示尾码，请确认已保存完整码', stay: '返回结果', confirm: '确认关闭' } : undefined}
+    onClose={() => { setRelease(undefined); onClose() }}
+    footer={(requestClose) => release ? <>
+      {release.codes.length > 1 && <CopyButton value={release.codes.join('\n')} label="复制全部" variant="secondary" onError={copyError} onCopied={() => setResultFeedback('已复制全部兑换码')} />}
+      <button className="button secondary" type="button" onClick={() => download(release)}>导出 CSV</button>
+      <button className="button primary" type="button" onClick={requestClose}>完成</button>
+    </> : <>
+      <button className="button secondary" type="button" disabled={busy} onClick={requestClose}>取消</button>
       <button className="button primary" type="submit" form="redemption-batch-form" disabled={busy || !config}>生成</button>
     </>}>
-    <form id="redemption-batch-form" onSubmit={(event) => { void submit(event) }}>
+    {release ? <div className="form-stack redemption-result">
+      <p ref={resultIntro} tabIndex={-1}>关闭后仅显示尾码，请先保存完整码</p>
+      <ul className="redemption-code-list" aria-label="完整兑换码" tabIndex={release.codes.length > 1 ? 0 : undefined}>
+        {release.codes.map((code, index) => <li key={code}>
+          <code>{code}</code>
+          <CopyButton value={code} label={release.codes.length === 1 ? '复制' : `复制第 ${index + 1} 个兑换码`}
+            onError={copyError} onCopied={() => setResultFeedback('已复制兑换码')} />
+        </li>)}
+      </ul>
+      {resultFeedback && <p role="status">{resultFeedback}</p>}
+    </div> : <form id="redemption-batch-form" onSubmit={(event) => { void submit(event) }}>
       <fieldset disabled={busy}>
         <FormStack>
           {error && <ErrorState message={error} onRetry={() => { setError(''); setRetry((value) => value + 1) }} />}
@@ -135,34 +174,8 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
           <p className="sp-form-hint">最多发放 {Number(quantity) * Number(uses)} 份订阅 · 完整码仅在本次生成后显示</p>
         </FormStack>
       </fieldset>
-    </form>
-  </EditDrawer>
-}
-
-function ReleaseDrawer({ release, onClose }: { release: Release; onClose: () => void }) {
-  const [exported, setExported] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const codeList = release.codes.join('\n')
-  function download() {
-    if (exported) return
-    const blob = new Blob([`code\r\n${release.codes.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `redemption-${release.id}.csv`
-    link.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setExported(true)
-  }
-  return <EditDrawer open title="兑换码已生成" onClose={onClose} dirty={!exported && !copied}
-    footer={<>
-      <CopyButton value={codeList} label="复制兑换码" variant="secondary" onCopied={() => setCopied(true)} />
-      <button className="button primary" type="button" onClick={download} disabled={exported}>{exported ? '已导出 CSV' : '导出 CSV'}</button>
-    </>}>
-    <FormField label="完整兑换码" htmlFor="released-codes">
-      <Textarea id="released-codes" readOnly autoComplete="off" spellCheck={false} rows={12} value={codeList} />
-    </FormField>
-  </EditDrawer>
+    </form>}
+  </Dialog>
 }
 
 function PagedTable<T extends { id: string }>({ path, page, onPageChange, columns, empty, refresh }:
@@ -185,7 +198,6 @@ export function AdminRedemptionsPage() {
   const q = search.get('q') ?? ''
   const userId = search.get('user') ?? ''
   const [editing, setEditing] = useState(false)
-  const [release, setRelease] = useState<Release>()
   const [pending, setPending] = useState<Pending>()
   const [busy, setBusy] = useState(false)
   const [refresh, setRefresh] = useState(0)
@@ -306,12 +318,9 @@ export function AdminRedemptionsPage() {
       ]} />}
     </section>
     {editing && <BatchEditor onClose={() => setEditing(false)} onRelease={(result) => {
-      setEditing(false)
-      setRelease(result)
       setRefresh((value) => value + 1)
       update({ batch: result.id, view: 'codes' })
     }} />}
-    {release && <ReleaseDrawer release={release} onClose={() => setRelease(undefined)} />}
     <ConfirmDialog open={!!pending} title={pending?.title ?? ''} description={pending?.description ?? ''}
       confirmLabel="确认" danger busy={busy} onClose={() => setPending(undefined)} onConfirm={confirm} />
   </div>

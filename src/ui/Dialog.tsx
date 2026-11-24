@@ -2,6 +2,8 @@ import { X } from 'lucide-react'
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { focusFirstField } from './focus-field'
 
+export type DialogSize = 's' | 'm' | 'l' | 'xl'
+
 type DialogProps = {
   open: boolean
   onClose: () => void
@@ -9,7 +11,10 @@ type DialogProps = {
   description?: string
   children?: ReactNode
   footer?: ReactNode | ((requestClose: () => void) => ReactNode)
-  size?: 's' | 'm' | 'l' | 'xl'
+  size?: DialogSize
+  headerStatus?: ReactNode
+  headerActions?: ReactNode
+  discardCopy?: { message: string; stay: string; confirm: string }
   busy?: boolean
   dirty?: boolean
   sensitive?: boolean
@@ -38,7 +43,7 @@ function restoreFocus(trigger: HTMLElement | null, explicitTarget?: RefObject<HT
 
 export function Dialog({
   open, onClose, title, description, children, footer, size = 'm', busy = false, dirty = false,
-  sensitive = false, closeOnBackdrop = true, returnFocusRef,
+  sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy,
 }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -164,20 +169,23 @@ export function Dialog({
     >
       <div className="sp-dialog-panel">
         <header className="sp-dialog-heading">
-          <h2 id={titleId}>{title}</h2>
-          <button ref={closeButton} className="sp-dialog-close" type="button" aria-label="关闭" title="关闭" onClick={() => requestClose()} disabled={busy}><X aria-hidden="true" size={18} /></button>
+          {headerStatus ? <div className="drawer-heading-title"><h2 id={titleId}>{title}</h2>{headerStatus}</div> : <h2 id={titleId}>{title}</h2>}
+          <div className="drawer-heading-actions">
+            {headerActions}
+            <button ref={closeButton} className="sp-dialog-close" type="button" aria-label="关闭" title="关闭" onClick={() => requestClose()} disabled={busy}><X aria-hidden="true" size={18} /></button>
+          </div>
         </header>
-        <div className="sp-dialog-body">
+        <div className="sp-dialog-body" inert={discarding}>
           {description ? <p className="sp-dialog-description" id={descriptionId}>{description}</p> : null}
           {children}
         </div>
         {actions || discarding ? (
           <footer className="sp-dialog-footer">
             {discarding ? (
-              <div className="drawer-discard" role="group" aria-label="未保存更改">
-                <p>关闭将放弃未保存的更改</p>
-                <button ref={stayButton} className="button secondary" type="button" disabled={busy} onClick={() => requestClose()}>继续编辑</button>
-                <button className="button danger" type="button" disabled={busy} onClick={() => requestClose('discard')}>放弃更改</button>
+              <div className="drawer-discard" role="group" aria-label={discardCopy?.message ?? '未保存更改'}>
+                <p role="status">{discardCopy?.message ?? '关闭将放弃未保存的更改'}</p>
+                <button ref={stayButton} className="button secondary" type="button" disabled={busy} onClick={() => requestClose()}>{discardCopy?.stay ?? '继续编辑'}</button>
+                <button className="button danger" type="button" disabled={busy} onClick={() => requestClose('discard')}>{discardCopy?.confirm ?? '放弃更改'}</button>
               </div>
             ) : actions}
           </footer>

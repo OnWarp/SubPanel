@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { FormSelect } from '../../ui/Controls'
+import type { Plan } from './plan-types'
+import { Dialog } from '../../ui/Dialog'
 import { StatusMessage } from '../../ui/StatusMessage'
 
 const path = '/api/admin/compile-jobs'
@@ -25,6 +27,9 @@ const status = { queued: '待执行', running: '执行中', failed: '有失败',
 
 type Props = {
   request: BatchInput | null
+  choosingPlan: boolean
+  plans: Plan[]
+  onPreviewPlan: (planId: string) => void
   onClear: () => void
   historyOpen: boolean
   onCloseHistory: () => void
@@ -32,7 +37,9 @@ type Props = {
   platforms: Record<string, string>
 }
 
-export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHistory, onChanged, platforms }: Props) {
+export function SubscriptionBatchJobs({ request, choosingPlan, plans, onPreviewPlan, onClear, historyOpen, onCloseHistory, onChanged, platforms }: Props) {
+  const [planId, setPlanId] = useState('')
+  const choosingTarget = choosingPlan && !request
   const [review, setReview] = useState<{ input: BatchInput; preview: Preview } | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
   const [job, setJob] = useState<Job | null>(null)
@@ -66,6 +73,11 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
     try { await work() } catch (cause) { showError(cause) } finally { setBusy(false) }
   }
   const confirm = () => {
+    if (busy) return
+    if (choosingTarget) {
+      if (planId) onPreviewPlan(planId)
+      return
+    }
     if (!review) return
     void perform(async () => {
       const { previewId, fingerprint } = review.preview
@@ -73,6 +85,7 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
         method: 'POST', body: jsonBody({ ...review.input, previewId, fingerprint }),
       })
       onClear()
+      setPlanId('')
       setReview(null)
       setItems([])
       setJob(queued)
@@ -119,7 +132,7 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
   }
 
   return <>
-    <EditDrawer open={(historyOpen || job !== null) && !review && !request} title="订阅批量任务" onClose={close} busy={busy}>
+    <Dialog size="xl" open={(historyOpen || job !== null) && !review && !request && !choosingPlan} title="订阅批量任务" onClose={close} busy={busy}>
       <section aria-label="任务进度">
         <div className="form-stack">
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
@@ -148,11 +161,17 @@ export function SubscriptionBatchJobs({ request, onClear, historyOpen, onCloseHi
           </>}
         </div>
       </section>
-    </EditDrawer>
-    <ConfirmDialog open={Boolean(request || review)} title={review ? label[review.input.operation.action] : '批量影响预览'}
-      description={review ? `已选 ${review.preview.selected} 个 · 预计影响 ${review.preview.affected} 个 · ${review.preview.missing} 个已不存在` : error ? '可关闭后重新预览' : '正在读取所选订阅的影响范围'}
-      confirmLabel="确认并创建任务" confirmDisabled={!review} busy={busy} onConfirm={confirm}
-      onClose={() => { setReview(null); setError(''); onClear() }}>
+    </Dialog>
+    <ConfirmDialog open={Boolean(choosingPlan || request || review)}
+      size={choosingPlan ? 'm' : 's'} dirty={choosingTarget && !!planId}
+      title={choosingPlan ? '更换计划' : review ? label[review.input.operation.action] : '批量影响预览'}
+      description={choosingTarget ? '选中的订阅将改用同一计划' : review ? `已选 ${review.preview.selected} 个 · 预计影响 ${review.preview.affected} 个 · ${review.preview.missing} 个已不存在` : error ? '可关闭后重新预览' : '正在读取所选订阅的影响范围'}
+      confirmLabel={choosingTarget ? '预览影响' : '确认并创建任务'} confirmDisabled={choosingTarget ? !planId : !review} busy={busy} onConfirm={confirm}
+      onClose={() => { setPlanId(''); setReview(null); setError(''); onClear() }}>
+      {choosingTarget && <FormSelect aria-label="目标计划" value={planId} onChange={(event) => setPlanId(event.currentTarget.value)}>
+        <option value="">选择计划</option>
+        {plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
+      </FormSelect>}
       {error && <StatusMessage tone="error">{error}</StatusMessage>}
       {review && <div>
         <p>{review.preview.platforms.length
