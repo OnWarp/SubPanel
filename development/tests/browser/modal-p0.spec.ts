@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { expect, test, type Page } from '@playwright/test'
 
-const screenshots = 'development/screenshots/sub-modal-p0'
+const screenshots = 'development/screenshots/sub-modal-test-fix'
 
 async function mockPage(page: Page, role: 'user' | 'admin', fixtures: Record<string, unknown>) {
   await page.route('**/api/**', route => {
@@ -48,15 +48,30 @@ for (const width of [1440, 390]) {
       await mkdir(screenshots, { recursive: true })
       await page.screenshot({ path: `${screenshots}/ticket-dialog-${width}.png` })
 
-      // Shrink the viewport to force overflow while keeping the same width.
-      await page.setViewportSize({ width, height: 335 })
+      // The mobile dialog updates its geometry in the VisualViewport resize handler.
+      const shortHeight = 335
+      await page.setViewportSize({ width, height: shortHeight })
+      if (width === 390) {
+        await expect(dialog).toHaveCSS('--dialog-viewport-height', `${shortHeight}px`)
+      }
+
       const body = dialog.locator('.sp-dialog-body')
-      const headerPosition = await heading.boundingBox()
-      await body.hover()
-      await page.mouse.wheel(0, 280)
-      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
-      expect(await heading.boundingBox()).toEqual(headerPosition)
+      const footer = dialog.locator('.sp-dialog-footer')
+      await expect(body).toHaveCSS('overflow-y', 'auto')
+      await expect(heading).toBeInViewport({ ratio: 1 })
+      await expect(footer).toBeInViewport({ ratio: 1 })
+      const headingPosition = await heading.boundingBox()
+      const footerPosition = await footer.boundingBox()
+      const scrollDistance = await body.evaluate(element => {
+        const before = element.scrollTop
+        element.scrollTo({ top: element.scrollHeight, behavior: 'instant' })
+        return element.scrollTop - before
+      })
+      expect(scrollDistance).toBeGreaterThan(0)
+      expect(await heading.boundingBox()).toEqual(headingPosition)
+      expect(await footer.boundingBox()).toEqual(footerPosition)
       await expect(submit).toBeInViewport()
+      await page.screenshot({ path: `${screenshots}/ticket-dialog-scrolled-${width}.png` })
       await page.keyboard.press('Escape')
       await expect(dialog).toBeHidden()
       await expect(trigger).toBeFocused()
