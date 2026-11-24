@@ -12,7 +12,7 @@ import { FilterBar } from '../../ui/FilterBar'
 import { SearchInput } from '../../ui/SearchInput'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { useToast } from '../../ui/Toast'
 import { catalogPreview, formatDate } from './catalog-utils'
 import { groupNodeIds } from './catalog-counts'
@@ -55,8 +55,10 @@ export function GroupsPage() {
   const [error, setError] = useState('')
   const [batchError, setBatchError] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [choosingNodes, setChoosingNodes] = useState(false)
   const [editing, setEditing] = useState<'create' | CatalogGroup | null>(null)
   const [form, setForm] = useState<GroupForm>(emptyForm)
+  const [baseline, setBaseline] = useState(form)
   const [rulesPreview, setRulesPreview] = useState<RulePreview | null>(null)
   const [previewClient, setPreviewClient] = useState('mihomo')
   const [previewSubscription, setPreviewSubscription] = useState('')
@@ -114,22 +116,28 @@ export function GroupsPage() {
 
   const openCreate = (event: React.MouseEvent<HTMLButtonElement>) => {
     drawerTrigger.current = event.currentTarget
-    setForm({ ...emptyForm(), nodeOrder: nodes.map((node) => node.id) })
+    const draft = { ...emptyForm(), nodeOrder: nodes.map((node) => node.id) }
+    setBaseline(draft)
+    setForm(draft)
     setDrawerError('')
+    setChoosingNodes(false)
     setEditing('create')
   }
 
   const openEdit = (group: CatalogGroup, trigger: HTMLButtonElement | null) => {
     drawerTrigger.current = trigger
-    setForm({
+    const draft = {
       name: group.name,
       rules: group.rules,
       sourceIds: [...group.sourceIds],
       includedNodeIds: [...group.includedNodeIds],
       excludedNodeIds: [...group.excludedNodeIds],
       nodeOrder: [...group.nodeOrder, ...nodes.map((node) => node.id).filter((id) => !group.nodeOrder.includes(id))],
-    })
+    }
+    setBaseline(draft)
+    setForm(draft)
     setDrawerError('')
+    setChoosingNodes(false)
     setEditing(group)
   }
 
@@ -188,7 +196,7 @@ export function GroupsPage() {
 
   const saveGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!editing) return
+    if (!editing || busy || choosingNodes || !rulesPreview) return
     setDrawerError('')
     if (!form.name.trim()) {
       setDrawerError('请输入分组名称')
@@ -281,50 +289,58 @@ export function GroupsPage() {
         <ResourceFooter count={filteredGroups.length} unit="个分组" />
       </section>
 
-      <EditDrawer open={editing !== null} title={editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} size="wide" onClose={closeEdit} returnFocusRef={drawerTrigger}>
-        <form className="form-stack group-form" onSubmit={saveGroup}>
-          <label className="field"><span>分组名称</span><Input aria-label="分组名称" value={form.name} maxLength={128} onChange={(event) => { const name = event.currentTarget.value; setForm((current) => ({ ...current, name })) }} required /></label>
+      <Dialog open={editing !== null} title={choosingNodes ? '选择关联节点' : editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} focusStep={choosingNodes ? 'nodes' : 'details'} size={choosingNodes ? 'l' : 'm'} dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={closeEdit} returnFocusRef={drawerTrigger}
+        footer={(cancel) => choosingNodes ? <button className="button primary" type="button" data-dialog-initial-focus onClick={() => setChoosingNodes(false)}>完成</button> : <>
+          <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
+          <button className="button primary" form="group-editor" type="submit" disabled={busy || !rulesPreview}>{busy ? '保存中' : editing === 'create' ? '保存分组' : '保存修改'}</button>
+        </>}
+      >
+        <form id="group-editor" className="form-stack group-form" onSubmit={saveGroup}>
+          <div className="form-stack" hidden={choosingNodes}>
+            <label className="field"><span>分组名称</span><Input aria-label="分组名称" value={form.name} maxLength={128} onChange={(event) => { const name = event.currentTarget.value; setForm((current) => ({ ...current, name })) }} required /></label>
 
-          <section className="source-preview" aria-label="分组规则预览">
-            <strong>分组规则预览</strong>
-            <label className="field"><span>目标客户端</span><FormSelect value={previewClient} onChange={(event) => setPreviewClient(event.currentTarget.value)}>{previewClients.map((client) => <option key={client}>{client}</option>)}</FormSelect></label>
-            <label className="field"><span>订阅权限预览</span><FormSelect value={previewSubscription} onChange={(event) => setPreviewSubscription(event.currentTarget.value)}><option value="">选择订阅</option>{subscriptions.map((sub) => <option key={sub.id} value={sub.id}>{sub.name}</option>)}</FormSelect></label>
-            {rulesPreview && <>
-              <p>命中 {rulesPreview.matched} · 已停用 {rulesPreview.disabled} · 不兼容 {rulesPreview.incompatible} · 可输出 {rulesPreview.outputNodes}</p>
-              <p>预计影响 {rulesPreview.affectedSubscriptions} 个订阅</p>
-              {rulesPreview.nodes.length > 0 && <details><summary>查看可输出节点与顺序</summary><ol>{rulesPreview.nodes.map((node) => <li key={node.id}>{node.displayName}</li>)}</ol></details>}
-              {rulesPreview.entitlement && <p>启用节点 ∩ 订阅选择 ∩ 计划授权 · 授权 {rulesPreview.entitlement.authorizedNodeIds.length} · 输出 {rulesPreview.entitlement.outputNodes}
-                {rulesPreview.entitlement.reason ? ` · ${rulesPreview.entitlement.reason}` : ''}</p>}
-            </>}
-            {previewError && <StatusMessage tone="error">{previewError}</StatusMessage>}
-            {!rulesPreview && !previewError && form.name.trim() && <p role="status">正在计算规则预览</p>}
-          </section>
-          <details>
-            <summary>动态匹配</summary>
-            <p className="drawer-note">动态条件需同时满足，命中结果与来源、指定节点合并，排除节点优先</p>
-            {(['tags', 'protocols'] as const).map((key) => <label className="field" key={key}><span>{key === 'tags' ? '标签' : '协议'}（逗号分隔）</span>
-              <Input key={editing === 'create' ? 'new' : editing?.id} defaultValue={form.rules?.[key]?.join(', ')} onChange={(event) => {
-                const values = splitRules(event.currentTarget.value)
-                setForm((current) => ({ ...current, rules: { ...current.rules, [key]: values } }))
-              }} /></label>)}
-            {(['region', 'namePattern'] as const).map((key) => <label className="field" key={key}><span>{key === 'region' ? '地区' : '名称正则'}</span>
-              <Input value={form.rules?.[key] ?? ''} onChange={(event) => {
-                const value = event.currentTarget.value
-                setForm((current) => ({ ...current, rules: { ...current.rules, [key]: value } }))
-              }} /></label>)}
-          </details>
-          <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id).filter((id) => !current.sourceIds.includes(id)) }))}>反选</button></div><div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><Checkbox type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div></> : <p className="drawer-note">暂无来源</p>}</fieldset>
+            <section className="form-stack" aria-label="分组规则预览">
+              <strong>分组规则预览</strong>
+              <label className="field"><span>目标客户端</span><FormSelect value={previewClient} onChange={(event) => setPreviewClient(event.currentTarget.value)}>{previewClients.map((client) => <option key={client}>{client}</option>)}</FormSelect></label>
+              <label className="field"><span>订阅权限预览</span><FormSelect value={previewSubscription} onChange={(event) => setPreviewSubscription(event.currentTarget.value)}><option value="">选择订阅</option>{subscriptions.map((sub) => <option key={sub.id} value={sub.id}>{sub.name}</option>)}</FormSelect></label>
+              {rulesPreview && <>
+                <p>命中 {rulesPreview.matched} · 已停用 {rulesPreview.disabled} · 不兼容 {rulesPreview.incompatible} · 可输出 {rulesPreview.outputNodes}</p>
+                <p>预计影响 {rulesPreview.affectedSubscriptions} 个订阅</p>
+                {rulesPreview.nodes.length > 0 && <details><summary>查看可输出节点与顺序</summary><ol>{rulesPreview.nodes.map((node) => <li key={node.id}>{node.displayName}</li>)}</ol></details>}
+                {rulesPreview.entitlement && <p>启用节点 ∩ 订阅选择 ∩ 计划授权 · 授权 {rulesPreview.entitlement.authorizedNodeIds.length} · 输出 {rulesPreview.entitlement.outputNodes}
+                  {rulesPreview.entitlement.reason ? ` · ${rulesPreview.entitlement.reason}` : ''}</p>}
+              </>}
+              {previewError && <StatusMessage tone="error">{previewError}</StatusMessage>}
+              {!rulesPreview && !previewError && form.name.trim() && <p role="status">正在计算规则预览</p>}
+            </section>
+            <details>
+              <summary>动态匹配</summary>
+              <p className="drawer-note">动态条件需同时满足，命中结果与来源、指定节点合并，排除节点优先</p>
+              {(['tags', 'protocols'] as const).map((key) => <label className="field" key={key}><span>{key === 'tags' ? '标签' : '协议'}（逗号分隔）</span>
+                <Input key={editing === 'create' ? 'new' : editing?.id} defaultValue={form.rules?.[key]?.join(', ')} onChange={(event) => {
+                  const values = splitRules(event.currentTarget.value)
+                  setForm((current) => ({ ...current, rules: { ...current.rules, [key]: values } }))
+                }} /></label>)}
+              {(['region', 'namePattern'] as const).map((key) => <label className="field" key={key}><span>{key === 'region' ? '地区' : '名称正则'}</span>
+                <Input value={form.rules?.[key] ?? ''} onChange={(event) => {
+                  const value = event.currentTarget.value
+                  setForm((current) => ({ ...current, rules: { ...current.rules, [key]: value } }))
+                }} /></label>)}
+            </details>
+            <button className="button secondary" type="button" onClick={() => setChoosingNodes(true)}>选择关联节点</button>
+          </div>
+          <div className="form-stack" hidden={!choosingNodes}>
+            <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id).filter((id) => !current.sourceIds.includes(id)) }))}>反选</button></div><div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><Checkbox type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div></> : <p className="drawer-note">暂无来源</p>}</fieldset>
 
-          <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
+            <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
 
-          <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
+            <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
 
-          <fieldset className="choice-section"><legend>节点顺序</legend>{form.nodeOrder.length ? <ol className="order-list">{form.nodeOrder.map((id, index) => <li key={id}><span>{nodeNames.get(id) ?? id}</span><span className="row-actions"><button className="icon-button" type="button" aria-label={`上移 ${nodeNames.get(id) ?? id}`} title="上移" disabled={index === 0} onClick={() => moveNode(id, -1)}><ArrowUp aria-hidden="true" size={15} /></button><button className="icon-button" type="button" aria-label={`下移 ${nodeNames.get(id) ?? id}`} title="下移" disabled={index === form.nodeOrder.length - 1} onClick={() => moveNode(id, 1)}><ArrowDown aria-hidden="true" size={15} /></button></span></li>)}</ol> : <p className="drawer-note">暂无节点</p>}</fieldset>
-
+            <fieldset className="choice-section"><legend>节点顺序</legend>{form.nodeOrder.length ? <ol className="order-list">{form.nodeOrder.map((id, index) => <li key={id}><span>{nodeNames.get(id) ?? id}</span><span className="row-actions"><button className="icon-button" type="button" aria-label={`上移 ${nodeNames.get(id) ?? id}`} title="上移" disabled={index === 0} onClick={() => moveNode(id, -1)}><ArrowUp aria-hidden="true" size={15} /></button><button className="icon-button" type="button" aria-label={`下移 ${nodeNames.get(id) ?? id}`} title="下移" disabled={index === form.nodeOrder.length - 1} onClick={() => moveNode(id, 1)}><ArrowDown aria-hidden="true" size={15} /></button></span></li>)}</ol> : <p className="drawer-note">暂无节点</p>}</fieldset>
+          </div>
           {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
-          <div className="dialog-actions"><button className="button secondary" type="button" onClick={closeEdit} disabled={busy}>取消</button><button className="button primary" type="submit" disabled={busy || !rulesPreview}>{busy ? '保存中' : editing === 'create' ? '保存分组' : '保存修改'}</button></div>
         </form>
-      </EditDrawer>
+      </Dialog>
 
       <ConfirmDialog open={confirmDelete} title="删除分组" description={`将删除选中的 ${selected.size} 个分组${affectedSubscriptions ? ` · 有 ${affectedSubscriptions} 个订阅引用这些分组` : ''}`} confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={deleteSelected} />
     </div>

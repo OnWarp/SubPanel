@@ -41,6 +41,7 @@ test.describe.serial('SubPanel account shell', () => {
     await expect(page).toHaveURL(/\/account$/)
     await expect(page.locator('.sidebar-account').getByText('admin', { exact: true })).toBeVisible()
 
+    await page.getByRole('button', { name: '修改密码' }).click()
     await page.getByLabel('当前密码').fill('correct horse battery staple')
     await page.getByLabel('新密码', { exact: true }).fill('new correct horse password')
     await page.getByLabel('确认新密码').fill('new correct horse password')

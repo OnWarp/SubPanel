@@ -9,6 +9,7 @@ vi.mock('../../../src/theme/ThemeProvider', () => ({
 }))
 import { SessionProvider } from '../../../src/app/session'
 import { userSidebar } from '../../../src/app/navigation'
+import { AccountPage } from '../../../src/features/accounts/AccountPage'
 import { LoginPage } from '../../../src/features/accounts/LoginPage'
 import { RegisterPage } from '../../../src/features/accounts/RegisterPage'
 import { MySubscriptionsPage } from '../../../src/features/delivery/MySubscriptionsPage'
@@ -201,10 +202,12 @@ describe('user page presentation', () => {
     expect(notifications).toContain('到期提醒')
     expect(notifications).toContain('仅在此浏览器生效，到期前 7 天在首页提醒')
     const security = sectionPage('security')
-    expect(security).toContain('用户名不可修改，新密码须为 12 至 128 个字符')
     expect(security).toContain('退出全部设备')
     expect(security).not.toContain('注销')
     expect(security).not.toContain('删除账户')
+    const openSecurity = page(createElement(AccountPage, { embedded: true, initialPasswordOpen: true }))
+    const passwordDialog = openSecurity.match(/<dialog\b[^>]*>[\s\S]*?<\/dialog>/)?.[0]
+    expect(passwordDialog).toContain('<p>用户名不可修改，新密码须为 12 至 128 个字符</p>')
     const support = sectionPage('support')
     expect(support).toContain('aria-label="帮助与支持"')
     expect(support).toContain('href="/notices"')

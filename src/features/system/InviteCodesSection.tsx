@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Checkbox, Input, DateTimeInput } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
@@ -7,7 +8,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterChip } from '../../ui/FilterChip'
-import { FormActions, FormField } from '../../ui/FormField'
+import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
@@ -45,6 +46,8 @@ export function InviteCodesSection() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [createError, setCreateError] = useState('')
   const [kind, setKind] = useState<'multi' | 'batch'>('multi')
   const [maxUses, setMaxUses] = useState('')
   const [count, setCount] = useState('10')
@@ -96,7 +99,7 @@ export function InviteCodesSection() {
       toast.notify(kind === 'multi' ? '邀请码已生成' : `已生成 ${result.invitations.length} 个邀请码`)
       await load()
     } catch (cause) {
-      toast.notifyError(errorMessage(cause, '生成邀请码失败'))
+      setCreateError(errorMessage(cause, '生成邀请码失败'))
     } finally {
       setBusy(false)
     }
@@ -144,6 +147,15 @@ export function InviteCodesSection() {
   return (
     <div className="sys-subsection">
       <h3 className="sys-subtitle">注册邀请码</h3>
+      <button className="button primary" type="button" disabled={busy || loading || !!loadError} onClick={() => {
+        setCreated(null)
+        setCreateError('')
+        setKind('multi')
+        setMaxUses('')
+        setCount('10')
+        setExpiresAt('')
+        setOpen(true)
+      }}>创建邀请码</button>
       <p className="sys-hint">邀请注册无需邮箱验证码</p>
       {loading ? <LoadingState label="正在加载邀请码" /> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
@@ -179,6 +191,16 @@ export function InviteCodesSection() {
               ))}
             </ul>
           )}
+
+        </>
+      ) : null}
+      <Dialog open={open} title={created ? '邀请码已生成' : '创建邀请码'} size="m" busy={busy} focusStep={created ? 'result' : 'form'}
+        dirty={!created && (kind !== 'multi' || maxUses !== '' || count !== '10' || expiresAt !== '')}
+        sensitive={created !== null} onClose={() => { setOpen(false); setCreated(null) }}
+        footer={(cancel) => created ? <button className="button primary" type="button" data-dialog-initial-focus onClick={cancel}>完成</button> : <>
+          <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
+          <button className="button primary" form="invite-editor" type="submit" disabled={busy}>生成邀请码</button>
+        </>}>
           {created ? (
             <div className="sys-invite-created">
               <p className="sys-hint">新邀请码明文只显示这一次，请立即保存</p>
@@ -197,8 +219,7 @@ export function InviteCodesSection() {
                 </div>
               ) : null}
             </div>
-          ) : null}
-          <form className="sys-form sys-invite-form sp-form-stack" onSubmit={create}>
+          ) : <form id="invite-editor" className="form-stack" onSubmit={create}>
             <div role="group" aria-label="邀请码类型">
               <FilterChip active={kind === 'multi'} onClick={() => setKind('multi')}>多次使用</FilterChip>
               <FilterChip active={kind === 'batch'} onClick={() => setKind('batch')}>批量单次</FilterChip>
@@ -243,12 +264,9 @@ export function InviteCodesSection() {
                 />
               </FormField>
             </div>
-            <FormActions>
-              <button className="button primary" type="submit" disabled={busy}>生成邀请码</button>
-            </FormActions>
-          </form>
-        </>
-      ) : null}
+            {createError && <p role="alert">{createError}</p>}
+          </form>}
+      </Dialog>
       <ConfirmDialog
         open={pendingDelete !== null}
         title="删除邀请码"

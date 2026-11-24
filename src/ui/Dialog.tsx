@@ -12,6 +12,7 @@ type DialogProps = {
   children?: ReactNode
   footer?: ReactNode | ((requestClose: () => void) => ReactNode)
   size?: DialogSize
+  focusStep?: string
   headerStatus?: ReactNode
   headerActions?: ReactNode
   discardCopy?: { message: string; stay: string; confirm: string }
@@ -43,7 +44,7 @@ function restoreFocus(trigger: HTMLElement | null, explicitTarget?: RefObject<HT
 
 export function Dialog({
   open, onClose, title, description, children, footer, size = 'm', busy = false, dirty = false,
-  sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy,
+  sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
 }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -96,6 +97,19 @@ export function Dialog({
       })
     }
   }, [open, returnFocusRef])
+
+  useLayoutEffect(() => {
+    const element = dialog.current
+    if (!open || focusStep === undefined || !element?.open) return
+    const body = element.querySelector('.sp-dialog-body')
+    if (body) body.scrollTop = 0
+    const initial = element.querySelector<HTMLElement>('[data-dialog-initial-focus]:not(:disabled)')
+    if (initial) initial.focus({ preventScroll: true })
+    else {
+      focusFirstField(element)
+      if (!element.contains(document.activeElement)) closeButton.current?.focus({ preventScroll: true })
+    }
+  }, [open, focusStep])
 
   useLayoutEffect(() => {
     if (discard) {

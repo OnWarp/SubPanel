@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Input } from '../../ui/Controls'
 import { KeyRound, LogOut } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
@@ -15,9 +16,15 @@ import { EmailBindChangeForm } from './EmailBindChangeForm'
 import { ProfileCard } from './ProfileCard'
 import { formatProfileDate, useAccountProfile } from './profile'
 
-export function AccountPage({ embedded = false }: { embedded?: boolean }) {
+export function AccountPage({
+  embedded = false,
+  initialPasswordOpen = false,
+}: { embedded?: boolean; initialPasswordOpen?: boolean }) {
   const { refresh } = useSession()
   const { profile, error: profileError, reload } = useAccountProfile()
+  const [passwordOpen, setPasswordOpen] = useState(initialPasswordOpen)
+  const [passwordBusy, setPasswordBusy] = useState(false)
+  const [passwordDirty, setPasswordDirty] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [confirmLogoutAll, setConfirmLogoutAll] = useState(false)
@@ -25,6 +32,7 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
 
   const changePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (passwordBusy) return
     setMessage('')
     setError('')
     const formElement = event.currentTarget
@@ -34,6 +42,7 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
       setError('两次输入的新密码不一致')
       return
     }
+    setPasswordBusy(true)
     try {
       await api('/api/account/password', {
         method: 'POST',
@@ -42,9 +51,13 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
       await refresh()
       await reload()
       formElement.reset()
+      setPasswordDirty(false)
+      setPasswordOpen(false)
       setMessage('密码已更新，其他会话已退出')
     } catch (cause) {
       setError(cause instanceof ApiClientError ? cause.message : '密码更新失败')
+    } finally {
+      setPasswordBusy(false)
     }
   }
 
@@ -71,26 +84,35 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
         <LoadingState label="正在加载账户资料" />
       ) : null}
       <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
-        <DataHeader title="修改密码" />
-        <p className="profile-hint">用户名不可修改，新密码须为 12 至 128 个字符</p>
-        <form className="security-form adm-account-form" onSubmit={changePassword}>
-          <FormField label="当前密码" htmlFor="account-current-password">
-            <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
-          </FormField>
-          <FormField label="新密码" htmlFor="account-new-password">
-            <Input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
-          </FormField>
-          <FormField label="确认新密码" htmlFor="account-confirm-password">
-            <Input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
-          </FormField>
-          {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-          {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-          <div className="form-actions"><Button variant="primary" type="submit"><KeyRound aria-hidden="true" size={17} />更新密码</Button></div>
-        </form>
+        <DataHeader title="密码" actions={<Button onClick={() => { setError(''); setPasswordOpen(true) }}>修改密码</Button>} />
+        {message && <StatusMessage tone="success">{message}</StatusMessage>}
+        {!passwordOpen && error && <StatusMessage tone="error">{error}</StatusMessage>}
+        <Dialog open={passwordOpen} title="修改密码" size="m" busy={passwordBusy} dirty={passwordDirty} sensitive
+          onClose={() => { setPasswordDirty(false); setPasswordOpen(false); setError('') }}
+          footer={(cancel) => <>
+            <Button onClick={cancel} disabled={passwordBusy}>取消</Button>
+            <Button variant="primary" type="submit" form="account-password-editor" loading={passwordBusy}><KeyRound aria-hidden="true" size={17} />更新密码</Button>
+          </>}>
+          {passwordOpen && <>
+            <p>用户名不可修改，新密码须为 12 至 128 个字符</p>
+            <form id="account-password-editor" onChange={(event) => setPasswordDirty([...new FormData(event.currentTarget).values()].some(Boolean))} className="form-stack" onSubmit={changePassword}>
+              <FormField label="当前密码" htmlFor="account-current-password">
+                <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
+              </FormField>
+              <FormField label="新密码" htmlFor="account-new-password">
+                <Input id="account-new-password" name="newPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+              </FormField>
+              <FormField label="确认新密码" htmlFor="account-confirm-password">
+                <Input id="account-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+              </FormField>
+              {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
+            </form>
+          </>}
+        </Dialog>
       </section>
       {profile ? (
         <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
-          <DataHeader title={profile.emailBound ? '更换邮箱' : '绑定邮箱'} />
+          <DataHeader title="邮箱" />
           <EmailBindChangeForm
             profile={profile}
             onUpdated={async () => {

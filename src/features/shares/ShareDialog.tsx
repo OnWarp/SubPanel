@@ -4,7 +4,7 @@ import { ApiClientError } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
@@ -84,6 +84,7 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
   onPending: (pending: boolean) => void
   onCreated: (share: ShareView, url: string) => void
 }) {
+  const idPrefix = formId ?? 'share'
   const [remark, setRemark] = useState('')
   const [days, setDays] = useState('')
   const [password, setPassword] = useState('')
@@ -143,12 +144,12 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
 
   return (
     <form id={formId} className="form-stack sh-form" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
-      <FormField label="备注" htmlFor="share-remark">
-        <Input id="share-remark" value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
+      <FormField label="备注" htmlFor={`${idPrefix}-remark`}>
+        <Input id={`${idPrefix}-remark`} value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
       </FormField>
-      <FormField label="有效期（天）" htmlFor="share-days">
+      <FormField label="有效期（天）" htmlFor={`${idPrefix}-days`}>
         <Input
-          id="share-days"
+          id={`${idPrefix}-days`}
           inputMode="numeric"
           value={days}
           disabled={submitting}
@@ -161,9 +162,9 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
           <FilterChip key={day} active={days === String(day)} onClick={() => { if (!submitting) setDays(String(day)) }}>{day} 天</FilterChip>
         ))}
       </div>
-      <FormField label="访问密码" htmlFor="share-password">
+      <FormField label="访问密码" htmlFor={`${idPrefix}-password`}>
         <Input
-          id="share-password"
+          id={`${idPrefix}-password`}
           type="password"
           autoComplete="new-password"
           maxLength={128}
@@ -190,7 +191,7 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
   )
 }
 
-export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
+export function ShareDialog({ subscription, onClose, returnFocusRef }: {
   subscription: ShareTarget | null
   onClose: () => void
   returnFocusRef?: RefObject<HTMLButtonElement | null>
@@ -205,6 +206,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
   const [status, setStatus] = useState<'all' | ShareStatus>('all')
   const [page, setPage] = useState(1)
   const [creating, setCreating] = useState(false)
+  const [createDirty, setCreateDirty] = useState(false)
   const [createBusy, setCreateBusy] = useState(false)
   const [revealed, setRevealed] = useState<{ url: string, title: string } | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
@@ -280,7 +282,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
   }
 
   const runPending = async () => {
-    if (!pending) return
+    if (!pending || busyId) return
     const target = pending
     setBusyId(target.share.id)
     setNotice(null)
@@ -309,7 +311,6 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
       setPending(null)
     } catch (cause) {
       setNotice({ tone: 'error', text: errorText(cause, '操作失败') })
-      setPending(null)
     } finally {
       setBusyId('')
     }
@@ -371,31 +372,41 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
 
   return (
     <>
-      <EditDrawer
-        open={subscription !== null}
-        title={subscription ? `${subscription.name} 的分享` : '分享'}
-        size="large"
+      <Dialog
+        open={subscription !== null && pending === null}
+        title={revealed?.title ?? (creating ? '创建分享' : subscription ? `${subscription.name} 的分享` : '分享')}
+        size="m"
+        focusStep={revealed ? 'result' : creating ? 'create' : 'list'}
+        dirty={creating && createDirty}
+        sensitive={revealed !== null}
         busy={createBusy || busyId !== ''}
-        onClose={onClose}
+        onClose={() => { if (creating) setCreating(false); else onClose() }}
         returnFocusRef={returnFocusRef}
+        footer={(cancel) => {
+          if (revealed) return <>
+            <button className="button secondary" type="button" onClick={() => {
+              void copyToClipboard(revealed.url).then(() => setNotice({ tone: 'success', text: '分享链接已复制' }))
+                .catch(() => setNotice({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' }))
+            }}>复制链接</button>
+            <button className="button primary" type="button" onClick={() => setRevealed(null)}>完成</button>
+          </>
+          if (creating) return <>
+            <button className="button secondary" type="button" onClick={cancel} disabled={createBusy}>取消</button>
+            <button className="button primary" type="submit" form="user-create-share" disabled={createBusy}>创建</button>
+          </>
+          return <button className="button primary" type="button" onClick={() => { setCreateDirty(false); setCreating(true) }} disabled={loading}>创建分享</button>
+        }}
       >
         <div className="sh-drawer">
           {notice ? <StatusMessage tone={notice.tone}>{notice.text}</StatusMessage> : null}
           {revealed ? (
-            <section className="sh-reveal" aria-live="polite" aria-label={revealed.title}>
-              <strong>{revealed.title}</strong>
-              <p>请立即复制分享链接，离开页面前仍可在列表中复制</p>
-              <div className="sh-reveal-line">
-                <Input aria-label="分享链接" value={revealed.url} readOnly />
-                <button className="button secondary" type="button" onClick={() => { copyToClipboard(revealed.url).then(() => setNotice({ tone: 'success', text: '分享链接已复制' })).catch(() => setNotice({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })) }}>复制链接</button>
-              </div>
-              <button className="button secondary" type="button" onClick={() => setRevealed(null)}>完成</button>
-            </section>
+            <Input aria-label="分享链接" data-dialog-initial-focus value={revealed.url} readOnly />
           ) : null}
           {creating && subscription ? (
             <CreateShareForm
               subscriptionId={subscription.id}
-              onCancel={() => { if (!createBusy) setCreating(false) }}
+              formId="user-create-share"
+              onDirtyChange={setCreateDirty}
               onPending={setCreateBusy}
               onCreated={(share, url) => {
                 setIssued((current) => ({ ...current, [share.id]: url }))
@@ -405,39 +416,35 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
                 setNotice({ tone: 'success', text: '分享已创建' })
               }}
             />
-          ) : (
-            <div className="sh-drawer-lead">
-              <button className="button primary" type="button" onClick={() => setCreating(true)} disabled={!subscription || loading}>创建分享</button>
-            </div>
-          )}
-
-          {loading ? <div className="sh-state"><LoadingState label="正在加载分享" /></div> : null}
-          {!loading && loadError ? <div className="sh-state"><ErrorState message={loadError} onRetry={() => { if (subscriptionId) load(subscriptionId).catch(() => undefined) }} /></div> : null}
-          {!loading && !loadError && shares.length === 0 ? <div className="sh-state"><EmptyState title="还没有分享" /></div> : null}
-          {!loading && !loadError && shares.length > 0 ? (
-            <div className="sh-list">
-              <h3 className="sh-list-title">分享列表</h3>
-              <FilterBar className="sh-filters">
-                <SearchInput label="搜索备注" placeholder="搜索备注" value={query} onChange={setQuery} />
-                <div className="sh-chips" role="group" aria-label="分享状态">
-                  {STATUS_FILTERS.map((item) => (
-                    <FilterChip key={item.value} active={status === item.value} onClick={() => setStatus(item.value)}>{item.label}</FilterChip>
-                  ))}
-                </div>
-              </FilterBar>
-              {filtered.length === 0 ? <div className="sh-state"><EmptyState title="没有匹配的分享" description="换一个关键词或状态" /></div> : (
-                <DataTable
-                  className="sh-share-table"
-                  columns={columns}
-                  rows={rows}
-                  rowKey={(share) => share.id}
-                  pagination={pageCount > 1 ? { page: currentPage, pageCount, onPageChange: setPage } : undefined}
-                />
-              )}
-            </div>
           ) : null}
+          {!creating && !revealed && <>
+            {loading ? <div className="sh-state"><LoadingState label="正在加载分享" /></div> : null}
+            {!loading && loadError ? <div className="sh-state"><ErrorState message={loadError} onRetry={() => { if (subscriptionId) load(subscriptionId).catch(() => undefined) }} /></div> : null}
+            {!loading && !loadError && shares.length === 0 ? <div className="sh-state"><EmptyState title="还没有分享" /></div> : null}
+            {!loading && !loadError && shares.length > 0 ? (
+              <div className="sh-list">
+                                <FilterBar className="sh-filters">
+                  <SearchInput label="搜索备注" placeholder="搜索备注" value={query} onChange={setQuery} />
+                  <div className="sh-chips" role="group" aria-label="分享状态">
+                    {STATUS_FILTERS.map((item) => (
+                      <FilterChip key={item.value} active={status === item.value} onClick={() => setStatus(item.value)}>{item.label}</FilterChip>
+                    ))}
+                  </div>
+                </FilterBar>
+                {filtered.length === 0 ? <div className="sh-state"><EmptyState title="没有匹配的分享" /></div> : (
+                  <DataTable
+                    className="sh-share-table"
+                    columns={columns}
+                    rows={rows}
+                    rowKey={(share) => share.id}
+                    pagination={pageCount > 1 ? { page: currentPage, pageCount, onPageChange: setPage } : undefined}
+                  />
+                )}
+              </div>
+            ) : null}
+          </>}
         </div>
-      </EditDrawer>
+      </Dialog>
       <ConfirmDialog
         open={pending !== null}
         title={confirmCopy.title}
@@ -445,9 +452,10 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
         confirmLabel={confirmCopy.confirmLabel}
         danger
         busy={busyId !== ''}
-        onClose={() => { if (busyId === '') setPending(null) }}
-        onConfirm={() => { runPending().catch(() => undefined) }}
-      />
+        onClose={() => { if (!busyId) { setPending(null); setNotice(null) } }}
+        onConfirm={() => { void runPending() }}>
+        {notice?.tone === 'error' && <StatusMessage tone="error">{notice.text}</StatusMessage>}
+      </ConfirmDialog>
     </>
   )
 }
