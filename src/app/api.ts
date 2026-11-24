@@ -155,14 +155,20 @@ export type SubscriptionFormat = {
   note: string | null
 }
 
-export type SubscriptionFetchSummary = {
+type FetchAggregate = {
+  success: number
+  statuses: Record<string, number>
+  failure: number
+  durationMs: { min: number; max: number; avg: number } | null
+}
+
+export type SubscriptionFetchSummary = FetchAggregate & {
   lastFetchAt: string | null
   lastPlatform: string | null
   lastOk: boolean | null
   lastStatus: number | null
-  success: number
-  failure: number
-  durationMs: { min: number; max: number; avg: number } | null
+  platforms: Record<string, FetchAggregate>
+  unavailable?: true
 }
 
 export type AdminSubscription = {

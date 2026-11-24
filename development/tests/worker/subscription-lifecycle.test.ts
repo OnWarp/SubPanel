@@ -322,6 +322,7 @@ describe('subscription lifecycle', () => {
     expect(after.fetch?.lastPlatform).toBe('singbox')
     expect(after.fetch?.lastOk).toBe(true)
     expect(after.fetch?.success).toBeGreaterThan(0)
+    expect(after.fetch).toMatchObject({ statuses: expect.any(Object), durationMs: { min: expect.any(Number), max: expect.any(Number) } })
     expect(JSON.stringify(after.fetch)).not.toContain('curl')
     expect(JSON.stringify(after.fetch)).not.toContain('ClashMeta')
     const stored = await env.DATA.get(`fetch-stats:${created.subscription.id}`)
@@ -338,22 +339,87 @@ describe('subscription lifecycle', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${created.token}/mihomo`)).status).toBe(200)
     expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${copyBody.token}/mihomo`)).status).toBe(200)
 
-    const batch = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/subscriptions/batch`,
-      jsonRequest({ ids: [created.subscription.id, extra.subscription.id], action: 'plan', planId: secondPlan.id }, withCookie(admin)),
+    const jobPath = '/api/admin/compile-jobs'
+    const request = (path: string, body?: unknown) => exports.default.fetch(
+      TEST_ORIGIN + jobPath + path,
+      body === undefined ? withCookie(admin) : jsonRequest(body, withCookie(admin)),
     )
-    expect(batch.status).toBe(200)
-    const batchBody = await batch.json() as { ok: string[]; failed: unknown[] }
-    expect(batchBody.failed).toEqual([])
+    const inspect = async (input: { ids: string[]; operation: Record<string, unknown> }) => {
+      const response = await request('/batch/preview', input)
+      expect(response.status).toBe(200)
+      return { ...input, ...await response.json() as { previewId: string; fingerprint: string; platforms: string[]; affected: number } }
+    }
+    const enqueue = async (input: Awaited<ReturnType<typeof inspect>>, status = 201) => {
+      const response = await request('/batch', input)
+      expect(response.status).toBe(status)
+      return (await response.json() as { job: { id: string } }).job.id
+    }
+    const ids = [created.subscription.id, extra.subscription.id]
+    const planReview = await inspect({ ids, operation: { action: 'plan', planId: secondPlan.id } })
+    expect(planReview).toMatchObject({ affected: 2, platforms: expect.arrayContaining(['mihomo', 'singbox', 'generic']) })
+    const batchId = await enqueue(planReview)
+    expect(await enqueue(planReview, 200)).toBe(batchId)
+    expect(await (await request(`/${batchId}/run`, {})).json()).toMatchObject({ job: { status: 'completed', processed: 2, failures: 0 } })
     expect((await adminSubscription(admin, created.subscription.id)).planId).toBe(secondPlan.id)
     expect((await adminSubscription(admin, extra.subscription.id)).planId).toBe(secondPlan.id)
 
-    const binding = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/subscriptions/batch`,
-      jsonRequest({ ids: [created.subscription.id], action: 'binding', templateBinding: { mode: 'base' } }, withCookie(admin)),
-    )
-    expect(binding.status).toBe(200)
-    expect((await binding.json() as { ok: string[] }).ok).toEqual([created.subscription.id])
+    const bindingReview = await inspect({ ids: ids.slice(0, 1), operation: { action: 'binding', templateBinding: { mode: 'base' } } })
+    expect(bindingReview.platforms).toEqual(['mihomo', 'singbox'])
+    const bindingId = await enqueue(bindingReview)
+    expect(await (await request(`/${bindingId}/run`, {})).json()).toMatchObject({ job: { status: 'completed', processed: 1 } })
+
+    const copyReview = await inspect({ ids: [created.subscription.id, 'sub_999999'], operation: { action: 'copy' } })
+    expect(copyReview).toMatchObject({ affected: 1, missing: 1, platforms: [] })
+    const copyId = await enqueue(copyReview)
+    expect(await (await request(`/${copyId}/run`, {})).json()).toMatchObject({ job: { status: 'failed', processed: 2, failures: 1 } })
+    const outcomes = await (await request(`/${copyId}/items`)).json() as { items: Array<{ id: string; outcome: string; copyId: string }> }
+    const copiedId = outcomes.items.find(item => item.id === created.subscription.id)?.copyId
+    expect(copiedId).toMatch(/^sub_/u)
+    const copiedView = await adminSubscription(admin, copiedId!)
+    expect(copiedView.links.mihomo).not.toBe(after.links.mihomo)
+    const retry = await (await request(`/${copyId}/retry`, {})).json()
+    expect(retry).toMatchObject({ input: { ids: ['sub_999999'], operation: { action: 'copy' } }, affected: 0 })
+
+    const disableReview = await inspect({ ids, operation: { action: 'disable' } })
+    const disableId = await enqueue(disableReview)
+    expect(await (await request(`/${disableId}/cancel`, {})).json()).toMatchObject({ job: { status: 'cancelled', processed: 0 } })
+    expect((await request(`/${disableId}/run`, {})).status).toBe(409)
+    expect((await adminSubscription(admin, created.subscription.id)).enabled).toBe(true)
+    const audit = await env.DB.prepare("SELECT action, target_id, detail FROM audit_logs WHERE action LIKE 'subscription_batch.%' AND action<>'subscription_batch.created'").all()
+    expect(audit.results).toHaveLength(5)
+    expect(audit.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: 'subscription_batch.copy', target_id: created.subscription.id, detail: expect.stringContaining(copiedId!) }),
+      expect.objectContaining({ action: 'subscription_batch.copy', target_id: 'sub_999999', detail: expect.stringContaining('SUBSCRIPTION_NOT_FOUND') }),
+    ]))
+    expect(JSON.stringify(audit.results)).not.toContain(created.token)
+
+    const allIds = [...ids]
+    for (let index = 0; index < 3; index++) {
+      const { subscription } = await createSubscription(admin, {
+        name: `Batch page fixture ${index}`, planId: secondPlan.id, groupIds: [primary.groupId],
+      })
+      allIds.push(subscription.id)
+    }
+    const pagedId = await enqueue(await inspect({ ids: allIds, operation: { action: 'disable' } }))
+    const firstPage = await request(`/${pagedId}/run`, {})
+    expect(await firstPage.json()).toMatchObject({ job: { status: 'running', processed: 4 } })
+    expect(await (await request(`/${pagedId}/cancel`, {})).json()).toMatchObject({ job: { status: 'cancelled', processed: 4 } })
+    const remaining = await (await request(`/${pagedId}/retry`, {})).json() as Awaited<ReturnType<typeof inspect>> & { input: { ids: string[]; operation: Record<string, unknown> } }
+    expect(remaining.input.ids).toHaveLength(1)
+    const resumed = await enqueue({ ...remaining, ...remaining.input })
+    expect(await (await request(`/${resumed}/run`, {})).json()).toMatchObject({ job: { status: 'completed', processed: 1 } })
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${created.token}/mihomo`)).status).toBe(404)
+    const enableReview = await inspect({ ids: ids.slice(0, 1), operation: { action: 'enable' } })
+    const enableId = await enqueue(enableReview)
+    expect(await (await request(`/${enableId}/run`, {})).json()).toMatchObject({ job: { status: 'completed', processed: 1 } })
+    expect((await exports.default.fetch(`${TEST_ORIGIN}/sub/${created.token}/mihomo`)).status).toBe(200)
+    expect((await request('/batch', enableReview)).status).toBe(200)
+    const stale = await inspect({ ids: ids.slice(0, 1), operation: { action: 'disable' } })
+    const update = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${created.subscription.id}`,
+      jsonRequest({ name: 'Renamed' }, withCookie(admin, { method: 'PATCH' })))
+    expect(update.status).toBe(200)
+    expect((await request('/batch', stale)).status).toBe(409)
+
 
     const preview = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/subscriptions/output-preview`,

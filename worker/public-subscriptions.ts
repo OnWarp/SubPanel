@@ -154,7 +154,7 @@ async function serve(c: Context<AppEnv>, clientParam?: string) {
         durationMs: Math.max(0, Date.now() - started),
       }
       stageSubscriptionFetch(subscription.id, sample)
-      c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, subscription.id, sample))
+      c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, subscription.id))
     }
   }
 }

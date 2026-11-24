@@ -1,3 +1,4 @@
+import { SubscriptionBatchJobs, type BatchOperation } from './SubscriptionBatchJobs'
 import { expiryFromDuration } from '../../../shared/subscription-duration'
 import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { CreateShareForm } from '../shares/ShareDrawer'
@@ -64,7 +65,7 @@ type OutputPreview = { planGroupIds: string[]; authorizedGroupIds: string[]; out
 type FieldErrors = { startsAt?: string; expiresAt?: string }
 
 type DrawerState = 'create' | { kind: 'edit' | 'details'; subscription: AdminSubscription }
-type ConfirmAction = 'disable' | 'delete'
+type ConfirmAction = 'delete'
 type CreationMode = 'manual' | 'template'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 
@@ -262,6 +263,8 @@ export function SubscriptionsPage() {
     }).catch((cause) => setBatchBindingError(errorMessage(cause, '加载附加配置失败')))
   }
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [batchHistory, setBatchHistory] = useState(false)
+  const [batchRequest, setBatchRequest] = useState<{ ids: string[]; operation: BatchOperation } | null>(null)
   const [progress, setProgress] = useState('')
   const [transfer, setTransfer] = useState<AdminSubscription | null>(null)
   const [targetUser, setTargetUser] = useState('')
@@ -281,7 +284,6 @@ export function SubscriptionsPage() {
     if (seq !== listRequestSeq.current) return
     setSubscriptions(result.subscriptions)
     setTotal(result.total)
-    setSelected((current) => new Set([...current].filter((id) => result.subscriptions.some((subscription) => subscription.id === id))))
   }, [enabledOnly, expiryFilter, page, query, statusFilter])
 
   const loadMeta = useCallback(() => readData((read) => Promise.all([
@@ -330,11 +332,13 @@ export function SubscriptionsPage() {
 
   useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
   const changeQuery = (value: string) => {
+    setSelected(new Set())
     setQuery(value)
     setPage(1)
   }
 
   const selectExpiry = (filter: ExpiryFilter) => {
+    setSelected(new Set())
     setPage(1)
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
@@ -576,7 +580,7 @@ export function SubscriptionsPage() {
     }
   }
 
-  const executeBatch = async (action: ConfirmAction | 'enable') => {
+  const executeDelete = async () => {
     const ids = [...selected]
     if (!ids.length) return
     setConfirmAction(null)
@@ -589,8 +593,7 @@ export function SubscriptionsPage() {
       for (const [index, id] of ids.entries()) {
         setProgress(`正在处理 ${index + 1}/${ids.length}`)
         try {
-          if (action === 'delete') await api(`/api/admin/subscriptions/${id}`, { method: 'DELETE' })
-          else await api(`/api/admin/subscriptions/${id}`, { method: 'PATCH', body: jsonBody({ enabled: action === 'enable' }) })
+          await api(`/api/admin/subscriptions/${id}`, { method: 'DELETE' })
         } catch (cause) {
           failed.add(id)
           if (!firstFailure) firstFailure = errorMessage(cause, '请求失败')
@@ -599,7 +602,7 @@ export function SubscriptionsPage() {
       await load()
       setSelected(failed)
       if (firstFailure) setError(`${failed.size} 项未完成：${firstFailure}`)
-      else setMessage(action === 'delete' ? '订阅已删除' : '批量操作已完成')
+      else setMessage('订阅已删除')
     } catch (cause) {
       setError(errorMessage(cause, '批量操作失败'))
     } finally {
@@ -608,40 +611,36 @@ export function SubscriptionsPage() {
     }
   }
 
-  const runServerBatch = async (body: Record<string, unknown>, success: string) => {
-    const ids = [...selected]
-    if (!ids.length) return
+  const previewBatch = (operation: BatchOperation) => {
+    if (!selected.size) return
     setBatchPlanOpen(false)
     setBatchBindingOpen(false)
-    setBusy(true)
-    setError('')
-    setMessage('')
-    try {
-      const result = await api<{ ok: string[]; failed: Array<{ id: string; message: string }> }>('/api/admin/subscriptions/batch', { method: 'POST', body: jsonBody({ ids, ...body }) })
-      await load()
-      setSelected(new Set(result.failed.map((item) => item.id)))
-      if (result.failed.length) setError(`${result.failed.length} 项未完成：${result.failed[0]?.message ?? '请求失败'}`)
-      else setMessage(success)
-    } catch (cause) {
-      setError(errorMessage(cause, '批量操作失败'))
-    } finally {
-      setBusy(false)
-    }
+    setBatchRequest({ ids: [...selected], operation })
   }
 
   const actions: BatchAction[] = [
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
-    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setConfirmAction('disable') },
+    { key: 'copy', label: '复制', onClick: () => previewBatch({ action: 'copy' }) },
+    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => previewBatch({ action: 'enable' }) },
+    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => previewBatch({ action: 'disable' }) },
     { key: 'plan', label: '更换计划', onClick: () => { setBatchPlanId(''); setBatchPlanOpen(true) } },
     { key: 'binding', label: '更换配置', onClick: openBatchBinding },
     { key: 'delete', label: '删除', icon: Trash2, tone: 'danger', onClick: () => setConfirmAction('delete') },
   ]
 
+  const selectPage = useCallback((checked: boolean) => setSelected(current => {
+    const next = new Set(current)
+    for (const { id } of subscriptions) {
+      if (checked) next.add(id)
+      else next.delete(id)
+    }
+    return next
+  }), [subscriptions])
+
   const columns = useMemo<Array<DataTableColumn<AdminSubscription>>>(() => [
     {
       key: 'select',
       header: '选择',
-      headerContent: <ResourceSelectAll label="选择当前页订阅" ids={subscriptions.map((row) => row.id)} selected={selected} disabled={busy} onChange={(checked) => setSelected(checked ? new Set(subscriptions.map((subscription) => subscription.id)) : new Set())} />,
+      headerContent: <ResourceSelectAll label="选择当前页订阅" ids={subscriptions.map((row) => row.id)} selected={selected} disabled={busy} onChange={selectPage} />,
       width: 64,
       render: (subscription) => (
         <Checkbox
@@ -743,7 +742,7 @@ export function SubscriptionsPage() {
         ]} />
       ),
     },
-  ], [busy, copySubscription, groupNames, selected, subscriptions, userNames])
+  ], [busy, copySubscription, groupNames, selectPage, selected, subscriptions, userNames])
 
   const details = drawer !== null && drawer !== 'create' && drawer.kind === 'details' ? drawer.subscription : null
   const detailsId = details?.id
@@ -784,7 +783,7 @@ export function SubscriptionsPage() {
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
 
       <section className="data-section resource-card" aria-label="订阅列表">
-        <div className="section-heading"><span /><div className="data-header-actions"><Link to="/delivery/redemptions" className="button secondary">兑换码管理</Link><button className="button primary" type="button" onClick={openCreate} disabled={templateLoading}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
+        <div className="section-heading"><span /><div className="data-header-actions"><button className="button secondary" type="button" onClick={() => setBatchHistory(true)}>批量任务</button><Link to="/delivery/redemptions" className="button secondary">兑换码管理</Link><button className="button primary" type="button" onClick={openCreate} disabled={templateLoading}><Plus aria-hidden="true" size={17} />添加订阅</button></div></div>
         <FilterBar className="resource-card-filters">
           <SearchInput value={query} onChange={changeQuery} label="搜索订阅" placeholder="搜索名称、用户或分组" />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="订阅状态" value={activeUnified} onChange={(event) => {
@@ -793,7 +792,7 @@ export function SubscriptionsPage() {
           }}>{UNIFIED_FILTERS.map((filter) => <option key={filter.key} value={filter.key}>{filter.label}</option>)}</FormSelect></label>
           {enabledOnly ? <span className="exp-enabled-note">仅启用中的订阅</span> : null}
         </FilterBar>
-        <BatchToolbar selectedCount={selected.size} totalCount={total} onSelectAll={() => setSelected(new Set(subscriptions.map((subscription) => subscription.id)))} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
+        <BatchToolbar selectedCount={selected.size} totalCount={selected.size + subscriptions.filter(({ id }) => !selected.has(id)).length} onSelectAll={() => selectPage(true)} onClear={() => setSelected(new Set())} actions={actions} busy={busy} progress={progress} />
         {loading && subscriptions.length === 0 ? <LoadingState label="正在加载订阅" /> : null}
         {!loading && loadError && subscriptions.length === 0 ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !loadError && total === 0 && !filtersActive ? <EmptyState title="暂无订阅" /> : null}
@@ -1045,15 +1044,18 @@ export function SubscriptionsPage() {
         {qr?.loading ? <p className="qr-loading" role="status">正在生成二维码</p> : qr?.dataUrl ? <img className="qr-image" src={qr.dataUrl} alt={`${CLIENT_LABELS[qr.client] ?? qr.client} 订阅二维码`} /> : null}
       </ConfirmDialog>
 
-      <ConfirmDialog open={confirmAction !== null} title={confirmAction === 'delete' ? '删除订阅' : '停用订阅'} description={confirmAction === 'delete' ? `将删除选中的 ${selected.size} 个订阅及其已编译内容` : `将停用选中的 ${selected.size} 个订阅，现有链接将停止提供内容`} confirmLabel={confirmAction === 'delete' ? '确认删除' : '确认停用'} danger busy={busy} onClose={() => setConfirmAction(null)} onConfirm={() => executeBatch(confirmAction ?? 'disable')} />
+      <SubscriptionBatchJobs request={batchRequest} onClear={() => setBatchRequest(null)} historyOpen={batchHistory}
+        onCloseHistory={() => setBatchHistory(false)} onChanged={() => { void load(); setSelected(new Set()) }} platforms={CLIENT_LABELS} />
+      <ConfirmDialog open={confirmAction !== null} title="删除订阅" description={`将删除选中的 ${selected.size} 个订阅及所有平台产物`}
+        confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmAction(null)} onConfirm={() => void executeDelete()} />
       <ConfirmDialog open={resetTarget !== null} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} onClose={() => setResetTarget(null)} onConfirm={() => { const target = resetTarget; setResetTarget(null); if (target) void resetToken(target) }} />
-      <ConfirmDialog open={batchPlanOpen} title="更换计划" description="选中的订阅将改用同一计划" confirmLabel="确认更换" busy={busy} onClose={() => setBatchPlanOpen(false)} onConfirm={() => { if (!batchPlanId) { setError('请选择计划'); return } void runServerBatch({ action: 'plan', planId: batchPlanId }, '计划已更换') }}>
+      <ConfirmDialog open={batchPlanOpen} title="更换计划" description="选中的订阅将改用同一计划" confirmLabel="预览影响" confirmDisabled={!batchPlanId} busy={busy} onClose={() => setBatchPlanOpen(false)} onConfirm={() => previewBatch({ action: 'plan', planId: batchPlanId })}>
         <FormSelect aria-label="目标计划" value={batchPlanId} onChange={(event) => setBatchPlanId(event.currentTarget.value)}>
           <option value="">选择计划</option>
           {plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
         </FormSelect>
       </ConfirmDialog>
-      <ConfirmDialog open={batchBindingOpen} title="更换配置" description="选中的订阅将改用同一转换配置绑定" confirmLabel="确认更换" busy={busy} onClose={() => setBatchBindingOpen(false)} onConfirm={() => { void runServerBatch({ action: 'binding', templateBinding: batchBindingValue === 'inherit' || batchBindingValue === 'base' ? { mode: batchBindingValue } : { mode: 'specific', templateId: batchBindingValue } }, '配置绑定已更换') }}>
+      <ConfirmDialog open={batchBindingOpen} title="更换配置" description="选中的订阅将改用同一转换配置绑定" confirmLabel="预览影响" busy={busy} onClose={() => setBatchBindingOpen(false)} onConfirm={() => { previewBatch({ action: 'binding', templateBinding: batchBindingValue === 'inherit' || batchBindingValue === 'base' ? { mode: batchBindingValue } : { mode: 'specific', templateId: batchBindingValue } }) }}>
         <FormSelect aria-label="配置绑定" value={batchBindingValue} onChange={(event) => setBatchBindingValue(event.currentTarget.value)}>
           <option value="inherit">继承默认</option>
           <option value="base">基础配置</option>

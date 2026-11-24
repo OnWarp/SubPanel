@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, jsonBody, subscriptionTemplatesPath } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
@@ -18,7 +19,55 @@ export type RuleSource = {
 }
 
 export type LocalRuleSet = { name: string; rules: string[]; revision: number; updated_at: string }
-export type RuleLibraryResponse = { sources: RuleSource[]; localSets: LocalRuleSet[] }
+export type RuleLibraryResponse = {
+  sources: RuleSource[]; localSets: LocalRuleSet[]
+  hasMore?: boolean
+  system?: { name: string; revision: number; rules: string[] }
+}
+
+type SourceIdentity = { type: 'system' | 'local' | 'remote'; key: string }
+type Usage = {
+  references: { id: string; name: string; archived: number; sequence: number; platform: string; tag: string
+    mode: 'client' | 'inline'; version: string | null; changed: boolean }[]
+  next: string | null
+}
+
+function RuleUsage({ source }: { source: SourceIdentity }) {
+  const [usage, setUsage] = useState<Usage | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const load = async (after = '') => {
+    setLoading(true)
+    setError('')
+    try {
+      const query = new URLSearchParams({ ...source, after })
+      const page = await api<Usage>(`${ruleLibraryPath}/usage?${query}`)
+      setUsage(previous => ({ ...page, references: after ? [...(previous?.references ?? []), ...page.references] : page.references }))
+    } catch (cause) {
+      setError(templateError(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+  return <div className="form-stack">
+    <div><button className="button secondary" type="button" disabled={loading} onClick={() => void load()}>
+      {loading ? '正在查询' : '查看已发布配置引用'}
+    </button></div>
+    {error && <StatusMessage tone="error">{error}</StatusMessage>}
+    {usage && (!usage.references.length ? <p>暂无已发布配置引用</p> : <ul>{usage.references.map(item =>
+      <li key={JSON.stringify([item.id, item.platform, item.tag])}>
+        <Link to={`/delivery/conversions?config=${encodeURIComponent(item.id)}`}>{item.name}</Link>
+        {' · '}v{item.sequence} · {item.platform === 'singbox' ? 'sing-box' : 'Mihomo'} · {item.tag}
+        {' · '}{item.mode === 'client' ? '客户端下载' : '发布时内嵌'}
+        {item.version ? ` · 规则版本 ${item.version.slice(0, 12)}` : item.mode === 'inline' ? ' · 历史版本未记录' : ''}
+        {item.changed ? ' · 来源已更新，重新发布后生效' : ''}
+        {item.archived ? ' · 已归档' : ''}
+      </li>,
+    )}</ul>)}
+    {usage?.next && <div><button className="button secondary" type="button" disabled={loading}
+      onClick={() => void load(usage.next!)}>加载更多引用</button></div>}
+  </div>
+}
 
 export function RuleLibrary() {
   const [library, setLibrary] = useState<RuleLibraryResponse>({ sources: [], localSets: [] })
@@ -31,14 +80,15 @@ export function RuleLibrary() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     if (!open) return
     const abort = new AbortController()
-    void api<RuleLibraryResponse>(ruleLibraryPath, { signal: abort.signal }).then(setLibrary)
+    void api<RuleLibraryResponse>(`${ruleLibraryPath}?page=${page}`, { signal: abort.signal }).then(setLibrary)
       .catch(cause => { if (!abort.signal.aborted) setError(templateError(cause)) })
     return () => abort.abort()
-  }, [open])
+  }, [open, page])
 
   const save = async (event: FormEvent, local: boolean) => {
     event.preventDefault()
@@ -53,7 +103,7 @@ export function RuleLibrary() {
     } catch (cause) {
       setError(templateError(cause))
     } finally {
-      try { setLibrary(await api<RuleLibraryResponse>(ruleLibraryPath)) }
+      try { setLibrary(await api<RuleLibraryResponse>(`${ruleLibraryPath}?page=${page}`)) }
       catch (cause) { setError(templateError(cause)) }
       setBusy(false)
     }
@@ -64,7 +114,14 @@ export function RuleLibrary() {
     <details onToggle={event => setOpen(event.currentTarget.open)}>
       <summary>规则来源</summary>
       <div className="form-stack">
-        <p>系统默认包含私网直连和 MATCH 兜底</p>
+        <h3>系统规则</h3>
+        {library.system && <details>
+          <summary>{library.system.name} · v{library.system.revision}</summary>
+          <p>随系统发布 · 可在 Mihomo 基础编辑器插入，或在 sing-box 的 localRuleSets 中指定出站</p>
+          <ul>{library.system.rules.map(rule => <li key={rule}>{rule}</li>)}</ul>
+          <RuleUsage source={{ type: 'system', key: library.system.name }} />
+        </details>}
+        <h3>管理员自建</h3>
         <form className="form-stack" onSubmit={event => { void save(event, true) }}>
           <FormField label="自建规则集名称" htmlFor="local-rules-name">
             <Input id="local-rules-name" value={localName} maxLength={80} required disabled={busy} onChange={event => setLocalName(event.currentTarget.value)} />
@@ -76,7 +133,10 @@ export function RuleLibrary() {
         </form>
         {library.localSets.map(source => <div key={source.name}>
           <button className="button secondary" type="button" onClick={() => { setLocalName(source.name); setLocalRules(source.rules.join('\n')) }}>{source.name} · v{source.revision}</button>
+          <p>最后保存 {templateDate(source.updated_at)}</p>
+          <RuleUsage key={source.revision} source={{ type: 'local', key: source.name }} />
         </div>)}
+        <h3>远程规则集</h3>
         <form className="form-stack" onSubmit={event => { void save(event, false) }}>
           <FormField label="远程规则源 HTTPS 地址" htmlFor="rule-source-url">
             <Input id="rule-source-url" type="url" value={url} maxLength={2048} required disabled={busy} onChange={event => setUrl(event.currentTarget.value)} />
@@ -101,10 +161,16 @@ export function RuleLibrary() {
           <summary>{source.url}</summary>
           <p>{source.nativeSingbox ? 'sing-box JSON' : `${source.behavior} · ${source.format}`} · {source.version ? `版本 ${source.version.slice(0, 12)}` : '待验证'}</p>
           <p>{source.last_success_at ? `最后成功 ${templateDate(source.last_success_at)}` : '暂无成功记录'}{source.error_code ? ` · ${source.error_code}` : ''}</p>
+          <RuleUsage key={source.version} source={{ type: 'remote', key: JSON.stringify([source.url, source.behavior, source.format]) }} />
           <button className="button secondary" type="button" onClick={() => {
             setUrl(source.url); setBehavior(source.behavior); setFormat(source.format)
           }}>选用此来源</button>
         </details>)}
+        {(page > 1 || library.hasMore) && <div className="data-header-actions" aria-label="规则库分页">
+          <button className="button secondary" type="button" disabled={busy || page === 1} onClick={() => setPage(value => value - 1)}>上一页</button>
+          <span>第 {page} 页</span>
+          <button className="button secondary" type="button" disabled={busy || !library.hasMore} onClick={() => setPage(value => value + 1)}>下一页</button>
+        </div>}
       </div>
     </details>
   </section>

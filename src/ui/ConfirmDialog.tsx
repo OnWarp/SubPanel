@@ -8,6 +8,7 @@ type ConfirmDialogProps = {
   confirmLabel: string
   danger?: boolean
   busy?: boolean
+  confirmDisabled?: boolean
   onClose: () => void
   onConfirm: () => void
   returnFocusRef?: RefObject<HTMLElement | null>
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger = false,
   busy = false,
+  confirmDisabled = false,
   onClose,
   onConfirm,
   returnFocusRef,
@@ -60,7 +62,7 @@ export function ConfirmDialog({
         {children}
         <div className="dialog-actions">
           <button className="button ghost" type="button" onClick={close} disabled={busy}>取消</button>
-          <button className={`button ${danger ? 'danger-fill' : 'primary'}`} type="button" onClick={onConfirm} disabled={busy}>{busy ? '处理中' : confirmLabel}</button>
+          <button className={`button ${danger ? 'danger-fill' : 'primary'}`} type="button" onClick={onConfirm} disabled={busy || confirmDisabled}>{busy ? '处理中' : confirmLabel}</button>
         </div>
       </div>
     </dialog>

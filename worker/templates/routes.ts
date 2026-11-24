@@ -1,4 +1,4 @@
-import { checkRuleSources, loadSingBoxRuleSets, listLocalRuleSets, listRuleSources, localRuleSet, refreshRuleSource, ruleSource, saveLocalRuleSet } from './rule-library.js'
+import { checkRuleSources, loadSingBoxRuleSets, listLocalRuleSets, listRuleSources, localRuleSet, refreshRuleSource, ruleSource, ruleUsage, ruleUsageQuery, saveLocalRuleSet, systemRuleSet, type RuleVersionSnapshot } from './rule-library.js'
 import { stringify } from 'yaml'
 import { prepareClientRender, CLIENT_IDS, type RenderNode } from '../renderers/index.js'
 import { compileSingBoxConfig, TARGET_SINGBOX_VERSION } from '../renderers/singbox.js'
@@ -177,8 +177,19 @@ templateRoutes.post('/', async c => c.json(await createDraft(c.env.DB, await rea
 
 templateRoutes.get('/rule-sources', async c => {
   c.header('Cache-Control', 'no-store')
-  const [sources, localSets] = await Promise.all([listRuleSources(c.env.DB), listLocalRuleSets(c.env.DB)])
-  return c.json({ sources, localSets })
+  const { page, offset } = pagination(c.req.query('page'), '100')
+  const [sources, localSets] = await Promise.all([listRuleSources(c.env.DB, offset), listLocalRuleSets(c.env.DB, offset)])
+  return c.json({
+    sources: sources.slice(0, 100), localSets: localSets.slice(0, 100), page,
+    hasMore: sources.length > 100 || localSets.length > 100,
+    system: { ...systemRuleSet, last_success_at: null, error_code: null },
+  })
+})
+templateRoutes.get('/rule-sources/usage', async c => {
+  const query = ruleUsageQuery.safeParse(c.req.query())
+  if (!query.success) throw apiError(422, 'RULE_SOURCE_INVALID', '规则源标识不正确')
+  c.header('Cache-Control', 'no-store')
+  return c.json(await ruleUsage(c.env.DB, query.data))
 })
 templateRoutes.post('/rule-sources/local', async c => {
   await saveLocalRuleSet(c.env.DB, await readJson(c, localRuleSet))
@@ -419,7 +430,8 @@ templateRoutes.post('/:id/publish', async c => {
   const contentHash = await computeContentHash(validation.normalized)
   const previousSingBox = Boolean(row.published_id && await publishedSingBox(c.env.DB, row.id, row.published_id))
   const enableSingBox = input.singbox ?? previousSingBox
-  const native = enableSingBox ? { ruleSets: await loadSingBoxRuleSets(c.env.DB, validation.template) } : undefined
+  const snapshots: RuleVersionSnapshot[] = []
+  const native = enableSingBox ? { ruleSets: await loadSingBoxRuleSets(c.env.DB, validation.template, snapshots) } : undefined
   const compiled = native ? singboxValidation(() => compileSingBoxConfig(validation.template, [previewNode], native)) : undefined
   const compiledDiagnostics = compiled ? JSON.stringify([...compiled.policyDiagnostics, ...compiled.diagnostics]) : undefined
   if (compiled && compiledDiagnostics) assertTemplateFitsD1(normalizedJson, compiled.json, compiledDiagnostics)
@@ -440,6 +452,10 @@ templateRoutes.post('/:id/publish', async c => {
         (profile_id,id,platform,target_version,source_json,compiled_json,diagnostics_json,created_at)
       SELECT template_id,id,'singbox',?,?,?,?,? FROM subscription_template_versions WHERE id=?
     `).bind(TARGET_SINGBOX_VERSION, normalizedJson, compiled.json, compiledDiagnostics, now, id)] : []),
+    ...(snapshots.length ? [c.env.DB.prepare(`
+      INSERT INTO conversion_rule_version_snapshots (version_id,versions_json)
+      SELECT id,? FROM subscription_template_versions WHERE id=?
+    `).bind(JSON.stringify(snapshots), id)] : []),
   ])
 
   // Check if template update succeeded (condition matched)
