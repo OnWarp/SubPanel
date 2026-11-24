@@ -6,6 +6,9 @@ import { copyToClipboard } from '../../app/clipboard'
 import { useSession } from '../../app/session'
 import { AuthLayout } from '../accounts/AuthLayout'
 import { ErrorState } from '../../ui/ErrorState'
+import { Button } from '../../ui/Button'
+import { CopyButton } from '../../ui/CopyButton'
+import { SubscriptionImports } from '../delivery/SubscriptionImports'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -56,8 +59,11 @@ function titleFor(phase: Phase): string {
 }
 
 export function SharePage() {
-  const params = useParams()
-  const token = params.token ?? ''
+  const { token = '' } = useParams()
+  return <ShareContent key={token} token={token} />
+}
+
+function ShareContent({ token }: { token: string }) {
   const navigate = useNavigate()
   const { user, loading: sessionLoading } = useSession()
   const [phase, setPhase] = useState<Phase>({ kind: 'loading' })
@@ -65,7 +71,7 @@ export function SharePage() {
   const [submitting, setSubmitting] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [originalBlocked, setOriginalBlocked] = useState(false)
-  const [manualOriginal, setManualOriginal] = useState('')
+  const [originalLink, setOriginalLink] = useState('')
   const [pendingAction, setPendingAction] = useState('')
   const [linkBaseUrl, setLinkBaseUrl] = useState<string | null>(null)
 
@@ -88,7 +94,7 @@ export function SharePage() {
 
   useEffect(() => {
     setOriginalBlocked(false)
-    setManualOriginal('')
+    setOriginalLink('')
     setFeedback(null)
     setFormError('')
     load().catch(() => undefined)
@@ -178,14 +184,13 @@ export function SharePage() {
     if (!isShareToken(token)) return
     setPendingAction('link')
     setFeedback(null)
-    setManualOriginal('')
     try {
       const result = await exportShareLink(token)
+      setOriginalLink(result.link)
       try {
         await copyToClipboard(result.link)
         setFeedback({ tone: 'success', text: '订阅链接已复制' })
       } catch {
-        setManualOriginal(result.link)
         setFeedback({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })
       }
     } catch (cause) {
@@ -200,15 +205,6 @@ export function SharePage() {
       await noteExportError(cause)
     } finally {
       setPendingAction('')
-    }
-  }
-
-  const copyClientLink = async (client: ShareClientId, label: string) => {
-    try {
-      await copyToClipboard(buildShareExportUrl(token, client, linkBaseUrl))
-      setFeedback({ tone: 'success', text: `${label} 链接已复制` })
-    } catch {
-      setFeedback({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })
     }
   }
 
@@ -255,10 +251,12 @@ export function SharePage() {
             meta={phase.meta}
             feedback={feedback}
             originalBlocked={originalBlocked}
-            manualOriginal={manualOriginal}
+            originalLink={originalLink}
             pendingAction={pendingAction}
             onCopyLink={() => { copySubscriptionLink().catch(() => undefined) }}
-            onCopyClient={(client, label) => { copyClientLink(client, label).catch(() => undefined) }}
+            onCopyError={() => setFeedback({ tone: 'error', text: '浏览器未允许复制，请手动选择内容' })}
+            onCopied={() => setFeedback(null)}
+            clientUrl={(client) => buildShareExportUrl(token, client, linkBaseUrl)}
             onOpenClient={(client) => { openClient(client).catch(() => undefined) }}
           />
         ) : null}
@@ -267,14 +265,16 @@ export function SharePage() {
   )
 }
 
-function ReadyShare({ meta, feedback, originalBlocked, manualOriginal, pendingAction, onCopyLink, onCopyClient, onOpenClient }: {
+function ReadyShare({ meta, feedback, originalBlocked, originalLink, pendingAction, onCopyLink, onCopyError, onCopied, clientUrl, onOpenClient }: {
   meta: ShareMeta
   feedback: Feedback | null
   originalBlocked: boolean
-  manualOriginal: string
+  originalLink: string
   pendingAction: string
   onCopyLink: () => void
-  onCopyClient: (client: ShareClientId, label: string) => void
+  onCopyError: () => void
+  onCopied: () => void
+  clientUrl: (client: ShareClientId) => string
   onOpenClient: (client: ShareClientId) => void
 }) {
   const remaining = meta.expiresAt ? formatRemaining(meta.expiresAt) : ''
@@ -290,30 +290,27 @@ function ReadyShare({ meta, feedback, originalBlocked, manualOriginal, pendingAc
           {meta.nodeNames.map((name, index) => <li key={`${index}-${name}`}>{name}</li>)}
         </ul>
       ) : null}
-      {originalBlocked ? null : (
-        <button className="button primary" type="button" onClick={onCopyLink} disabled={pendingAction !== ''}>
-          {pendingAction === 'link' ? '正在复制' : '复制订阅链接'}
-        </button>
-      )}
-      {manualOriginal ? (
-        <div className="sh-manual">
-          <Input aria-label="订阅链接" value={manualOriginal} readOnly />
+      {originalLink ? (
+        <div className="del-link-line">
+          <p className="del-link-text">{originalLink}</p>
+          <CopyButton value={originalLink} label="复制订阅链接" onError={onCopyError} onCopied={onCopied} />
         </div>
-      ) : null}
+      ) : !originalBlocked && (
+        <Button variant="primary" onClick={onCopyLink} loading={pendingAction === 'link'} disabled={pendingAction !== ''}>复制订阅链接</Button>
+      )}
       {feedback ? <StatusMessage tone={feedback.tone}>{feedback.text}</StatusMessage> : null}
       <section className="sh-clients" aria-labelledby="share-clients-title">
         <h2 id="share-clients-title">客户端导入</h2>
-        {SHARE_CLIENTS.map((item) => (
-          <div className="sh-client" key={item.client}>
-            <span>{item.label}</span>
-            <div className="sh-client-actions">
-              <button className="button secondary" type="button" disabled={pendingAction !== ''} aria-label={`复制 ${item.label} 链接`} onClick={() => onCopyClient(item.client, item.label)}>复制</button>
-              <button className="button secondary" type="button" disabled={pendingAction !== ''} aria-label={`打开 ${item.label} 链接`} onClick={() => onOpenClient(item.client)}>
-                {pendingAction === item.client ? '正在打开' : '打开'}
-              </button>
+        <SubscriptionImports entries={SHARE_CLIENTS.map(({ client, label }) => ({ client, label, link: clientUrl(client) }))}>
+          <details className="diagnostic-disclosure">
+            <summary>下载配置</summary>
+            <div className="upd-import-actions">
+              {SHARE_CLIENTS.map(({ client, label }) => (
+                <Button key={client} loading={pendingAction === client} disabled={pendingAction !== ''} onClick={() => onOpenClient(client)}>{label}</Button>
+              ))}
             </div>
-          </div>
-        ))}
+          </details>
+        </SubscriptionImports>
       </section>
     </>
   )

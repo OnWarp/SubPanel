@@ -100,7 +100,8 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     const afterCopy = await overview.boundingBox()
     expect(afterCopy?.y).toBe(beforeCopy?.y)
     await expect(page.getByRole('img', { name: '订阅二维码' })).toBeVisible()
-    await expect(page.getByRole('group', { name: '客户端平台' }).getByRole('button', { name: '自动识别', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(link).toHaveText(/\/sub\/[^/]+$/)
+    await expect(page.getByRole('link', { name: 'Mihomo', exact: true })).toHaveAttribute('href', /^clash:\/\/install-config\?url=/)
 
     const diagnostics = page.locator('details').filter({ hasText: '兼容诊断' })
     await expect(diagnostics).not.toHaveAttribute('open', '')
@@ -112,7 +113,8 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await page.getByRole('combobox', { name: '选择订阅' }).click()
     await page.getByRole('option', { name: '备用订阅', exact: true }).click()
     await expect(page.getByRole('heading', { name: '备用订阅' })).toBeVisible()
-    await expect(page.getByRole('group', { name: '客户端平台' }).getByRole('button', { name: '自动识别', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(link).toHaveText(/\/sub\/[^/]+$/)
+    await expect(page.getByRole('link', { name: 'Mihomo', exact: true })).toHaveAttribute('href', /^clash:\/\/install-config\?url=/)
     const beforeReset = (await link.textContent())?.trim() ?? ''
     expect(beforeReset.startsWith('https://')).toBe(true)
     expect(beforeReset).not.toBe(originalLink)

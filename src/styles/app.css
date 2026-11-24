@@ -322,7 +322,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .subscription-client-format > span { flex: 0 0 64px; color: var(--color-text-muted); }
 .subscription-client-format .sp-select { min-width: 0; }
 .subscription-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; }
-.subscription-link-row .link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-sm); }
 .diagnostic-list article { display: grid; gap: 6px; min-width: 0; padding: var(--space-3) 0; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: transparent; }
 .diagnostic-list header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .diagnostic-list p, .diagnostic-list li { color: var(--color-text-muted); font-size: var(--font-xs); }

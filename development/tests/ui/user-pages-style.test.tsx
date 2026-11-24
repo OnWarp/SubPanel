@@ -154,7 +154,7 @@ describe('user page presentation', () => {
     expect(subscriptions).not.toContain('查看我的权益')
     expect(subscriptions).toContain('aria-label="选择订阅"')
     const source = readFileSync(new URL('../../../src/features/delivery/MySubscriptionsPage.tsx', import.meta.url), 'utf8')
-    for (const action of ['分享', '复制', '订阅二维码', '重置订阅令牌', '兼容诊断', '各平台链接', '订阅计划', '流量额度', '到期时间']) expect(source).toContain(action)
+    for (const action of ['分享', '复制', '订阅二维码', '重置订阅令牌', '兼容诊断', 'SubscriptionImports', '订阅计划', '流量额度', '到期时间']) expect(source).toContain(action)
     expect(source).not.toContain('注销')
 
     const login = page(createElement(LoginPage))
