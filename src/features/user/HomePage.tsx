@@ -13,13 +13,15 @@ import { QuickEntryCard } from '../../ui/QuickEntryCard'
 import { getExpiryState } from '../delivery/expiry'
 import type { Notice } from '../notices/types'
 import { homeTrafficLine } from './home-traffic'
-import { reminderEnabled } from './reminder'
+import { subscriptionStatus, useUnifiedSubscription } from '../delivery/unified-subscription'
+import { unifiedExpiryReminder, reminderEnabled } from './reminder'
 
 type HomeDashboardProps = {
   reminder: string | null
   subscriptionLabel: string
   subscriptionTone: 'success' | 'danger' | 'neutral'
   subscriptionSub: string
+  groupLabel?: string
   groupValue: string
   groupSub: string
   validity?: string | null
@@ -27,19 +29,19 @@ type HomeDashboardProps = {
   onOpenNodes: () => void
 }
 
-export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupValue, groupSub, validity, trafficLine, onOpenNodes }: HomeDashboardProps) {
+export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, subscriptionSub, groupLabel = '分组 / 节点', groupValue, groupSub, validity, trafficLine, onOpenNodes }: HomeDashboardProps) {
   const statusLine = [validity, trafficLine].filter((part): part is string => Boolean(part)).join(' · ')
   return <>
     {reminder ? <p role="status">{reminder}</p> : null}
     <div className="user-stat-grid upd-stat-grid">
       <StatCard label="订阅" value={<StatusPill tone={subscriptionTone}>{subscriptionLabel}</StatusPill>} sub={subscriptionSub} />
-      <StatCard label="分组 / 节点" value={groupValue} sub={groupSub} onClick={onOpenNodes} />
+      <StatCard label={groupLabel} value={groupValue} sub={groupSub} onClick={onOpenNodes} />
     </div>
     {statusLine ? <p className="upd-home-validity">{statusLine}</p> : null}
   </>
 }
 
-export function HomePage() {
+function LegacyHomePage() {
   const navigate = useNavigate()
   const { user } = useSession()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([])
@@ -90,5 +92,34 @@ export function HomePage() {
     <nav className="user-quick-grid" aria-label="快捷入口">
       <QuickEntryCard icon={<Network />} title="节点" href="/nodes" />
     </nav>
+  </div>
+}
+
+export function HomePage() {
+  const { state, reload } = useUnifiedSubscription()
+  const navigate = useNavigate()
+  const { user } = useSession()
+  const [notices, setNotices] = useState<Notice[]>([])
+  const unified = state.kind === 'ready'
+  useEffect(() => {
+    if (!unified) return
+    void watchApi<{ notices: Notice[] }>('/api/notices', result => setNotices(result.notices)).catch(() => setNotices([]))
+  }, [unified])
+  if (state.kind === 'legacy') return <LegacyHomePage />
+  return <div className="page-stack nav-home upd-page upd-home">
+    <PageHero title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
+    {state.kind === 'ready' ? <>
+      <HomeDashboard
+        reminder={unifiedExpiryReminder(state.summary, user?.id)}
+        subscriptionLabel={subscriptionStatus[state.summary.status]}
+        subscriptionTone={state.summary.status === 'active' ? 'success' : state.summary.status === 'expired' ? 'danger' : 'neutral'}
+        subscriptionSub={state.summary.permanent ? '长期有效' : ''}
+        groupLabel="可用节点"
+        groupValue={String(state.summary.nodeCount)}
+        groupSub=""
+        onOpenNodes={() => navigate('/nodes')}
+      />
+      <NoticeCarousel items={notices.map(notice => ({ id: String(notice.id), title: notice.title }))} onSelect={id => navigate(`/notices?notice=${encodeURIComponent(id)}`)} labels={{ previous: '上一条公告', next: '下一条公告', close: '关闭公告' }} />
+    </> : state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />}
   </div>
 }

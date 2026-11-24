@@ -17,7 +17,7 @@ const sample: UserSummary[] = [
 ]
 
 function directory(overrides: Partial<Parameters<typeof UsersDirectory>[0]> = {}) {
-  return renderToStaticMarkup(createElement(UsersDirectory, {
+  return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(UsersDirectory, {
     phase: 'ready',
     loadError: '',
     onRetry: () => undefined,
@@ -38,7 +38,7 @@ function directory(overrides: Partial<Parameters<typeof UsersDirectory>[0]> = {}
     onRowAction: () => undefined,
     onBatch: () => undefined,
     ...overrides,
-  }))
+  })))
 }
 
 function menus(html: string) {
@@ -62,6 +62,7 @@ describe('users directory', () => {
     expect(html).toContain('alone')
     expect(html).toContain('usr_1')
     expect(html).not.toContain('alone@')
+    expect(html).toContain('href="/users/usr_2"')
     expect(html).toContain('wuyang')
     expect(html).toContain('wuyang@example.com')
     expect(html).toContain('管理员')
@@ -92,7 +93,7 @@ describe('users directory', () => {
     expect(admin).toContain('改邮箱')
     expect(admin).toContain('停用')
     expect(admin).toContain('管理员不能在这里启用或停用')
-    expect(admin).toContain('管理订阅计划')
+    expect(admin).toContain('订阅授权')
     expect(admin).toContain('移入回收站')
     expect(admin).not.toContain('重置密码')
     expect(admin).not.toContain('设为管理员')
@@ -101,7 +102,7 @@ describe('users directory', () => {
     expect(user).toContain('重置密码')
     expect(user).toContain('设为管理员')
     expect(user).toContain('启用')
-    expect(user).toContain('管理订阅计划')
+    expect(user).toContain('订阅授权')
     expect(user).toContain('移入回收站')
   })
 

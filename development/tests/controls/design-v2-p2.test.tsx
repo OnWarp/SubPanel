@@ -6,28 +6,13 @@ import { FormField, FormGroup } from '../../../src/ui/FormField'
 import { Switch } from '../../../src/ui/Switch'
 
 describe('design v2 form and detail contracts', () => {
-  it('renders subscription details as hairline rows with a shared section title', () => {
-    const html = renderToStaticMarkup(<SubscriptionDetailRows
-      user="alice" groups="默认分组"
-      plan={{ name: '月付', traffic: '100 GB', speed: '不限', devices: '3' }}
-      links={[{ client: 'mihomo', label: 'Mihomo', link: 'https://example.test/sub/token' }]}
-      client="mihomo" primaryLink="https://example.test/sub/token" linkError=""
-      onClient={() => {}} onCopied={() => {}} onCopyError={() => {}} onShowQr={() => {}}
-      bindingLabel="继承默认" templateName="办公分流" version="v3"
-      bindingError="" bindingLoading={false}
-      diagnostics={[{ key: 'mihomo', label: 'Mihomo', available: true, summary: '输入 1 · 输出 1 · 跳过 0', items: [] }]}
-    />)
-    expect(html).toContain('subscription-details')
-    expect(html).toContain('drawer-section-title')
+  it('renders aggregate subscription details as hairline rows', () => {
+    const html = renderToStaticMarkup(<SubscriptionDetailRows permanent expiresAt={null} nodes={[{ name: 'Fixture', protocol: 'ss' }]} />)
     expect(html).toContain('key-value-rows')
-    expect(html).toContain('基本信息')
-    expect(html).toContain('客户端链接')
-    expect(html).toContain('class="subscription-link-row"')
-    expect(html).toContain('class="link-url del-link-text"')
-    expect(html).toContain('附加配置')
-    expect(html).toContain('兼容诊断')
-    expect(html).not.toContain('subscription-detail-fields')
-    expect(html).not.toContain('profile-fields')
+    expect(html).toContain('最远到期')
+    expect(html).toContain('长期有效')
+    expect(html).toContain('聚合节点')
+    expect(html).not.toContain('Fixture')
   })
 
   it('groups fields, caps ordinary fields, and shows switch state without color alone', () => {

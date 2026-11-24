@@ -30,6 +30,8 @@ export type EntitlementTemplate = {
   revision: number
   updatedAt: string
   subscriptionCount: number
+  boundUserCount: number
+  ownerUserId: string | null
   currentVersion: Omit<EntitlementVersion, 'subscriptionCount'>
 }
 

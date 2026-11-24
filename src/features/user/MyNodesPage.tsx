@@ -1,8 +1,9 @@
+import { subscriptionError, unifiedSubscriptionPath, useUnifiedSubscription, type SubscriptionNode } from '../delivery/unified-subscription'
 import { GateEmptyState } from '../../ui/GateEmptyState'
 import { Network } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { peekApi, watchApi, ApiClientError } from '../../app/api'
+import { api, peekApi, watchApi, ApiClientError } from '../../app/api'
 import { FormSelect } from '../../ui/Controls'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
@@ -121,7 +122,7 @@ export function UserNodesFooter({ total, page, pageCount, onPage }: {
   )
 }
 
-export function MyNodesPage() {
+function LegacyMyNodesPage() {
   const [initial] = useState(() => peekApi<UserNodesResponse>(`/api/user/nodes?page=1&pageSize=${PAGE_SIZE}&subscriptionId=all&groupId=all`))
   const [hasActiveSubscription, setHasActiveSubscription] = useState(initial?.hasActiveSubscription ?? false)
   const [nodes, setNodes] = useState<UserNode[]>(initial?.nodes ?? [])
@@ -233,4 +234,38 @@ export function MyNodesPage() {
       ) : null}
     </div>
   )
+}
+
+function UnifiedNodes({ reloadSummary }: { reloadSummary: () => void }) {
+  const [nodes, setNodes] = useState<SubscriptionNode[]>()
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    void api<{ nodes: SubscriptionNode[] }>(`${unifiedSubscriptionPath}/nodes`, { signal: controller.signal, cache: 'no-store' })
+      .then(result => { if (!controller.signal.aborted) setNodes(result.nodes) })
+      .catch(cause => {
+        if (!controller.signal.aborted) setError(subscriptionError(cause, '加载节点失败'))
+      })
+    return () => controller.abort()
+  }, [revision])
+  return <div className="page-stack">
+    <PageHero title="我的节点" />
+    {error ? <ErrorState message={error} onRetry={() => {
+      setError(''); setRevision(value => value + 1); reloadSummary()
+    }} /> : !nodes ? <LoadingState label="正在加载节点" /> : <>
+      <DataTable rows={nodes.map((node, index) => ({ ...node, index }))} rowKey={node => node.index} empty="暂无可用节点"
+        columns={[{ key: 'name', header: '节点' }, { key: 'protocol', header: '协议' }]} />
+      {!nodes.length && <Link to="/subscriptions">打开订阅</Link>}
+    </>}
+  </div>
+}
+
+export function MyNodesPage() {
+  const { state, reload } = useUnifiedSubscription()
+  if (state.kind === 'legacy') return <LegacyMyNodesPage />
+  if (state.kind === 'ready') return <UnifiedNodes reloadSummary={reload} />
+  return <div className="page-stack"><PageHero title="我的节点" />
+    {state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />}
+  </div>
 }
