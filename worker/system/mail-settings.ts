@@ -176,7 +176,7 @@ export async function updateMailSettings(
   patch: MailSettingsPatch,
   now = new Date().toISOString(),
 ): Promise<MailSettings> {
-  if (workerEnv.REQUIRE_WORKER_SECRETS === 'true' && (patch.smtpPassword || patch.resendApiKey)) {
+  if ((workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true' && (patch.smtpPassword || patch.resendApiKey)) {
     throw apiError(422, 'MAIL_SECRET_REQUIRED', '请通过部署密钥配置邮件凭据')
   }
   const current = await readMailSettings(db)

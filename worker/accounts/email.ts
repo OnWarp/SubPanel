@@ -60,7 +60,7 @@ function secretValue(value: string | undefined): string | undefined {
 
 async function mailSettings(): Promise<Map<string, unknown>> {
   try {
-    const keys = workerEnv.REQUIRE_WORKER_SECRETS === 'true' ? [MAIL_SETTING_KEYS.from] : Object.values(MAIL_SETTING_KEYS)
+    const keys = (workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true' ? [MAIL_SETTING_KEYS.from] : Object.values(MAIL_SETTING_KEYS)
     return await readSettingMap(workerEnv.DB, keys)
   } catch {
     return new Map()
@@ -133,7 +133,7 @@ export async function resolveMailConfig(): Promise<ResolvedMailConfig | null> {
     return fromUsable ? { provider: 'smtp', from, smtp } : unusable('mail_from is missing or invalid')
   }
 
-  if (workerEnv.REQUIRE_WORKER_SECRETS === 'true') return null
+  if ((workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true') return null
 
   const provider = settingString(settings, MAIL_SETTING_KEYS.provider)
   if (provider === 'resend') {

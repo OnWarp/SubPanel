@@ -10,7 +10,7 @@ export function fetchRemoteTextWithPolicy(
   cancellation?: AbortSignal,
   limits?: FetchOptions[4],
 ) {
-  const egress = fetcher === fetch && workerEnv.REQUIRE_WORKER_SECRETS === 'true'
+  const egress = fetcher === fetch && (workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true'
     ? {
         origins: new Set(workerEnv.REMOTE_FETCH_ORIGINS?.split(',').map(origin => origin.trim()) ?? []),
         gateway: workerEnv.REMOTE_FETCH_GATEWAY,

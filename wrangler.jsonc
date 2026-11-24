@@ -8,7 +8,7 @@
     "not_found_handling": "single-page-application"
   },
   "vars": {
-    "REQUIRE_WORKER_SECRETS": "true",
+    "REQUIRE_WORKER_SECRETS": "false",
     "REDEMPTION_ROLLOUT_PERCENT": "100"
   },
   "kv_namespaces": [

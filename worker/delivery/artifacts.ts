@@ -14,7 +14,7 @@ import { compiledArtifactSchema, type CompiledArtifact, type Subscription } from
 export async function readCurrentArtifact(
   kv: KVNamespace, subscription: Subscription, client: RenderClient, relevant: string, profile?: string | null,
 ) {
-  const encrypted = workerEnv.REQUIRE_WORKER_SECRETS === 'true'
+  const encrypted = (workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true'
   const baseKey = compiledKey(subscription.tokenHash, client, {
     subscription: subscription.revision, catalogRelevant: relevant, profile,
   })
@@ -96,7 +96,7 @@ export async function loadSubscriptionArtifact(
     ...rendered, catalogRelevantRevision: relevant, templateVersionId: effective?.version_id ?? undefined,
   }
   const serialized = JSON.stringify(current)
-  const encrypted = workerEnv.REQUIRE_WORKER_SECRETS === 'true'
+  const encrypted = (workerEnv.REQUIRE_WORKER_SECRETS as string | undefined) === 'true'
   const write = (async () => {
     const value = encrypted
       ? JSON.stringify(await encryptText(serialized, (await readCryptoMaterial(env.DATA)).encryptionKey))
