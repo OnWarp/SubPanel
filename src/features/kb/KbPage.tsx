@@ -133,7 +133,7 @@ export function KbPage() {
       ) : null}
 
       {!searchingActive && !error && !loading && categories.length === 0 ? (
-        <EmptyState icon={BookOpen} title="知识库还没有内容" description="管理员发布文章后会显示在这里" />
+        <EmptyState icon={BookOpen} title="暂无文章" />
       ) : null}
 
       {!searchingActive && !error && categories.length > 0 ? (

@@ -152,8 +152,13 @@ describe('navigation ownership and route compatibility', () => {
     ['/kb/manage', '知识库管理'],
     ['/catalog/apps', '客户端下载'],
     ['/audit-logs', '审计日志'],
-  ])('renders the shared section heading on %s', (path, title) => {
-    expect(render(path)).toContain(`<div class="section-heading data-header"><div class="data-header-main"><h2>${title}</h2>`)
+    ['/users', '用户管理'],
+    ['/invites', '用户管理'],
+    ['/users/recycle-bin', '用户管理'],
+  ])('renders the page title once on %s', (path, title) => {
+    const html = render(path)
+    expect(html).toContain(`<h1>${title}</h1>`)
+    expect(html).not.toContain(`<h2>${title}</h2>`)
   })
   it('keeps the filter controls and total in the audit card', () => {
     const html = render('/audit-logs')

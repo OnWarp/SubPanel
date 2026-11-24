@@ -332,13 +332,12 @@ export function AppsPage() {
     },
   ]
 
-  const description = catalog ? `${apps.length} 个 APP · 维护名称、简介与各平台下载配置` : '维护名称、简介与各平台下载配置'
 
   return (
     <div className="page-stack app-page ops-page">
-      <PageHeader title="客户端下载" description={description} />
+      <PageHeader title="客户端下载" />
       <section className="data-section app-data" aria-label="APP 列表">
-        <OperationsHeading title="客户端下载" action={
+        <OperationsHeading action={
           <>
             <Link className="button secondary" to="/apps">查看用户端</Link>
             <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>

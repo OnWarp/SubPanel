@@ -75,7 +75,7 @@ export function AppsPage() {
 
   return (
     <div className="page-stack appu-page">
-      <PageHero subtitle="选择适合设备的客户端" title="客户端下载" />
+      <PageHero title="客户端下载" />
       {loading ? <LoadingState label="正在加载 APP" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && response && !response.downloadsEnabled ? (

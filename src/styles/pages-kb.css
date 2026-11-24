@@ -89,18 +89,8 @@
 }
 
 .kb-article-head {
-  display: grid;
-  gap: var(--space-2);
   padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--color-border);
-}
-
-.kb-article-head h2 {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--font-title);
-  font-weight: var(--weight-strong);
-  line-height: 1.2;
 }
 
 .kb-article-meta {

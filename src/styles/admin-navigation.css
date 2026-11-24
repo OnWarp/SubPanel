@@ -64,11 +64,6 @@
   text-overflow: ellipsis;
 }
 
-.admin-account-info small {
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-}
-
 .sidebar-collapsed .admin-account summary {
   justify-content: center;
 }

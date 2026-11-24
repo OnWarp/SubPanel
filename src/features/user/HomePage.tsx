@@ -88,7 +88,7 @@ export function HomePage() {
     </>}
     <NoticeCarousel items={notices.map(notice => ({ id: String(notice.id), title: notice.title }))} onSelect={id => navigate(`/notices?notice=${encodeURIComponent(id)}`)} labels={{ previous: '上一条公告', next: '下一条公告', close: '关闭公告' }} />
     <nav className="user-quick-grid" aria-label="快捷入口">
-      <QuickEntryCard icon={<Network />} title="节点" desc="可用节点" href="/nodes" />
+      <QuickEntryCard icon={<Network />} title="节点" href="/nodes" />
     </nav>
   </div>
 }

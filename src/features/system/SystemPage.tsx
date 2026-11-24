@@ -31,10 +31,10 @@ function isNotFound(cause: unknown) {
   return cause instanceof ApiClientError && cause.status === 404
 }
 
-const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string; hint: string }> = [
-  { value: 'open', label: '开放注册', hint: '任何人都可以注册账户' },
-  { value: 'invite', label: '邀请注册', hint: '只能凭邀请码注册' },
-  { value: 'closed', label: '关闭注册', hint: '暂停新用户注册' },
+const REGISTRATION_MODES: Array<{ value: RegistrationMode; label: string }> = [
+  { value: 'open', label: '开放注册' },
+  { value: 'invite', label: '邀请注册' },
+  { value: 'closed', label: '关闭注册' },
 ]
 
 function RegistrationSection() {
@@ -90,7 +90,7 @@ function RegistrationSection() {
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && mode ? (
         <div className="sys-body">
-          <p className="sys-hint">{REGISTRATION_MODES.find((option) => option.value === mode)?.hint}，切换后立即生效</p>
+          <p className="sys-hint">切换后立即生效</p>
           <EmailDomains />
         </div>
       ) : null}
@@ -347,10 +347,7 @@ function MailSection() {
             </div>
           </div>
           <p className="sys-hint">
-            密码与 API Key 只写入不回显
-            {settings.smtpPasswordSet ? '，SMTP 密码已设置' : ''}
-            {settings.resendApiKeySet ? '，Resend API Key 已设置' : ''}
-            ，留空表示不修改
+            密码与 API Key 只写入不回显，留空表示不修改
           </p>
           <FormGroup id="sys-mail-test-title" title="测试邮件">
             <div className="sys-test-row">
@@ -446,7 +443,7 @@ function StatusSection() {
           </ul>
           <FormGroup id="sys-migrations-title" title="已应用迁移">
             {status.migrations.length === 0 ? (
-              <p className="sys-hint">暂无迁移记录，各模块结构版本见上方列表</p>
+              <p className="sys-hint">暂无迁移记录</p>
             ) : (
               <ul className="sys-migration-list">
                 {status.migrations.map((migration) => (
@@ -488,7 +485,7 @@ export function SystemPage() {
     <div className="page-stack settings-sections">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><section className="data-section sys-section"><DataHeader title="模板" actions={<Link className="button secondary" to="/delivery/conversions">打开转换配置</Link>} /></section></> : null}
+        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><section className="data-section sys-section"><DataHeader title="转换配置" actions={<Link className="button secondary" to="/delivery/conversions" aria-label="打开转换配置">打开</Link>} /></section></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
     </div>
   </div>

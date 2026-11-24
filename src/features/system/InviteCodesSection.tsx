@@ -144,7 +144,7 @@ export function InviteCodesSection() {
   return (
     <div className="sys-subsection">
       <h3 className="sys-subtitle">注册邀请码</h3>
-      <p className="sys-hint">新用户凭邀请码自定用户名、密码与邮箱完成注册，无需邮箱验证码</p>
+      <p className="sys-hint">邀请注册无需邮箱验证码</p>
       {loading ? <LoadingState label="正在加载邀请码" /> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !loadError ? (

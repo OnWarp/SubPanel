@@ -38,6 +38,7 @@ export function KbArticlePage() {
   return (
     <div className="page-stack kb-page kb-article-page">
       <PageHero
+        id="kb-article-title"
         title={article?.title ?? '文章'}
         actions={<Link className="button ghost" to="/kb"><ArrowLeft aria-hidden="true" size={16} />返回知识库</Link>}
       />
@@ -48,7 +49,6 @@ export function KbArticlePage() {
       {article ? (
         <article className="data-section kb-article" aria-labelledby="kb-article-title">
           <header className="kb-article-head">
-            <h2 id="kb-article-title">{article.title}</h2>
             <p className="kb-article-meta">
               <span>{article.categoryName}</span>
               <span>更新于 {formatKbTime(article.updatedAt)}</span>

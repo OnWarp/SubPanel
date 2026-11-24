@@ -317,10 +317,10 @@ export function AdminKbPage() {
 
   return (
     <div className="page-stack kb-page kb-admin ops-page">
-      <PageHeader title="知识库管理" description="维护教程分类与文章" />
+      <PageHeader title="知识库管理" />
 
       <section className="data-section" aria-label="知识库管理">
-        <OperationsHeading title="知识库管理" action={
+        <OperationsHeading action={
           <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>新建文章</button>
         } />
         <FilterBar>
@@ -344,8 +344,7 @@ export function AdminKbPage() {
         {!articlesLoading && !articlesError && total === 0 ? (
           <EmptyState
             icon={BookOpen}
-            title="暂无文章"
-            description={categories.length === 0 ? '先创建分类，再写第一篇文章' : '当前筛选下没有文章'}
+            title={categories.length === 0 ? '暂无文章，请先创建分类' : categoryFilter === 'all' && publishedFilter === 'all' ? '暂无文章' : '暂无匹配文章'}
           />
         ) : null}
         {!articlesLoading && !articlesError && total > 0 ? (

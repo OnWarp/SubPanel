@@ -154,7 +154,7 @@ export function NoticesSection() {
 
   return (
     <section className="data-section" aria-label="公告">
-      <OperationsHeading title="公告" action={
+      <OperationsHeading action={
         <>
           <button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>
           <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); noticeForm.current?.querySelector<HTMLInputElement>('#ntc-title')?.focus() }}>新建公告</button>

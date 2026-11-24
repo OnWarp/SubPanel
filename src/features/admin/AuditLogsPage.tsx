@@ -5,7 +5,7 @@ import { DataTable } from '../../ui/DataTable'
 import { FilterBar } from '../../ui/FilterBar'
 import { ErrorState } from '../../ui/ErrorState'
 import { PageHeader } from '../../ui/PageHeader'
-import { OperationsFooter, OperationsHeading } from './OperationsCard'
+import { OperationsFooter } from './OperationsCard'
 
 type Log = {
   id: string
@@ -53,7 +53,6 @@ export function AuditLogsPage() {
     <div className="page-stack ops-page">
       <PageHeader title="审计日志" />
       <section className="data-section" aria-label="审计日志">
-        <OperationsHeading title="审计日志" />
         <FilterBar className="audit-filters">
           <label className="filter-field"><span>操作</span><Input value={action} onChange={(event) => { setAction(event.target.value); setPage(1) }} /></label>
           <label className="filter-field"><span>管理员 ID</span><Input value={actor} onChange={(event) => { setActor(event.target.value); setPage(1) }} /></label>

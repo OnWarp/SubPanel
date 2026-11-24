@@ -256,7 +256,7 @@ export function UsersDirectory({
             </div>
           ) : null}
           {total === 0 ? (
-            <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户'} description={view === 'trash' ? '移入回收站的用户会显示在这里' : '创建邀请并完成注册后，用户会显示在这里'} />
+            <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户，请先创建邀请'} />
           ) : (
             <DataTable className="usr-table" columns={columns} rows={users} rowKey={(user) => user.id} empty="暂无匹配用户" />
           )}

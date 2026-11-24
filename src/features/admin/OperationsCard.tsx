@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { PaginationProps } from '../../ui/Pagination'
 import '../../styles/pages-admin-ops.css'
 
-export function OperationsHeading({ title, action }: { title: string; action?: ReactNode }) {
+export function OperationsHeading({ title, action }: { title?: string; action?: ReactNode }) {
   return <DataHeader title={title} actions={action} />
 }
 

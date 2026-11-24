@@ -668,7 +668,6 @@
 .sp-quick-entry { position: relative; display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-4); text-align: start; cursor: pointer; }
 .sp-quick-entry-icon { display: inline-flex; flex-shrink: 0; color: var(--color-accent); }
 .sp-quick-entry-text { display: grid; min-width: 0; flex: 1; gap: var(--space-1); padding-right: var(--space-4); }
-.sp-quick-entry-text > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); }
 .sp-quick-entry-arrow { position: absolute; top: var(--space-3); right: var(--space-3); color: var(--color-text-muted); }
 .sp-status-pill { display: inline-flex; align-items: center; padding: var(--space-1) var(--space-2); border-radius: var(--radius-pill); font-size: var(--font-sm); font-weight: var(--weight-medium); }
 .sp-status-pill-success { color: var(--color-success); background: var(--color-success-soft); }

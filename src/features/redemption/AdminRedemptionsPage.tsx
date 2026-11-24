@@ -153,7 +153,7 @@ function ReleaseDrawer({ release, onClose }: { release: Release; onClose: () => 
   }
   return <EditDrawer open title="兑换码已生成" onClose={onClose} dirty={!exported}
     footer={<button className="button primary" type="button" onClick={download} disabled={exported}>{exported ? '已导出 CSV' : '导出 CSV'}</button>}>
-    <FormField label="完整兑换码" htmlFor="released-codes" hint="请妥善保存，关闭后只能查看尾码">
+    <FormField label="完整兑换码" htmlFor="released-codes" hint="关闭后仅显示尾码，请先保存">
       <Textarea id="released-codes" readOnly autoComplete="off" spellCheck={false} rows={12} value={release.codes.join('\n')} />
     </FormField>
   </EditDrawer>

@@ -179,12 +179,6 @@
   background: var(--color-surface);
   color: var(--color-text);
 }
-.ashr-settings-hint {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
-  line-height: var(--leading-body);
-}
 .ashr-actions {
   display: flex;
   min-width: 0;

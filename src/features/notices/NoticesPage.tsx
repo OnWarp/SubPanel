@@ -58,7 +58,7 @@ export function NoticesPage() {
 
   return (
     <div className="page-stack ntc-page">
-      <PageHero subtitle="查看最新服务公告" title="公告" />
+      <PageHero title="公告" />
       <SearchInput className="ntc-search" label="搜索公告" placeholder="搜索公告标题或内容" value={query} onChange={(value) => { setQuery(value); setPage(1) }} />
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
