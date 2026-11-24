@@ -393,8 +393,11 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
 .sp-dialog[data-size="xl"] { width: min(calc(100% - 32px), var(--dialog-size-xl)); }
 .sp-dialog::backdrop { background: var(--color-dialog-overlay); }
 .sp-dialog-panel {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 88vh;
+  max-height: 88svh;
   max-height: 88dvh;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -403,7 +406,7 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
   box-shadow: var(--shadow-float);
   --dialog-padding: 24px;
 }
-.sp-dialog-panel:has(.sp-dialog-footer) { grid-template-rows: auto minmax(0, 1fr) auto; }
+.sp-dialog-heading, .sp-dialog-footer { flex-shrink: 0; min-width: 0; }
 .sp-dialog-heading {
   display: flex;
   padding: var(--dialog-padding) var(--dialog-padding) var(--space-3);
@@ -429,11 +432,15 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
 @media (hover: hover) {
   .sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 }
-.sp-dialog :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sp-dialog .sp-dialog-panel :focus-visible,
+.sp-dialog .sp-switch input:focus-visible + .sp-switch-track {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 .sp-dialog-body {
   min-height: 0;
   padding: 0 var(--dialog-padding) var(--dialog-padding);
-  overflow: auto;
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 .sp-dialog-body [hidden] { display: none; }
@@ -450,28 +457,55 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
   background: var(--color-surface-subtle);
 }
 
-@media (max-width: 760px) {
-  .sp-dialog {
-    --dialog-safe-top: env(safe-area-inset-top, 0px);
-    --dialog-safe-bottom: env(safe-area-inset-bottom, 0px);
-    --dialog-available-height: calc(var(--dialog-viewport-height, 100dvh) - var(--dialog-safe-top) - var(--dialog-safe-bottom));
-    inset-block: calc(var(--dialog-viewport-top, 0px) + var(--dialog-safe-top) + var(--dialog-available-height) / 2) auto;
-    inset-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
-    translate: 0 -50%;
-  }
+@media (max-width: 768px), (max-width: 950px) and (max-height: 500px) {
   .sp-dialog[data-size] {
-    max-width: calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+    --dialog-safe-top: env(safe-area-inset-top, 0px);
+    --dialog-safe-right: env(safe-area-inset-right, 0px);
+    --dialog-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --dialog-safe-left: env(safe-area-inset-left, 0px);
+    --dialog-css-height: 100vh;
+    --dialog-available-height: calc(var(--dialog-viewport-height, var(--dialog-css-height)) - var(--dialog-safe-top) - var(--dialog-safe-bottom));
+    --dialog-available-width: calc(var(--dialog-viewport-width, 100%) - var(--dialog-safe-left) - var(--dialog-safe-right));
+    inset: calc(var(--dialog-viewport-top, 0px) + var(--dialog-safe-top) + var(--dialog-available-height) / 2)
+      auto auto calc(var(--dialog-viewport-left, 0px) + var(--dialog-safe-left) + var(--dialog-available-width) / 2);
+    margin: 0;
+    translate: -50% -50%;
+    width: calc(var(--dialog-available-width) - 32px);
+  }
+  @supports (height: 100svh) {
+    .sp-dialog[data-size] { --dialog-css-height: 100svh; }
+  }
+  @supports (height: 100dvh) {
+    .sp-dialog[data-size] { --dialog-css-height: 100dvh; }
   }
   .sp-dialog-panel {
     max-height: calc(var(--dialog-available-height) * .9);
     border-radius: 16px;
     --dialog-padding: 16px;
   }
-  .sp-dialog-heading { align-items: center; }
+  .sp-dialog-heading {
+    align-items: center;
+    padding-block: clamp(0px, calc(var(--dialog-available-height) * .12 - 16px), var(--dialog-padding));
+  }
   .sp-dialog-heading h2 { font-size: 17px; }
-  .sp-dialog :is(button, .button, input:not([type="checkbox"], [type="radio"]), select, [role="combobox"]) { min-height: 44px; }
-  .sp-dialog button { min-width: 44px; }
-  .sp-dialog :is(summary, .choice-row, .sp-switch) { min-height: 44px; }
+  .sp-dialog-body { overflow-wrap: anywhere; }
+  .sp-dialog-body :is(.app-form-grid, .app-platform-fields, .kb-form-grid, .ashr-settings-grid, .ashr-toggles) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sp-dialog-footer {
+    --dialog-footer-padding: clamp(2px, calc(var(--dialog-available-height) * .08 - 10px), var(--space-4));
+    padding-inline: max(var(--dialog-padding), var(--dialog-safe-left)) max(var(--dialog-padding), var(--dialog-safe-right));
+    padding-block: var(--dialog-footer-padding) max(var(--dialog-safe-bottom), var(--dialog-footer-padding));
+  }
+  .sp-dialog .sp-dialog-panel :is(button, .button, .icon-button, select, textarea, [role="option"], summary, .choice-row, .sp-switch),
+  .sp-dialog .sp-dialog-panel input:not([type="checkbox"], [type="radio"], [type="hidden"], [aria-hidden="true"]),
+  .sp-dialog .sp-dialog-panel label:has(> input:is([type="checkbox"], [type="radio"])) {
+    min-height: var(--size-touch-target);
+  }
+  .sp-dialog :is(button, .icon-button) { min-width: var(--size-touch-target); }
+}
+@media (pointer: coarse) {
+  .sp-dialog :is(input:not([type="checkbox"], [type="radio"]), select, textarea) { font-size: max(16px, 1em); }
 }
 @media (prefers-reduced-motion: no-preference) {
   .sp-dialog:modal .sp-dialog-panel { animation: sp-dialog-enter 160ms ease-out; }

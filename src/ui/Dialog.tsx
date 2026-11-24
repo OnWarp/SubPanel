@@ -42,6 +42,49 @@ function restoreFocus(trigger: HTMLElement | null, explicitTarget?: RefObject<HT
   if (temporary) fallback.removeAttribute('tabindex')
 }
 
+function trackDialogViewport(element: HTMLDialogElement) {
+  const viewport = window.visualViewport
+  const body = element.querySelector<HTMLElement>('.sp-dialog-body')
+  let frame = 0
+
+  const update = () => {
+    if (viewport) {
+      element.style.setProperty('--dialog-viewport-height', `${viewport.height}px`)
+      element.style.setProperty('--dialog-viewport-width', `${viewport.width}px`)
+      element.style.setProperty('--dialog-viewport-top', `${viewport.offsetTop}px`)
+      element.style.setProperty('--dialog-viewport-left', `${viewport.offsetLeft}px`)
+    }
+
+    const field = document.activeElement
+    if (!body || !field || !body.contains(field)) return
+    const bounds = body.getBoundingClientRect()
+    const { top, bottom } = field.getBoundingClientRect()
+    const inset = 4
+    if (top < bounds.top + inset || bottom - top > bounds.height - inset * 2) {
+      body.scrollTop += top - bounds.top - inset
+    } else if (bottom > bounds.bottom - inset) {
+      body.scrollTop += bottom - bounds.bottom + inset
+    }
+  }
+  const schedule = () => {
+    cancelAnimationFrame(frame)
+    frame = requestAnimationFrame(update)
+  }
+
+  update()
+  element.addEventListener('focusin', schedule)
+  window.addEventListener('resize', schedule)
+  viewport?.addEventListener('resize', schedule)
+  viewport?.addEventListener('scroll', schedule)
+  return () => {
+    cancelAnimationFrame(frame)
+    element.removeEventListener('focusin', schedule)
+    window.removeEventListener('resize', schedule)
+    viewport?.removeEventListener('resize', schedule)
+    viewport?.removeEventListener('scroll', schedule)
+  }
+}
+
 export function Dialog({
   open, onClose, title, description, children, footer, size = 'm', busy = false, dirty = false,
   sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
@@ -63,37 +106,30 @@ export function Dialog({
 
     const trigger = document.activeElement instanceof HTMLElement && document.activeElement !== document.body
       ? document.activeElement : null
+    const scrollPositions = new Map<Element, { top: number; left: number }>()
+    const scrollContainers = [
+      document.scrollingElement,
+      ...document.querySelectorAll('.workspace-content, .sidebar-nav'),
+    ]
+    for (const container of scrollContainers) {
+      if (container) scrollPositions.set(container, { top: container.scrollTop, left: container.scrollLeft })
+    }
+
+    const stopTrackingViewport = trackDialogViewport(element)
     element.showModal()
     const initial = element.querySelector<HTMLElement>('[data-dialog-initial-focus]:not(:disabled)')
     if (initial) initial.focus({ preventScroll: true })
     else focusFirstField(element)
 
-    const viewport = window.visualViewport
-    const updateViewport = () => {
-      if (!viewport) return
-      element.style.setProperty('--dialog-viewport-height', `${viewport.height}px`)
-      element.style.setProperty('--dialog-viewport-top', `${viewport.offsetTop}px`)
-    }
-    updateViewport()
-    const resizeViewport = () => {
-      updateViewport()
-      const body = element.querySelector('.sp-dialog-body')
-      const field = document.activeElement
-      if (!body?.contains(field) || !field?.matches('input, textarea, [contenteditable="true"]')) return
-      const bounds = body.getBoundingClientRect()
-      const { top, bottom } = field.getBoundingClientRect()
-      if (top < bounds.top) body.scrollTop += top - bounds.top
-      else if (bottom > bounds.bottom) body.scrollTop += bottom - bounds.bottom
-    }
-    viewport?.addEventListener('resize', resizeViewport)
-    viewport?.addEventListener('scroll', updateViewport)
-
     return () => {
-      viewport?.removeEventListener('resize', resizeViewport)
-      viewport?.removeEventListener('scroll', updateViewport)
+      stopTrackingViewport()
       element.close()
       queueMicrotask(() => {
-        if (!element.open) restoreFocus(trigger, returnFocusRef)
+        if (element.open) return
+        restoreFocus(trigger, returnFocusRef)
+        for (const [container, position] of scrollPositions) {
+          if (container.isConnected) container.scrollTo({ ...position, behavior: 'instant' })
+        }
       })
     }
   }, [open, returnFocusRef])
