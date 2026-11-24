@@ -16,10 +16,13 @@ import { EmailBindChangeForm } from './EmailBindChangeForm'
 import { ProfileCard } from './ProfileCard'
 import { formatProfileDate, useAccountProfile } from './profile'
 
-export function AccountPage({ embedded = false }: { embedded?: boolean }) {
+export function AccountPage({
+  embedded = false,
+  initialPasswordOpen = false,
+}: { embedded?: boolean; initialPasswordOpen?: boolean }) {
   const { refresh } = useSession()
   const { profile, error: profileError, reload } = useAccountProfile()
-  const [passwordOpen, setPasswordOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(initialPasswordOpen)
   const [passwordBusy, setPasswordBusy] = useState(false)
   const [passwordDirty, setPasswordDirty] = useState(false)
   const [message, setMessage] = useState('')
@@ -91,7 +94,7 @@ export function AccountPage({ embedded = false }: { embedded?: boolean }) {
             <Button variant="primary" type="submit" form="account-password-editor" loading={passwordBusy}><KeyRound aria-hidden="true" size={17} />更新密码</Button>
           </>}>
           {passwordOpen && <>
-            <p>新密码须为 12 至 128 个字符</p>
+            <p>用户名不可修改，新密码须为 12 至 128 个字符</p>
             <form id="account-password-editor" onChange={(event) => setPasswordDirty([...new FormData(event.currentTarget).values()].some(Boolean))} className="form-stack" onSubmit={changePassword}>
               <FormField label="当前密码" htmlFor="account-current-password">
                 <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
