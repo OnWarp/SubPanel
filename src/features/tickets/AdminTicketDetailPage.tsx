@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Textarea } from '../../ui/Controls'
 import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -25,6 +26,7 @@ export function AdminTicketDetailPage() {
   const [reply, setReply] = useState('')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [reopenOpen, setReopenOpen] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const toast = useToast()
 
@@ -87,6 +89,7 @@ export function AdminTicketDetailPage() {
     try {
       const result = await api<{ ticket: Ticket }>(`/api/admin/tickets/${id}/reopen`, { method: 'POST', body: '{}' })
       setThread((current) => current ? { ...current, ticket: result.ticket } : current)
+      setReopenOpen(false)
       toast.notify('工单已重开')
     } catch (cause) {
       setActionError(errorMessage(cause, '重开工单失败'))
@@ -107,9 +110,9 @@ export function AdminTicketDetailPage() {
             <Link className="button ghost" to="/delivery/tickets"><ArrowLeft aria-hidden="true" size={16} />返回队列</Link>
             {ticket ? (
               closed ? (
-                <button className="button secondary" type="button" disabled={busy} onClick={() => { reopenTicket().catch(() => undefined) }}>重开工单</button>
+                <button className="button secondary" type="button" disabled={busy} onClick={() => { setActionError(''); setReopenOpen(true) }}>重开工单</button>
               ) : (
-                <button className="button secondary" type="button" disabled={busy} onClick={() => setCloseOpen(true)}>关闭工单</button>
+                <button className="button secondary" type="button" disabled={busy} onClick={() => { setActionError(''); setCloseOpen(true) }}>关闭工单</button>
               )
             ) : null}
           </span>
@@ -118,7 +121,7 @@ export function AdminTicketDetailPage() {
 
       {loading && !thread ? <LoadingState label="正在加载工单" /> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-      {actionError ? <StatusMessage tone="error">{actionError}</StatusMessage> : null}
+      {actionError && !reopenOpen && !closeOpen ? <StatusMessage tone="error">{actionError}</StatusMessage> : null}
 
       {thread ? (
         <>
@@ -145,6 +148,14 @@ export function AdminTicketDetailPage() {
         </>
       ) : null}
 
+      <Dialog open={reopenOpen} title="重开工单" size="m" busy={busy} onClose={() => { setReopenOpen(false); setActionError('') }}
+        footer={cancel => <>
+          <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
+          <button className="button primary" type="button" disabled={busy} onClick={() => { void reopenTicket() }}>确认重开</button>
+        </>}>
+        <p>重开后用户可以继续回复</p>
+        {actionError && <StatusMessage tone="error">{actionError}</StatusMessage>}
+      </Dialog>
       <ConfirmDialog
         open={closeOpen}
         title="关闭工单"
@@ -154,7 +165,9 @@ export function AdminTicketDetailPage() {
         busy={busy}
         onClose={() => setCloseOpen(false)}
         onConfirm={() => { closeTicket().catch(() => undefined) }}
-      />
+      >
+        {actionError && <StatusMessage tone="error">{actionError}</StatusMessage>}
+      </ConfirmDialog>
     </div>
   )
 }

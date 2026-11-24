@@ -6,7 +6,7 @@ import { Switch } from '../../ui/Switch'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, peekApi, readData, jsonBody } from '../../app/api'
 import { PageHeader } from '../../ui/PageHeader'
-import { EditDrawer } from '../../ui/EditDrawer'
+import { Dialog } from '../../ui/Dialog'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 
 import { DataTable } from '../../ui/DataTable'
@@ -77,7 +77,7 @@ export function PlansPage() {
       <FormField label="试用计划" htmlFor="trial-plan"><FormSelect id="trial-plan" value={trial.trialPlanId ?? ''} onChange={(e) => setTrial({ ...trial,trialPlanId: e.target.value || null })}><option value="">关闭</option>{plans.filter((p) => p.enabled).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</FormSelect></FormField>
       <FormField label="试用天数" htmlFor="trial-days"><Input id="trial-days" type="number" min="1" max="36500" value={trial.trialDays ?? ''} onChange={(e) => setTrial({ ...trial,trialDays: e.target.value ? Number(e.target.value) : null })} /></FormField>
     </form></section>
-    <EditDrawer open={draft !== null} title={draft?.id ? '编辑计划' : '新增计划'} busy={busy} dirty={draft !== null && JSON.stringify(draft) !== draftBaseline} onClose={() => setDraft(null)} footer={<>
+    <Dialog size="m" open={draft !== null} title={draft?.id ? '编辑计划' : '新增计划'} busy={busy} dirty={draft !== null && JSON.stringify(draft) !== draftBaseline} onClose={() => setDraft(null)} footer={<>
       <button className="button secondary" type="button" onClick={() => setDraft(null)} disabled={busy}>取消</button>
       <button className="button primary" type="submit" form="plan-edit-form" disabled={busy}>{busy ? '保存中' : '保存计划'}</button>
     </>}>
@@ -95,7 +95,7 @@ export function PlansPage() {
           <fieldset className="choice-section"><legend>绑定分组</legend>{groups.map((g) => <label key={g.id} className="choice-row"><Checkbox type="checkbox" checked={draft.groupIds.includes(g.id)} onChange={(e) => setDraft({ ...draft,groupIds: e.target.checked ? [...draft.groupIds,g.id] : draft.groupIds.filter((id) => id !== g.id) })} />{g.name}</label>)}</fieldset>
         </FormGroup>
       </form> : null}
-    </EditDrawer>
+    </Dialog>
     <ConfirmDialog open={remove !== null} title="删除计划" description={`删除 ${remove?.name ?? ''}？已有订阅记录的计划请停用`} confirmLabel="删除" danger busy={busy} onClose={() => setRemove(null)} onConfirm={() => { void deleteSelected() }} />
   </div>
 }

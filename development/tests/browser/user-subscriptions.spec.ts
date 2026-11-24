@@ -99,9 +99,13 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await expect(page.getByRole('button', { name: '已复制', exact: true })).toBeVisible()
     const afterCopy = await overview.boundingBox()
     expect(afterCopy?.y).toBe(beforeCopy?.y)
+    await page.getByRole('button', { name: '订阅二维码' }).click()
     await expect(page.getByRole('img', { name: '订阅二维码' })).toBeVisible()
+    await page.keyboard.press('Escape')
     await expect(link).toHaveText(/\/sub\/[^/]+$/)
+    await page.getByRole('button', { name: '导入客户端' }).click()
     await expect(page.getByRole('link', { name: 'Mihomo', exact: true })).toHaveAttribute('href', /^clash:\/\/install-config\?url=/)
+    await page.keyboard.press('Escape')
 
     const diagnostics = page.locator('details').filter({ hasText: '兼容诊断' })
     await expect(diagnostics).not.toHaveAttribute('open', '')
@@ -114,7 +118,9 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await page.getByRole('option', { name: '备用订阅', exact: true }).click()
     await expect(page.getByRole('heading', { name: '备用订阅' })).toBeVisible()
     await expect(link).toHaveText(/\/sub\/[^/]+$/)
+    await page.getByRole('button', { name: '导入客户端' }).click()
     await expect(page.getByRole('link', { name: 'Mihomo', exact: true })).toHaveAttribute('href', /^clash:\/\/install-config\?url=/)
+    await page.keyboard.press('Escape')
     const beforeReset = (await link.textContent())?.trim() ?? ''
     expect(beforeReset.startsWith('https://')).toBe(true)
     expect(beforeReset).not.toBe(originalLink)

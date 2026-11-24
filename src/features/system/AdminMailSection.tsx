@@ -1,13 +1,19 @@
+import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { Dialog } from '../../ui/Dialog'
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, jsonBody, peekApi, readData } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { AdvancedFields, FormActions, FormField, FormGroup } from '../../ui/FormField'
+import { StatusMessage } from '../../ui/StatusMessage'
 import { ErrorState } from '../../ui/ErrorState'
 type Template={key:string;subject:string;body:string}
 type Broadcast={id:string;subject:string;status:string;total:number;sent:number;failed:number;created_at:string}
 export function AdminMailSection() {
  const [templates, setTemplates] = useState(() => peekApi<{ templates: Template[] }>('/api/admin/mail-templates')?.templates ?? [])
+ const editTrigger = useRef<HTMLButtonElement>(null)
+ const [draft, setDraft] = useState<Template | null>(null)
+ const [resetting, setResetting] = useState(false)
  const [history, setHistory] = useState(() => peekApi<{ broadcasts: Broadcast[] }>('/api/admin/mail-broadcasts')?.broadcasts ?? [])
  const [subject,setSubject]=useState(''),[body,setBody]=useState(''),[target,setTarget]=useState('all')
  const [days, setDays] = useState(() => peekApi<{ reminder_days: number }>('/api/admin/system/reminders')?.reminder_days ?? 3)
@@ -30,16 +36,54 @@ export function AdminMailSection() {
   }
  }, [])
  useEffect(()=>{void load()},[load])
- async function run(action:()=>Promise<unknown>) {setBusy(true);setError('');setResult('');try{const value=await action();const counts=value as {total?:number;processed?:number;sent?:number;failed?:number;skipped?:number}|null;setResult(counts && typeof counts.sent==='number' ? `处理 ${counts.processed ?? counts.total ?? 0}，发送 ${counts.sent}，失败 ${counts.failed ?? 0}，跳过 ${counts.skipped ?? 0}` : '已保存');await load()}catch(e){setError(e instanceof Error?e.message:'操作失败')}finally{setBusy(false)}}
+ async function run(action:()=>Promise<unknown>, onSuccess?: () => void) {if (busy) return;setBusy(true);setError('');setResult('');try{const value=await action();const counts=value as {total?:number;processed?:number;sent?:number;failed?:number;skipped?:number}|null;setResult(counts && typeof counts.sent==='number' ? `处理 ${counts.processed ?? counts.total ?? 0}，发送 ${counts.sent}，失败 ${counts.failed ?? 0}，跳过 ${counts.skipped ?? 0}` : '已保存');await load();onSuccess?.()}catch(e){setError(e instanceof Error?e.message:'操作失败')}finally{setBusy(false)}}
  return <>
  <section className="data-section sys-section"><DataHeader title="邮件模板与群发" />
- {error?<ErrorState message={error} onRetry={()=>void load()}/>:null}
+ {error && !draft?<ErrorState message={error} onRetry={()=>void load()}/>:null}
  {result?<p role="status">{result}</p>:null}
- <p className="sys-hint">文本变量：验证码 verification：{'{{username}}, {{code}}, {{purpose}}'}；到期 expiry_reminder：{'{{username}}, {{plan}}, {{expires_at}}'}；群发 broadcast：{'{{username}}, {{subject}}, {{body}}'}。恢复默认会删除自定义模板。</p>
- {templates.map((t,i)=><form className="sys-form sp-form-stack" key={t.key} onSubmit={e=>{e.preventDefault();void run(()=>api(`/api/admin/mail-templates/${t.key}`,{method:'PUT',body:jsonBody({subject:t.subject,body:t.body})}))}}>
- <DataHeader title={t.key} actions={<button className="button primary" type="submit" disabled={busy}>保存模板</button>} /><FormField label="标题"><Input required maxLength={500} value={t.subject} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,subject:e.target.value}:v))}/></FormField>
- <FormField label="正文" wide><Textarea required value={t.body} onChange={e=>setTemplates(templates.map((v,j)=>j===i?{...v,body:e.target.value}:v))}/></FormField>
- <FormActions><button type="button" className="button ghost" disabled={busy} onClick={()=>void run(()=>api(`/api/admin/mail-templates/${t.key}`,{method:'DELETE'}))}>恢复默认</button></FormActions></form>)}
+ <ul className="form-stack">
+   {templates.map(template => <li key={template.key}>
+     <button className="button secondary" type="button" disabled={busy} onClick={(event) => { editTrigger.current = event.currentTarget; setError(''); setDraft(template) }}>
+       编辑 {template.key}
+     </button>
+   </li>)}
+ </ul>
+ <Dialog open={draft !== null && !resetting} title={draft ? `编辑邮件模板 · ${draft.key}` : '编辑邮件模板'}
+   size="xl" busy={busy} returnFocusRef={editTrigger} dirty={draft !== null && !templates.some(template => template.key === draft.key && template.subject === draft.subject && template.body === draft.body)}
+   onClose={() => { setDraft(null); setError('') }}
+   footer={(cancel) => <>
+     <button type="button" className="button ghost" disabled={busy} onClick={() => { setError(''); setResetting(true) }}>恢复默认</button>
+     <button type="button" className="button secondary" disabled={busy} onClick={cancel}>取消</button>
+     <button type="submit" className="button primary" form="mail-template-editor" disabled={busy}>保存模板</button>
+   </>}>
+   {draft && <form id="mail-template-editor" className="form-stack" onSubmit={event => {
+     event.preventDefault()
+     void run(() => api(`/api/admin/mail-templates/${draft.key}`, {
+       method: 'PUT', body: jsonBody({ subject: draft.subject, body: draft.body }),
+     }), () => setDraft(null))
+   }}>
+     <FormField label="标题" htmlFor="mail-template-subject">
+       <Input id="mail-template-subject" required maxLength={500} value={draft.subject} disabled={busy}
+         onChange={event => setDraft({ ...draft, subject: event.currentTarget.value })} />
+     </FormField>
+     <FormField label="正文" htmlFor="mail-template-body">
+       <Textarea id="mail-template-body" rows={10} required value={draft.body} disabled={busy}
+         onChange={event => setDraft({ ...draft, body: event.currentTarget.value })} />
+     </FormField>
+     <p className="sys-hint">文本变量 {draft.key === 'verification' ? '{{username}}, {{code}}, {{purpose}}' : draft.key === 'expiry_reminder' ? '{{username}}, {{plan}}, {{expires_at}}' : '{{username}}, {{subject}}, {{body}}'}</p>
+     {error && <StatusMessage tone="error">{error}</StatusMessage>}
+   </form>}
+ </Dialog>
+ <ConfirmDialog open={resetting} title="恢复默认模板" description="自定义模板及当前编辑将被清除"
+   confirmLabel="恢复默认" danger busy={busy} returnFocusRef={editTrigger} onClose={() => { setResetting(false); setError('') }}
+   onConfirm={() => {
+     if (draft) void run(() => api(`/api/admin/mail-templates/${draft.key}`, { method: 'DELETE' }), () => {
+       setResetting(false)
+       setDraft(null)
+     })
+   }}>
+   {error && <StatusMessage tone="error">{error}</StatusMessage>}
+ </ConfirmDialog>
  <form className="sys-form sp-form-stack" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/mail-broadcasts',{method:'POST',body:jsonBody({subject,body,target})}))}}>
  <FormGroup id="sys-mail-broadcast-title" title="群发邮件" hint="逐个发送并记录结果；无邮箱或邮件服务未配置会计为失败">
  <FormField label="目标"><FormSelect aria-label="目标" value={target} onChange={e=>setTarget(e.target.value)}><option value="all">全部用户</option><option value="active">有效订阅用户</option><option value="expiring">7 日内到期用户</option></FormSelect></FormField>

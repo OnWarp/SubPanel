@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Input } from '../../ui/Controls'
 import { MailCheck, Send } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
@@ -17,6 +18,7 @@ type EmailBindChangeFormProps = {
 export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormProps) {
   const bound = profile.emailBound
   const base = bound ? '/api/account/email/change' : '/api/account/email/bind'
+  const [open, setOpen] = useState(false)
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [currentPassword, setCurrentPassword] = useState('')
   const [email, setEmail] = useState('')
@@ -54,6 +56,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
       setEmail('')
       setCode('')
       setCurrentPassword('')
+      setOpen(false)
       setMessage(bound ? '邮箱已更换' : '邮箱已绑定')
       await onUpdated()
     } catch (cause) {
@@ -63,62 +66,46 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
     }
   }
 
-  if (step === 'code') {
-    return (
-      <form className="security-form" onSubmit={confirm}>
-        <FormField label="邮箱验证码" htmlFor="account-email-code">
-          <Input
-            id="account-email-code"
-            name="code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="\d{6}"
-            maxLength={6}
-            required
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          />
-        </FormField>
-        {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-        {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-        <div className="form-actions">
-          <Button variant="ghost" disabled={busy} onClick={() => setStep('email')}>
-            重新填写邮箱
-          </Button>
-          <Button variant="primary" type="submit" loading={busy}>
-            <MailCheck aria-hidden="true" size={17} />
-            {bound ? '确认更换' : '确认绑定'}
-          </Button>
-        </div>
-      </form>
-    )
+  const title = bound ? '更换邮箱' : '绑定邮箱'
+  const close = () => {
+    setOpen(false)
+    setStep('email')
+    setCurrentPassword('')
+    setEmail('')
+    setCode('')
+    setError('')
+    setMessage('')
   }
-
-  return (
-    <form className="security-form" onSubmit={sendCode}>
-      <FormField label={bound ? '新邮箱' : '邮箱'} htmlFor="account-email-address">
-        <Input
-          id="account-email-address"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </FormField>
-      {bound ? <FormField label="当前密码" htmlFor="account-email-current-password">
-        <Input id="account-email-current-password" type="password" autoComplete="current-password"
-          value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required />
-      </FormField> : null}
-      {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
-      {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
-      <div className="form-actions">
-        <Button variant="primary" type="submit" loading={busy}>
-          <Send aria-hidden="true" size={17} />
-          获取验证码
+  return <>
+    <Button onClick={() => { setMessage(''); setOpen(true) }}>{title}</Button>
+    {!open && message && <StatusMessage tone="success">{message}</StatusMessage>}
+    <Dialog open={open} title={title} size="m" focusStep={step} busy={busy} dirty={Boolean(email || currentPassword || code)} sensitive onClose={close}
+      footer={(cancel) => <>
+        <Button variant="ghost" disabled={busy} onClick={step === 'code' ? () => { setStep('email'); setCode(''); setError(''); setMessage('') } : cancel}>
+          {step === 'code' ? '重新填写邮箱' : '取消'}
         </Button>
-      </div>
-    </form>
-  )
+        <Button variant="primary" type="submit" form="account-email-editor" loading={busy}>
+          {step === 'code' ? <MailCheck aria-hidden="true" size={17} /> : <Send aria-hidden="true" size={17} />}
+          {step === 'code' ? bound ? '确认更换' : '确认绑定' : '获取验证码'}
+        </Button>
+      </>}>
+      <form id="account-email-editor" className="form-stack" onSubmit={step === 'code' ? confirm : sendCode}>
+        {step === 'code' ? <FormField label="邮箱验证码" htmlFor="account-email-code">
+          <Input id="account-email-code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}"
+            maxLength={6} required value={code} onChange={(event) => setCode(event.target.value)} />
+        </FormField> : <>
+          <FormField label={bound ? '新邮箱' : '邮箱'} htmlFor="account-email-address">
+            <Input id="account-email-address" name="email" type="email" autoComplete="email" required
+              value={email} onChange={(event) => setEmail(event.target.value)} />
+          </FormField>
+          {bound && <FormField label="当前密码" htmlFor="account-email-current-password">
+            <Input id="account-email-current-password" type="password" autoComplete="current-password" required
+              value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
+          </FormField>}
+        </>}
+        {error && <StatusMessage tone="error">{error}</StatusMessage>}
+        {open && message && <StatusMessage tone="success">{message}</StatusMessage>}
+      </form>
+    </Dialog>
+  </>
 }

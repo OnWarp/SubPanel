@@ -2,8 +2,8 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-const origin = 'http://template-p3.test'
-const distribution = `${origin}/system/distribution`
+const origin = 'https://template-p3.test'
+const distribution = `${origin}/delivery/conversions`
 const root = '/api/admin/system/subscription-templates'
 const screenshotDir = 'development/screenshots/template-p3'
 const now = '2026-11-20T09:25:00Z'
@@ -90,6 +90,7 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
       case `${root}/default`:
         defaultId = body?.templateId as string | null
         return json({ ok: true, revision: ++defaultRevision, references: row.references, inheritedCount: options.baseDefault ? 1 : 8 })
+      case `${root}/office/versions/v3`: return json({ yaml: draft })
       case `${root}/office/versions`:
         return json({ versions: [version, { ...version, id: 'v2', sequence: 2 }], total: 2, page: 1, pageSize: 20 })
       case `${root}/office/rollback`:
@@ -128,7 +129,7 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
 }
 
 const templates = (page: Page) => page.getByRole('region', { name: '附加配置', exact: true })
-const editFooter = (page: Page) => templates(page).locator('.template-editor-footer')
+const editFooter = (page: Page) => templates(page).locator('.sp-dialog-footer')
 
 async function choose(control: Locator, page: Page, option: string) {
   await control.click()
@@ -157,7 +158,6 @@ test('未保存时禁用发布，浏览器返回可继续、保存或放弃', as
   const name = templates(page).getByLabel('配置名称')
   await name.fill('本地更改')
   await expect(editFooter(page).getByRole('button', { name: '发布' })).toBeDisabled()
-  await expect(editFooter(page).getByText('先保存草稿')).toBeVisible()
   await page.goBack()
   const dialog = page.getByRole('dialog', { name: '有未保存更改' })
   await expect(dialog).toBeVisible()
@@ -190,14 +190,15 @@ test('取消抽屉保留原绑定，再保存时与订阅同一请求提交', as
   await choose(mode, page, '指定模板')
   await choose(page.getByLabel('指定模板', { exact: true }), page, '办公分流 · v3')
   await page.getByRole('button', { name: '取消', exact: true }).click()
-  expect(calls.filter(({ method }) => method !== 'GET')).toHaveLength(0)
+  await page.getByRole('button', { name: '放弃更改' }).click()
+  expect(calls.filter(({ method, path }) => method !== 'GET' && !path.endsWith('/output-preview'))).toHaveLength(0)
   await open()
   await expect(mode).toHaveText('继承默认')
   await choose(mode, page, '指定模板')
   await choose(page.getByLabel('指定模板', { exact: true }), page, '办公分流 · v3')
   await page.getByRole('button', { name: '保存修改' }).click()
   await expect(page.getByText('订阅已更新。')).toBeVisible()
-  expect(calls.filter(({ method }) => method !== 'GET')).toMatchObject([{
+  expect(calls.filter(({ method, path }) => method !== 'GET' && !path.endsWith('/output-preview'))).toMatchObject([{
     method: 'PATCH', path: '/api/admin/subscriptions/sub_1',
     body: { templateBinding: { mode: 'specific', templateId: 'office', expectedRevision: 2 } },
   }])
@@ -247,11 +248,11 @@ test('候选导入失败保留编辑内容，发布确认列出忽略字段', as
   await expect(editFooter(page).getByRole('button', { name: '发布' })).toBeEnabled()
   await editFooter(page).getByRole('button', { name: '发布' }).click()
   const dialog = page.getByRole('dialog', { name: '发布配置' })
-  await expect(dialog.getByText('发布「办公分流」的草稿修订 5，将影响 10 条订阅。')).toBeVisible()
+  await expect(dialog.getByText('发布「办公分流」的草稿修订 5，将影响 10 条订阅')).toBeVisible()
   await expect(dialog.getByText('发布将忽略以下字段，请确认：dns')).toBeVisible()
   await dialog.getByRole('button', { name: '确认发布' }).click()
   await expect(dialog).toBeHidden()
-  expect(calls.find(({ path }) => path.endsWith('/publish'))?.body).toEqual({ expectedRevision: 5, draftHash: 'new-hash', ignoredAcknowledged: true })
+  expect(calls.find(({ path }) => path.endsWith('/publish'))?.body).toEqual({ expectedRevision: 5, draftHash: 'new-hash', ignoredAcknowledged: true, singbox: false })
 })
 
 test('从基础配置切换默认前先统计继承订阅，提交后显示版本', async ({ page }) => {
@@ -285,14 +286,17 @@ test('创建订阅时同一请求携带绑定，普通创建沿用继承默认',
   const { calls } = await mockApp(page)
   await page.goto(`${origin}/delivery/subscriptions`)
   await page.getByRole('button', { name: '添加订阅' }).click()
+  await page.getByRole('button', { name: '手动创建' }).click()
   await page.getByLabel('订阅名称').fill('带绑定的订阅')
   await choose(page.getByLabel('附加配置', { exact: true }), page, '基础配置')
   await page.getByRole('button', { name: '保存订阅' }).click()
   await expect(page.getByText('订阅已添加')).toBeVisible()
-  const writes = () => calls.filter(({ method }) => method !== 'GET')
+  const writes = () => calls.filter(({ method, path }) => method === 'POST' && path === '/api/admin/subscriptions')
   expect(writes()).toMatchObject([{ method: 'POST', path: '/api/admin/subscriptions',
     body: { templateBinding: { mode: 'base', expectedRevision: 1 } } }])
+  await page.getByRole('dialog', { name: '办公室订阅' }).getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('button', { name: '添加订阅' }).click()
+  await page.getByRole('button', { name: '手动创建' }).click()
   await page.getByLabel('订阅名称').fill('继承默认的订阅')
   await page.getByRole('button', { name: '保存订阅' }).click()
   await expect(page.getByLabel('订阅名称')).toBeHidden()

@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Input } from '../../ui/Controls'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
@@ -5,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { subscriptionPlanLabels } from './plan-types'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
-import { ShareDrawer } from '../shares/ShareDrawer'
+import { ShareDialog } from '../shares/ShareDialog'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
@@ -48,6 +49,7 @@ export function MySubscriptionsPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [tokenNotice, setTokenNotice] = useState<{ name: string; token: string; warning: string } | null>(null)
+  const [qrOpen, setQrOpen] = useState(false)
   const [linkQr, setLinkQr] = useState<{ dataUrl: string; loading: boolean } | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
   const resetButtonRef = useRef<HTMLButtonElement>(null)
@@ -137,7 +139,7 @@ export function MySubscriptionsPage() {
   const expiryBadge = expiry ? EXPIRY_BADGE[expiry.kind] : null
 
   useEffect(() => {
-    if (!primaryLink) {
+    if (!primaryLink || !qrOpen) {
       setLinkQr(null)
       return
     }
@@ -155,7 +157,7 @@ export function MySubscriptionsPage() {
         setError('二维码生成失败')
       })
     return () => { cancelled = true }
-  }, [primaryLink])
+  }, [primaryLink, qrOpen])
 
   const resetToken = async () => {
     if (!selected || busy) return
@@ -236,10 +238,7 @@ export function MySubscriptionsPage() {
                       <CopyButton className="upd-copy-primary" value={primaryLink} />
                     </div>
                   </div>
-                  <div className="del-qr-slot">
-                    {linkQr?.loading ? <p className="del-qr-loading">正在生成二维码</p> : null}
-                    {linkQr?.dataUrl ? <img className="del-qr" src={linkQr.dataUrl} alt="订阅二维码" /> : null}
-                  </div>
+                  <button className="button secondary" type="button" onClick={() => setQrOpen(true)}>订阅二维码</button>
                 </>
               ) : platforms.status === 'ready' && !selected.linkError ? (
                 <EmptyState title="当前暂无可用的订阅入口" />
@@ -249,7 +248,7 @@ export function MySubscriptionsPage() {
             </div>
           </section>
 
-          <SubscriptionImports key={selected.id} entries={linkEntries
+          <SubscriptionImports modal key={selected.id} entries={linkEntries
             .filter(([client]) => client !== 'auto')
             .map(([client, link]) => ({ client, link, label: platforms.names[client] ?? CLIENT_LABELS[client] ?? client }))} />
 
@@ -278,13 +277,20 @@ export function MySubscriptionsPage() {
           <section className="data-section del-reset" aria-labelledby="reset-token-title">
             <h2 id="reset-token-title">重置订阅</h2>
             <p>重置后旧链接立即失效，请重新添加到客户端</p>
-            <button ref={resetButtonRef} className="button danger" type="button" onClick={() => setResetOpen(true)} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</button>
+            <button ref={resetButtonRef} className="button danger" type="button" onClick={() => { setError(''); setResetOpen(true) }} disabled={busy}><KeyRound aria-hidden="true" size={16} />重置订阅令牌</button>
           </section>
         </> : null}
       </div>
 
-      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} returnFocusRef={resetButtonRef} onClose={() => setResetOpen(false)} onConfirm={() => resetToken()} />
-      <ShareDrawer
+      <Dialog open={qrOpen && !!primaryLink} title="订阅二维码" size="s" sensitive onClose={() => setQrOpen(false)}>
+        {linkQr?.loading && <p role="status">正在生成二维码</p>}
+        {linkQr?.dataUrl && <img className="del-qr" src={linkQr.dataUrl} alt="订阅二维码" />}
+        {!linkQr && error && <StatusMessage tone="error">{error}</StatusMessage>}
+      </Dialog>
+      <ConfirmDialog open={resetOpen} title="重置订阅令牌" description="重置后旧链接会立即失效，请重新添加到客户端" confirmLabel="确认重置" danger busy={busy} returnFocusRef={resetButtonRef} onClose={() => { setError(''); setResetOpen(false) }} onConfirm={() => resetToken()}>
+        {resetOpen && error && <StatusMessage tone="error">{error}</StatusMessage>}
+      </ConfirmDialog>
+      <ShareDialog
         subscription={subscriptions.find((subscription) => subscription.id === shareParam) ?? null}
         onClose={closeShare}
         returnFocusRef={shareButtonRef}

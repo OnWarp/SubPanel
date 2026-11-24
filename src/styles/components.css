@@ -436,6 +436,7 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
   overflow: auto;
   overscroll-behavior: contain;
 }
+.sp-dialog-body [hidden] { display: none; }
 .sp-dialog-body:empty { padding-block-end: 0; }
 .sp-dialog-description { margin: 0 0 var(--space-3); color: var(--color-text-muted); }
 .sp-dialog-description:last-child { margin-block-end: 0; }
@@ -470,6 +471,7 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
   .sp-dialog-heading h2 { font-size: 17px; }
   .sp-dialog :is(button, .button, input:not([type="checkbox"], [type="radio"]), select, [role="combobox"]) { min-height: 44px; }
   .sp-dialog button { min-width: 44px; }
+  .sp-dialog :is(summary, .choice-row, .sp-switch) { min-height: 44px; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .sp-dialog:modal .sp-dialog-panel { animation: sp-dialog-enter 160ms ease-out; }

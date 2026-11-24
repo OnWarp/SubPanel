@@ -17,9 +17,9 @@ import { useAccountProfile } from '../accounts/profile'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { formatExpiryTime } from '../delivery/expiry'
 import { subscriptionPlanLabels } from '../delivery/plan-types'
-import { orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
+import { CLIENT_LABELS, orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
 import { PersonalRedemptions } from '../redemption/PersonalRedemptions'
-import { clientImportLink } from './client-import'
+import { SubscriptionImports } from '../delivery/SubscriptionImports'
 import { formatTrafficGb } from './home-traffic'
 import { reminderEnabled, reminderKey } from './reminder'
 
@@ -152,9 +152,8 @@ function SubscriptionLink({ subscription, onReset }: {
   const resetButton = useRef<HTMLButtonElement>(null)
   const link = pickPrimaryLink(subscription.links, subscription.defaultClient, platforms)
   const entries = orderLinkEntries(Object.entries(subscription.links), platforms)
-  const primaryEntry = entries.find(([, url]) => url === link)
-  const primaryImport = primaryEntry ? clientImportLink(...primaryEntry) : null
-  const clientImport = primaryImport ?? entries.map(entry => clientImportLink(...entry)).find(Boolean)
+  const importEntries = entries.filter(([client]) => client !== 'generic' && client !== 'auto')
+    .map(([client, url]) => ({ client, link: url, label: platforms.names[client] ?? CLIENT_LABELS[client] ?? client }))
 
   async function resetLink() {
     if (busy) return
@@ -182,7 +181,9 @@ function SubscriptionLink({ subscription, onReset }: {
       <CopyButton key={link} value={link} label="复制链接" />
     </div> : <p>暂无可用链接</p>}
     <div className="upd-link-row">
-      {link ? <a className="button secondary" href={clientImport ?? `/subscriptions?subscription=${encodeURIComponent(subscription.id)}`}>导入客户端</a> : null}
+      {link && <SubscriptionImports modal entries={importEntries}>
+        <Link className="button secondary" to={`/subscriptions?subscription=${encodeURIComponent(subscription.id)}`}>查看订阅</Link>
+      </SubscriptionImports>}
       <button ref={resetButton} className="button ghost" type="button" onClick={() => {
         setResetError('')
         setResetDone(false)

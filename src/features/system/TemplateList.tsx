@@ -17,6 +17,7 @@ import { referenceCount, templateDate, templateError, templateStatus, versionLab
 
 type ListProps = {
   archived: boolean
+  editorOpen: boolean
   onArchived: (show: boolean) => void
   onOpen: (id: string, preview?: boolean) => void
 }
@@ -37,7 +38,7 @@ async function countInherited() {
   return count
 }
 
-export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
+export function TemplateList({ archived, editorOpen, onArchived, onOpen }: ListProps) {
   const [data, setData] = useState(() => peekSubscriptionTemplates())
   const [archivedRows, setArchivedRows] = useState(() => archived ? peekSubscriptionTemplates(true)?.templates : undefined)
   const [action, setAction] = useState<ListAction>()
@@ -53,6 +54,7 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
   }
 
   useEffect(() => {
+    if (editorOpen) return
     let active = true
     setLoadError('')
     setArchivedRows(archived ? peekSubscriptionTemplates(true)?.templates : undefined)
@@ -61,7 +63,7 @@ export function TemplateList({ archived, onArchived, onOpen }: ListProps) {
         if (active) { setData(next); setArchivedRows(history?.templates) }
       }).catch((cause) => { if (active) setLoadError(templateError(cause)) })
     return () => { active = false }
-  }, [archived])
+  }, [archived, editorOpen])
 
   const run = async (operation: () => Promise<void>) => {
     setBusy(true)
