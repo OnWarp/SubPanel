@@ -96,7 +96,11 @@ try {
   const current = await request('/api/user/subscription', 200)
   assert.ok(current.subscriptionUrl)
   const unified = new URL(current.subscriptionUrl)
-  assert.equal(unified.origin, origin)
+  // wrangler dev rewrites the worker request URL to the configured
+  // custom-domain route (sub.warp.dpdns.org), so the fallback origin is the
+  // route host, not the local dev origin, when no primary domain is set.
+  // Accept both: the local origin (no rewrite) and the route origin.
+  assert.ok([origin, 'http://sub.warp.dpdns.org'].includes(unified.origin), 'unexpected subscription origin ' + unified.origin)
   const addresses = Array.from({ length: 12 }, (_, index) => `192.0.2.${index + 1}`)
   for (const [kind, url] of [['legacy', legacyPath], ['unified', `${unified.pathname}/singbox`]]) {
     const started = performance.now()

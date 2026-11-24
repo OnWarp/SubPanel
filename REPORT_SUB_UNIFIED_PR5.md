@@ -46,4 +46,12 @@ Workerd trace 的 CPU 计时在该夹具均为 0 ms，无法据此估算部署�
 
 执行风险检查拦截 1 次，涉及递归删除本地状态目录。改为移动旧目录，再应用全量迁移。类型与 Worker 测试运行期间隔离本地浏览器 secrets。交付使用 Git bundle，生产开关、真实用户和生产数据未操作。
 
+## 协调员独立复验与修正（2026-11-24 17:44，loop5）
+
+协调员在同一 worktree 独立重跑：`npm run check` 退出 0、`npm run build` 退出 0、`CI=1 npm test` 68 个文件通过、591 条通过、4 条跳过；本地 D1 全量 28 条迁移成功，删 0028 两表及迁移行后增量重应用 0028 成功；恢复演练复核：归档内 SQLite 完整性通过、外键零违规，27 条迁移、1 用户、1 旧订阅、1 绑定、1 映射、1 检查点、6 审计记录，与报告一致。
+
+浏览器回归初次独立重跑在 `development/test-sub-unified-pr5.mjs` 第 99 行失败（4185 与 4186 两档复现相同结果）：`subscriptionUrl` 的 origin 为 `http://sub.warp.dpdns.org`，断言期望本地 origin。根因已用临时调试路由实证：`wrangler dev --local` 会把 Worker 看到的请求 URL 与 Host 改写为 wrangler.jsonc 里配置的自定义域路由（sub.warp.dpdns.org），与客户端实际发的 Host/Origin 无关；因此无主域名配置时回退分支 `new URL(c.req.url).origin` 在本地恒为路由域名。生成该 URL 的 handler 行自 PR4 的 main 已存在，PR5 未改动，生产行为不受影响（生产主域名已配为 https，请求域名即真实自定义域）。
+
+修正只改测试不断言生产代码：`development/test-sub-unified-pr5.mjs` 第 99 行改为接受本地 origin 与路由 origin 两者，并注明原因。修正后完整重跑通过：浏览器 1440、1024、390 三档通过，压测段旧链接 12 请求 8 个 200、4 个 503（约 350 ms），统一订阅 12 个 200（约 270 ms）。Codex 报告的浏览器通过在修正前用已提交测试无法复现（4185/4186 均在同一断言失败），以本次修正后重跑结果为准。
+
 SUB_UNIFIED_PR5_DONE
