@@ -2,15 +2,12 @@ import { auditStatement } from '../admin/audit.js'
 import { z } from 'zod'
 import { batch } from '../db/db.js'
 import { DELIVERY_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
-import { subscriptionToColumns } from '../migration/delivery.js'
 import { apiError, ApiError } from '../platform/api-error.js'
-import { randomToken } from '../platform/crypto.js'
 import { sha256Base64Url } from '../platform/hash.js'
 import { CLIENT_IDS } from '../renderers/index.js'
 import { bindingWrite, requirePublished } from '../templates/repository.js'
-import { readDeliverySubscription, subscriptionInsert } from './d1-repository.js'
+import { readDeliverySubscription } from './d1-repository.js'
 import { bumpDeliveryRevision, getPlan } from './plans.js'
-import { createToken } from './service.js'
 
 const idSchema = z.string().regex(/^sub_[1-9]\d*$/u).max(32)
 const binding = z.discriminatedUnion('mode', [
@@ -18,7 +15,7 @@ const binding = z.discriminatedUnion('mode', [
   z.object({ mode: z.enum(['inherit', 'base']) }),
 ])
 export const batchAction = z.discriminatedUnion('action', [
-  z.object({ action: z.enum(['copy', 'enable', 'disable']) }),
+  z.object({ action: z.enum(['enable', 'disable']) }),
   z.object({ action: z.literal('plan'), planId: z.string().min(1).max(128) }),
   z.object({ action: z.literal('binding'), templateBinding: binding }),
 ])
@@ -78,17 +75,15 @@ export async function reviewBatch(env: DataEnv, input: Input, actor: string, pre
       case 'plan': return row.plan_id !== action.planId
       case 'binding': return (row.mode ?? 'inherit') !== action.templateBinding.mode
         || (action.templateBinding.mode === 'specific' && row.template_id !== action.templateBinding.templateId)
-      case 'copy': return true
     }
   })
-  const platforms = !affected.length || action.action === 'copy' ? []
+  const platforms = !affected.length ? []
     : action.action === 'binding' ? (affected.some(row => !row.singbox_override) ? ['mihomo', 'singbox'] : ['mihomo']) : CLIENT_IDS
   const operation: Operation = { input: action, target }
   const fingerprint = await sha256Base64Url(JSON.stringify([actor, previewId, operation, items]))
   return { items, operation, preview: {
     previewId, fingerprint, selected: ids.length, affected: affected.length, missing: ids.length - found.results.length,
     platforms,
-    generatedPlatforms: action.action === 'copy' ? CLIENT_IDS : [],
   } }
 }
 
@@ -139,7 +134,6 @@ async function applyItem(env: DataEnv, job: Lease, item: BatchItem, operation: O
     .bind(now, ...target.values, operation.target)] : []
 
   const statements: D1PreparedStatement[] = []
-  let copyHash: string | null = null
   switch (action.action) {
     case 'enable':
     case 'disable':
@@ -159,41 +153,11 @@ async function applyItem(env: DataEnv, job: Lease, item: BatchItem, operation: O
       statements.push(bindingWrite(db, id, { ...choice, expectedRevision: mihomoRevision ?? 1 }, now, true))
       break
     }
-    case 'copy': {
-      const material = await createToken(env.DATA, randomToken())
-      copyHash = material.tokenHash
-      const copy = subscriptionToColumns({
-        ...current, ...material, revision: 1, name: `${current.name} 副本`.slice(0, 128),
-        createdAt: now, updatedAt: now, lastRemindedAt: null,
-      })
-      statements.push(
-        subscriptionInsert(db, copy, { where: '1=1', bindings: [] }),
-        db.prepare(`INSERT INTO subscription_groups (subscription_id,group_id,position)
-          SELECT s.id,g.group_id,g.position FROM subscriptions s JOIN subscription_groups g ON g.subscription_id=?
-          WHERE s.token_hash=?`).bind(id, copyHash),
-        db.prepare(`INSERT INTO subscription_nodes (subscription_id,node_id,position)
-          SELECT s.id,n.node_id,n.position FROM subscriptions s JOIN subscription_nodes n ON n.subscription_id=?
-          WHERE s.token_hash=? AND s.plan_id IS NULL`).bind(id, copyHash),
-        db.prepare(`INSERT INTO subscription_template_bindings (subscription_id,mode,template_id,revision,updated_at)
-          SELECT s.id,b.mode,b.template_id,1,? FROM subscriptions s JOIN subscription_template_bindings b ON b.subscription_id=?
-          WHERE s.token_hash=?`).bind(now, id, copyHash),
-        db.prepare(`INSERT INTO conversion_bindings (subscription_id,platform,mode,profile_id,revision,updated_at)
-          SELECT s.id,b.platform,b.mode,b.profile_id,1,? FROM subscriptions s JOIN conversion_bindings b ON b.subscription_id=?
-          WHERE s.token_hash=?`).bind(now, id, copyHash),
-        db.prepare(`INSERT INTO subscription_creation (subscription_id,source_type)
-          SELECT id,'manual' FROM subscriptions WHERE token_hash=?`).bind(copyHash),
-        db.prepare(`UPDATE system_settings SET value=cast(substr((SELECT id FROM subscriptions WHERE token_hash=?),5) AS INTEGER)+1,
-          updated_at=? WHERE key='next_subscription_id'`).bind(copyHash, now),
-        db.prepare(`UPDATE system_settings SET value=json_insert(value,'$[#]',(SELECT id FROM subscriptions WHERE token_hash=?)),
-          updated_at=? WHERE key='delivery_entity_order' AND json_type(value)='array'`).bind(copyHash, now),
-      )
-      break
-    }
   }
   await batch(db, [
     guard, ...targetGuard, ...statements, bumpDeliveryRevision(db, now),
-    db.prepare(`UPDATE compile_job_items SET outcome='applied',copy_id=(SELECT id FROM subscriptions WHERE token_hash=?)
-      WHERE job_id=? AND subscription_id=?`).bind(copyHash, job.id, id),
+    db.prepare(`UPDATE compile_job_items SET outcome='applied'
+      WHERE job_id=? AND subscription_id=?`).bind(job.id, id),
   ])
 }
 

@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
-import { createSubscription, transferSubscription, disableExpiredSubscriptions, updateSubscription } from '../../../worker/delivery/service'
-import { readDelivery } from '../../../worker/delivery/repository'
+import { createSubscription, disableExpiredSubscriptions, updateSubscription } from '../../../worker/delivery/service'
+import { readDelivery, writeDelivery } from '../../../worker/delivery/repository'
 import { publicSubscriptionRoutes } from '../../../worker/public-subscriptions'
 import { createShare, readShareMeta } from '../../../worker/shares/service'
 import type { DataEnv } from '../../../worker/db/module-switch'
@@ -25,29 +25,12 @@ beforeEach(() => {
 const app = new Hono().route('/', publicSubscriptionRoutes).onError((error, c) => c.json({ error: error.message }, 'status' in error ? error.status as 400 : 500))
 const pull = (token: string) => app.request(`/sub/${token}/generic`, {}, env, { waitUntil() {}, passThroughOnException() {}, props: {} })
 
-it('creates a pool subscription with empty generic output, rotates on each assignment and preserves all other fields', async () => {
+it('creates a pool subscription with empty generic output', async () => {
   const pool = await createSubscription(env, { name: 'Pool', groupIds: [], expiresAt: Date.now() + 86400000 })
   expect(pool.subscription.userId).toBeNull()
   const initial = await pull(pool.token)
   expect(initial.status).toBe(200)
   expect(await initial.text()).toBe('')
-  let previous = pool
-  for (const userId of ['usr_1', 'usr_2', null]) {
-    const result = await transferSubscription(env, pool.subscription.id, userId)
-    expect(result.token).not.toBe(previous.token)
-    expect((await pull(previous.token)).status).toBe(404)
-    expect((await pull(result.token)).status).toBe(200)
-    const { userId: _owner, tokenHash: _hash, tokenPrefix: _prefix, encryptedToken: _encrypted, revision: _revision, updatedAt: _updated, ...preserved } = pool.subscription
-    expect(result.subscription).toMatchObject(preserved)
-    previous = result
-  }
-})
-
-it('rejects invalid transfer targets without changing ownership or token', async () => {
-  const created = await createSubscription(env, { userId: 'usr_1', name: 'Owned', groupIds: [] })
-  await expect(transferSubscription(env, created.subscription.id, 'usr_99')).rejects.toMatchObject({ code: 'USER_NOT_FOUND' })
-  expect((await readDelivery(env)).subscriptions[0]).toEqual(created.subscription)
-  expect((await pull(created.token)).status).toBe(200)
 })
 
 it('retains and disables at exact expiry and restores after extension and enable', async () => {
@@ -78,6 +61,7 @@ it('uses existing share storage and guards for temporary links and preserves oth
   await expect(readShareMeta(env, temporary.token, null, null, now)).resolves.toBeDefined()
   await expect(readShareMeta(env, temporary.token, null, null, new Date(expiresAt))).rejects.toMatchObject({ code: 'SHARE_NOT_FOUND' })
   await expect(readShareMeta(env, existing.token, null, null, new Date(expiresAt))).resolves.toBeDefined()
-  await transferSubscription(env, subscription.subscription.id, 'usr_2')
+  const snapshot = await readDelivery(env)
+  await writeDelivery(env, { ...snapshot, subscriptions: [{ ...subscription.subscription, userId: 'usr_2' }] })
   await expect(readShareMeta(env, existing.token, null, null, now)).rejects.toMatchObject({ code: 'SHARE_NOT_FOUND' })
 })

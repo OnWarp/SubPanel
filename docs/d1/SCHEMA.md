@@ -210,7 +210,7 @@ KV 兑换成功后删除邀请键，没有独立记录。
 
 ### subscriptions、subscription_groups ← `subscriptionSchema`
 
-迁移 `0014_subscription_pool.sql` 起，`subscriptions.user_id` 可为 NULL，表示未分配订阅；保留用户外键与订阅分组顺序。转移同时更新归属和令牌，过期订阅保留并置为禁用
+迁移 `0014_subscription_pool.sql` 起，`subscriptions.user_id` 可为 NULL，表示未分配订阅；保留用户外键与订阅分组顺序。过期订阅保留并置为禁用
 
 | KV / Zod | 列 |
 | --- | --- |

@@ -302,46 +302,6 @@ export async function preparePlanSubscription(
   ]
 }
 
-async function bindingForCopy(env: DataEnv, id: string): Promise<BindingInput | undefined> {
-  try {
-    const row = await env.DB.prepare(
-      'SELECT mode, template_id FROM subscription_template_bindings WHERE subscription_id=?',
-    ).bind(id).first<{ mode: BindingInput['mode']; template_id: string | null }>()
-    if (!row) return undefined
-    if (row.mode === 'specific') {
-      if (!row.template_id) return undefined
-      return { mode: 'specific', templateId: row.template_id, expectedRevision: 1 }
-    }
-    return { mode: row.mode, expectedRevision: 1 }
-  } catch {
-    return undefined
-  }
-}
-
-export async function copySubscription(
-  env: DataEnv,
-  id: string,
-  options: SubscriptionMutationOptions = {},
-): Promise<SubscriptionMutationResult> {
-  const current = await getSubscription(env, id)
-  const templateBinding = await bindingForCopy(env, id)
-  return createSubscription(env, {
-    userId: current.userId,
-    planId: current.planId ?? null,
-    name: `${current.name} 副本`.slice(0, 128),
-    groupIds: [...current.groupIds],
-    nodeIds: current.planId ? undefined : current.nodeIds,
-    enabled: current.enabled,
-    defaultClient: current.defaultClient,
-    startsAt: current.startsAt,
-    expiresAt: current.expiresAt,
-    templateBinding,
-    trafficGb: current.trafficGb,
-    speedLimitMbps: current.speedLimitMbps,
-    deviceLimit: current.deviceLimit,
-  }, options)
-}
-
 export async function listSubscriptionsForUser(env: DataEnv, userId: string): Promise<PublicSubscription[]> {
   return (await listAllSubscriptions(env)).filter(subscription => subscription.userId === userId).map(toPublicSubscription)
 }
@@ -453,21 +413,6 @@ export async function setSubscriptionEnabled(
   options: SubscriptionMutationOptions = {},
 ): Promise<Subscription> {
   return updateSubscription(env, id, { enabled }, options)
-}
-
-export async function transferSubscription(env: DataEnv, id: string, userId: string | null): Promise<SubscriptionMutationResult> {
-  const snapshot = await readDelivery(env)
-  const current = findSubscription(snapshot, id)
-  await assertReferences(env, userId, current.groupIds)
-  const token = randomToken()
-  const tokenData = await createToken(env.DATA, token)
-  if (snapshot.subscriptions.some(item => item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
-  const now = new Date().toISOString()
-  const updated = { ...current, userId, ...tokenData, revision: current.revision + 1, updatedAt: now }
-  // Ownership and token are written in the same D1 batch (or single KV snapshot).
-  await writeDelivery(env, { ...snapshot, subscriptions: snapshot.subscriptions.map(item => item.id === id ? updated : item) }, now)
-  await deleteCompiledArtifacts(env.DATA, current.tokenHash)
-  return { subscription: updated, token }
 }
 
 export async function disableExpiredSubscriptions(env: DataEnv, now = new Date().toISOString()): Promise<void> {

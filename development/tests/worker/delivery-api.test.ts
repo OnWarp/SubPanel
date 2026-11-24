@@ -55,41 +55,6 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Delivery APIs and public subscriptions', () => {
-  it('allocates from the pool, transfers with token rotation, and recycles with the same plan and expiry', async () => {
-    const admin = await login()
-    const { groupId, planId } = await createCatalogGroup(admin)
-    await createUserCookie(admin)
-    const listedUsers = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/users`, withCookie(admin))).json() as { users: Array<{ id: string; username: string }> }
-    const target = listedUsers.users.find((user) => user.username === 'delivery-user')
-    const expiresAt = Date.now() + 86400000
-    const created = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions`, jsonRequest({ name: 'Pool', planId, groupIds: [groupId], expiresAt }, withCookie(admin)))
-    expect(created.status).toBe(201)
-    type Result = { subscription: { id: string; userId: string | null; expiresAt: number; groupIds: string[] }; token: string }
-    const pool = await created.json() as Result
-    expect(pool.subscription.userId).toBeNull()
-    const pull = (token: string) => exports.default.fetch(`${TEST_ORIGIN}/sub/${token}/mihomo`)
-    expect((await pull(pool.token)).status).toBe(200)
-    const transfer = async (userId: string | null) => {
-      const response = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/subscriptions/${pool.subscription.id}/transfer`, jsonRequest({ userId }, withCookie(admin)))
-      expect(response.status).toBe(200)
-      const result = await response.json() as Result
-      expect(result.subscription).toMatchObject({ userId, expiresAt, planId, groupIds: [groupId] })
-      return result
-    }
-    const assigned = await transfer('usr_1')
-    expect((await pull(pool.token)).status).toBe(404)
-    expect((await pull(assigned.token)).status).toBe(200)
-    const moved = await transfer(target!.id)
-    expect((await pull(assigned.token)).status).toBe(404)
-    expect((await pull(moved.token)).status).toBe(200)
-    const recycled = await transfer(null)
-    expect((await pull(moved.token)).status).toBe(404)
-    expect((await pull(recycled.token)).status).toBe(200)
-    const audits = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action = 'post.subscriptions.transfer'").all<{ detail: string }>()
-    expect(audits.results).toHaveLength(3)
-    expect(JSON.stringify(audits.results)).not.toContain(moved.token)
-  })
-
   it('creates temporary admin shares through the shared mechanism and rejects them at expiry', async () => {
     const admin = await login()
     const { groupId, planId } = await createCatalogGroup(admin)
