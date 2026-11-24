@@ -2,7 +2,7 @@ import { AdminRedemptionsPage } from '../features/redemption/AdminRedemptionsPag
 import { AuditLogsPage } from '../features/admin/AuditLogsPage'
 import { PlansPage } from '../features/delivery/PlansPage'
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AccountPage } from '../features/accounts/AccountPage'
 import { InvitePage } from '../features/accounts/InvitePage'
 import { LoginPage } from '../features/accounts/LoginPage'
@@ -33,7 +33,7 @@ import { MySubscriptionsPage } from '../features/delivery/MySubscriptionsPage'
 import { SharePage } from '../features/shares/SharePage'
 import { readShareReturn } from '../features/shares/share-link'
 import { HomePage } from '../features/user/HomePage'
-import { MinePage } from '../features/user/MinePage'
+import { MinePage, MineSettingsPage } from '../features/user/MinePage'
 import { MyNodesPage } from '../features/user/MyNodesPage'
 import { AppShell } from './AppShell'
 import { useSession } from './session'
@@ -97,7 +97,10 @@ export function AppRouter() {
       <Route path="/apps" element={user ? shell(<UserAppsPage />) : <Navigate to={signedOut} replace />} />
       <Route path="/home" element={user?.role === 'user' ? shell(<HomePage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/entitlement" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace /> : <Navigate to={user ? home : signedOut} replace />} />
-      <Route path="/me" element={user?.role === 'user' ? shell(<MinePage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/me" element={user?.role === 'user' ? shell(<Outlet />) : <Navigate to={user ? home : signedOut} replace />}>
+        <Route index element={<MinePage />} />
+        <Route path=":section" element={<MineSettingsPage />} />
+      </Route>
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/entitlements" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace /> : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/nodes" element={user?.role === 'user' ? shell(<MyNodesPage />) : <Navigate to={user ? home : signedOut} replace />} />
@@ -109,7 +112,7 @@ export function AppRouter() {
       <Route path="/system" element={user?.role === 'admin' ? shell(<SystemPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/system/:section" element={user?.role === 'admin' ? shell(<SystemPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/operations/notices" element={user?.role === 'admin' ? shell(<AdminNoticesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/account" element={shell(user?.role === 'user' ? <MinePage /> : <AccountPage />)} />
+      <Route path="/account" element={user?.role === 'user' ? <Navigate to="/me" replace /> : shell(<AccountPage />)} />
       <Route path="*" element={<Navigate to={user ? home : signedOut} replace />} />
     </Routes>
   )

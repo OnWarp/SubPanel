@@ -29,26 +29,7 @@ export function PersonalRedemptions() {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [historyPage, setHistoryPage] = useState(1)
-  const [refresh, setRefresh] = useState(0)
-  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
-  const [subscriptionError, setSubscriptionError] = useState('')
   const history = useRedemptionPage<RedemptionRecord>(myRedemptionsPath, historyPage)
-  const platforms = useEnabledPlatforms()
-
-  useEffect(() => {
-    const abort = new AbortController()
-    void api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions', { signal: abort.signal })
-      .then((result) => {
-        if (abort.signal.aborted) return
-        setSubscriptionError('')
-        setSubscriptions(result.subscriptions.toSorted((a, b) =>
-          Number(b.status === 'active') - Number(a.status === 'active')
-          || (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity)
-          || b.createdAt.localeCompare(a.createdAt)))
-      })
-      .catch((error) => { if (!abort.signal.aborted) setSubscriptionError(errorText(error)) })
-    return () => abort.abort()
-  }, [refresh])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -71,7 +52,6 @@ export function PersonalRedemptions() {
         setPending(undefined)
         setHistoryPage(1)
         history.reload()
-        setRefresh((value) => value + 1)
       }
     } catch (error) {
       setMessage(errorText(error))
@@ -106,9 +86,48 @@ export function PersonalRedemptions() {
       </form>
       {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{`已兑换 ${receipt.name}`}</StatusMessage><Link to={`/subscriptions?subscription=${receipt.id}`}>查看新订阅</Link></div> : null}
     </section>
+    <section className="data-section user-account-card redemption-section" aria-label="兑换历史">
+      <h2>兑换历史</h2>
+      {history.error ? <ErrorState message={history.error} onRetry={history.reload} /> : <DataTable
+        rows={history.data?.items ?? []} rowKey={(row) => row.id} loadingLabel={history.loading ? '正在加载兑换历史' : undefined}
+        empty="暂无兑换记录"
+        pagination={history.data && history.data.total > history.data.pageSize ? {
+          page: historyPage, pageCount: Math.ceil(history.data.total / history.data.pageSize), onPageChange: setHistoryPage, compact: true,
+        } : undefined}
+        columns={[
+          { key: 'subscriptionName', header: '订阅', render: (row) => row.hasSubscription
+            ? <Link to={`/subscriptions?subscription=${row.subscriptionId}`}>{row.subscriptionName}</Link> : row.subscriptionName },
+          { key: 'redeemedAt', header: '兑换时间', render: (row) => new Date(row.redeemedAt).toLocaleString() },
+          { key: 'expiresAt', header: '发放时的到期时间', render: (row) => row.expiresAt === null ? '永久有效' : formatExpiryTime(row.expiresAt) },
+        ]} />}
+    </section>
+  </>
+}
+
+export function PersonalSubscriptionList() {
+  const [refresh, setRefresh] = useState(0)
+  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
+  const [subscriptionError, setSubscriptionError] = useState('')
+  const platforms = useEnabledPlatforms()
+
+  useEffect(() => {
+    const abort = new AbortController()
+    void api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions', { signal: abort.signal })
+      .then((result) => {
+        if (abort.signal.aborted) return
+        setSubscriptionError('')
+        setSubscriptions(result.subscriptions.toSorted((a, b) =>
+          Number(b.status === 'active') - Number(a.status === 'active')
+          || (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity)
+          || b.createdAt.localeCompare(a.createdAt)))
+      })
+      .catch((error) => { if (!abort.signal.aborted) setSubscriptionError(errorText(error)) })
+    return () => abort.abort()
+  }, [refresh])
+
+  return (
     <section className="data-section user-account-card redemption-section" aria-label="我的订阅">
       <div className="section-heading">
-        <h2>我的订阅</h2>
         <Link className="button secondary" to="/subscriptions">管理订阅</Link>
       </div>
       {subscriptionError ? <ErrorState message={subscriptionError} onRetry={() => setRefresh((value) => value + 1)} /> : null}
@@ -132,20 +151,5 @@ export function PersonalRedemptions() {
           } },
         ]} />}
     </section>
-    <section className="data-section user-account-card redemption-section" aria-label="兑换历史">
-      <h2>兑换历史</h2>
-      {history.error ? <ErrorState message={history.error} onRetry={history.reload} /> : <DataTable
-        rows={history.data?.items ?? []} rowKey={(row) => row.id} loadingLabel={history.loading ? '正在加载兑换历史' : undefined}
-        empty="暂无兑换记录"
-        pagination={history.data && history.data.total > history.data.pageSize ? {
-          page: historyPage, pageCount: Math.ceil(history.data.total / history.data.pageSize), onPageChange: setHistoryPage, compact: true,
-        } : undefined}
-        columns={[
-          { key: 'subscriptionName', header: '订阅', render: (row) => row.hasSubscription
-            ? <Link to={`/subscriptions?subscription=${row.subscriptionId}`}>{row.subscriptionName}</Link> : row.subscriptionName },
-          { key: 'redeemedAt', header: '兑换时间', render: (row) => new Date(row.redeemedAt).toLocaleString() },
-          { key: 'expiresAt', header: '发放时的到期时间', render: (row) => row.expiresAt === null ? '永久有效' : formatExpiryTime(row.expiresAt) },
-        ]} />}
-    </section>
-  </>
+  )
 }
