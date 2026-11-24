@@ -61,6 +61,7 @@ accountRoutes.post('/logout', (c) => {
 })
 
 const bindEmailSchema = z.object({ email: emailInputSchema })
+const changeEmailSchema = bindEmailSchema.extend({ currentPassword: passwordInputSchema })
 const confirmBindSchema = z.object({ code: z.string().regex(/^\d{6}$/) })
 
 accountRoutes.post('/email/bind', async (c) => {
@@ -111,17 +112,21 @@ accountRoutes.post('/logout-all', async (c) => {
 })
 
 accountRoutes.post('/email/change', async (c) => {
-  const input = await readJson(c, bindEmailSchema)
+  const input = await readJson(c, changeEmailSchema)
   const user = await findAccountUserById(c.env, c.get('principal').id)
   if (!user) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
+  if (!await verifyPassword(input.currentPassword, user.password)) throw apiError(401, 'INVALID_PASSWORD', '当前密码错误')
   const result = await requestEmailChange(c.env, user, input.email)
   return c.json(result)
 })
 
 accountRoutes.post('/email/change/confirm', async (c) => {
-  const input = await readJson(c, confirmBindSchema)
+  const input = await readJson(c, confirmBindSchema.extend({ currentPassword: passwordInputSchema }))
   const user = await findAccountUserById(c.env, c.get('principal').id)
-  if (!user) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
+  if (!user || user.sessionVersion !== c.get('principal').sessionVersion) throw apiError(401, 'AUTH_REQUIRED', '请先登录')
+  if (!await verifyPassword(input.currentPassword, user.password)) throw apiError(401, 'INVALID_PASSWORD', '当前密码错误')
   const updated = await confirmEmailChange(c.env, user, input.code)
+  const material = await readCryptoMaterial(c.env.DATA)
+  setSessionCookie(c, await createSessionToken(updated, material.sessionKey))
   return c.json({ user: toPublicAccountUser(updated) })
 })

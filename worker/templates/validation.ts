@@ -1,4 +1,5 @@
 import { LineCounter, isNode, parseDocument } from 'yaml'
+import { assertYamlBudget } from '../platform/yaml-budget.js'
 import { sha256Base64Url } from '../platform/hash.js'
 import { z } from 'zod'
 import { mihomoClientLayer, nodeLayer } from './layers.js'
@@ -108,6 +109,7 @@ function validateStructure(yaml: string, legacy: boolean) {
   const lineCounter = new LineCounter()
   let doc: ReturnType<typeof parseDocument>
   try {
+    assertYamlBudget(yaml)
     doc = parseDocument(yaml, { uniqueKeys: true, lineCounter })
   } catch {
     invalid('YAML_PARSE_ERROR', '无法解析 YAML，请检查文档结构和嵌套深度')
@@ -457,10 +459,13 @@ export function computeContentHash(template: Template) {
 }
 
 export function expandTemplate(template: Template, nodes: string[]) {
-  const { subpanel, ...policy } = template
+  const { subpanel, 'rule-providers': providers, ...policy } = template
+  const referenced = new Set(policy.rules.filter(rule => rule.startsWith('RULE-SET,')).map(rule => rule.split(',')[1]))
+  const activeProviders = Object.fromEntries(Object.entries(providers ?? {}).filter(([name]) => referenced.has(name)))
   return {
     ...subpanel?.client,
     ...policy,
+    ...(Object.keys(activeProviders).length && { 'rule-providers': activeProviders }),
     'proxy-groups': template['proxy-groups'].map(group => ({
       ...(group.type !== 'select' && { url: 'https://www.gstatic.com/generate_204', interval: 300 }),
       ...group,

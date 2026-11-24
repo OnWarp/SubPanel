@@ -1,4 +1,5 @@
 import { parseDocument, stringify } from 'yaml'
+import { assertYamlBudget } from '../platform/yaml-budget.js'
 import { jsonValueSchema, type JsonValue, type Protocol } from '../catalog/schema.js'
 import type { ImportResult, ParsedNode } from './model.js'
 
@@ -268,6 +269,7 @@ function parseProxy(entry: Record<string, unknown>): ParsedNode {
 
 export function parseMihomo(content: string): ImportResult {
   try {
+    assertYamlBudget(content)
     const document = parseDocument(content, { merge: false })
     if (document.errors.length > 0) throw new Error('Invalid YAML')
     const value: unknown = document.toJS({ maxAliasCount: 20 })

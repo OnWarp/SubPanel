@@ -1,5 +1,6 @@
 import { Lexer, isAlias, isMap, isScalar, isSeq, parseDocument } from 'yaml'
-import { fetchRemoteTextWithMetadata, RemoteFetchError, validateRemoteUrl } from '../catalog/remote.js'
+import { fetchRemoteTextWithPolicy as fetchRemoteTextWithMetadata } from '../catalog/egress-policy.js'
+import { RemoteFetchError, validateRemoteUrl } from '../catalog/remote.js'
 import { sha256Base64Url } from '../platform/hash.js'
 import { apiError } from '../platform/api-error.js'
 import { validRuleValue, type Template } from './validation.js'
@@ -157,7 +158,7 @@ export async function listRuleSources(db: D1Database, offset = 0) {
 }
 
 export async function checkRuleSources(db: D1Database, template: Template) {
-  const names = [...new Set(template.rules.filter(rule => rule.startsWith('RULE-SET,')).map(rule => rule.split(',')[1]))]
+  const names = Object.keys(template['rule-providers'] ?? {})
   if (!names.length) return []
   const providers = template['rule-providers']!
   const requested = names.map(name => {

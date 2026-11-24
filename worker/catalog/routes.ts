@@ -252,7 +252,10 @@ catalogRoutes.get('/sources/:sourceId/sync-runs', async (c) => {
   const { results } = await c.env.DB.prepare(
     'SELECT id, started_at, finished_at, status, details FROM catalog_sync_runs WHERE source_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 20',
   ).bind(c.req.param('sourceId')).all<{ id: string; started_at: string; finished_at: string; status: string; details: string }>()
-  return c.json({ runs: results.map(({ details, ...run }) => ({ ...run, details: JSON.parse(details) })) })
+  return c.json({ runs: results.map(({ details, ...run }) => {
+    const { etag: _etag, ...safeDetails } = JSON.parse(details)
+    return { ...run, details: safeDetails }
+  }) })
 })
 
 function affectedGroupSubscriptions(

@@ -1,3 +1,4 @@
+import { env as workerEnv } from 'cloudflare:workers'
 import { RENDERER_VERSION } from '../renderers/model.js'
 import { apiError } from '../platform/api-error.js'
 import { bindingWrite, requirePublished, rethrowBindingError, type BindingInput } from '../templates/repository.js'
@@ -72,7 +73,7 @@ export async function writeDelivery(
     await persistDeliverySnapshot(env.DB, next, accounts.users, statement, snapshot.revision, request, policy, additionalStatements).catch(rethrowBindingError)
     return next
   }
-  if (policy || additionalStatements) throw apiError(409, 'SUBSCRIPTION_STORAGE_NOT_READY', '请先完成订阅 D1 迁移')
+  if (workerEnv.REQUIRE_WORKER_SECRETS === 'true' || policy || additionalStatements) throw apiError(409, 'SUBSCRIPTION_STORAGE_NOT_READY', '请先完成订阅 D1 迁移')
   if (binding) throw apiError(409, 'TEMPLATE_STORAGE_NOT_READY', '请先完成订阅 D1 迁移，再随订阅保存附加配置')
   const next = await writeDeliveryKv(env.DATA, snapshot, now)
   if (cleanup) await cleanup.run()

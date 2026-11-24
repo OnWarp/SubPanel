@@ -24,6 +24,7 @@ export function SetupPage() {
         body: jsonBody({
           username: form.get('username'),
           password: form.get('password'),
+          setupSecret: form.get('setupSecret'),
         }),
       })
       await refresh()
@@ -43,6 +44,9 @@ export function SetupPage() {
         </FormField>
         <FormField label="管理员密码" htmlFor="setup-password">
           <Input id="setup-password" name="password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required />
+        </FormField>
+        <FormField label="初始化密钥" htmlFor="setup-secret">
+          <Input id="setup-secret" name="setupSecret" type="password" autoComplete="off" required />
         </FormField>
         {error ? <p className="form-message error" role="alert">{error}</p> : null}
         <button className="button primary" type="submit" disabled={submitting}>

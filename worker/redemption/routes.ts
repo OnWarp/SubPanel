@@ -4,6 +4,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { ApiError, apiError } from '../platform/api-error.js'
+import { hashToken, fromBase64Url } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
 import { limitAttempts } from './limits.js'
 import { batchInput, confirmRedemption, createBatch, previewInput, previewRedemption, redeemInput } from './service.js'
@@ -16,6 +17,17 @@ const sizeLimit = bodyLimit({
   onError: () => { throw apiError(413, 'PAYLOAD_TOO_LARGE', '请求内容过长') },
 })
 adminRedemptionRoutes.use('/redemption-batches', sizeLimit)
+userRedemptionRoutes.use('*', async (c, next) => {
+  if (c.req.method !== 'POST') return next()
+  const percent = Number(c.env.REDEMPTION_ROLLOUT_PERCENT ?? 100)
+  if (percent === 100) return next()
+  const digest = fromBase64Url(await hashToken(c.get('principal').id))
+  const bucket = new DataView(digest.buffer).getUint32(0) / 2 ** 32 * 100
+  if (!Number.isInteger(percent) || percent < 0 || percent > 100 || bucket >= percent) {
+    throw apiError(503, 'REDEMPTION_ROLLOUT_PENDING', '兑换暂未开放')
+  }
+  await next()
+})
 userRedemptionRoutes.use('*', sizeLimit)
 
 async function readRedemptionJson<S extends z.ZodType>(c: Context<AppEnv>, schema: S) {

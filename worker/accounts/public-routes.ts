@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { apiError, ApiError } from '../platform/api-error.js'
-import { getOrCreateCryptoMaterial, readCryptoMaterial } from '../platform/crypto.js'
+import { hashToken, readCryptoMaterial, signHmac, verifyHmac } from '../platform/crypto.js'
+import { ACCOUNTS_D1_READY_KEY } from '../db/module-switch.js'
 import { readJson } from '../platform/http.js'
 import { resolveSessionUser } from './auth.js'
 import { findUserByEmailNormalized } from './d1-repository.js'
@@ -26,6 +27,7 @@ import {
 import { createSessionToken, setSessionCookie } from './session.js'
 
 const setupInputSchema = z.object({
+  setupSecret: z.string().max(512),
   username: usernameInputSchema,
   password: passwordInputSchema,
 })
@@ -59,10 +61,14 @@ publicAccountRoutes.post('/setup', async (c) => {
   if (current.users.length > 0) throw apiError(409, 'ALREADY_INITIALIZED', '系统已经完成初始化')
 
   const input = await readJson(c, setupInputSchema)
-  await getOrCreateCryptoMaterial(c.env.DATA)
+  const secret = c.env.BOOTSTRAP_SECRET
+  if (!secret || secret.length < 32 || !await verifyHmac('subpanel:setup', await signHmac('subpanel:setup', await hashToken(input.setupSecret)), await hashToken(secret))) {
+    throw apiError(403, 'SETUP_FORBIDDEN', '初始化密钥无效')
+  }
+  await readCryptoMaterial(c.env.DATA)
   const now = new Date().toISOString()
   const admin = {
-    id: `usr_${current.nextUserId}`,
+    id: 'usr_1',
     username: input.username,
     role: 'admin' as const,
     enabled: true,
@@ -72,23 +78,31 @@ publicAccountRoutes.post('/setup', async (c) => {
     createdAt: now,
     updatedAt: now,
   }
-  await writeAccounts(c.env, {
-    ...current,
-    nextUserId: current.nextUserId + 1,
-    users: [admin],
-  }, now)
-
+  const db = c.env.DB
+  const results = await db.batch([
+    db.prepare(`INSERT INTO users (
+      id, username, role, enabled, password_algorithm, password_iterations,
+      password_salt, password_hash, session_version, created_at, updated_at
+    ) SELECT ?, ?, 'admin', 1, ?, ?, ?, ?, 0, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM users)`)
+      .bind(admin.id, admin.username, admin.password.algorithm, admin.password.iterations,
+        admin.password.salt, admin.password.hash, now, now),
+    db.prepare(`INSERT INTO system_settings(key,value,updated_at)
+      SELECT ?, 'true', ? WHERE changes()=1
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
+      .bind(ACCOUNTS_D1_READY_KEY, now),
+  ])
+  if (!results[0].meta.changes) throw apiError(409, 'ALREADY_INITIALIZED', '系统已经完成初始化')
   return c.json({ user: toPublicUser(admin) }, 201)
 })
 
 publicAccountRoutes.post('/login', async (c) => {
   const input = await readJson(c, loginInputSchema)
   const identifier = (input.identifier ?? input.username) as string
-  const useD1 = await accountsUseD1(c.env)
   const identifierKey = identifier.trim().toLowerCase()
   const sourceKey = c.req.header('cf-connecting-ip') ?? 'unknown'
   const nowSeconds = Math.floor(Date.now() / 1_000)
-  if (useD1 && (await loginRateLimited(c.env.DB, identifierKey, sourceKey, nowSeconds))) {
+  if (await loginRateLimited(c.env.DB, identifierKey, sourceKey, nowSeconds)) {
     throw apiError(429, 'TOO_MANY_ATTEMPTS', '登录尝试过于频繁，请稍后再试')
   }
 
@@ -100,12 +114,12 @@ publicAccountRoutes.post('/login', async (c) => {
     valid = (await verifyPassword(input.password, user.password)) && user.enabled
   }
   if (!valid) {
-    if (useD1) await recordLoginFailure(c.env.DB, identifierKey, sourceKey, nowSeconds)
+    await recordLoginFailure(c.env.DB, identifierKey, sourceKey, nowSeconds)
     throw apiError(401, 'INVALID_CREDENTIALS', '用户名或密码错误')
   }
   if (!user) throw apiError(401, 'INVALID_CREDENTIALS', '用户名或密码错误')
 
-  if (useD1) await clearLoginFailures(c.env.DB, identifierKey)
+  await clearLoginFailures(c.env.DB, identifierKey)
   const material = await readCryptoMaterial(c.env.DATA)
   setSessionCookie(c, await createSessionToken(user, material.sessionKey))
   return c.json({ user: toPublicUser(user) })

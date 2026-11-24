@@ -366,7 +366,7 @@ describe('administrator Catalog APIs', () => {
     expect(fetcher).toHaveBeenCalledTimes(2)
     const catalog = await readCatalog(env)
     expect(catalog.nodes[0]).toMatchObject({ displayName: 'Newest', sourceIds: ['src_1'] })
-    expect(catalog.sources[0].sync).toMatchObject({ httpStatus: 200, etag: '"test-feed"', consecutiveFailures: 0 })
+    expect(catalog.sources[0].sync).toMatchObject({ httpStatus: 200, consecutiveFailures: 0 })
     expect((await request('/sources/src_1/confirm-sync', { previewId: fresh.id })).status).toBe(409)
     const runs = await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog/sources/src_1/sync-runs`, withCookie(cookie))
     expect(await runs.json()).toMatchObject({ runs: [{ status: 'success', details: { added: 1, duplicates: 1 } }] })

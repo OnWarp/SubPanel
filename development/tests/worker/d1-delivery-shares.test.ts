@@ -464,7 +464,7 @@ describe('shares D1 repository and import', () => {
     expect(await env.DATA.get(shareEntityKey(saved.tokenHash))).not.toBeNull()
   })
 
-  it('reads KV or D1 according to the flag and counts verify attempts only in the active store', async () => {
+  it('reads the active share store and counts verify attempts in D1 across cutover', async () => {
     await setupAdmin()
     const saved = shareRecord()
     await writeShare(env, saved)
@@ -483,14 +483,14 @@ describe('shares D1 repository and import', () => {
     const nowMs = Date.parse('2026-07-23T00:05:00.000Z')
     expect(await consumeVerifySlot(env, saved.tokenHash, nowMs)).toBe(true)
     const kvLimits = await env.DATA.list({ prefix: 'sharelimit:' })
-    expect(kvLimits.keys.length).toBe(1)
+    expect(kvLimits.keys.length).toBe(0)
 
     await markModuleReady(env.DB, SHARES_D1_READY_KEY, NOW)
     const minute = Math.floor(nowMs / 60_000)
     await env.DB.prepare(
       `INSERT INTO rate_limits (bucket, subject, window_start, count, expires_at) VALUES ('share_verify', ?, ?, 10, ?)`,
     ).bind(saved.tokenHash, minute - 1, Math.floor(nowMs / 1000) - 1).run()
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    for (let attempt = 0; attempt < 9; attempt += 1) {
       expect(await consumeVerifySlot(env, saved.tokenHash, nowMs)).toBe(true)
     }
     expect(await consumeVerifySlot(env, saved.tokenHash, nowMs)).toBe(false)

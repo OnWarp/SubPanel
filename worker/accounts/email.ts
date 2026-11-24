@@ -60,7 +60,8 @@ function secretValue(value: string | undefined): string | undefined {
 
 async function mailSettings(): Promise<Map<string, unknown>> {
   try {
-    return await readSettingMap(workerEnv.DB, Object.values(MAIL_SETTING_KEYS))
+    const keys = workerEnv.REQUIRE_WORKER_SECRETS === 'true' ? [MAIL_SETTING_KEYS.from] : Object.values(MAIL_SETTING_KEYS)
+    return await readSettingMap(workerEnv.DB, keys)
   } catch {
     return new Map()
   }
@@ -132,6 +133,8 @@ export async function resolveMailConfig(): Promise<ResolvedMailConfig | null> {
     return fromUsable ? { provider: 'smtp', from, smtp } : unusable('mail_from is missing or invalid')
   }
 
+  if (workerEnv.REQUIRE_WORKER_SECRETS === 'true') return null
+
   const provider = settingString(settings, MAIL_SETTING_KEYS.provider)
   if (provider === 'resend') {
     const apiKey = settingString(settings, MAIL_SETTING_KEYS.resendApiKey)
@@ -162,7 +165,7 @@ async function sendViaResend(apiKey: string, from: string, message: MailMessage)
 export async function sendMail(message: MailMessage): Promise<MailSendResult> {
   const config = await resolveMailConfig()
   if (!config) {
-    console.warn(`[mail] no mail provider configured; message to ${message.to} was not sent`)
+    console.warn(JSON.stringify({ event: 'mail_provider_unavailable' }))
     return { ok: false, provider: null, error: '邮件服务未配置' }
   }
   // One initial attempt plus at most one retry, then the failure is final.
@@ -176,7 +179,7 @@ export async function sendMail(message: MailMessage): Promise<MailSendResult> {
       lastError = error instanceof Error ? error.message : String(error)
     }
   }
-  console.warn(`[mail] send via ${config.provider} failed: ${lastError}`)
+  console.warn(JSON.stringify({ event: 'mail_send_failed', provider: config.provider }))
   return { ok: false, provider: config.provider, error: lastError }
 }
 

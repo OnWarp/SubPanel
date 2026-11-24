@@ -1,4 +1,5 @@
 import { savePlan } from '../../../worker/delivery/plans'
+import { getOrCreateCryptoMaterial } from '../../../worker/platform/crypto'
 import { hashPassword } from '../../../worker/accounts/password'
 import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
 import { env, exports } from 'cloudflare:workers'
@@ -57,11 +58,14 @@ export const jsonRequest = (body: unknown, init: RequestInit = {}): RequestInit 
 })
 
 export async function setupAdmin(): Promise<void> {
-  const response = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/setup`,
-    jsonRequest({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
-  )
-  if (response.status !== 201) throw new Error(`Setup failed with ${response.status}`)
+  await getOrCreateCryptoMaterial(env.DATA)
+  const now = new Date().toISOString()
+  const accounts = await readAccounts(env)
+  await writeAccounts(env, { ...accounts, nextUserId: 2, users: [{
+    id: 'usr_1', username: ADMIN_USERNAME, role: 'admin', enabled: true,
+    password: await hashPassword(ADMIN_PASSWORD), sessionVersion: 0, deletedAt: null,
+    createdAt: now, updatedAt: now,
+  }] }, now)
 }
 
 export async function login(username = ADMIN_USERNAME, password = ADMIN_PASSWORD): Promise<string> {

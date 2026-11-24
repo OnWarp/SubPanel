@@ -14,6 +14,7 @@ const ENV_CRYPTO_CREATED_AT = '1970-01-01T00:00:00.000Z'
 export type CryptoSecrets = {
   DATA_ENCRYPTION_KEY?: string
   SESSION_KEY?: string
+  REQUIRE_WORKER_SECRETS?: string
 }
 
 const cryptoMaterialSchema = z.object({
@@ -71,6 +72,7 @@ function readAmbientSecrets(): CryptoSecrets {
     return {
       DATA_ENCRYPTION_KEY: workerEnv.DATA_ENCRYPTION_KEY,
       SESSION_KEY: workerEnv.SESSION_KEY,
+      REQUIRE_WORKER_SECRETS: workerEnv.REQUIRE_WORKER_SECRETS,
     }
   } catch {
     return {}
@@ -80,7 +82,7 @@ function readAmbientSecrets(): CryptoSecrets {
 function materialFromSecrets(secrets: CryptoSecrets): CryptoMaterial | undefined {
   const encryptionKey = nonemptySecret(secrets.DATA_ENCRYPTION_KEY)
   const sessionKey = nonemptySecret(secrets.SESSION_KEY)
-  if (encryptionKey === undefined && sessionKey === undefined) return undefined
+  if (encryptionKey === undefined && sessionKey === undefined && secrets.REQUIRE_WORKER_SECRETS !== 'true') return undefined
   if (encryptionKey === undefined || sessionKey === undefined) throw new Error('Crypto material is corrupt')
   return parseCryptoMaterial(JSON.stringify({
     schemaVersion: 1,

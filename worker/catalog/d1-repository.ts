@@ -1,3 +1,5 @@
+import { env as workerEnv } from 'cloudflare:workers'
+import { decryptText, encryptedValueSchema, encryptText, readCryptoMaterial } from '../platform/crypto.js'
 import { batch, type AppDatabase } from '../db/db.js'
 import {
   CATALOG_SETTING_KEYS,
@@ -197,6 +199,32 @@ export async function catalogCounts(db: AppDatabase): Promise<CatalogCounts> {
   return { sources, nodes, nodeRawVariants, groups, groupSources, groupNodes, groupNodeOrder }
 }
 
+const CATALOG_ENCRYPTION_KEY = 'catalog_encrypted_storage'
+const ENCRYPTED_VARIANT_PREFIX = 'subpanel:encrypted:v1:'
+
+async function readNodePayload(row: NodeSql, key: () => Promise<string>) {
+  const stored = parseJson(row.credentials)
+  const encrypted = stored && typeof stored === 'object' && 'subpanelEncrypted' in stored
+  const envelope = encryptedValueSchema.safeParse(encrypted ? stored.subpanelEncrypted : undefined)
+  if (envelope.success) {
+    return JSON.parse(await decryptText(envelope.data, await key())) as {
+      credentials: unknown; tls: unknown; transport: unknown; plugin: unknown; extensions: unknown
+    }
+  }
+  return {
+    credentials: stored, extensions: parseJson(row.extensions), tls: optionalJson(row.tls),
+    transport: optionalJson(row.transport), plugin: optionalJson(row.plugin),
+  }
+}
+
+async function readVariantPayload(row: VariantSql, key: () => Promise<string>) {
+  if (row.raw.startsWith(ENCRYPTED_VARIANT_PREFIX)) {
+    const envelope = encryptedValueSchema.parse(JSON.parse(row.raw.slice(ENCRYPTED_VARIANT_PREFIX.length)))
+    return JSON.parse(await decryptText(envelope, await key())) as { raw: string; extensions: unknown }
+  }
+  return { raw: row.raw, extensions: parseJson(row.extensions) }
+}
+
 export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapshot> {
   try {
     const [sources, nodes, variants, groups, groupSources, groupNodes, groupOrder, settings] = await Promise.all([
@@ -245,6 +273,8 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
       variantsByNode.set(variant.node_id, list)
     }
 
+    let keyPromise: Promise<string> | undefined
+    const key = () => keyPromise ??= readCryptoMaterial(workerEnv.DATA).then(material => material.encryptionKey)
     const snapshot = {
       schemaVersion: 2,
       revision,
@@ -274,7 +304,8 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
         assignOptional(source, 'lastErrorCode', row.last_error_code)
         return source
       }),
-      nodes: orderedNodes.map((row) => {
+      nodes: await Promise.all(orderedNodes.map(async (row) => {
+        const payload = await readNodePayload(row, key)
         const node: Record<string, unknown> = {
           ...JSON.parse(row.source_metadata ?? '{}'),
           id: row.id,
@@ -282,27 +313,26 @@ export async function readCatalogFromD1(db: AppDatabase): Promise<CatalogSnapsho
           displayName: row.display_name,
           server: row.server,
           port: row.port,
-          credentials: parseJson(row.credentials),
-          extensions: parseJson(row.extensions),
+          credentials: payload.credentials,
+          extensions: payload.extensions,
           fingerprint: row.fingerprint,
           sourceIds: parseJson(row.source_ids),
-          rawVariants: (variantsByNode.get(row.id) ?? []).map((variant) => ({
+          rawVariants: await Promise.all((variantsByNode.get(row.id) ?? []).map(async (variant) => ({
             sourceId: variant.source_id,
             format: variant.format,
-            raw: variant.raw,
-            extensions: parseJson(variant.extensions),
-          })),
+            ...await readVariantPayload(variant, key),
+          }))),
           enabled: row.enabled === 1,
           retained: row.retained === 1,
           order: row.sort_order,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         }
-        assignOptional(node, 'tls', optionalJson(row.tls))
-        assignOptional(node, 'transport', optionalJson(row.transport))
-        assignOptional(node, 'plugin', optionalJson(row.plugin))
+        assignOptional(node, 'tls', payload.tls)
+        assignOptional(node, 'transport', payload.transport)
+        assignOptional(node, 'plugin', payload.plugin)
         return node
-      }),
+      })),
       groups: orderedGroups.map((row) => ({
         id: row.id,
         name: row.name,
@@ -434,6 +464,28 @@ function groupOrderInsert(db: AppDatabase, row: GroupNodeOrderRow): D1PreparedSt
 
 export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogSnapshot, expectedRevision?: number, audit?: D1PreparedStatement): Promise<void> {
   const converted = convertCatalog(snapshot)
+  const alreadyEncrypted = await readSettingMap(db, [CATALOG_ENCRYPTION_KEY])
+  const encrypt = workerEnv.CATALOG_ENCRYPT_AT_REST === 'true' || alreadyEncrypted.get(CATALOG_ENCRYPTION_KEY) === true
+  let nodes = converted.rows.nodes
+  let variants = converted.rows.node_raw_variants
+  if (encrypt) {
+    const { encryptionKey } = await readCryptoMaterial(workerEnv.DATA)
+    nodes = await Promise.all(nodes.map(async row => ({
+      ...row,
+      credentials: JSON.stringify({ subpanelEncrypted: await encryptText(JSON.stringify({
+        credentials: parseJson(row.credentials), extensions: parseJson(row.extensions),
+        tls: optionalJson(row.tls), transport: optionalJson(row.transport), plugin: optionalJson(row.plugin),
+      }), encryptionKey) }),
+      tls: null, transport: null, plugin: null, extensions: '{}',
+    })))
+    variants = await Promise.all(variants.map(async row => ({
+      ...row,
+      raw: ENCRYPTED_VARIANT_PREFIX + JSON.stringify(await encryptText(JSON.stringify({
+        raw: row.raw, extensions: parseJson(row.extensions),
+      }), encryptionKey)),
+      extensions: '{}',
+    })))
+  }
   const meta = metaFromSnapshot(snapshot)
   const statements: D1PreparedStatement[] = [
     // A stale revision or a legacy import over P2 assignments aborts the whole batch.
@@ -444,6 +496,11 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
       WHERE COALESCE((SELECT json_extract(value, '$') FROM system_settings WHERE key = ?), 0) != ?`)
       .bind(meta.updatedAt, CATALOG_SETTING_KEYS.revision, expectedRevision)]),
     ...(audit ? [audit] : []),
+    ...(encrypt ? [upsertSettingStatement(db, CATALOG_ENCRYPTION_KEY, true, meta.updatedAt)] : [
+      db.prepare(`INSERT INTO system_settings (key, value, updated_at)
+        SELECT 'catalog_write_conflict', NULL, ? WHERE EXISTS (SELECT 1 FROM system_settings WHERE key=? AND value='true')`)
+        .bind(meta.updatedAt, CATALOG_ENCRYPTION_KEY),
+    ]),
     db.prepare('DELETE FROM group_node_order'),
     db.prepare('DELETE FROM group_nodes'),
     db.prepare('DELETE FROM group_sources'),
@@ -451,9 +508,9 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
     db.prepare('DELETE FROM nodes'),
     deleteMissing(db, 'sources', converted.rows.sources.map((row) => row.id)),
     ...converted.rows.sources.map((row) => sourceInsert(db, row)),
-    ...converted.rows.nodes.map((row) => nodeInsert(db, row)),
+    ...nodes.map((row) => nodeInsert(db, row)),
     db.prepare('DELETE FROM subscription_nodes WHERE NOT EXISTS (SELECT 1 FROM nodes WHERE id = subscription_nodes.node_id)'),
-    ...converted.rows.node_raw_variants.map((row) => variantInsert(db, row)),
+    ...variants.map((row) => variantInsert(db, row)),
     ...converted.rows.groups.map((row) => groupInsert(db, row)),
     ...snapshot.sources.filter((row) => row.sync).map((row) =>
       db.prepare('UPDATE sources SET sync_metadata = ? WHERE id = ?').bind(JSON.stringify(row.sync), row.id)),

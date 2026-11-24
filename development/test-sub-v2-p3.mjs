@@ -4,7 +4,7 @@ import { chromium, expect } from '@playwright/test'
 
 const base = new URL(process.env.P3_BASE_URL ?? 'http://127.0.0.1:4196')
 if (!['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)) throw new Error('Use an isolated local Worker')
-const output = 'development/screenshots/sub-v2-p3'
+const output = process.env.P3_SCREENSHOTS ?? 'development/screenshots/sub-v2-p3'
 const widths = [1440, 1024, 390]
 const password = randomUUID()
 const account = 'p3-member'
@@ -43,12 +43,12 @@ async function sampleOutput(context, token) {
   return results
 }
 
-const browser = await chromium.launch({ headless: true })
+const browser = await chromium.launch({ headless: true, executablePath: process.env.P3_CHROMIUM_EXECUTABLE })
 try {
   const admin = await browser.newContext({ baseURL: base.origin, locale: 'zh-CN' })
   const user = await browser.newContext({ baseURL: base.origin, locale: 'zh-CN', permissions: ['clipboard-read', 'clipboard-write'] })
   expect((await request(admin, '/api/bootstrap')).initialized).toBe(false)
-  await request(admin, '/api/setup', { username: 'admin', password }, 201)
+  await request(admin, '/api/setup', { username: 'admin', password, setupSecret: process.env.BOOTSTRAP_SECRET }, 201)
   await request(admin, '/api/login', { username: 'admin', password })
   await request(admin, '/api/admin/migration/run', { module: 'catalog' })
   await request(admin, '/api/admin/migration/run', { module: 'delivery' })

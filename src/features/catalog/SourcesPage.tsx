@@ -33,7 +33,7 @@ function DiffCounts({ diff }: { diff: SyncPreview['diff'] }) {
   return <dl className="catalog-sync-diff">{diffLabels.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{diff[key]}</dd></div>)}</dl>
 }
 
-type SyncRun = { id: string; started_at: string; status: string; details: { errorCode?: string; added?: number; missing?: number; updated?: number; durationMs?: number; httpStatus?: number; etag?: string } }
+type SyncRun = { id: string; started_at: string; status: string; details: { errorCode?: string; added?: number; missing?: number; updated?: number; durationMs?: number; httpStatus?: number } }
 const syncFormats = ['uri-list', 'base64-uri-list', 'mihomo', 'sing-box', 'sip008', 'loon', 'surge', 'quantumultx']
 
 type SourceForm = {
@@ -444,7 +444,7 @@ export function SourcesPage() {
             {drawer.sync?.firstFailureAt && <p>首次失败 {formatDate(drawer.sync.firstFailureAt)} · 连续失败 {drawer.sync.consecutiveFailures} 次</p>}
             <ul>{syncRuns?.map((run) => <li key={run.id}>{formatDate(run.started_at)} · {run.status === 'success' ? '成功' : run.status === 'failed' ? '失败' : '已取消'}
               {run.details.httpStatus && ` · HTTP ${run.details.httpStatus}`}{run.details.durationMs !== undefined && ` · ${run.details.durationMs} ms`}
-              {run.details.errorCode && ` · ${run.details.errorCode}`}{run.details.etag && ` · ETag ${run.details.etag}`}
+              {run.details.errorCode && ` · ${run.details.errorCode}`}
               {run.details.added !== undefined && ` · 新增 ${run.details.added} / 更新 ${run.details.updated} / 失效 ${run.details.missing}`}
             </li>)}</ul>
           </details>}
