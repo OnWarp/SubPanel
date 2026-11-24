@@ -186,16 +186,6 @@
   color: var(--color-danger);
 }
 
-.resource-pages .drawer-content > .form-stack,
-.resource-pages .drawer-content > .subscription-details {
-  gap: var(--space-4);
-}
-
-.resource-pages .drawer-content .choice-section {
-  padding: var(--space-4);
-  border-radius: var(--radius-control);
-}
-
 @media (width < 768px) {
   .resource-card.data-section {
     --resource-card-padding: var(--space-4);

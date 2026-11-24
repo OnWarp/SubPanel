@@ -83,7 +83,7 @@ export function AdminKbPage() {
   const [articlesLoading, setArticlesLoading] = useState(() => peekApi(articlesPath) === undefined)
   const [articlesError, setArticlesError] = useState('')
 
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
   const [articleForm, setArticleForm] = useState<ArticleForm>(EMPTY_ARTICLE_FORM)
   const [baseline, setBaseline] = useState(articleForm)
   const [articleError, setArticleError] = useState('')
@@ -168,7 +168,7 @@ export function AdminKbPage() {
     setBaseline(draft)
     setArticleForm(draft)
     setArticleError('')
-    setDrawerOpen(true)
+    setEditorOpen(true)
   }
 
   const openEdit = async (article: KbArticleSummary) => {
@@ -187,7 +187,7 @@ export function AdminKbPage() {
       setBaseline(draft)
       setArticleForm(draft)
       setArticleError('')
-      setDrawerOpen(true)
+      setEditorOpen(true)
     } catch (cause) {
       toast.notifyError(errorMessage(cause, '加载文章失败'))
     } finally {
@@ -225,7 +225,7 @@ export function AdminKbPage() {
         await api(`/api/admin/kb/articles/${articleForm.id}`, { method: 'PUT', body: jsonBody(payload) })
         toast.notify('文章已更新')
       }
-      setDrawerOpen(false)
+      setEditorOpen(false)
       setArticleForm(EMPTY_ARTICLE_FORM)
       await loadArticles()
     } catch (cause) {
@@ -437,11 +437,11 @@ export function AdminKbPage() {
       </section>
 
       <Dialog
-        open={drawerOpen}
+        open={editorOpen}
         title={articleForm.id === null ? '新建文章' : '编辑文章'}
         size="xl"
         busy={formBusy}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => setEditorOpen(false)}
 
         dirty={JSON.stringify(articleForm) !== JSON.stringify(baseline)}
         footer={(cancel) => <>

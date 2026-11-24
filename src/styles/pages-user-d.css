@@ -538,13 +538,3 @@
 .upd-page :is(.inline-alert, .token-strip, .link-strip) {
   border-radius: var(--radius-page-panel);
 }
-
-.app-layout:not(.admin-layout) :is(dialog.confirm-dialog, dialog.edit-drawer, dialog.reset-dialog) {
-  border-radius: var(--radius-page-panel);
-}
-
-@media (width < 768px) {
-  .app-layout:not(.admin-layout) dialog.edit-drawer {
-    border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
-  }
-}

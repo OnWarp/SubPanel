@@ -104,7 +104,7 @@ export function SourcesPage() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<SourceStatusFilter>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [drawer, setDrawer] = useState<'create' | CatalogSource | null>(null)
+  const [editor, setEditor] = useState<'create' | CatalogSource | null>(null)
   const [form, setForm] = useState<SourceForm>(emptyForm)
   const [previewContent, setPreviewContent] = useState('')
   const [preview, setPreview] = useState<PreviewResult | null>(null)
@@ -115,11 +115,11 @@ export function SourcesPage() {
   const [syncError, setSyncError] = useState('')
   const [syncRuns, setSyncRuns] = useState<SyncRun[] | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
-  const [drawerError, setDrawerError] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [batchProgress, setBatchProgress] = useState('')
   const [pendingBatch, setPendingBatch] = useState<PendingBatch | null>(null)
   const createButton = useRef<HTMLButtonElement>(null)
-  const drawerTrigger = useRef<HTMLButtonElement | null>(null)
+  const editorTrigger = useRef<HTMLButtonElement | null>(null)
   const toast = useToast()
 
   const load = useCallback(async () => {
@@ -163,30 +163,30 @@ export function SourcesPage() {
     setSelected((current) => new Set([...current].filter((id) => visible.has(id))))
   }, [filteredSources])
 
-  const closeDrawer = () => {
+  const closeEditor = () => {
     if (busy || previewBusy) return
-    setDrawer(null)
+    setEditor(null)
     setPreview(null)
     setPreviewContent('')
-    setDrawerError('')
+    setEditorError('')
   }
 
   const openCreate = (event: React.MouseEvent<HTMLButtonElement>) => {
-    drawerTrigger.current = event.currentTarget
+    editorTrigger.current = event.currentTarget
     setForm(emptyForm())
     setPreview(null)
     setPreviewContent('')
-    setDrawerError('')
-    setDrawer('create')
+    setEditorError('')
+    setEditor('create')
   }
 
   const openEdit = (source: CatalogSource, trigger: HTMLButtonElement | null) => {
-    drawerTrigger.current = trigger ?? createButton.current
+    editorTrigger.current = trigger ?? createButton.current
     setForm(sourceForm(source))
     setPreview(null)
     setPreviewContent('')
-    setDrawerError('')
-    setDrawer(source)
+    setEditorError('')
+    setEditor(source)
     setSyncRuns(null)
   }
 
@@ -199,10 +199,10 @@ export function SourcesPage() {
     const input = event.currentTarget
     const file = input.files?.[0]
     if (!file) return
-    setDrawerError('')
+    setEditorError('')
     setPreview(null)
     if (file.size > MAX_FILE_BYTES) {
-      setDrawerError('文件超过 5 MiB 大小限制')
+      setEditorError('文件超过 5 MiB 大小限制')
       input.value = ''
       return
     }
@@ -210,7 +210,7 @@ export function SourcesPage() {
       const content = await file.text()
       setForm((current) => ({ ...current, content }))
     } catch {
-      setDrawerError('读取文件失败')
+      setEditorError('读取文件失败')
       input.value = ''
     }
   }
@@ -218,21 +218,21 @@ export function SourcesPage() {
   const previewSource = async () => {
     if (busy || previewBusy) return
     if (!form.content.trim()) {
-      setDrawerError('请先填写来源内容')
+      setEditorError('请先填写来源内容')
       return
     }
     setPreviewBusy(true)
-    setDrawerError('')
+    setEditorError('')
     try {
       const result = await api<PreviewResult>('/api/admin/catalog/preview', {
         method: 'POST',
-        body: jsonBody({ content: form.content, sourceId: drawer === 'create' ? undefined : drawer?.id }),
+        body: jsonBody({ content: form.content, sourceId: editor === 'create' ? undefined : editor?.id }),
       })
       setPreview(result)
       setPreviewContent(form.content)
     } catch (cause) {
       setPreview(null)
-      setDrawerError(errorMessage(cause, '预览来源失败'))
+      setEditorError(errorMessage(cause, '预览来源失败'))
     } finally {
       setPreviewBusy(false)
     }
@@ -240,19 +240,19 @@ export function SourcesPage() {
 
   const saveSource = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!drawer || busy || previewBusy) return
-    setDrawerError('')
+    if (!editor || busy || previewBusy) return
+    setEditorError('')
     if (!form.name.trim()) {
-      setDrawerError('请输入来源名称')
+      setEditorError('请输入来源名称')
       return
     }
-    if (form.type !== 'remote' && (drawer === 'create' || form.content.trim()) && (!preview || previewContent !== form.content)) {
-      setDrawerError('请先预览来源内容')
+    if (form.type !== 'remote' && (editor === 'create' || form.content.trim()) && (!preview || previewContent !== form.content)) {
+      setEditorError('请先预览来源内容')
       return
     }
     setBusy(true)
     try {
-      if (drawer === 'create') {
+      if (editor === 'create') {
         const payload = form.type === 'remote'
           ? {
               type: 'remote' as const,
@@ -265,13 +265,13 @@ export function SourcesPage() {
             }
           : { type: form.type, name: form.name, content: form.content, enabled: form.enabled }
         const result = await api<{ success?: boolean; source?: CatalogSource }>('/api/admin/catalog/sources', { method: 'POST', body: jsonBody(payload) })
-        setDrawer(null)
+        setEditor(null)
         setPreview(null)
         await load()
         if (form.type === 'remote' && result.source) void executeSingleRefresh(result.source)
         else toast.notify('来源已添加')
       } else {
-        const sourceId = drawer?.id
+        const sourceId = editor?.id
         if (!sourceId) throw new Error('来源编辑状态已失效')
         const payload: Record<string, unknown> = { name: form.name, enabled: form.enabled }
         if (form.type === 'remote') {
@@ -293,17 +293,17 @@ export function SourcesPage() {
             throw new Error('刷新周期必须是 15 分钟的正整数倍')
           }
           payload.refreshIntervalMinutes = refreshIntervalMinutes
-          if (form.formatOverride || drawer.sync?.formatOverride) payload.formatOverride = form.formatOverride || null
+          if (form.formatOverride || editor.sync?.formatOverride) payload.formatOverride = form.formatOverride || null
         } else if (form.content.trim()) payload.content = form.content
         await api(`/api/admin/catalog/sources/${sourceId}`, { method: 'PUT', body: jsonBody(payload) })
-        setDrawer(null)
+        setEditor(null)
         setPreview(null)
         await load()
         toast.notify('来源已更新')
       }
     } catch (cause) {
       setWarning('')
-      setDrawerError(errorMessage(cause, '保存来源失败'))
+      setEditorError(errorMessage(cause, '保存来源失败'))
     } finally {
       setBusy(false)
     }
@@ -390,7 +390,7 @@ export function SourcesPage() {
         <ResourceRowActions actions={[
           { label: '编辑', disabled: busy, onClick: (trigger) => openEdit(source, trigger) },
           ...(source.type === 'remote' ? [
-            { label: '刷新', disabled: busy, onClick: (trigger: HTMLButtonElement | null) => { drawerTrigger.current = trigger; syncQueue.current = []; return executeSingleRefresh(source) } },
+            { label: '刷新', disabled: busy, onClick: (trigger: HTMLButtonElement | null) => { editorTrigger.current = trigger; syncQueue.current = []; return executeSingleRefresh(source) } },
           ] : []),
           { label: '删除', danger: true, disabled: busy, onClick: () => { setSelected(new Set([source.id])); askBatch('delete') } },
         ]} />
@@ -422,37 +422,37 @@ export function SourcesPage() {
         </ResourceFooter>
       </section>
 
-      <Dialog open={drawer !== null} title={drawer === 'create' ? '添加来源' : '编辑来源'} size="l" busy={busy || previewBusy} onClose={closeDrawer} returnFocusRef={drawerTrigger}
-        dirty={drawer !== null && JSON.stringify(form) !== JSON.stringify(drawer === 'create' ? emptyForm() : sourceForm(drawer))}
+      <Dialog open={editor !== null} title={editor === 'create' ? '添加来源' : '编辑来源'} size="l" busy={busy || previewBusy} onClose={closeEditor} returnFocusRef={editorTrigger}
+        dirty={editor !== null && JSON.stringify(form) !== JSON.stringify(editor === 'create' ? emptyForm() : sourceForm(editor))}
         footer={(requestClose) => <>
           <button className="button secondary" type="button" onClick={requestClose} disabled={busy || previewBusy}>取消</button>
-          <button className="button primary" type="submit" form="source-editor-form" disabled={busy || previewBusy}>{busy ? '保存中' : drawer === 'create' ? '保存来源' : '保存修改'}</button>
+          <button className="button primary" type="submit" form="source-editor-form" disabled={busy || previewBusy}>{busy ? '保存中' : editor === 'create' ? '保存来源' : '保存修改'}</button>
         </>}
       >
-        {drawer && <form id="source-editor-form" className="form-stack" onSubmit={saveSource}>
+        {editor && <form id="source-editor-form" className="form-stack" onSubmit={saveSource}>
           <label className="field"><span>来源名称</span><Input aria-label="来源名称" value={form.name} maxLength={128} onChange={(event) => updateForm('name', event.currentTarget.value)} required /></label>
-          {drawer === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="drawer-note">类型：{sourceTypeLabel(form.type)}</p>}
+          {editor === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="dialog-note">类型：{sourceTypeLabel(form.type)}</p>}
           {form.type === 'remote' ? <>
-            <label className="field"><span>远程 URL</span><Input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={drawer === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={drawer === 'create'} /></label>
+            <label className="field"><span>远程 URL</span><Input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={editor === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={editor === 'create'} /></label>
             <details className="sources-advanced" onInvalidCapture={(event) => { event.currentTarget.open = true }}>
               <summary>高级设置</summary>
               <label className="field"><span>导入格式</span><FormSelect value={form.formatOverride} onChange={(event) => updateForm('formatOverride', event.currentTarget.value)}><option value="">自动识别</option>{syncFormats.map((format) => <option key={format} value={format}>{formatLabel(format)}</option>)}</FormSelect></label>
-              <label className="field"><span>请求 Headers（JSON）</span><Textarea aria-label="请求 Headers" value={form.headers} onChange={(event) => updateForm('headers', event.currentTarget.value)} placeholder={drawer === 'create' ? '{"User-Agent":"SubPanel"}' : '留空保持当前 Headers；填写 {} 可清空'} rows={3} /></label>
+              <label className="field"><span>请求 Headers（JSON）</span><Textarea aria-label="请求 Headers" value={form.headers} onChange={(event) => updateForm('headers', event.currentTarget.value)} placeholder={editor === 'create' ? '{"User-Agent":"SubPanel"}' : '留空保持当前 Headers；填写 {} 可清空'} rows={3} /></label>
               <label className="field"><span>刷新周期（分钟）</span><Input aria-label="刷新周期" type="number" min={15} step={15} value={form.refreshIntervalMinutes} onChange={(event) => updateForm('refreshIntervalMinutes', event.currentTarget.value)} required /></label>
-              <p className="drawer-note">同步失败时保留上次成功导入的节点</p>
+              <p className="dialog-note">同步失败时保留上次成功导入的节点</p>
             </details>
           </> : <>
-            {form.type === 'file' ? <label className="field"><span>来源文件</span><FileInput aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setDrawerError('读取文件失败')) }} /></label> : null}
-            <label className="field"><span>来源内容</span><Textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={drawer === 'create'} /></label>
-            <div className="drawer-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button></div>
+            {form.type === 'file' ? <label className="field"><span>来源文件</span><FileInput aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setEditorError('读取文件失败')) }} /></label> : null}
+            <label className="field"><span>来源内容</span><Textarea aria-label="来源内容" value={form.content} onChange={(event) => updateForm('content', event.currentTarget.value)} rows={8} placeholder="粘贴订阅或节点内容" required={editor === 'create'} /></label>
+            <div className="dialog-inline-actions"><button className="button secondary" type="button" onClick={previewSource} disabled={previewBusy || busy}><FileUp aria-hidden="true" size={16} />{previewBusy ? '检测中' : '预览'}</button></div>
           </>}
-          {drawer !== 'create' && <details className="sources-advanced">
+          {editor !== 'create' && <details className="sources-advanced">
             <summary onClick={() => {
-              if (drawer.type === 'remote') void api<{ runs: SyncRun[] }>(`/api/admin/catalog/sources/${drawer.id}/sync-runs`)
-                .then(({ runs }) => setSyncRuns(runs)).catch((cause) => setDrawerError(errorMessage(cause, '加载同步记录失败')))
+              if (editor.type === 'remote') void api<{ runs: SyncRun[] }>(`/api/admin/catalog/sources/${editor.id}/sync-runs`)
+                .then(({ runs }) => setSyncRuns(runs)).catch((cause) => setEditorError(errorMessage(cause, '加载同步记录失败')))
             }}>同步详情</summary>
-            <p className="drawer-note">格式：{formatLabel(drawer.detectedFormat)} · 最近同步：{formatDate(drawer.lastSuccessAt)}</p>
-            {drawer.sync?.firstFailureAt && <p>首次失败 {formatDate(drawer.sync.firstFailureAt)} · 连续失败 {drawer.sync.consecutiveFailures} 次</p>}
+            <p className="dialog-note">格式：{formatLabel(editor.detectedFormat)} · 最近同步：{formatDate(editor.lastSuccessAt)}</p>
+            {editor.sync?.firstFailureAt && <p>首次失败 {formatDate(editor.sync.firstFailureAt)} · 连续失败 {editor.sync.consecutiveFailures} 次</p>}
             <ul>{syncRuns?.map((run) => <li key={run.id}>{formatDate(run.started_at)} · {run.status === 'success' ? '成功' : run.status === 'failed' ? '失败' : '已取消'}
               {run.details.httpStatus && ` · HTTP ${run.details.httpStatus}`}{run.details.durationMs !== undefined && ` · ${run.details.durationMs} ms`}
               {run.details.errorCode && ` · ${run.details.errorCode}`}
@@ -461,11 +461,11 @@ export function SourcesPage() {
           </details>}
           <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />
           {preview ? <section className="form-stack" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.diff && <DiffCounts diff={preview.diff} />}{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
-          {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
+          {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
         </form>}
       </Dialog>
 
-      <Dialog open={syncSource !== null} title="同步差异预览" size="l" busy={busy} onClose={closeSync} returnFocusRef={drawerTrigger}
+      <Dialog open={syncSource !== null} title="同步差异预览" size="l" busy={busy} onClose={closeSync} returnFocusRef={editorTrigger}
         footer={(requestClose) => <>
             <button className="button secondary" type="button" disabled={busy} onClick={requestClose}>取消</button>
             <button className="button primary" type="button" disabled={!syncPreview || busy} onClick={confirmSync}>确认同步</button>

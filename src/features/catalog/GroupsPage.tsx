@@ -63,10 +63,10 @@ export function GroupsPage() {
   const [previewClient, setPreviewClient] = useState('mihomo')
   const [previewSubscription, setPreviewSubscription] = useState('')
   const [previewError, setPreviewError] = useState('')
-  const [drawerError, setDrawerError] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [progress, setProgress] = useState('')
-  const drawerTrigger = useRef<HTMLButtonElement>(null)
+  const editorTrigger = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const toast = useToast()
@@ -115,17 +115,17 @@ export function GroupsPage() {
   }, [filteredGroups])
 
   const openCreate = (event: React.MouseEvent<HTMLButtonElement>) => {
-    drawerTrigger.current = event.currentTarget
+    editorTrigger.current = event.currentTarget
     const draft = { ...emptyForm(), nodeOrder: nodes.map((node) => node.id) }
     setBaseline(draft)
     setForm(draft)
-    setDrawerError('')
+    setEditorError('')
     setChoosingNodes(false)
     setEditing('create')
   }
 
   const openEdit = (group: CatalogGroup, trigger: HTMLButtonElement | null) => {
-    drawerTrigger.current = trigger
+    editorTrigger.current = trigger
     const draft = {
       name: group.name,
       rules: group.rules,
@@ -136,7 +136,7 @@ export function GroupsPage() {
     }
     setBaseline(draft)
     setForm(draft)
-    setDrawerError('')
+    setEditorError('')
     setChoosingNodes(false)
     setEditing(group)
   }
@@ -144,7 +144,7 @@ export function GroupsPage() {
   const closeEdit = () => {
     if (!busy) {
       setEditing(null)
-      setDrawerError('')
+      setEditorError('')
     }
   }
 
@@ -197,9 +197,9 @@ export function GroupsPage() {
   const saveGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!editing || busy || choosingNodes || !rulesPreview) return
-    setDrawerError('')
+    setEditorError('')
     if (!form.name.trim()) {
-      setDrawerError('请输入分组名称')
+      setEditorError('请输入分组名称')
       return
     }
     setBusy(true)
@@ -210,7 +210,7 @@ export function GroupsPage() {
       await load()
       toast.notify(editing === 'create' ? '分组已添加' : '分组已更新')
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '保存分组失败'))
+      setEditorError(errorMessage(cause, '保存分组失败'))
     } finally {
       setBusy(false)
     }
@@ -289,7 +289,7 @@ export function GroupsPage() {
         <ResourceFooter count={filteredGroups.length} unit="个分组" />
       </section>
 
-      <Dialog open={editing !== null} title={choosingNodes ? '选择关联节点' : editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} focusStep={choosingNodes ? 'nodes' : 'details'} size={choosingNodes ? 'l' : 'm'} dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={closeEdit} returnFocusRef={drawerTrigger}
+      <Dialog open={editing !== null} title={choosingNodes ? '选择关联节点' : editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} focusStep={choosingNodes ? 'nodes' : 'details'} size={choosingNodes ? 'l' : 'm'} dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={closeEdit} returnFocusRef={editorTrigger}
         footer={(cancel) => choosingNodes ? <button className="button primary" type="button" data-dialog-initial-focus onClick={() => setChoosingNodes(false)}>完成</button> : <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
           <button className="button primary" form="group-editor" type="submit" disabled={busy || !rulesPreview}>{busy ? '保存中' : editing === 'create' ? '保存分组' : '保存修改'}</button>
@@ -315,7 +315,7 @@ export function GroupsPage() {
             </section>
             <details>
               <summary>动态匹配</summary>
-              <p className="drawer-note">动态条件需同时满足，命中结果与来源、指定节点合并，排除节点优先</p>
+              <p className="dialog-note">动态条件需同时满足，命中结果与来源、指定节点合并，排除节点优先</p>
               {(['tags', 'protocols'] as const).map((key) => <label className="field" key={key}><span>{key === 'tags' ? '标签' : '协议'}（逗号分隔）</span>
                 <Input key={editing === 'create' ? 'new' : editing?.id} defaultValue={form.rules?.[key]?.join(', ')} onChange={(event) => {
                   const values = splitRules(event.currentTarget.value)
@@ -330,15 +330,15 @@ export function GroupsPage() {
             <button className="button secondary" type="button" onClick={() => setChoosingNodes(true)}>选择关联节点</button>
           </div>
           <div className="form-stack" hidden={!choosingNodes}>
-            <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id).filter((id) => !current.sourceIds.includes(id)) }))}>反选</button></div><div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><Checkbox type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div></> : <p className="drawer-note">暂无来源</p>}</fieldset>
+            <fieldset className="choice-section"><legend>包含来源</legend>{sources.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id) }))}>全选</button><button className="button secondary" type="button" aria-label="反选包含来源" onClick={() => setForm((current) => ({ ...current, sourceIds: sources.map((source) => source.id).filter((id) => !current.sourceIds.includes(id)) }))}>反选</button></div><div className="choice-list">{sources.map((source) => <label key={source.id} className="choice-row"><Checkbox type="checkbox" aria-label={`包含来源 ${source.name}`} checked={form.sourceIds.includes(source.id)} onChange={() => setForm((current) => ({ ...current, sourceIds: toggle(current.sourceIds, source.id) }))} /><span>{source.name}</span></label>)}</div></> : <p className="dialog-note">暂无来源</p>}</fieldset>
 
-            <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
+            <fieldset className="choice-section"><legend>单独包含节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选单独包含节点" onClick={() => setAllNodeChoices('includedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`单独包含节点 ${node.displayName}`} checked={form.includedNodeIds.includes(node.id)} onChange={() => setNodeChoice('includedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="dialog-note">暂无节点</p>}</fieldset>
 
-            <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="drawer-note">暂无节点</p>}</fieldset>
+            <fieldset className="choice-section"><legend>排除节点</legend>{nodes.length ? <><div className="choice-section-actions"><button className="button secondary" type="button" aria-label="全选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', false)}>全选</button><button className="button secondary" type="button" aria-label="反选排除节点" onClick={() => setAllNodeChoices('excludedNodeIds', true)}>反选</button></div><div className="choice-list">{nodes.map((node) => <label key={node.id} className="choice-row"><Checkbox type="checkbox" aria-label={`排除节点 ${node.displayName}`} checked={form.excludedNodeIds.includes(node.id)} onChange={() => setNodeChoice('excludedNodeIds', node.id)} /><span>{node.displayName}</span></label>)}</div></> : <p className="dialog-note">暂无节点</p>}</fieldset>
 
-            <fieldset className="choice-section"><legend>节点顺序</legend>{form.nodeOrder.length ? <ol className="order-list">{form.nodeOrder.map((id, index) => <li key={id}><span>{nodeNames.get(id) ?? id}</span><span className="row-actions"><button className="icon-button" type="button" aria-label={`上移 ${nodeNames.get(id) ?? id}`} title="上移" disabled={index === 0} onClick={() => moveNode(id, -1)}><ArrowUp aria-hidden="true" size={15} /></button><button className="icon-button" type="button" aria-label={`下移 ${nodeNames.get(id) ?? id}`} title="下移" disabled={index === form.nodeOrder.length - 1} onClick={() => moveNode(id, 1)}><ArrowDown aria-hidden="true" size={15} /></button></span></li>)}</ol> : <p className="drawer-note">暂无节点</p>}</fieldset>
+            <fieldset className="choice-section"><legend>节点顺序</legend>{form.nodeOrder.length ? <ol className="order-list">{form.nodeOrder.map((id, index) => <li key={id}><span>{nodeNames.get(id) ?? id}</span><span className="row-actions"><button className="icon-button" type="button" aria-label={`上移 ${nodeNames.get(id) ?? id}`} title="上移" disabled={index === 0} onClick={() => moveNode(id, -1)}><ArrowUp aria-hidden="true" size={15} /></button><button className="icon-button" type="button" aria-label={`下移 ${nodeNames.get(id) ?? id}`} title="下移" disabled={index === form.nodeOrder.length - 1} onClick={() => moveNode(id, 1)}><ArrowDown aria-hidden="true" size={15} /></button></span></li>)}</ol> : <p className="dialog-note">暂无节点</p>}</fieldset>
           </div>
-          {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
+          {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
         </form>
       </Dialog>
 

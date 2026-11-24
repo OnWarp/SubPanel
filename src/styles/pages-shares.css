@@ -1,5 +1,5 @@
 /*
- * Share drawer and public share page. Every class is sh- prefixed.
+ * Share dialog and public share page. Every class is sh- prefixed.
  * Shared primitives stay in components.css.
  */
 
@@ -19,7 +19,6 @@
   gap: var(--space-4);
 }
 
-.sh-drawer-lead,
 .sh-reveal,
 .sh-form,
 .sh-filters,

@@ -3,7 +3,7 @@ import { Select, type SelectOption } from './Select'
 
 type InputProps = ComponentPropsWithRef<'input'>
 
-/** Drawer and dialog forms: 12px rhythm and a 460px cap on short fields. */
+/** Dialog forms: 12px rhythm and a 460px cap on short fields. */
 export function FormStack({ children, className = '' }: { children: ReactNode; className?: string }) {
   return <div className={`form-stack sp-form-stack ${className}`.trim()}>{children}</div>
 }
