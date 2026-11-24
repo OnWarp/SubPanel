@@ -19,7 +19,6 @@
   gap: var(--space-4);
 }
 
-.sh-reveal,
 .sh-form,
 .sh-filters,
 .sh-list {
@@ -36,17 +35,6 @@
   background: transparent;
 }
 
-.sh-reveal {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-inset);
-  background: var(--color-surface-subtle);
-}
-
-.sh-reveal p,
 .sh-hint,
 .sh-switches legend,
 .sh-list-title {
@@ -64,16 +52,7 @@
   font-weight: 600;
 }
 
-.sh-reveal-line {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .sh-form input,
-.sh-reveal input,
 .sh-manual input {
   width: 100%;
   min-width: 0;
@@ -85,7 +64,6 @@
   color: var(--color-text);
 }
 
-.sh-reveal input,
 .sh-manual input {
   flex: 1 1 180px;
   font-family: var(--font-mono);
@@ -186,6 +164,12 @@
 
 .sh-state {
   min-width: 0;
+}
+
+.sh-state > .empty-state {
+  padding: var(--space-3) 0;
+  border: 0;
+  background: transparent;
 }
 
 .auth-page:has(.sh-public) .auth-panel {
@@ -296,7 +280,6 @@
   }
 
   .sh-form input,
-  .sh-reveal input,
   .sh-manual input,
   .sh-share-table .sh-row-actions .button,
   .auth-panel .sh-client-actions .button {
@@ -305,7 +288,6 @@
 }
 
 @media (max-width: 480px) {
-  .sh-reveal-line .button,
   .sh-client .sh-client-actions {
     width: 100%;
   }
