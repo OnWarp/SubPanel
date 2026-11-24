@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../src/theme/ThemeProvider', () => ({
@@ -14,11 +14,15 @@ import { RegisterPage } from '../../../src/features/accounts/RegisterPage'
 import { MySubscriptionsPage } from '../../../src/features/delivery/MySubscriptionsPage'
 import { formatTrafficGb, homeTrafficLine } from '../../../src/features/user/home-traffic'
 import { HomeDashboard, HomePage } from '../../../src/features/user/HomePage'
-import { MinePage } from '../../../src/features/user/MinePage'
+import { MinePage, MineSettingsPage } from '../../../src/features/user/MinePage'
 import { UserNodesFilters, UserNodesFooter, UserNodesTable, type UserNode } from '../../../src/features/user/MyNodesPage'
 
 function page(node: ReactNode) {
   return renderToStaticMarkup(createElement(MemoryRouter, null, createElement(SessionProvider, null, node)))
+}
+
+function sectionPage(section: string) {
+  return renderToStaticMarkup(createElement(MemoryRouter, { initialEntries: [`/me/${section}`] }, createElement(SessionProvider, null, createElement(Routes, null, createElement(Route, { path: '/me/:section', element: createElement(MineSettingsPage) })))))
 }
 
 const node: UserNode = {
@@ -185,19 +189,27 @@ describe('user page presentation', () => {
     const html = page(createElement(MinePage))
     expect(html).toContain('upd-mine')
     expect(html).toContain('个人中心')
-    expect(html).toContain('管理订阅')
+    expect(html).toContain('订阅信息')
     expect(html).toContain('账户信息')
     expect(html).toContain('通知设置')
-    expect(html).toContain('到期提醒')
-    expect(html).toContain('仅在此浏览器生效，到期前 7 天在首页提醒')
+    expect(html).toContain('href="/me/security"')
+    expect(html).toContain('href="/me/support"')
     expect(html).not.toContain('权益与计划')
-    expect(html).toContain('aria-label="帮助与支持"')
-    expect(html).toContain('href="/notices"')
-    expect(html).toContain('href="/kb"')
-    expect(html).toContain('href="/tickets"')
-    expect(html).toContain('用户名不可修改，新密码须为 12 至 128 个字符')
-    expect(html).toContain('退出全部设备')
     expect(html).not.toContain('注销')
     expect(html).not.toContain('删除账户')
+    const notifications = sectionPage('notifications')
+    expect(notifications).toContain('到期提醒')
+    expect(notifications).toContain('仅在此浏览器生效，到期前 7 天在首页提醒')
+    const security = sectionPage('security')
+    expect(security).toContain('用户名不可修改，新密码须为 12 至 128 个字符')
+    expect(security).toContain('退出全部设备')
+    expect(security).not.toContain('注销')
+    expect(security).not.toContain('删除账户')
+    const support = sectionPage('support')
+    expect(support).toContain('aria-label="帮助与支持"')
+    expect(support).toContain('href="/notices"')
+    expect(support).toContain('href="/kb"')
+    expect(support).toContain('href="/tickets"')
+    expect(support).toContain('href="/apps"')
   })
 })

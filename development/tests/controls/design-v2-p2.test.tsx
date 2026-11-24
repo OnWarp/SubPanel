@@ -10,8 +10,8 @@ describe('design v2 form and detail contracts', () => {
     const html = renderToStaticMarkup(<SubscriptionDetailRows
       user="alice" groups="默认分组"
       plan={{ name: '月付', traffic: '100 GB', speed: '不限', devices: '3' }}
-      links={[{ value: 'mihomo', label: 'Mihomo' }]}
-      client="mihomo" link="https://example.test/sub/token" linkError=""
+      links={[{ client: 'mihomo', label: 'Mihomo', link: 'https://example.test/sub/token' }]}
+      client="mihomo" primaryLink="https://example.test/sub/token" linkError=""
       onClient={() => {}} onCopied={() => {}} onCopyError={() => {}} onShowQr={() => {}}
       bindingLabel="继承默认" templateName="办公分流" version="v3"
       bindingError="" bindingLoading={false}
@@ -23,7 +23,7 @@ describe('design v2 form and detail contracts', () => {
     expect(html).toContain('基本信息')
     expect(html).toContain('客户端链接')
     expect(html).toContain('class="subscription-link-row"')
-    expect(html).toContain('class="link-url"')
+    expect(html).toContain('class="link-url del-link-text"')
     expect(html).toContain('附加配置')
     expect(html).toContain('兼容诊断')
     expect(html).not.toContain('subscription-detail-fields')

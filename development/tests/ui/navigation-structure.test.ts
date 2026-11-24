@@ -238,6 +238,10 @@ describe('navigation ownership and route compatibility', () => {
       expect(readFileSync(new URL('../../../src/app/router.tsx', import.meta.url), 'utf8')).toContain(`path="${path}" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace />`)
       return
     }
+    if (path === '/account') {
+      expect(html).toContain('data-redirect="/me"')
+      return
+    }
     expect(html).toContain('workspace-content')
     const expected = userSidebar.map(item => item.to)
     expect(links(nav(html, '主导航'))).toEqual(expected)
@@ -248,7 +252,8 @@ describe('navigation ownership and route compatibility', () => {
     }
   })
   it('places support links in Mine, downloads on subscriptions and the home CTA on subscriptions', () => {
-    expect(links(nav(render('/me', 'user'), '帮助与支持'))).toEqual(['/notices', '/kb', '/tickets', '/apps'])
+    expect(links(nav(render('/me/support', 'user'), '帮助与支持'))).toEqual(['/notices', '/kb', '/tickets', '/apps'])
+    expect(render('/me', 'user')).toContain('href="/me/support"')
     const home = render('/home', 'user')
     expect(home).toContain('打开订阅')
     expect(home).not.toContain('复制订阅链接')
