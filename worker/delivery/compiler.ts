@@ -87,9 +87,9 @@ export type ZeroNodeReason = 'disabled' | 'unassigned' | 'pending' | 'expired' |
 
 export async function renderResolvedSubscription(
   env: DataEnv,
-  subscription: Subscription,
+  subscription: { id: string | null; revision: number },
   client: RenderClient,
-  context: Awaited<ReturnType<typeof resolveEntitlement>>,
+  context: Pick<Awaited<ReturnType<typeof resolveEntitlement>>, 'nodes' | 'catalog' | 'speed' | 'zeroNodeReason'>,
   now: string,
   previewTemplate?: Template,
   singboxOptions?: Parameters<typeof compileSingBoxConfig>[2],

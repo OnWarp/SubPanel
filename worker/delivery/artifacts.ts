@@ -38,7 +38,7 @@ export async function readCurrentArtifact(
 
 const catalogCache = new WeakMap<D1Database, CatalogSnapshot>()
 
-async function readArtifactCatalog(env: DataEnv): Promise<CatalogSnapshot> {
+export async function readArtifactCatalog(env: DataEnv): Promise<CatalogSnapshot> {
   const keys = [CATALOG_SETTING_KEYS.revision, CATALOG_SETTING_KEYS.updatedAt]
   const matches = (snapshot: CatalogSnapshot, settings: Map<string, unknown>) =>
     settings.get(keys[0]) === snapshot.revision && settings.get(keys[1]) === snapshot.updatedAt

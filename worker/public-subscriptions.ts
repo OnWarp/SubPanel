@@ -11,9 +11,9 @@ import { loadSubscriptionArtifact } from './delivery/artifacts.js'
 import { isPublicSubscriptionCurrent, readDeliverySubscription } from './delivery/d1-repository.js'
 import { allowSubscriptionFetch } from './delivery/public-rate-limit.js'
 
-const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
+export const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
 const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
-const clientAliases: Record<string, string> = {
+export const clientAliases: Record<string, string> = {
   clash: 'mihomo',
   'clash-meta': 'mihomo',
   stash: 'mihomo',
@@ -24,7 +24,7 @@ const clientAliases: Record<string, string> = {
   'neko-box': 'nekobox',
 }
 
-function clientFromUserAgent(userAgent: string): string {
+export function clientFromUserAgent(userAgent: string): string {
   const value = userAgent.toLowerCase()
   if (value.includes('mihomo') || value.includes('clash') || value.includes('stash')) return 'mihomo'
   if (value.includes('sing-box') || value.includes('singbox') || value.includes('karing')) return 'singbox'

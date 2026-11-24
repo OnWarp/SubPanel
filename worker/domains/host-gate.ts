@@ -8,7 +8,7 @@ import { getGateState } from './service.js'
 // clients; everything else is panel-class. Keep in sync with the public
 // share API paths in worker/shares/routes.ts.
 export function isSubscriptionClassPath(pathname: string): boolean {
-  if (pathname === '/sub' || pathname.startsWith('/sub/')) return true
+  if (pathname === '/sub' || pathname.startsWith('/sub/') || pathname === '/s' || pathname.startsWith('/s/')) return true
   return /^\/api\/shares\/(?:[^/?#]+)\/(?:meta|verify|export)$/.test(pathname)
 }
 

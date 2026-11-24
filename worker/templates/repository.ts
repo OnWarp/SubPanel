@@ -101,7 +101,7 @@ export async function getDefault(db: D1Database) {
   ).first<TemplateDefaultRow>() ?? { id: 1, template_id: null, revision: 1, updated_at: '1970-01-01T00:00:00.000Z' }
 }
 
-async function getMihomoTemplate(db: D1Database, subscriptionId: string) {
+async function getMihomoTemplate(db: D1Database, subscriptionId: string | null) {
   const row = await db.prepare(`
     SELECT CASE COALESCE(b.mode, 'inherit')
              WHEN 'specific' THEN b.template_id WHEN 'inherit' THEN d.template_id END AS selected_id,
@@ -135,7 +135,7 @@ async function getMihomoTemplate(db: D1Database, subscriptionId: string) {
   return { ...row, target_version: null, compiled_json: null }
 }
 
-export async function getEffectiveTemplate(db: D1Database, subscriptionId: string, platform: 'mihomo' | 'singbox' = 'mihomo') {
+export async function getEffectiveTemplate(db: D1Database, subscriptionId: string | null, platform: 'mihomo' | 'singbox' = 'mihomo') {
   if (platform === 'mihomo') return getMihomoTemplate(db, subscriptionId)
   const row = await db.prepare(`
     WITH binding AS (

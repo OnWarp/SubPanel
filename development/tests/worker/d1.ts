@@ -1,3 +1,4 @@
+import unifiedSql from '../../../migrations/0026_unified_subscription.sql?raw'
 import coreGSql from '../../../migrations/0025_core_g.sql?raw'
 import subscriptionV2P3Sql from '../../../migrations/0023_subscription_v2_p3.sql?raw'
 import compileJobsSql from '../../../migrations/0024_compile_jobs.sql?raw'
@@ -295,4 +296,14 @@ export async function emptyDatabase(db: D1Database = env.DB): Promise<void> {
     'PRAGMA foreign_keys = ON',
   ].join(';\n')
   await db.exec(sql)
+}
+
+export async function applyUnifiedMigration(db: D1Database = env.DB) {
+  await applyD1Migrations(db, [{
+    name: '0026_unified_subscription.sql',
+    queries: [
+      ...splitSqlStatements(unifiedSql.replace(triggerPattern, '')),
+      ...(unifiedSql.match(triggerPattern) ?? []),
+    ],
+  }])
 }

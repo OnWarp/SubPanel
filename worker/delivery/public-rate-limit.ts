@@ -1,9 +1,9 @@
 import { windowStartFor } from '../accounts/rate-limit.js'
 import { hashToken } from '../platform/crypto.js'
 
-export async function allowSubscriptionFetch(db: D1Database, scope: 'address' | 'subscription' | 'global', subject: string, override?: number) {
+export async function allowSubscriptionFetch(db: D1Database, scope: 'address' | 'subscription' | 'global', subject: string, override?: number, namespace = 'subscription') {
   const limit = override ?? (scope === 'address' ? 240 : 120)
-  const bucket = `subscription_${scope}`
+  const bucket = `${namespace}_${scope}`
   const window = windowStartFor(Math.floor(Date.now() / 1000), 60)
   const key = scope === 'global' ? 'all' : await hashToken(`${bucket}:${subject}`)
   const row = await db.prepare(`INSERT INTO rate_limits (bucket, subject, window_start, count, expires_at)

@@ -169,6 +169,12 @@ function addVersion(db: AppDatabase, id: string, number: number, config: Templat
 }
 
 function mapVersionError(error: unknown): never {
+  if (error instanceof Error && error.message.includes('ENTITLEMENT_IN_USE')) {
+    throw apiError(409, 'ENTITLEMENT_IN_USE', '请先处理模板的授权关系')
+  }
+  if (error instanceof Error && error.message.includes('REDEMPTION_PRIVATE_TEMPLATE')) {
+    throw apiError(409, 'REDEMPTION_PRIVATE_TEMPLATE', '专属模板不可兑换')
+  }
   if (error instanceof Error && error.message.includes('ENTITLEMENT_GROUP_MISSING')) {
     throw apiError(422, 'ENTITLEMENT_GROUP_MISSING', '所选分组已删除，请重新选择')
   }
@@ -178,13 +184,17 @@ function mapVersionError(error: unknown): never {
   throw error
 }
 
-export async function createEntitlementTemplate(db: AppDatabase, input: TemplateInput, actor: string, status: 'enabled' | 'disabled' = 'enabled') {
+export async function createEntitlementTemplate(db: AppDatabase, input: TemplateInput, actor: string, status: 'enabled' | 'disabled' = 'enabled', ownerUserId?: string) {
+  if (ownerUserId && input.allowRedemption) {
+    throw apiError(422, 'REDEMPTION_PRIVATE_TEMPLATE', '专属模板不可兑换')
+  }
   await assertAvailableNodes(db, input.config.nodeIds)
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
   await batch(db, [
     db.prepare(`INSERT INTO entitlement_templates (id, name, description, status, allow_redemption, revision, created_by, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`).bind(id, input.name, input.description, status, Number(input.allowRedemption), actor, now, now),
+    ...(ownerUserId ? [db.prepare('INSERT INTO private_entitlement_templates (template_id,owner_user_id) VALUES (?,?)').bind(id, ownerUserId)] : []),
     addVersion(db, id, 1, input.config, actor, now),
   ]).catch(mapVersionError)
   return getEntitlementTemplate(db, id)
