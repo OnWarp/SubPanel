@@ -20,7 +20,7 @@ type Preview = {
 }
 const policyLabels = { groups: '动态分组', nodes: '指定节点', mixed: '动态分组与指定节点' }
 
-export function PersonalRedemptions() {
+export function PersonalRedemptions({ unified = false, onRedeemed, onPending }: { unified?: boolean; onRedeemed?: () => void; onPending?: (busy: boolean) => void } = {}) {
   const [code, setCode] = useState('')
   const [pending, setPending] = useState<{ preview: Preview; idempotencyKey: string }>()
   const [receipt, setReceipt] = useState<Receipt>()
@@ -33,6 +33,7 @@ export function PersonalRedemptions() {
     event.preventDefault()
     if (busy) return
     setBusy(true)
+    onPending?.(true)
     setMessage('')
     setReceipt(undefined)
     try {
@@ -50,12 +51,14 @@ export function PersonalRedemptions() {
         setPending(undefined)
         setHistoryPage(1)
         history.reload()
+        onRedeemed?.()
       }
     } catch (error) {
       setMessage(errorText(error))
       if (error instanceof ApiClientError && error.code === 'REDEMPTION_CODE_UNAVAILABLE') setPending(undefined)
     } finally {
       setBusy(false)
+      onPending?.(false)
     }
   }
 
@@ -65,12 +68,12 @@ export function PersonalRedemptions() {
       <form className="sp-form-stack" onSubmit={(event) => { void submit(event) }}>
         {pending ? <>
           <dl className="key-value-rows">
-            <div><dt>订阅</dt><dd>{pending.preview.name}</dd></div>
+            {!unified && <div><dt>订阅</dt><dd>{pending.preview.name}</dd></div>}
             <div><dt>有效期</dt><dd>{pending.preview.duration.value} {TERM_UNITS[pending.preview.duration.unit]}</dd></div>
             <div><dt>流量额度</dt><dd>{pending.preview.quotaBytes === null ? '不限' : `${pending.preview.quotaBytes / BYTES_PER_GIB} GiB`}</dd></div>
             <div><dt>节点策略</dt><dd>{policyLabels[pending.preview.nodePolicy]}</dd></div>
           </dl>
-          <p>确认后会新增一份独立订阅</p>
+          {!unified && <p>确认后会新增一份独立订阅</p>}
         </> : <FormField label="兑换码" htmlFor="personal-redemption-code">
           <Input id="personal-redemption-code" required autoComplete="off" spellCheck={false}
             maxLength={100} value={code} disabled={busy} onChange={(event) => setCode(event.target.value)}
@@ -86,7 +89,7 @@ export function PersonalRedemptions() {
             onClick={() => { setPending(undefined); setMessage('') }}>返回修改</button> : null}
         </FormActions>
       </form>
-      {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{`已兑换 ${receipt.name}`}</StatusMessage><Link to={receipt.templateId ? '/subscriptions' : `/subscriptions?subscription=${receipt.id}`}>查看订阅</Link></div> : null}
+      {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{unified ? '兑换成功' : `已兑换 ${receipt.name}`}</StatusMessage>{!unified && <Link to={receipt.templateId ? '/subscriptions' : `/subscriptions?subscription=${receipt.id}`}>查看订阅</Link>}</div> : null}
     </section>
     <section className="data-section user-account-card redemption-section" aria-label="兑换历史">
       <h2>兑换历史</h2>
@@ -97,8 +100,8 @@ export function PersonalRedemptions() {
           page: historyPage, pageCount: Math.ceil(history.data.total / history.data.pageSize), onPageChange: setHistoryPage, compact: true,
         } : undefined}
         columns={[
-          { key: 'subscriptionName', header: '订阅', render: (row) => row.hasSubscription
-            ? <Link to={`/subscriptions?subscription=${row.subscriptionId}`}>{row.subscriptionName}</Link> : row.subscriptionName },
+          ...(unified ? [] : [{ key: 'subscriptionName', header: '订阅', render: (row: RedemptionRecord) => row.hasSubscription
+            ? <Link to={`/subscriptions?subscription=${row.subscriptionId}`}>{row.subscriptionName}</Link> : row.subscriptionName }]),
           { key: 'redeemedAt', header: '兑换时间', render: (row) => new Date(row.redeemedAt).toLocaleString() },
           { key: 'expiresAt', header: '发放时的到期时间', render: (row) => row.expiresAt === null ? '永久有效' : formatExpiryTime(row.expiresAt) },
         ]} />}

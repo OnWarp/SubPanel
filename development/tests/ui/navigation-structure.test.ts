@@ -35,10 +35,10 @@ function mobileDock(html: string) {
 }
 const desktopLabels = ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置']
 const mobileDockLabels = ['概览', '节点管理', '订阅管理', '用户管理']
-const mobileDockRoutes = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users']
+const mobileDockRoutes = ['/dashboard', '/catalog/nodes', '/delivery/templates', '/users']
 
 describe('navigation ownership and route compatibility', () => {
-  const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users', '/delivery/tickets', '/system/registration']
+  const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/templates', '/users', '/delivery/tickets', '/system/registration']
   it('renders six ungrouped desktop destinations and a single-row mobile dock', () => {
     const html = render('/invites')
     const sidebar = nav(html, '主导航')
@@ -64,7 +64,7 @@ describe('navigation ownership and route compatibility', () => {
 
   it.each([
     ['节点管理导航', '/catalog/nodes', ['/catalog/nodes', '/catalog/sources', '/catalog/groups']],
-    ['订阅管理导航', '/delivery/subscriptions', ['/delivery/subscriptions', '/delivery/templates', '/delivery/conversions', '/delivery/shares', '/plans']],
+    ['订阅管理导航', '/delivery/templates', ['/delivery/templates', '/delivery/conversions', '/delivery/shares', '/delivery/redemptions']],
     ['用户管理子页', '/users', ['/users', '/invites', '/users/recycle-bin']],
     ['运营管理导航', '/delivery/tickets', ['/delivery/tickets', '/operations/notices', '/kb/manage', '/catalog/apps']],
     ['系统设置导航', '/system/registration', ['/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs']],
@@ -88,9 +88,9 @@ describe('navigation ownership and route compatibility', () => {
     }
   })
 
-  it('keeps redemption management outside the subscription tabs and primary navigation', () => {
+  it('keeps redemption management under subscription navigation', () => {
     const html = render('/delivery/redemptions')
-    expect(nav(html, '订阅管理导航')).toBe('')
+    expect(links(nav(html, '订阅管理导航'))).toContain('/delivery/redemptions')
     expect(links(nav(html, '主导航'))).not.toContain('/delivery/redemptions')
     expect(links(mobileDock(html))).not.toContain('/delivery/redemptions')
   })
@@ -110,7 +110,7 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each([
     ['/dashboard', '概览'], ['/catalog/nodes', '节点'], ['/catalog/sources', '来源'], ['/catalog/groups', '分组'],
-    ['/delivery/subscriptions', '订阅'], ['/delivery/shares', '分享管理'], ['/plans', '订阅计划'],
+    ['/delivery/templates', '权益模板'], ['/delivery/shares', '分享管理'], ['/users/usr_2', '用户详情'],
     ['/delivery/tickets', '工单'], ['/delivery/tickets/tkt_1', '工单'], ['/kb/manage', '知识库'],
     ['/catalog/apps', '客户端下载'], ['/operations/notices', '公告'], ['/audit-logs', '审计日志'], ['/account', '账户安全'],
   ])('keeps administrator route %s reachable', (path, marker) => {
@@ -128,6 +128,9 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each([
     ['/system', '/system/registration'],
+    ['/delivery/subscriptions', '/users'],
+    ['/delivery/subscriptions/old', '/users'],
+    ['/plans', '/delivery/templates'],
     ['/system?section=admin-mail&keep=1', '/system/mail?keep=1'],
     ['/system?tab=domain&subscription=sub_1', '/system/distribution?subscription=sub_1'],
     ['/system#share', '/system/distribution'],
@@ -146,7 +149,7 @@ describe('navigation ownership and route compatibility', () => {
     expect(grid?.match(/class="sp-stat-card sp-stat-body"/g)).toHaveLength(7)
   })
   it.each([
-    ['/plans', '订阅计划'],
+    ['/delivery/templates', '权益模板'],
     ['/delivery/tickets', '工单'],
     ['/operations/notices', '公告'],
     ['/kb/manage', '知识库管理'],
@@ -259,7 +262,7 @@ describe('navigation ownership and route compatibility', () => {
     expect(home).not.toContain('复制订阅链接')
     expect(home).not.toContain('重置订阅')
     expect(render('/me', 'user')).not.toContain('重置订阅')
-    expect(render('/subscriptions', 'user')).toContain('下载客户端')
+    expect(render('/subscriptions', 'user')).toContain('正在加载订阅')
   })
   it.each(['/users', '/invites', '/users/recycle-bin', '/system', '/system/distribution', '/catalog/apps', '/operations/notices', '/audit-logs', '/delivery/tickets/tkt_1'])('retains administrator protection on %s', path => {
     expect(render(path, 'user')).not.toContain('workspace-content')

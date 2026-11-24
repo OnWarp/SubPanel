@@ -20,7 +20,7 @@ import { clientIdSchema } from './schema.js'
 import { verifyShadowUser } from './shadow.js'
 import { DELIVERY_D1_READY_KEY, isModuleReady } from '../db/module-switch.js'
 import { loadUnifiedArtifact } from './unified-artifacts.js'
-import { accountAvailable, readUserAccess, requireUnifiedSubscription, resetUserToken, revealUserToken, subscriptionNotFound } from './user-access.js'
+import { accountAvailable, prepareUserAccess, readUserAccess, requireUnifiedSubscription, resetUserToken, revealUserToken, subscriptionNotFound, unifiedOperationsEnabled } from './user-access.js'
 
 const resetInput = z.strictObject({ expectedRevision: z.number().int().positive() })
 const removeInput = resetInput.extend({ requestId: z.string().min(1).max(128) })
@@ -41,19 +41,30 @@ function changesView(changes: BindingChange[]) {
   }))
 }
 
-async function privateResponse(c: Context<AppEnv>, next: () => Promise<void>, publicAccess = false) {
+async function privateResponse(c: Context<AppEnv>, next: () => Promise<void>, publicAccess = false, signedIn = false) {
   c.header('Cache-Control', 'private, no-store')
   c.header('Referrer-Policy', 'no-referrer')
-  await requireUnifiedSubscription(c.env.DB, publicAccess)
+  try {
+    await requireUnifiedSubscription(c.env.DB, publicAccess)
+  } catch (error) {
+    if (signedIn && error instanceof ApiError && error.status === 404) {
+      throw apiError(404, 'UNIFIED_SUBSCRIPTION_DISABLED', '统一订阅暂未开放')
+    }
+    throw error
+  }
   await next()
 }
 
 export const unifiedUserRoutes = new Hono<AppEnv>()
-unifiedUserRoutes.use('*', requireAuth, (c, next) => privateResponse(c, next, true))
+unifiedUserRoutes.use('*', requireAuth, (c, next) => privateResponse(c, next, true, true))
 
 unifiedUserRoutes.get('/', async c => {
-  const catalog = await readArtifactCatalog(c.env)
-  const result = await resolveUserSubscription(c.env.DB, c.get('principal').id, Date.now(), catalog)
+  const userId = c.get('principal').id
+  const access = await readUserAccess(c.env.DB, { userId })
+  if (accountAvailable(access) && access.revision === null) {
+    await (await prepareUserAccess(c.env, userId, new Date().toISOString())).run()
+  }
+  const result = await resolveUserSubscription(c.env.DB, userId, Date.now(), await readArtifactCatalog(c.env))
   const token = result.diagnostics.length ? null : await revealUserToken(c.env, result.access)
   const origin = token && (await primaryDomainOriginSafe(c.env.DB, 'subscription') ?? new URL(c.req.url).origin)
   const [enabledFormats, shareSettings] = await Promise.all([listEnabledPlatforms(c.env.DB), readShareSettings(c.env)])
@@ -66,9 +77,16 @@ unifiedUserRoutes.get('/', async c => {
     permanent: result.permanent,
     subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
     supportedFormats,
+    importPlatforms: enabledFormats.filter(({ platform }) => platform !== 'auto'),
     shareEnabled: shareSettings.enabled && shareSettings.createAllowed,
     hasAvailableNodes: result.nodes.length > 0,
+    nodeCount: result.nodes.length,
   })
+})
+
+unifiedUserRoutes.get('/nodes', async c => {
+  const result = await resolveUserSubscription(c.env.DB, c.get('principal').id, Date.now(), await readArtifactCatalog(c.env))
+  return c.json({ nodes: result.nodes.map(node => ({ name: node.displayName, protocol: node.protocol })) })
 })
 
 unifiedUserRoutes.post('/reset-token', async c => {
@@ -149,6 +167,23 @@ unifiedAdminRoutes.post(`${bindings}/replace`, async c => {
 unifiedAdminRoutes.post(`${subscription}/reset-token`, async c => {
   const input = await readJson(c, resetInput)
   return c.json(await resetUserToken(c.env, c.req.param('id'), input.expectedRevision, c.get('principal').id))
+})
+
+unifiedAdminRoutes.get(`${subscription}/summary`, async c => {
+  const result = await resolveUserSubscription(c.env.DB, c.req.param('id'), Date.now(), await readArtifactCatalog(c.env))
+  if (!result.access) throw subscriptionNotFound()
+  const token = await unifiedOperationsEnabled(c.env.DB) && !result.diagnostics.length
+    ? await revealUserToken(c.env, result.access) : null
+  const origin = token && (await primaryDomainOriginSafe(c.env.DB, 'subscription') ?? new URL(c.req.url).origin)
+  const logs = await c.env.DB.prepare(`SELECT id, action, created_at AS createdAt FROM audit_logs
+    WHERE target_type='user' AND target_id=? ORDER BY created_at DESC, id DESC LIMIT 50`)
+    .bind(result.access.user_id).all<{ id: string; action: string; createdAt: string }>()
+  return c.json({
+    expiresAt: iso(result.expiresAt), permanent: result.permanent,
+    nodes: result.nodes.map(node => ({ name: node.displayName, protocol: node.protocol })),
+    subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
+    logs: logs.results,
+  })
 })
 
 unifiedAdminRoutes.get(`${subscription}/preview`, async c => {

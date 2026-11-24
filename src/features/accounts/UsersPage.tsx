@@ -1,6 +1,6 @@
 import { Button } from '../../ui/Button'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { UserSubscriptionPlan } from '../delivery/UserSubscriptionPlan'
+import { Link, useNavigate } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
@@ -67,7 +67,7 @@ function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
     ? { key: 'disable', label: '停用', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
     : { key: 'enable', label: '启用', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
   items.push(
-    { key: 'subscription-plan', label: '管理订阅计划' },
+    { key: 'subscription-plan', label: '订阅授权' },
     { key: 'soft-delete', label: '移入回收站', danger: true },
   )
   return items
@@ -184,7 +184,8 @@ export function UsersDirectory({
       header: '用户',
       render: (user) => (
         <div className="usr-person">
-          <strong className="usr-name">{user.username}</strong>
+          {view === 'active' ? <Link className="usr-name" to={`/users/${encodeURIComponent(user.id)}`}>{user.username}</Link>
+            : <strong className="usr-name">{user.username}</strong>}
           <span className="usr-meta">{userSecondary(user)}</span>
         </div>
       ),
@@ -314,7 +315,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [batchConfirm, setBatchConfirm] = useState<Exclude<BatchKind, 'enable'> | null>(null)
   const [batchProgress, setBatchProgress] = useState('')
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
-  const [subscriptionPlanUser, setSubscriptionPlanUser] = useState<UserSummary | null>(null)
+  const navigate = useNavigate()
   const toast = useToast()
   const usersRequestSeq = useRef(0)
   const dialogTrigger = useRef<HTMLElement>(null)
@@ -573,7 +574,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     else if (action === 'promote') setConfirmAction({ kind: 'promote', user })
     else if (action === 'enable') void setEnabled(user, true)
     else if (action === 'disable') void setEnabled(user, false)
-    else if (action === 'subscription-plan') setSubscriptionPlanUser(user)
+    else if (action === 'subscription-plan') navigate(`/users/${encodeURIComponent(user.id)}?tab=subscription`)
     else if (action === 'soft-delete') setConfirmAction({ kind: 'soft-delete', user })
     else if (action === 'restore') void restoreUser(user)
     else setConfirmAction({ kind: 'purge', user })
@@ -641,19 +642,6 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         onBatch={requestBatch}
         batchProgress={batchProgress}
       />
-      {subscriptionPlanUser ? (
-        <UserSubscriptionPlan
-          key={subscriptionPlanUser.id}
-          userId={subscriptionPlanUser.id}
-          username={subscriptionPlanUser.username}
-          showSummary={false}
-          active
-          returnFocusRef={dialogTrigger}
-          onSave={() => { void load() }}
-          onActiveChange={(next) => { if (!next) setSubscriptionPlanUser(null) }}
-        />
-      ) : null}
-
       <Dialog
         open={editUser !== null}
         returnFocusRef={dialogTrigger}

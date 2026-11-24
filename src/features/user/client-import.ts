@@ -34,3 +34,7 @@ const preferredClients: Record<ImportDevice, readonly string[]> = {
 export function prefersClientImport(device: ImportDevice, client: string): boolean {
   return preferredClients[device].includes(client)
 }
+
+export function subscriptionFormatLink(base: string, format: string): string {
+  return `${base}/${encodeURIComponent(format)}`
+}

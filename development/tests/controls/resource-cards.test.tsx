@@ -6,7 +6,7 @@ import { GroupsPage } from '../../../src/features/catalog/GroupsPage'
 import { NodesPage } from '../../../src/features/catalog/NodesPage'
 import { SourcesPage } from '../../../src/features/catalog/SourcesPage'
 import { AdminSharesPage } from '../../../src/features/delivery/AdminSharesPage'
-import { SubscriptionsPage } from '../../../src/features/delivery/SubscriptionsPage'
+import { EntitlementTemplatesPage } from '../../../src/features/delivery/EntitlementTemplatesPanel'
 import { DataTable } from '../../../src/ui/DataTable'
 import { PageHeader } from '../../../src/ui/PageHeader'
 import { Pagination } from '../../../src/ui/Pagination'
@@ -35,16 +35,12 @@ describe('admin resource list cards', () => {
     expect(card.includes('aria-label="下一页"')).toBe(paged)
   })
 
-  it('renders one subscriptions heading with an accessible list and separate add action', () => {
-    const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><SubscriptionsPage /></ToastProvider></MemoryRouter>)
+  it('renders one entitlement heading while loading templates', () => {
+    const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><EntitlementTemplatesPage /></ToastProvider></MemoryRouter>)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
-    expect(html).toContain('<h1>订阅</h1>')
-    const card = html.split('aria-label="订阅列表">')[1].split('</section>')[0]
-    expect(card).toContain('添加订阅')
-    expect(card).toContain('aria-label="搜索订阅"')
-    expect(card).toContain('共 0 个订阅')
-    expect(card).toContain('1 / 1 页')
-    expect(card).toContain('aria-label="下一页"')
+    expect(html).toContain('<h1>权益模板</h1>')
+    expect(html).toContain('正在加载订阅模板')
+    expect(html).not.toContain('添加订阅')
   })
 
   it('renders one Sources heading and groups the search, filter and add action in a separate toolbar', () => {

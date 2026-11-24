@@ -64,6 +64,8 @@ type TemplateRow = VersionRow & {
   created_at: string
   updated_at: string
   subscription_count: number
+  bound_user_count: number
+  owner_user_id: string | null
 }
 
 const versionColumns = `v.id AS version_id, v.version_no, v.schema_version, v.config_json,
@@ -79,7 +81,10 @@ const versionSubscriptionCount = `(
 )`
 const templateSelect = `SELECT t.*, ${versionColumns}, (
   SELECT sum(${versionSubscriptionCount}) FROM entitlement_template_versions v WHERE v.template_id = t.id
-) AS subscription_count FROM entitlement_templates t ${currentVersionJoin}`
+) AS subscription_count,
+  (SELECT count(*) FROM user_template_bindings b WHERE b.template_id=t.id AND b.status!='revoked') AS bound_user_count,
+  (SELECT owner_user_id FROM private_entitlement_templates p WHERE p.template_id=t.id) AS owner_user_id
+  FROM entitlement_templates t ${currentVersionJoin}`
 
 function versionDto(row: VersionRow) {
   if (row.schema_version !== 1) throw new Error('Unsupported entitlement template schema')
@@ -105,6 +110,8 @@ function templateDto(row: TemplateRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     subscriptionCount: row.subscription_count,
+    boundUserCount: row.bound_user_count,
+    ownerUserId: row.owner_user_id,
     currentVersion: versionDto(row),
   }
 }

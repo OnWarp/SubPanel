@@ -257,3 +257,36 @@ it('holds legacy shares for scope review when unified public operations are enab
     matches: false, reasons: expect.arrayContaining(['LEGACY_SHARE_SCOPE_REVIEW_REQUIRED']),
   })
 })
+
+it('keeps an account link before the first binding and exposes only display nodes', async () => {
+  await markModuleReady(env.DB, userSubscriptionPublicReady)
+  const path = '/api/user/subscription'
+  const summary = async () => (await invoke(path, withCookie(cookie))).json<{
+    subscriptionUrl: string; status: string; nodeCount: number; hasAvailableNodes: boolean
+  }>()
+  const empty = await summary()
+  expect(empty).toMatchObject({ status: 'none', nodeCount: 0, hasAvailableNodes: false })
+  expect(new URL(empty.subscriptionUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9_-]{43}$/u)
+  expect((await summary()).subscriptionUrl).toBe(empty.subscriptionUrl)
+  const access = await readUserAccess(env.DB, { userId })
+  const now = Date.now()
+  await mutateBinding(env, userId, templateId, assign(access!.revision!, now - 100, null), userId, now)
+  expect(await summary()).toMatchObject({
+    status: 'active', nodeCount: 1, hasAvailableNodes: true, subscriptionUrl: empty.subscriptionUrl,
+  })
+  const nodes = await invoke(`${path}/nodes`, withCookie(cookie))
+  expect(nodes.status).toBe(200)
+  expect(nodes.headers.get('cache-control')).toContain('no-store')
+  expect(await nodes.json()).toEqual({ nodes: [{ name: expect.any(String), protocol: expect.any(String) }] })
+})
+
+it('returns a binding conflict when a reviewed revision is stale', async () => {
+  const path = `/api/admin/users/${userId}/template-bindings/${templateId}`
+  const now = Date.now()
+  const input = assign(0, now - 100, null)
+  const preview = await invoke(`${path}/preview?expectedRevision=0&expiry=permanent`, withCookie(cookie))
+  expect(preview.status).toBe(200)
+  await mutateBinding(env, userId, templateId, input, userId, now)
+  const stale = await invoke(path, withCookie(cookie, jsonRequest({ ...input, requestId: crypto.randomUUID() }, { method: 'PUT' })))
+  expect(stale.status).toBe(409)
+})

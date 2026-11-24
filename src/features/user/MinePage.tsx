@@ -18,6 +18,7 @@ import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { formatExpiryTime } from '../delivery/expiry'
 import { subscriptionPlanLabels } from '../delivery/plan-types'
 import { orderLinkEntries, pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
+import { subscriptionStatus, useUnifiedSubscription } from '../delivery/unified-subscription'
 import { PersonalRedemptions } from '../redemption/PersonalRedemptions'
 import { clientImportLink } from './client-import'
 import { formatTrafficGb } from './home-traffic'
@@ -67,7 +68,7 @@ const mineSettings = [
   { path: 'security', label: '安全', icon: ShieldCheck, Content: SecuritySettings },
   { path: 'notifications', label: '通知设置', icon: Bell, Content: NotificationSettings },
   { path: 'display', label: '显示设置', icon: Monitor, Content: DisplaySettings },
-  { path: 'redemption', label: '兑换订阅', icon: Gift, Content: PersonalRedemptions },
+  { path: 'redemption', label: '兑换订阅', icon: Gift, Content: RedemptionSettings },
   { path: 'support', label: '帮助与支持', icon: LifeBuoy, Content: SupportSettings },
 ] as const
 
@@ -92,7 +93,7 @@ function isActive(subscription: AdminSubscription) {
     : subscription.planState ? subscription.planState === 'active' : subscription.enabled
 }
 
-function SubscriptionOverview({ details = false }: { details?: boolean }) {
+function LegacySubscriptionOverview({ details = false }: { details?: boolean }) {
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
   const [error, setError] = useState('')
   const load = useCallback((signal?: AbortSignal) => {
@@ -196,6 +197,24 @@ function SubscriptionLink({ subscription, onReset }: {
       {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
     </ConfirmDialog>
   </section>
+}
+
+function RedemptionSettings() {
+  const { state, reload } = useUnifiedSubscription()
+  if (state.kind === 'loading') return <LoadingState label="正在加载订阅" />
+  if (state.kind === 'error') return <ErrorState message={state.message} onRetry={reload} />
+  return <PersonalRedemptions unified={state.kind === 'ready'} />
+}
+
+function SubscriptionOverview({ details = false }: { details?: boolean }) {
+  const { state, reload } = useUnifiedSubscription()
+  if (state.kind === 'legacy') return <LegacySubscriptionOverview details={details} />
+  if (state.kind === 'ready') return details ? <Navigate to="/subscriptions" replace /> :
+    <section className="upd-mine-panel">
+      <Link to="/subscriptions">我的订阅<ChevronRight size={16} aria-hidden="true" /></Link>
+      <StatusBadge tone={state.summary.status === 'active' ? 'success' : 'muted'}>{subscriptionStatus[state.summary.status]}</StatusBadge>
+    </section>
+  return state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />
 }
 
 function SubscriptionInfo() {
