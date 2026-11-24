@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { formatCode, normalizeCode } from '../../shared/redemption-code.js'
 import { auditStatement } from '../admin/audit.js'
 import { getRedemptionVersion } from '../delivery/entitlement-templates.js'
 import { createSubscription, DeliveryError } from '../delivery/service.js'
 import type { Subscription } from '../delivery/schema.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { ApiError, apiError } from '../platform/api-error.js'
-import { codeDigest, generateCode, issuePreview, normalizeCode, readKeyring, receiptVerifier, verifyPreview } from './credentials.js'
+import { codeDigest, generateCode, issuePreview, matchesCodeTag, readKeyring, receiptVerifier, verifyPreview } from './credentials.js'
 import { limitGeneration, recordFailure } from './limits.js'
 
 export const batchInput = z.object({
@@ -47,7 +48,7 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
   const key = keys.get(active)!
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  const codes: string[] = []
+  const codes = new Set<string>()
   const statements = [db.prepare(`INSERT INTO redemption_batches
     (id, name, template_version_id, template_name, quantity, max_uses, redeem_deadline, note, created_by, created_at, request_key)
     SELECT ?, ?, ?, (SELECT t.name FROM entitlement_templates t JOIN entitlement_template_versions v ON v.template_id=t.id
@@ -60,9 +61,10 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
     input.quantity, input.maxUses, input.redeemDeadline, input.note, actor, now, input.idempotencyKey)]
 
   for (let offset = 0; offset < input.quantity; offset += 50) {
-    const chunk = Array.from({ length: Math.min(50, input.quantity - offset) }, generateCode)
-    const persisted = await Promise.all(chunk.map(async ({ canonical, display }) => {
-      codes.push(display)
+    const persisted = await Promise.all(Array.from({ length: Math.min(50, input.quantity - offset) }, async () => {
+      let canonical = await generateCode(key)
+      while (codes.has(canonical)) canonical = await generateCode(key)
+      codes.add(canonical)
       return [crypto.randomUUID(), await codeDigest(key, canonical), canonical.slice(-4)]
     }))
     statements.push(db.prepare(`INSERT INTO redemption_codes (id, batch_id, digest_key_version, code_digest, tail, max_uses)
@@ -85,7 +87,7 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
     }
     throw error
   }
-  return { id, codes }
+  return { id, codes: [...codes].map(formatCode) }
 }
 
 async function normalizeOrReject(db: D1Database, code: string) {
@@ -107,11 +109,12 @@ async function findCandidate(env: RedemptionEnv, normalized: string, user: strin
     )) AS available
     FROM redemption_codes c JOIN redemption_batches b ON b.id=c.batch_id WHERE ${matches}`)
     .bind(user, ...digests.flat()).first<Candidate>()
-  if (!code) {
+  const key = code && keys.get(code.digest_key_version)
+  if (!code || !key || !await matchesCodeTag(key, normalized)) {
     await recordFailure(env.DB)
     throw invalidCode()
   }
-  return { code, key: keys.get(code.digest_key_version)! }
+  return { code, key }
 }
 
 export async function previewRedemption(env: RedemptionEnv, user: string, input: z.infer<typeof previewInput>) {

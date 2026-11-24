@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DateTimeInput, FormSelect, FormStack, Input, Textarea } from '../../ui/Controls'
+import { CopyButton } from '../../ui/CopyButton'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EditDrawer } from '../../ui/EditDrawer'
 import { ErrorState } from '../../ui/ErrorState'
@@ -140,6 +141,8 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
 
 function ReleaseDrawer({ release, onClose }: { release: Release; onClose: () => void }) {
   const [exported, setExported] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const codeList = release.codes.join('\n')
   function download() {
     if (exported) return
     const blob = new Blob([`code\r\n${release.codes.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' })
@@ -151,10 +154,13 @@ function ReleaseDrawer({ release, onClose }: { release: Release; onClose: () => 
     window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     setExported(true)
   }
-  return <EditDrawer open title="兑换码已生成" onClose={onClose} dirty={!exported}
-    footer={<button className="button primary" type="button" onClick={download} disabled={exported}>{exported ? '已导出 CSV' : '导出 CSV'}</button>}>
-    <FormField label="完整兑换码" htmlFor="released-codes" hint="关闭后仅显示尾码，请先保存">
-      <Textarea id="released-codes" readOnly autoComplete="off" spellCheck={false} rows={12} value={release.codes.join('\n')} />
+  return <EditDrawer open title="兑换码已生成" onClose={onClose} dirty={!exported && !copied}
+    footer={<>
+      <CopyButton value={codeList} label="复制兑换码" variant="secondary" onCopied={() => setCopied(true)} />
+      <button className="button primary" type="button" onClick={download} disabled={exported}>{exported ? '已导出 CSV' : '导出 CSV'}</button>
+    </>}>
+    <FormField label="完整兑换码" htmlFor="released-codes">
+      <Textarea id="released-codes" readOnly autoComplete="off" spellCheck={false} rows={12} value={codeList} />
     </FormField>
   </EditDrawer>
 }

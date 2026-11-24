@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
+import { formatCode, normalizeCode } from '../../../shared/redemption-code'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { Input } from '../../ui/Controls'
 import { DataTable } from '../../ui/DataTable'
@@ -72,7 +73,11 @@ export function PersonalRedemptions() {
           <p>确认后会新增一份独立订阅</p>
         </> : <FormField label="兑换码" htmlFor="personal-redemption-code">
           <Input id="personal-redemption-code" required autoComplete="off" spellCheck={false}
-            maxLength={100} value={code} disabled={busy} onChange={(event) => setCode(event.target.value)} />
+            maxLength={100} value={code} disabled={busy} onChange={(event) => setCode(event.target.value)}
+            onBlur={() => {
+              const canonical = normalizeCode(code)
+              if (canonical) setCode(formatCode(canonical))
+            }} />
         </FormField>}
         {message ? <StatusMessage tone="error">{message}</StatusMessage> : null}
         <FormActions>

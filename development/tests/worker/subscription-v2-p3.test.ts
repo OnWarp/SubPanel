@@ -1,4 +1,6 @@
 import { env } from 'cloudflare:workers'
+import { formatCode, normalizeCode, redemptionAlphabet } from '../../../shared/redemption-code'
+import { codeDigest, generateCode, matchesCodeTag, readKeyring } from '../../../worker/redemption/credentials'
 import { beforeEach, expect, it } from 'vitest'
 import { app } from '../../../worker/app'
 import { readDelivery } from '../../../worker/delivery/repository'
@@ -93,13 +95,56 @@ async function unavailable(response: Response) {
   expect(await response.json()).toEqual({ error: { code: 'REDEMPTION_CODE_UNAVAILABLE', message: '兑换码不可用，请检查后重试' } })
 }
 
+it('normalizes both formats and checks newly generated HMAC tags', async () => {
+  const { keys } = await readKeyring(bindings.REDEMPTION_HMAC_KEYS)
+  const key = keys.get('v1')!
+  const code = await generateCode(key)
+  expect(code).toHaveLength(12)
+  expect([...code].every(symbol => redemptionAlphabet.includes(symbol))).toBe(true)
+  expect(await matchesCodeTag(key, code)).toBe(true)
+  const altered = code.slice(0, -1) + (code.endsWith('2') ? '3' : '2')
+  expect(await matchesCodeTag(key, altered)).toBe(false)
+
+  const legacy = '23456789ABCDEFGHJKMNPQRSTVWX'
+  expect(formatCode(legacy)).toBe('2345-6789-ABCD-EFGH-JKMN-PQRS-TVWX')
+  for (const canonical of [code, legacy]) {
+    expect(normalizeCode(canonical.toLowerCase())).toBe(canonical)
+    expect(normalizeCode(`  ${formatCode(canonical).toLowerCase()}\n`)).toBe(canonical)
+  }
+  expect(normalizeCode('2345 6789 abcd-efgh-jkmn-pqrs-tvwx')).toBe(legacy)
+  for (const invalid of ['2345-6789-ABC', '2345–6789-ABCD', '2345-6789-ABCO', '2345-6789-ABC0',
+    '2345-6789-ABCI', '2345-6789-ABC1', '2345-6789-ABCl', '23-456789-ABCD', '2345 6789 ABCD',
+    '2345-6789-ABCſ', '2345-6789-ABCU', '23456789ABCDEFGHJKMNPQRSTVWO', ' '.repeat(101) + code]) {
+    expect(normalizeCode(invalid)).toBeNull()
+  }
+})
+
+it('redeems a pre-existing 28-character ledger entry and rejects a short code with a false tag', async () => {
+  const { issue } = await fixture()
+  const holder = await account(1)
+  const { keys } = await readKeyring(bindings.REDEMPTION_HMAC_KEYS)
+  const key = keys.get('v1')!
+  const { id, codes: [released] } = await issue({ quantity: 1 })
+  const altered = normalizeCode(released)!.slice(0, -1) + (released.endsWith('2') ? '3' : '2')
+  const replaceCode = async (canonical: string) => {
+    await env.DB.prepare('UPDATE redemption_codes SET code_digest=?, tail=? WHERE batch_id=?')
+      .bind(await codeDigest(key, canonical), canonical.slice(-4), id).run()
+  }
+  await replaceCode(altered)
+  await unavailable(await call(`${me}/preview`, holder.cookie, { code: altered }))
+  const legacy = '23456789ABCDEFGHJKMNPQRSTVWX'
+  await replaceCode(legacy)
+  const request = await preview(holder.cookie, formatCode(legacy).toLowerCase())
+  expect((await confirm(holder.cookie, { ...request, code: legacy })).status).toBe(200)
+})
+
 it('pins batch entitlements across template changes, rotation and disabling issuance, with safe audit and ownership', async () => {
   const { admin, template, group, issue } = await fixture()
   const holder = await account(1)
   const outsider = await account(2)
   const { id, codes, input } = await issue()
   expect(new Set(codes).size).toBe(3)
-  codes.forEach((code) => expect(code).toMatch(/^[2-9A-HJ-KM-NP-TV-Z]{4}(?:-[2-9A-HJ-KM-NP-TV-Z]{4}){6}$/u))
+  codes.forEach((code) => expect(code).toMatch(/^[2-9A-HJ-KM-NP-TV-Z]{4}(?:-[2-9A-HJ-KM-NP-TV-Z]{4}){2}$/u))
   const duplicate = await call(batches, admin, input)
   expect(duplicate.status).toBe(409)
   expect(await duplicate.text()).not.toContain(codes[0])
