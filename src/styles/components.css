@@ -369,33 +369,49 @@
 }
 
 /* Dialog ----------------------------------------------------------------- */
+html:has(.sp-dialog:modal),
+body:has(.sp-dialog:modal),
+body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .sp-dialog {
-  width: min(100% - 28px, 520px);
+  position: fixed;
+  width: min(calc(100% - 32px), var(--dialog-size-m));
   max-width: none;
+  max-height: none;
   padding: 0;
+  overflow: visible;
   border: 0;
   background: transparent;
   color: var(--color-text);
+  font-size: 14px;
 }
-.sp-dialog::backdrop { background: var(--color-overlay); }
+.sp-dialog[data-size="s"] { width: min(calc(100% - 32px), var(--dialog-size-s)); }
+.sp-dialog[data-size="l"] { width: min(calc(100% - 32px), var(--dialog-size-l)); }
+.sp-dialog[data-size="xl"] { width: min(calc(100% - 32px), var(--dialog-size-xl)); }
+.sp-dialog::backdrop { background: var(--color-dialog-overlay); }
 .sp-dialog-panel {
   display: grid;
-  max-height: min(80svh, 720px);
+  grid-template-rows: auto minmax(0, 1fr);
+  max-height: 88dvh;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-card-lg);
+  border-radius: 12px;
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-float);
+  --dialog-padding: 24px;
 }
 .sp-dialog-panel:has(.sp-dialog-footer) { grid-template-rows: auto minmax(0, 1fr) auto; }
 .sp-dialog-heading {
   display: flex;
-  padding: var(--space-5) var(--space-5) var(--space-3);
+  padding: var(--dialog-padding) var(--dialog-padding) var(--space-3);
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
 }
-.sp-dialog-heading h2 { margin: 0; font-size: var(--font-md); line-height: 1.3; }
+.sp-dialog-heading h2 { min-width: 0; margin: 0; font-size: 18px; line-height: 1.3; overflow-wrap: anywhere; }
 .sp-dialog-close {
   display: inline-grid;
   width: 24px;
@@ -413,16 +429,54 @@
 @media (hover: hover) {
   .sp-dialog-close:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 }
-.sp-dialog-body { min-height: 0; padding: 0 var(--space-5) var(--space-5); overflow-y: auto; }
+.sp-dialog :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sp-dialog-body {
+  min-height: 0;
+  padding: 0 var(--dialog-padding) var(--dialog-padding);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.sp-dialog-body:empty { padding-block-end: 0; }
+.sp-dialog-description { margin: 0 0 var(--space-3); color: var(--color-text-muted); }
+.sp-dialog-description:last-child { margin-block-end: 0; }
 .sp-dialog-footer {
   display: flex;
   flex-wrap: wrap;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-4) var(--dialog-padding);
   justify-content: flex-end;
   gap: var(--space-2);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-subtle);
 }
+
+@media (max-width: 760px) {
+  .sp-dialog {
+    --dialog-safe-top: env(safe-area-inset-top, 0px);
+    --dialog-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --dialog-available-height: calc(var(--dialog-viewport-height, 100dvh) - var(--dialog-safe-top) - var(--dialog-safe-bottom));
+    inset-block: calc(var(--dialog-viewport-top, 0px) + var(--dialog-safe-top) + var(--dialog-available-height) / 2) auto;
+    inset-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+    translate: 0 -50%;
+  }
+  .sp-dialog[data-size] {
+    max-width: calc(100% - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  }
+  .sp-dialog-panel {
+    max-height: calc(var(--dialog-available-height) * .9);
+    border-radius: 16px;
+    --dialog-padding: 16px;
+  }
+  .sp-dialog-heading { align-items: center; }
+  .sp-dialog-heading h2 { font-size: 17px; }
+  .sp-dialog :is(button, .button, input:not([type="checkbox"], [type="radio"]), select, [role="combobox"]) { min-height: 44px; }
+  .sp-dialog button { min-width: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sp-dialog:modal .sp-dialog-panel { animation: sp-dialog-enter 160ms ease-out; }
+  .sp-dialog:modal::backdrop { animation: sp-dialog-fade 160ms ease-out; }
+}
+@keyframes sp-dialog-enter { from { opacity: 0; transform: scale(.98); } }
+@keyframes sp-dialog-fade { from { opacity: 0; } }
 
 /* Responsive ------------------------------------------------------------- */
 @media (max-width: 760px) {

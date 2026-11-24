@@ -1,0 +1,199 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir } from 'node:fs/promises'
+import { expect, test, type Page } from '@playwright/test'
+
+const screenshots = 'development/screenshots/sub-modal-p0'
+
+async function mockPage(page: Page, role: 'user' | 'admin', fixtures: Record<string, unknown>) {
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/bootstrap') {
+      return route.fulfill({ json: { initialized: true, user: { id: 'fixture', username: 'fixture', role, enabled: true } } })
+    }
+    return route.fulfill({ status: path in fixtures ? 200 : 404, json: fixtures[path] ?? {} })
+  })
+}
+
+for (const width of [1440, 390]) {
+  test.describe(`${width}px modal regression`, () => {
+    test.use({ viewport: { width, height: 760 }, hasTouch: width === 390, reducedMotion: 'reduce' })
+
+    test('ticket Dialog traps focus, scrolls its body and restores the trigger', async ({ page }) => {
+      await mockPage(page, 'user', { '/api/tickets': { tickets: [] } })
+      await page.goto('/tickets')
+      const trigger = page.getByRole('button', { name: '新建工单', exact: true }).first()
+      await trigger.click()
+      const dialog = page.getByRole('dialog', { name: '新建工单' })
+      const heading = dialog.getByRole('heading')
+      const close = dialog.getByRole('button', { name: '关闭', exact: true })
+      const submit = dialog.getByRole('button', { name: '提交工单' })
+      await expect(dialog).toHaveAttribute('aria-modal', 'true')
+      await expect(dialog.getByLabel('标题')).toBeFocused()
+      await expect(dialog).toHaveCSS('width', `${Math.min(width - 32, 520)}px`)
+      await expect(dialog.locator('.sp-dialog-panel')).toHaveCSS('border-radius', width === 390 ? '16px' : '12px')
+      await expect(page.locator('.workspace-content')).toHaveCSS('overflow-y', 'hidden')
+      await expect(page.locator('html')).toHaveCSS('overflow-y', 'hidden')
+      expect(await trigger.evaluate(element => {
+        element.focus()
+        return element === document.activeElement
+      })).toBe(false)
+
+      await close.focus()
+      await page.keyboard.press('Shift+Tab')
+      await expect(submit).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(close).toBeFocused()
+      await expect(close).toHaveCSS('outline-style', 'solid')
+
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: `${screenshots}/ticket-dialog-${width}.png` })
+
+      // Shrink the viewport to force overflow while keeping the same width.
+      await page.setViewportSize({ width, height: 335 })
+      const body = dialog.locator('.sp-dialog-body')
+      const headerPosition = await heading.boundingBox()
+      await body.hover()
+      await page.mouse.wheel(0, 280)
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      expect(await heading.boundingBox()).toEqual(headerPosition)
+      await expect(submit).toBeInViewport()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(trigger).toBeFocused()
+      await expect(page.locator('.workspace-content')).toHaveCSS('overflow-y', 'auto')
+
+      await trigger.click()
+      await page.mouse.click(3, 3)
+      await expect(dialog).toBeHidden()
+      await expect(trigger).toBeFocused()
+      await trigger.click()
+      await dialog.getByRole('button', { name: '取消' }).click()
+      await expect(dialog).toBeHidden()
+    })
+
+    test('source drawer keeps its geometry, scroll and closing behavior', async ({ page }) => {
+      await mockPage(page, 'admin', { '/api/admin/catalog': { sources: [], nodes: [], groups: [] } })
+      await page.goto('/catalog/sources')
+      const trigger = page.getByRole('button', { name: '添加来源' })
+      await trigger.click()
+      const drawer = page.getByRole('dialog', { name: '添加来源' })
+      await expect(drawer).toHaveClass(/drawer-medium/)
+      await expect(drawer.getByLabel('来源名称')).toBeFocused()
+      const box = await drawer.boundingBox()
+      expect(box!.x + box!.width).toBeCloseTo(width, 0)
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: `${screenshots}/source-drawer-${width}.png` })
+      await page.mouse.click(3, 3)
+      await expect(drawer).toBeVisible()
+
+      await page.setViewportSize({ width, height: 310 })
+      const body = drawer.locator('.drawer-content')
+      await body.hover()
+      await page.mouse.wheel(0, 250)
+      await expect.poll(() => body.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+      await page.keyboard.press('Escape')
+      await expect(drawer).toBeHidden()
+      await expect(trigger).toBeFocused()
+      await trigger.click()
+      await drawer.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect(drawer).toBeHidden()
+      await expect(trigger).toBeFocused()
+    })
+
+    test('conversion history uses XL and restores focus after unmount', async ({ page }) => {
+      const root = '/api/admin/system/subscription-templates'
+      const date = '2026-11-20T09:25:00Z'
+      const template = {
+        id: 'config', name: '测试配置', status: 'published', revision: 2,
+        publishedVersionId: 'v2', publishedSequence: 2, publishedAt: date,
+        references: { isDefault: true, directBindings: 0, inheritedCount: 0 },
+      }
+      await mockPage(page, 'admin', {
+        [root]: { templates: [template], defaultId: template.id, defaultRevision: 1, total: 1 },
+        [`${root}/config/versions`]: {
+          versions: [{ id: 'v2', sequence: 2, createdAt: date }, { id: 'v1', sequence: 1, createdAt: date }],
+          total: 2, page: 1, pageSize: 20,
+        },
+      })
+      await page.goto('/delivery/conversions')
+      const trigger = page.getByRole('button', { name: '更多操作', exact: true })
+      await trigger.click()
+      await page.getByRole('button', { name: '版本历史', exact: true }).click()
+      const dialog = page.getByRole('dialog', { name: '测试配置 · 版本历史' })
+      await expect(dialog.getByText('当前发布')).toBeVisible()
+      await expect(dialog).toHaveCSS('width', `${Math.min(width - 32, 960)}px`)
+      await dialog.getByRole('button', { name: '回退', exact: true }).click()
+      await expect(dialog.getByRole('button', { name: '取消回退' })).toBeVisible()
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: `${screenshots}/conversion-history-${width}.png` })
+      await dialog.getByRole('button', { name: '取消回退' }).click()
+      await expect(dialog).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(trigger).toBeFocused()
+    })
+
+    test('redemption confirmation keeps its backdrop policy and focuses the safe action', async ({ page }) => {
+      const batch = {
+        id: 'fixture', name: '测试批次', status: 'active', templateName: '测试模板',
+        templateVersion: 1, quantity: 3, usedCount: 0, remaining: 3, redeemDeadline: Date.UTC(2027, 0, 1),
+      }
+      await mockPage(page, 'admin', {
+        '/api/admin/redemption-batches/fixture': { batch },
+        '/api/admin/redemption-batches/fixture/codes': { items: [], total: 0 },
+      })
+      await page.goto('/delivery/redemptions?batch=fixture&view=codes')
+      const trigger = page.getByRole('button', { name: '停用批次' })
+      await trigger.click()
+      const dialog = page.getByRole('dialog')
+      await expect(dialog.getByRole('button', { name: '取消' })).toBeFocused()
+      await expect(dialog).toHaveCSS('width', `${Math.min(width - 32, 400)}px`)
+      await mkdir(screenshots, { recursive: true })
+      await page.screenshot({ path: `${screenshots}/redemption-confirm-${width}.png` })
+      await page.mouse.click(3, 3)
+      await expect(dialog).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(trigger).toBeFocused()
+    })
+  })
+}
+
+test('desktop user dialogs guard dirty content and one-time results', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 760 })
+  const user = { id: 'member', username: 'member', role: 'user', enabled: true }
+  await mockPage(page, 'admin', { '/api/admin/users': { users: [user], total: 1 } })
+  const temporaryPassword = randomUUID()
+  await page.route('**/api/admin/users/member/reset-password', route => route.fulfill({ json: { user, temporaryPassword } }))
+  await page.goto('/users')
+  const menu = page.getByLabel('member 的操作')
+  await menu.click()
+  await page.getByRole('menuitem', { name: '改邮箱' }).click()
+  const edit = page.getByRole('dialog', { name: '编辑用户' })
+  await edit.getByLabel('邮箱').fill('member@example.test')
+  await page.mouse.click(3, 3)
+  await expect(edit.getByRole('button', { name: '继续编辑' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(edit.getByRole('button', { name: '继续编辑' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(edit.getByLabel('邮箱')).toBeFocused()
+  await edit.getByRole('button', { name: '取消' }).click()
+  await edit.getByRole('button', { name: '放弃更改' }).click()
+  await expect(edit).toBeHidden()
+  await expect(menu).toBeFocused()
+
+  await menu.click()
+  await page.getByRole('menuitem', { name: '重置密码' }).click()
+  const reset = page.getByRole('dialog', { name: '重置用户密码' })
+  const input = randomUUID()
+  await reset.getByLabel('新密码', { exact: true }).fill(input)
+  await reset.getByLabel('确认新密码').fill(input)
+  await reset.getByRole('button', { name: '确认重置' }).click()
+  await expect(reset.getByLabel('临时密码', { exact: true })).toBeVisible()
+  await page.mouse.click(3, 3)
+  await expect(reset).toBeVisible()
+  await reset.getByRole('button', { name: '完成' }).click()
+  await expect(reset).toBeHidden()
+  await expect(page.locator('input[aria-label="临时密码"]')).toHaveCount(0)
+  await expect(menu).toBeFocused()
+})

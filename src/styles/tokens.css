@@ -44,6 +44,11 @@
   --color-focus: color-mix(in srgb, var(--color-accent) 55%, transparent);
   --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 38%, transparent);
   --color-overlay: rgb(12 12 14 / 48%);
+  --color-dialog-overlay: rgb(12 12 14 / 40%);
+  --dialog-size-s: 400px;
+  --dialog-size-m: 520px;
+  --dialog-size-l: 720px;
+  --dialog-size-xl: 960px;
 
   --font-sans: -apple-system, "SF Pro Text", Inter, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;

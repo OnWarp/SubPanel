@@ -539,8 +539,7 @@
   border-radius: var(--radius-page-panel);
 }
 
-.app-layout:not(.admin-layout) :is(dialog.confirm-dialog, dialog.edit-drawer, dialog.reset-dialog),
-.app-layout:not(.admin-layout) .sp-dialog-panel {
+.app-layout:not(.admin-layout) :is(dialog.confirm-dialog, dialog.edit-drawer, dialog.reset-dialog) {
   border-radius: var(--radius-page-panel);
 }
 

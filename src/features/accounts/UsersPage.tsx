@@ -651,8 +651,8 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         dirty={editUser !== null && editEmail !== (editUser.email ?? '')}
         onClose={() => { if (!mutating) setEditUser(null) }}
         title="编辑用户"
-        footer={<>
-          <button className="button secondary" type="button" disabled={mutating} onClick={() => setEditUser(null)}>取消</button>
+        footer={(requestClose) => <>
+          <button className="button secondary" type="button" disabled={mutating} onClick={requestClose}>取消</button>
           <button className="button primary" type="submit" form="edit-user-form" disabled={mutating}>保存</button>
         </>}
       >
@@ -670,15 +670,16 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         open={resetUser !== null}
         busy={mutating}
         dirty={passwordDirty && !tempPassword}
+        sensitive={!!tempPassword}
         onClose={closePasswordReset}
         title="重置用户密码"
-        footer={tempPassword
+        footer={(requestClose) => tempPassword
           ? (
-              <button className="button primary" type="button" onClick={closePasswordReset} disabled={mutating}>完成</button>
+              <button className="button primary" type="button" onClick={requestClose} disabled={mutating}>完成</button>
             )
           : (
               <>
-                <button className="button secondary" type="button" onClick={closePasswordReset} disabled={mutating}>取消</button>
+                <button className="button secondary" type="button" onClick={requestClose} disabled={mutating}>取消</button>
                 <button className="button primary" type="submit" form="reset-password-form" disabled={mutating}><KeyRound aria-hidden="true" size={17} />确认重置</button>
               </>
             )}

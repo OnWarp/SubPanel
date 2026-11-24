@@ -104,11 +104,12 @@ export function TicketsPage() {
 
       <Dialog
         open={createOpen}
-        onClose={() => { if (!busy) setCreateOpen(false) }}
+        busy={busy}
+        onClose={() => setCreateOpen(false)}
         title="新建工单"
-        footer={(
+        footer={(requestClose) => (
           <>
-            <button className="button ghost" type="button" disabled={busy} onClick={() => setCreateOpen(false)}>取消</button>
+            <button className="button ghost" type="button" disabled={busy} onClick={requestClose}>取消</button>
             <button className="button primary" type="submit" form="tk-create-form" disabled={busy}>{busy ? '提交中' : '提交工单'}</button>
           </>
         )}
