@@ -6,6 +6,7 @@ import { chromium, expect } from '@playwright/test'
 const baseURL = process.env.MOBILE_BAR_BASE_URL ?? 'http://127.0.0.1:4182'
 const output = 'development/screenshots/mobile-bar-inset'
 const key = 'subpanel:mobile-bar'
+const adminKey = 'subpanel:layout:admin:admin'
 const now = '2026-11-21T08:30:00.000Z'
 const nodes = Array.from({ length: 20 }, (_, index) => ({
   id: `mobile-node-${index}`, protocol: 'ss', displayName: `Mobile node ${index + 1}`,
@@ -45,7 +46,22 @@ async function choose(style) {
   await expect(option(style)).toBeFocused()
   await expect(option(style)).toHaveAttribute('aria-pressed', 'true')
   await expect(shell).toHaveAttribute('data-mobile-bar', style)
-  assert.equal(await page.evaluate(key => localStorage.getItem(key), key), style)
+  assert.equal(await page.evaluate(({ key, adminKey, role }) => role === 'admin'
+    ? JSON.parse(localStorage.getItem(adminKey)).mobile.bar
+    : localStorage.getItem(key), { key, adminKey, role }), style)
+}
+
+async function seedPreference(section, field, value, legacyKey) {
+  await page.evaluate(({ adminKey, role, section, field, value, legacyKey }) => {
+    if (role !== 'admin') {
+      localStorage.setItem(legacyKey, value)
+      return
+    }
+    const saved = JSON.parse(localStorage.getItem(adminKey))
+    if (section) saved[section][field] = value
+    else saved[field] = value
+    localStorage.setItem(adminKey, JSON.stringify(saved))
+  }, { adminKey, role, section, field, value, legacyKey })
 }
 
 function panelEdges(el) {
@@ -126,8 +142,8 @@ try {
     const settings = admin ? '/dashboard' : '/me'
     const entries = admin ? ['概览', '节点管理', '订阅管理', '用户管理'] : ['首页', '订阅', '节点', '我的']
     await page.goto(settings)
-    // The user shell reads the inset choice previously saved in the admin shell.
-    await expect(shell).toHaveAttribute('data-mobile-bar', admin ? 'floating' : 'inset')
+    // Neither role has a saved bar style from the other role.
+    await expect(shell).toHaveAttribute('data-mobile-bar', 'floating')
     let floatingPanel
     for (const style of ['floating', 'inset']) {
       await page.goto(settings)
@@ -167,7 +183,7 @@ try {
       await expect(page.getByText(admin ? '1284' : '未开通', { exact: true })).toBeVisible()
 
       for (const theme of ['light', 'dark']) {
-        await page.evaluate(theme => localStorage.setItem('subpanel.theme', theme), theme)
+        await seedPreference(null, 'theme', theme, 'subpanel.theme')
         await page.reload()
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
         await expect(page.getByText(admin ? '1284' : '未开通', { exact: true })).toBeVisible()
@@ -183,17 +199,17 @@ try {
     await expect(shell).toHaveAttribute('data-mobile-bar', 'inset')
     await verifyDock('inset', entries, admin ? entries[0] : entries[3], floatingPanel)
     if (admin) {
-      for (const [layoutKey, value] of [
-        ['subpanel:sidebar-collapsed', '1'],
-        ['subpanel:admin-layout', 'topbar'],
+      for (const [field, value, fallback] of [
+        ['sidebarCollapsed', true, false],
+        ['navigation', 'topbar', 'sidebar'],
       ]) {
-        await page.evaluate(([name, setting]) => localStorage.setItem(name, setting), [layoutKey, value])
+        await seedPreference('pc', field, value)
         await page.reload()
         await verifyDock('inset', entries, entries[0], floatingPanel)
-        await page.evaluate(name => localStorage.removeItem(name), layoutKey)
+        await seedPreference('pc', field, fallback)
       }
     }
-    await page.evaluate(key => localStorage.setItem(key, 'floating'), key)
+    await seedPreference('mobile', 'bar', 'floating', key)
     await page.reload()
     await expect(shell).toHaveAttribute('data-mobile-bar', 'floating')
     // Breakpoint unified to <768px mobile: at 767 the floating dock is visible.
@@ -202,7 +218,7 @@ try {
     for (const width of [768, 1440]) {
       await page.setViewportSize({ width, height: 844 })
       for (const style of ['floating', 'inset']) {
-        await page.evaluate(({ key, style }) => localStorage.setItem(key, style), { key, style })
+        await seedPreference('mobile', 'bar', style, key)
         await page.goto(settings)
         await expect(shell).toHaveAttribute('data-mobile-bar', style)
         if (admin) await page.locator('.sidebar .admin-account summary').click()
@@ -226,7 +242,7 @@ try {
   role = 'admin'
   await page.setViewportSize({ width: 320, height: 780 })
   await page.goto('/catalog/nodes')
-  await page.evaluate(() => localStorage.setItem('subpanel.theme', 'light'))
+  await seedPreference(null, 'theme', 'light', 'subpanel.theme')
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   const section = main.locator('section[aria-labelledby="nodes-title"]')
@@ -253,7 +269,7 @@ try {
   }
   await page.screenshot({ path: join(output, 'admin-320-inset-light.png'), animations: 'disabled' })
 
-  await page.evaluate(key => localStorage.setItem(key, 'unknown'), key)
+  await seedPreference('mobile', 'bar', 'unknown', key)
   await page.reload()
   await expect(shell).toHaveAttribute('data-mobile-bar', 'floating')
   console.log('Mobile bar persistence, geometry, focus, safe area, desktop visibility and screenshots passed')

@@ -10,22 +10,13 @@ import { MobileBarContext, useMobileBarPreference } from './mobile-bar'
 import { useMobileViewport } from './layout'
 import { MobileBarOptions } from './MobileBarOptions'
 import { adminDomainForPath, adminDomains, adminMobileDock, userSidebar, navigationActive } from './navigation'
+import { useAdminLayout, sidebarCollapsedKey, type AdminLayout } from './admin-layout'
 
 const userDock = userSidebar
-const adminLayoutKey = 'subpanel:admin-layout'
 const adminLayoutOptions = [
   { value: 'sidebar', label: '侧边栏' },
   { value: 'topbar', label: '顶部导航' },
 ] as const
-type AdminLayout = typeof adminLayoutOptions[number]['value']
-
-function readAdminLayout(): AdminLayout {
-  try {
-    return localStorage.getItem(adminLayoutKey) === 'topbar' ? 'topbar' : 'sidebar'
-  } catch {
-    return 'sidebar'
-  }
-}
 
 function AdminNavigation({ activeDomain, layout, collapsed }: {
   activeDomain: ReturnType<typeof adminDomainForPath>
@@ -128,11 +119,15 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const location = useLocation()
-  const mobileBar = useMobileBarPreference()
+  const admin = useAdminLayout()
+  const mobileBar = useMobileBarPreference(admin ? {
+    style: admin.preferences.mobile.bar,
+    changeStyle: admin.changeMobileBar,
+  } : undefined)
   const isMobile = useMobileViewport()
   const shell = useRef<HTMLDivElement>(null)
   const restoreLayoutFocus = useRef(false)
-  const [adminLayout, setAdminLayout] = useState(readAdminLayout)
+  const adminLayout = admin?.preferences.pc.navigation ?? 'sidebar'
   useLayoutEffect(() => {
     if (!restoreLayoutFocus.current) return
     restoreLayoutFocus.current = false
@@ -141,22 +136,23 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [adminLayout])
 
   const changeAdminLayout = (next: AdminLayout) => {
-    if (next === adminLayout) return
+    if (!admin || next === adminLayout) return
     restoreLayoutFocus.current = true
-    try { localStorage.setItem(adminLayoutKey, next) } catch { /* storage unavailable */ }
-    setAdminLayout(next)
+    admin.changeNavigation(next)
   }
   const [signOutError, setSignOutError] = useState('')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem('subpanel:sidebar-collapsed') === '1' } catch { return false }
+  const [userSidebarCollapsed, setUserSidebarCollapsed] = useState(() => {
+    if (admin) return false
+    try { return localStorage.getItem(sidebarCollapsedKey) === '1' } catch { return false }
   })
-  const toggleSidebar = () => {
-    setSidebarCollapsed((current) => {
+  const sidebarCollapsed = admin?.preferences.pc.sidebarCollapsed ?? userSidebarCollapsed
+  const toggleSidebar = admin?.toggleSidebar ?? (() => {
+    setUserSidebarCollapsed((current) => {
       const next = !current
-      try { localStorage.setItem('subpanel:sidebar-collapsed', next ? '1' : '0') } catch { /* storage unavailable */ }
+      try { localStorage.setItem(sidebarCollapsedKey, next ? '1' : '0') } catch { /* storage unavailable */ }
       return next
     })
-  }
+  })
   const isAdmin = user?.role === 'admin'
   const hasAdminTopbar = isAdmin && adminLayout === 'topbar'
   const adminDomain = isAdmin ? adminDomainForPath(location.pathname) : undefined

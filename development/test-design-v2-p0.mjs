@@ -37,8 +37,10 @@ try {
       ]) {
         await page.goto(path)
         await page.evaluate(({ theme, layout }) => {
-          localStorage.setItem('subpanel.theme', theme)
-          localStorage.setItem('subpanel:admin-layout', layout)
+          localStorage.setItem('subpanel:layout:admin:usr_1', JSON.stringify({
+            pc: { navigation: layout },
+            theme,
+          }))
         }, { theme, layout: width === 1440 ? 'sidebar' : 'topbar' })
         await page.reload()
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
@@ -125,7 +127,7 @@ try {
   await expect(page.getByRole('button', { name: '展开侧栏' })).toBeFocused()
   await page.reload()
   await expect(page.getByRole('button', { name: '展开侧栏' })).toBeVisible()
-  assert.equal(await page.evaluate(() => localStorage.getItem('subpanel:admin-layout')), 'sidebar')
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('subpanel:layout:admin:usr_1')).pc.navigation), 'sidebar')
   await summaries.click()
   await page.keyboard.press('Escape')
   await expect(summaries).toBeFocused()

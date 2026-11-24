@@ -93,8 +93,10 @@ try {
     await page.setViewportSize({ width, height: width >= 768 ? 900 : 844 })
     await go('sources')
     await page.evaluate(({ theme, layout }) => {
-      localStorage.setItem('subpanel.theme', theme)
-      localStorage.setItem('subpanel:admin-layout', layout)
+      localStorage.setItem('subpanel:layout:admin:usr_1', JSON.stringify({
+        pc: { navigation: layout },
+        theme,
+      }))
     }, { theme, layout })
     for (const [name, title, readyText] of routes) {
       await go(name)
@@ -106,8 +108,9 @@ try {
       assert(await noPageOverflow(), `${name} at ${width}px`)
       if (width !== 320) await page.screenshot({ path: join(output, `${name}-${width}-${theme}.png`), animations: 'disabled' })
       const button = page.getByRole('row').filter({ hasText: readyText }).getByRole('button', { name: '更多操作' })
+      await expect(button).toBeVisible()
       const bounds = await button.boundingBox()
-      assert(bounds.x + bounds.width <= width)
+      assert(bounds && bounds.x + bounds.width <= width, `${name} row action at ${width}px`)
       await checkRowFocus(readyText, `编辑${title}`)
     }
   }

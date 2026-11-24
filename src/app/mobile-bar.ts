@@ -1,20 +1,21 @@
 import { createContext, useState } from 'react'
 
-const storageKey = 'subpanel:mobile-bar'
-type MobileBarStyle = 'floating' | 'inset'
+export const mobileBarKey = 'subpanel:mobile-bar'
+export type MobileBarStyle = 'floating' | 'inset'
 
 export const MobileBarContext = createContext<ReturnType<typeof useMobileBarPreference> | null>(null)
 
-export function useMobileBarPreference() {
+export function useMobileBarPreference(scoped?: { style: MobileBarStyle; changeStyle: (style: MobileBarStyle) => void }) {
   const [style, setStyle] = useState<MobileBarStyle>(() => {
-    try { return localStorage.getItem(storageKey) === 'inset' ? 'inset' : 'floating' }
+    if (scoped) return 'floating'
+    try { return localStorage.getItem(mobileBarKey) === 'inset' ? 'inset' : 'floating' }
     catch { return 'floating' }
   })
 
   const changeStyle = (next: MobileBarStyle) => {
-    try { localStorage.setItem(storageKey, next) } catch { /* storage unavailable */ }
+    try { localStorage.setItem(mobileBarKey, next) } catch { /* storage unavailable */ }
     setStyle(next)
   }
 
-  return { style, changeStyle }
+  return scoped ?? { style, changeStyle }
 }

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type ThemeMode = 'light' | 'dark'
@@ -7,8 +7,9 @@ declare global {
   interface Window {
     subpanelTheme: {
       key: string
+      guestKey: string
       media: MediaQueryList
-      read: () => ThemePreference
+      read: (key?: string) => ThemePreference
       resolve: (preference: ThemePreference) => ThemeMode
       apply: (preference?: ThemePreference) => ThemeMode
     }
@@ -23,41 +24,53 @@ type ThemeState = {
 
 const ThemeContext = createContext<ThemeState | null>(null)
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() => window.subpanelTheme.read())
-  const [mode, setMode] = useState<ThemeMode>(() => window.subpanelTheme.apply(preference))
+function subscribeToSystemTheme(listener: () => void) {
+  const { media } = window.subpanelTheme
+  media.addEventListener('change', listener)
+  return () => media.removeEventListener('change', listener)
+}
 
-  const apply = useCallback((next: ThemePreference) => {
-    setMode(window.subpanelTheme.apply(next))
-  }, [])
+function getSystemTheme() {
+  return window.subpanelTheme.resolve('system')
+}
 
-  const setPreference = useCallback((next: ThemePreference) => {
-    localStorage.setItem(window.subpanelTheme.key, next)
-    setPreferenceState(next)
-    apply(next)
-  }, [apply])
+export function ThemeProvider({ children, scoped, storageKey = window.subpanelTheme.key }: {
+  children: ReactNode
+  storageKey?: string
+  scoped?: Pick<ThemeState, 'preference' | 'setPreference'>
+}) {
+  const [legacyPreference, setLegacyPreference] = useState<ThemePreference>(() =>
+    scoped ? 'system' : window.subpanelTheme.read(storageKey),
+  )
+  const preference = scoped?.preference ?? legacyPreference
+  const systemTheme = useSyncExternalStore(subscribeToSystemTheme, getSystemTheme)
+  const mode = preference === 'system' ? systemTheme : preference
+  const usesLegacyStorage = !scoped
+
+  useLayoutEffect(() => {
+    window.subpanelTheme.apply(mode)
+  }, [mode])
+
+  const setLegacy = useCallback((next: ThemePreference) => {
+    try { localStorage.setItem(storageKey, next) } catch { /* storage unavailable */ }
+    setLegacyPreference(next)
+  }, [storageKey])
+  const setPreference = scoped?.setPreference ?? setLegacy
 
   useEffect(() => {
-    const handleSystem = () => {
-      if (preference === 'system') apply('system')
-    }
     const handleStorage = (event: StorageEvent) => {
-      if (event.key !== window.subpanelTheme.key) return
-      const next = window.subpanelTheme.read()
-      setPreferenceState(next)
-      apply(next)
+      if (event.key !== storageKey) return
+      setLegacyPreference(window.subpanelTheme.read(storageKey))
     }
-    window.subpanelTheme.media.addEventListener('change', handleSystem)
-    window.addEventListener('storage', handleStorage)
+    if (usesLegacyStorage) window.addEventListener('storage', handleStorage)
     const frame = requestAnimationFrame(() => {
       document.documentElement.dataset.themeReady = 'true'
     })
     return () => {
       cancelAnimationFrame(frame)
-      window.subpanelTheme.media.removeEventListener('change', handleSystem)
       window.removeEventListener('storage', handleStorage)
     }
-  }, [apply, preference])
+  }, [storageKey, usesLegacyStorage])
 
   const value = useMemo(() => ({ preference, mode, setPreference }), [mode, preference, setPreference])
   return <ThemeContext value={value}>{children}</ThemeContext>

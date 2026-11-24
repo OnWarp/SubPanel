@@ -1,10 +1,11 @@
 (() => {
   const key = 'subpanel.theme'
+  const guestKey = 'subpanel:layout:guest:theme'
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   const valid = (value) => value === 'system' || value === 'light' || value === 'dark'
-  const read = () => {
+  const read = (storageKey = key) => {
     try {
-      const value = localStorage.getItem(key)
+      const value = localStorage.getItem(storageKey)
       return valid(value) ? value : 'system'
     } catch {
       return 'system'
@@ -23,6 +24,6 @@
     return mode
   }
 
-  window.subpanelTheme = { key, media, read, resolve, apply }
-  apply()
+  window.subpanelTheme = { key, guestKey, media, read, resolve, apply }
+  apply(read(guestKey))
 })()
