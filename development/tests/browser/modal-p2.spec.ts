@@ -213,6 +213,9 @@ for (const width of [1440, 1024, 390]) {
         '/api/me/subscriptions/sub': { subscription },
         '/api/apps': { apps: [], downloadsEnabled: true },
         '/api/account/subscription-platforms': { platforms: [{ platform: 'mihomo', displayName: 'Mihomo' }] },
+        '/api/user/subscription': async (route: Route) => {
+          await route.fulfill({ status: 404, json: { error: { code: 'UNIFIED_SUBSCRIPTION_DISABLED', message: '统一订阅暂未开放' } } })
+        },
         '/api/shares': async (route: Route) => {
           if (route.request().method() === 'POST') {
             expect(route.request().postDataJSON()).toMatchObject({ subscriptionId: 'sub', remark: '分享测试' })
