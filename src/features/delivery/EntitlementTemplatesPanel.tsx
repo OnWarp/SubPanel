@@ -6,6 +6,7 @@ import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
@@ -45,13 +46,20 @@ function configFields(config: EntitlementConfig, catalog: CatalogResponse | null
 }
 
 export function EntitlementTemplatesPage() {
+  const [params] = useSearchParams()
+  const owner = params.get('owner')
+  const navigate = useNavigate()
+  const closeEditor = () => {
+    setEditor(null)
+    if (owner) navigate(`/users/${encodeURIComponent(owner)}?tab=subscription`)
+  }
   const [templates, setTemplates] = useState<EntitlementTemplate[]>([])
   const [catalog, setCatalog] = useState<CatalogResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [editor, setEditor] = useState<Editor | null>(null)
+  const [editor, setEditor] = useState<Editor | null>(() => owner ? { draft: emptyDraft } : null)
   const [history, setHistory] = useState<History | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [query, setQuery] = useState('')
@@ -104,12 +112,13 @@ export function EntitlementTemplatesPage() {
     setError('')
     setBusy(true)
     try {
-      await api(original ? `${entitlementTemplatesPath}/${original.id}` : entitlementTemplatesPath, {
+      const createPath = owner ? `/api/admin/users/${encodeURIComponent(owner)}/template-bindings/private-template` : entitlementTemplatesPath
+      await api(original ? `${entitlementTemplatesPath}/${original.id}` : createPath, {
         method: original ? 'PATCH' : 'POST',
         body: jsonBody({ ...draft, expectedRevision: original?.revision }),
       })
-      setEditor(null)
-      await load()
+      closeEditor()
+      if (!owner) await load()
     } catch (error) {
       setError(errors(error))
     } finally {
@@ -151,13 +160,10 @@ export function EntitlementTemplatesPage() {
 
   const columns: DataTableColumn<EntitlementTemplate>[] = [
     { key: 'name', header: '名称' },
-    { key: 'term', header: '有效期', render: ({ currentVersion }) => termLabel(currentVersion.config) },
-    { key: 'quota', header: '流量额度', render: ({ currentVersion }) => quotaLabel(currentVersion.config) },
-    { key: 'nodes', header: '节点分配', render: ({ currentVersion }) => nodePolicyLabel(currentVersion.config) },
-    { key: 'version', header: '版本', render: ({ currentVersion }) => `v${currentVersion.number}` },
+    { key: 'resources', header: '资源数', render: ({ currentVersion: { config } }) => config.groupIds.length + config.nodeIds.length },
+    { key: 'boundUserCount', header: '绑定用户数', align: 'right' },
+    { key: 'term', header: '默认时长', render: ({ currentVersion }) => termLabel(currentVersion.config) },
     { key: 'status', header: '状态', render: ({ status }) => <StatusBadge tone={status === 'enabled' ? 'success' : 'muted'} size="sm">{ENTITLEMENT_STATUS[status]}</StatusBadge> },
-    { key: 'subscriptionCount', header: '关联订阅', align: 'right' },
-    { key: 'updatedAt', header: '最近更新', render: ({ updatedAt }) => formatDate(updatedAt) },
     { key: 'actions', header: '操作', align: 'right', render: (template) =>
       <ResourceRowActions actions={[
         ...(template.status === 'archived' ? [] : [
@@ -182,7 +188,7 @@ export function EntitlementTemplatesPage() {
 
   return (
     <section className="page-stack del-templates-page" aria-label="订阅模板">
-      <PageHeader title="订阅模板" />
+      <PageHeader title="权益模板" />
       {error && !editor && !pending && <StatusMessage tone="error">{error}</StatusMessage>}
       {loading ? <LoadingState label="正在加载订阅模板" /> : loadError ? <ErrorState message={loadError} onRetry={() => { void load() }} /> :
         templates.length === 0 ? <><EmptyState title="暂无订阅模板">{createButton}</EmptyState></> : <>
@@ -196,10 +202,10 @@ export function EntitlementTemplatesPage() {
           </FilterBar>
           <DataTable columns={columns} rows={visible} rowKey={({ id }) => id} empty="没有匹配的订阅模板" className="del-template-table" />
         </>}
-      <Dialog size="xl" open={!!editor} title={original ? '编辑订阅模板' : '新建订阅模板'} busy={busy}
-        dirty={!!draft && JSON.stringify(draft) !== JSON.stringify(baseDraft)} onClose={() => setEditor(null)}
+      <Dialog size="l" open={!!editor} title={original ? '编辑权益模板' : owner ? '新建专属模板' : '新建权益模板'} busy={busy}
+        dirty={!!draft && JSON.stringify(draft) !== JSON.stringify(baseDraft)} onClose={closeEditor}
         footer={<>
-          {configChanged && <span className="drawer-note" role="status">{`将创建 v${original.currentVersion.number + 1}，新版本仅影响后续发放`}</span>}
+          {configChanged && <span className="drawer-note" role="status">{`发布后影响 ${original.boundUserCount} 位已绑定用户`}</span>}
           <button className="button primary" form="entitlement-template-form" type="submit" disabled={busy}>保存模板</button>
         </>}>
         {draft && config && <form id="entitlement-template-form" className="drawer-form" onSubmit={save}>
@@ -243,14 +249,14 @@ export function EntitlementTemplatesPage() {
             </FormField>
           </details>
           <FormGroup title="发放设置">
-            <label className="choice-row"><Checkbox checked={draft.allowRedemption}
-              onChange={(event) => changeDraft({ allowRedemption: event.currentTarget.checked })} />开放兑换码发放（兑换功能上线后生效）</label>
+            <label className="choice-row"><Checkbox disabled={!!owner || !!original?.ownerUserId} checked={draft.allowRedemption}
+              onChange={(event) => changeDraft({ allowRedemption: event.currentTarget.checked })} />开放兑换码发放</label>
           </FormGroup>
           <p className="drawer-note">{termLabel(config)} · {quotaLabel(config)} · {nodePolicyLabel(config)}</p>
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
         </form>}
       </Dialog>
-      <Dialog size="xl" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
+      <Dialog size="l" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
         {history?.error && <ErrorState message={history.error} onRetry={() => { void openHistory(history.template) }} />}
         {history && !history.versions && !history.error && <LoadingState label="正在加载版本" />}
         {history?.versions?.map((version, index, versions) => {
@@ -266,7 +272,7 @@ export function EntitlementTemplatesPage() {
         })}
       </Dialog>
       <ConfirmDialog open={!!pending} title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
-        description={error || '此后无法用该模板创建订阅。已创建订阅继续按原配置使用'}
+        description={error || `将影响 ${pending?.template.boundUserCount ?? 0} 位已绑定用户`}
         confirmLabel={pending?.action === 'archive' ? '确认归档' : '确认停用'} danger busy={busy}
         onClose={() => { setPending(null); setError('') }}
         onConfirm={() => { if (pending) void mutate(pending.template, pending.action) }} />

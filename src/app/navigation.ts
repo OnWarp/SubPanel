@@ -12,9 +12,8 @@ export const adminSections: NavSection[] = [
     { to: '/catalog/groups', label: '分组', icon: FolderKanban },
   ] },
   { label: '订阅', items: [
-    { to: '/delivery/subscriptions', label: '订阅管理', icon: Send },
+    { to: '/delivery/templates', label: '权益模板', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
-    { to: '/plans', label: '订阅计划', icon: ShieldCheck },
   ] },
   { label: '用户', items: [{ to: '/users', label: '用户管理', icon: Users }] },
   { label: '运营', items: [
@@ -43,19 +42,18 @@ export const adminDomains: AdminDomain[] = [
     ] },
   },
   {
-    to: '/delivery/subscriptions', label: '订阅管理', shortLabel: '订阅', icon: Send,
+    to: '/delivery/templates', label: '订阅管理', shortLabel: '订阅', icon: Send,
     section: { label: '订阅管理导航', tabs: [
-      { to: '/delivery/subscriptions', label: '订阅列表' },
-      { to: '/delivery/templates', label: '订阅模板' },
+      { to: '/delivery/templates', label: '权益模板' },
       { to: '/delivery/conversions', label: '转换配置' },
       { to: '/delivery/shares', label: '分享' },
-      { to: '/plans', label: '订阅计划' },
+      { to: '/delivery/redemptions', label: '兑换码' },
     ] },
   },
   {
     to: '/users', label: '用户管理', shortLabel: '用户', icon: Users,
     section: { label: '用户管理子页', preserveSearch: true, tabs: [
-      { to: '/users', label: '用户' },
+      { to: '/users', label: '用户', includeChildren: true },
       { to: '/invites', label: '邀请' },
       { to: '/users/recycle-bin', label: '回收站' },
     ] },
@@ -82,10 +80,11 @@ export const adminDomains: AdminDomain[] = [
 ]
 
 /** Narrow dock only. Operations and system settings stay on the desktop sidebar and the narrow account menu. */
-const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/subscriptions', '/users'])
+const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/templates', '/users'])
 export const adminMobileDock = adminDomains.filter((domain) => adminMobileDockTargets.has(domain.to))
 
 export function matchesSectionTab(tab: SectionTab, path: string) {
+  if (tab.to === '/users' && path === '/users/recycle-bin') return false
   return Boolean(matchPath({ path: tab.to, end: !tab.includeChildren }, path))
 }
 

@@ -120,6 +120,15 @@ export async function verifyShadowUser(env: DataEnv, userId: string, now: number
     }
   }
   if (formatDifferences.length) reasons.add('FORMAT_DIFFERS')
+  const oldExpired = Math.max(...legacyWindows.flatMap(row =>
+    row.expiresAt !== null && row.expiresAt <= now ? [row.expiresAt] : []))
+  const oldLastExpiredAt = state === 'expired' && Number.isFinite(oldExpired) ? oldExpired : null
+  const newLastExpiredAt = aggregate.status === 'expired' ? aggregate.lastExpiredAt : null
+  if (oldLastExpiredAt !== newLastExpiredAt) reasons.add('WINDOW_DIFFERS')
+  const displayNodes = (nodes: typeof catalog.nodes) =>
+    JSON.stringify(nodes.map(node => JSON.stringify([node.displayName, node.protocol])).sort())
+  if (displayNodes(oldNodes) !== displayNodes(aggregate.nodes)) reasons.add('NODE_DISPLAY_DIFFERS')
+
   return {
     userId, matches: reasons.size === 0, reasons: [...reasons], formatDifferences,
     oldNodes: oldNodes.length, newNodes: aggregate.nodes.length, measuredTraffic: null, operations,
