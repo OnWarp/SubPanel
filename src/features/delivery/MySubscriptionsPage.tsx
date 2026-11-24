@@ -1,3 +1,4 @@
+import { Dialog } from '../../ui/Dialog'
 import { Input } from '../../ui/Controls'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
 import { KeyRound, RefreshCw, Share2 } from 'lucide-react'
@@ -5,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { subscriptionPlanLabels } from './plan-types'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
-import { ShareDrawer } from '../shares/ShareDrawer'
+import { CreateShareForm, ShareDrawer } from '../shares/ShareDrawer'
 import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
@@ -36,8 +37,19 @@ function groupSummary(groupIds: string[]): string {
 export function MySubscriptionsPage() {
   const downloadsEnabled = useDownloadsEnabled()
   const [params, setParams] = useSearchParams()
+  const [unified, setUnified] = useState<{ status: string; subscriptionUrl: string | null; shareEnabled: boolean }>()
+  const [unifiedShareOpen, setUnifiedShareOpen] = useState(false)
+  const [unifiedShareUrl, setUnifiedShareUrl] = useState('')
+  const [revokeShares, setRevokeShares] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    void api<NonNullable<typeof unified>>('/api/user/subscription', { signal: controller.signal })
+      .then(setUnified).catch(() => undefined)
+    return () => controller.abort()
+  }, [])
   const [shareEnabled, setShareEnabled] = useState(false)
-  const shareParam = shareEnabled ? params.get('share') ?? '' : ''
+  const legacyShareEnabled = shareEnabled && !unified
+  const shareParam = legacyShareEnabled ? params.get('share') ?? '' : ''
   const shareButtonRef = useRef<HTMLButtonElement>(null)
   const appliedShare = useRef('')
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>(EMPTY_SUBSCRIPTIONS)
@@ -195,11 +207,33 @@ export function MySubscriptionsPage() {
         />} />
 
       <div className="upd-secondary-actions">
+        {unified?.status === 'active' && unified.shareEnabled && <Button variant="secondary" onClick={() => {
+          setUnifiedShareUrl('')
+          setUnifiedShareOpen(true)
+        }}>分享统一订阅</Button>}
+        {unified && <Button variant="secondary" onClick={() => setRevokeShares(true)}>撤销全部分享</Button>}
         {downloadsEnabled ? <Link className="button secondary" to="/apps">下载客户端</Link> : null}
       </div>
       {message ? <StatusMessage tone="success">{message}</StatusMessage> : null}
       {error ? <div className="inline-alert"><StatusMessage tone="error">{error}</StatusMessage><Button variant="secondary" onClick={() => { load().catch(() => undefined) }}><RefreshCw aria-hidden="true" size={16} />重试</Button></div> : null}
 
+      <Dialog open={unifiedShareOpen} title="分享统一订阅" onClose={() => setUnifiedShareOpen(false)} busy={busy}>
+        {unifiedShareUrl ? <div className="form-stack">
+          <Input aria-label="分享链接" readOnly value={unifiedShareUrl} />
+          <CopyButton value={unifiedShareUrl} label="复制分享链接" />
+        </div> : <CreateShareForm scope={{ type: 'unified' }} onCancel={() => setUnifiedShareOpen(false)}
+          onPending={setBusy} onCreated={(_share, url) => setUnifiedShareUrl(url)} />}
+      </Dialog>
+      <ConfirmDialog open={revokeShares} title="撤销全部分享" confirmLabel="撤销" description="现有分享链接将失效" busy={busy}
+        onClose={() => setRevokeShares(false)} onConfirm={() => {
+          setBusy(true)
+          void api('/api/shares/revoke-all', { method: 'POST', body: jsonBody({}) })
+            .then(() => { setRevokeShares(false); setMessage('已撤销全部分享') })
+            .catch(cause => setError(errorMessage(cause, '撤销分享失败'))).finally(() => setBusy(false))
+        }} />
+      {unified?.subscriptionUrl && <div className="data-section">
+        <CopyButton value={unified.subscriptionUrl} label="复制统一订阅链接" />
+      </div>}
       <div className="del-user-column">
         {tokenNotice ? <section className="token-strip" aria-label="新订阅令牌"><div><strong>{tokenNotice.name} 的新令牌</strong><span>{tokenNotice.warning}</span></div><Input aria-label="新订阅令牌" value={tokenNotice.token} readOnly /><CopyButton iconOnly value={tokenNotice.token} label="复制令牌" /></section> : null}
 
@@ -218,7 +252,7 @@ export function MySubscriptionsPage() {
                 <StatusBadge tone={selected.status ? (selected.status === 'active' ? 'success' : 'muted') : selected.planState === 'active' || (selected.planState === undefined && selected.enabled) ? 'success' : 'muted'}>{selected.statusLabel ?? (selected.planState ? subscriptionPlanLabels[selected.planState] : selected.enabled ? '正常' : '已停用')}</StatusBadge>
                 <StatusBadge tone={expiryBadge.tone}>{expiryBadge.label}</StatusBadge>
               </span>
-              {shareEnabled ? <button ref={shareButtonRef} className="button ghost" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button> : null}
+              {legacyShareEnabled ? <button ref={shareButtonRef} className="button ghost" type="button" onClick={() => openShare(selected.id)}><Share2 aria-hidden="true" size={16} />分享</button> : null}
             </div>
             <dl className="exp-status-meta">
               <div><dt>到期时间</dt><dd>{expiry.expiresAt === null ? '永久有效' : formatExpiryTime(expiry.expiresAt)}</dd></div>

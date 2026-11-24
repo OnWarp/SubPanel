@@ -8,10 +8,13 @@ import { api, ApiClientError, jsonBody, peekApi, watchApi } from '../../app/api'
 export type ShareStatus = 'active' | 'disabled' | 'revoked'
 export type ShareAccess = 'none' | 'password'
 
+export type ShareScope = { type: 'unified' } | { type: 'template'; templateId: string }
+
 export type ShareView = {
   id: string
   ownerUserId: string
-  subscriptionId: string
+  subscriptionId: string | null
+  scope?: ShareScope
   tokenPrefix: string
   remark: string
   status: ShareStatus
@@ -40,7 +43,8 @@ export type ShareMeta = {
 }
 
 export type CreateShareInput = {
-  subscriptionId: string
+  subscriptionId?: string
+  scope?: ShareScope
   remark?: string
   expiresAt?: string
   allowOriginalLink?: boolean

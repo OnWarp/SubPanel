@@ -1,3 +1,5 @@
+import { auditStatement } from '../admin/audit.js'
+import { apiError } from '../platform/api-error.js'
 import { z } from 'zod'
 import { readAccounts } from '../accounts/repository.js'
 import { SHARES_D1_READY_KEY, SHARES_SETTING_KEYS, isModuleReady, type DataEnv } from '../db/module-switch.js'
@@ -128,7 +130,11 @@ export async function readShareKv(kv: KVNamespace, tokenHash: string): Promise<S
 }
 
 export async function readShare(env: DataEnv, tokenHash: string): Promise<ShareRecord | null> {
-  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return readShareFromD1(env.DB, tokenHash)
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    const row = await env.DB.prepare('SELECT record_json FROM user_subscription_shares WHERE token_hash=?')
+      .bind(tokenHash).first<string>('record_json')
+    return row ? parseShare(row) : readShareFromD1(env.DB, tokenHash)
+  }
   return readShareKv(env.DATA, tokenHash)
 }
 
@@ -195,7 +201,8 @@ export async function listIndexedShares(env: DataEnv, key: string): Promise<Shar
   if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
     const filter = indexFilter(key)
     if (!filter) return []
-    return listSharesFromD1(env.DB, filter)
+    const legacy = await listSharesFromD1(env.DB, filter)
+    return filter.ownerUserId ? [...legacy, ...await listUnifiedShares(env, filter.ownerUserId)] : legacy
   }
   return listIndexedSharesKv(env.DATA, key)
 }
@@ -240,7 +247,9 @@ export async function listAllSharesKv(kv: KVNamespace): Promise<ShareRecord[]> {
 }
 
 export async function listAllShares(env: DataEnv): Promise<ShareRecord[]> {
-  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) return listSharesFromD1(env.DB)
+  if (await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    return [...await listSharesFromD1(env.DB), ...await listUnifiedShares(env)]
+  }
   return listAllSharesKv(env.DATA)
 }
 
@@ -303,6 +312,16 @@ export async function claimExportAccess(env: DataEnv, tokenHash: string, nowIso:
   if (!share || share.status !== 'active') return false
   if (Date.parse(share.expiresAt) <= Date.parse(nowIso)) return false
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) return false
+  if (share.scope) {
+    const result = await env.DB.prepare(`UPDATE user_subscription_shares SET record_json=json_set(record_json,
+      '$.accessCount',json_extract(record_json,'$.accessCount')+1,'$.lastAccessedAt',?)
+      WHERE token_hash=? AND json_extract(record_json,'$.status')='active'
+        AND json_extract(record_json,'$.expiresAt')>?
+        AND (json_extract(record_json,'$.maxAccessCount') IS NULL OR
+          json_extract(record_json,'$.accessCount')<json_extract(record_json,'$.maxAccessCount'))`)
+      .bind(nowIso, tokenHash, nowIso).run()
+    return result.meta.changes === 1
+  }
   // accessCount is updated with the share row. Concurrent exports are best-effort.
   await writeShare(env, {
     ...share,
@@ -310,4 +329,48 @@ export async function claimExportAccess(env: DataEnv, tokenHash: string, nowIso:
     lastAccessedAt: nowIso,
   })
   return true
+}
+
+async function listUnifiedShares(env: DataEnv, userId?: string) {
+  const statement = userId
+    ? env.DB.prepare('SELECT record_json FROM user_subscription_shares WHERE user_id=?').bind(userId)
+    : env.DB.prepare('SELECT record_json FROM user_subscription_shares')
+  const { results } = await statement.all<{ record_json: string }>()
+  return results.map(row => parseShare(row.record_json))
+}
+
+export async function writeUnifiedShare(env: DataEnv, actor: string, previous: ShareRecord | null, next: ShareRecord, action: string) {
+  const db = env.DB
+  const templateId = next.scope?.type === 'template' ? next.scope.templateId : null
+  let statement: D1PreparedStatement
+  if (previous) {
+    statement = db.prepare(`UPDATE user_subscription_shares SET token_hash=?, record_json=json_set(?,
+      '$.accessCount',json_extract(record_json,'$.accessCount'),'$.lastAccessedAt',json_extract(record_json,'$.lastAccessedAt'))
+      WHERE id=? AND token_hash=? AND json_extract(record_json,'$.updatedAt')=?
+        AND json_extract(record_json,'$.status')<>'revoked'`)
+      .bind(next.tokenHash, JSON.stringify(next), next.id, previous.tokenHash, previous.updatedAt)
+  } else {
+    const settings = await readShareSettings(env)
+    statement = db.prepare(`INSERT INTO user_subscription_shares (id,user_id,template_id,token_hash,record_json)
+      SELECT ?,?,?,?,? WHERE
+        (SELECT count(*) FROM user_subscription_shares WHERE user_id=? AND template_id IS ?) < ?
+        AND ((SELECT count(*) FROM user_subscription_shares WHERE user_id=?
+          AND json_extract(record_json,'$.status')='active') +
+          (SELECT count(*) FROM shares WHERE owner_user_id=? AND status='active')) < ?`)
+      .bind(next.id, next.ownerUserId, templateId, next.tokenHash, JSON.stringify(next), next.ownerUserId,
+        templateId, settings.maxSharesPerSubscription, next.ownerUserId, next.ownerUserId, settings.maxActiveSharesPerUser)
+  }
+  const audit = auditStatement(db, actor, `subscription.share.${action}`, 'share', next.id, {
+    userId: next.ownerUserId, templateId, requestId: crypto.randomUUID(),
+    before: previous && { status: previous.status, expiresAt: previous.expiresAt },
+    after: { status: next.status, expiresAt: next.expiresAt },
+  }, next.updatedAt)
+  const [result] = await db.batch([statement, db.prepare(`INSERT INTO system_settings (key,value,updated_at)
+    SELECT 'unified_share_conflict',NULL,? WHERE changes()<>1`).bind(next.updatedAt), audit]).catch(error => {
+    if (error instanceof Error && error.message.includes('system_settings.value')) {
+      throw apiError(409, 'SHARE_CONFLICT', '分享已更新或数量已达上限')
+    }
+    throw error
+  })
+  return result
 }

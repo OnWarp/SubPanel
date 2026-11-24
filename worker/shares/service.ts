@@ -1,3 +1,9 @@
+import { resolveUserSubscription } from '../delivery/aggregate.js'
+import { readArtifactCatalog } from '../delivery/artifacts.js'
+import { renderResolvedSubscription } from '../delivery/compiler.js'
+import { unifiedOperationsEnabled } from '../delivery/user-access.js'
+import { SHARES_D1_READY_KEY, isModuleReady } from '../db/module-switch.js'
+import { getEffectiveTemplate } from '../templates/repository.js'
 import type { Principal } from '../app-env.js'
 import type { User } from '../accounts/schema.js'
 import { readAccounts } from '../accounts/repository.js'
@@ -26,6 +32,7 @@ import {
   subscriptionIndexKey,
   userIndexKey,
   writeShare,
+  writeUnifiedShare,
   writeShareSettings,
 } from './repository.js'
 import { primaryDomainOriginSafe } from '../domains/service.js'
@@ -175,7 +182,8 @@ async function guard(
   sessionHash: string | null,
   password: string | undefined,
   now: Date,
-): Promise<{ share: ShareRecord, subscription: Subscription, settings: ShareSettings }> {
+) {
+
   const settings = await readShareSettings(env)
   if (!settings.enabled) throw notFound()
   const share = await readShare(env, await hashToken(token))
@@ -194,13 +202,17 @@ async function guard(
     throw notFound()
   }
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
+  if (share.scope) return { share, settings, aggregate: await resolveShareScope(env, share, now.getTime()) }
+  if (await unifiedOperationsEnabled(env.DB)) {
+    throw shareError(404, 'SHARE_LEGACY_SCOPE_REVIEW', '旧分享已暂停，请联系分享者重新创建')
+  }
   const subscription = await liveSubscription(env, share)
   if (!subscription) throw notFound()
   if (kind !== 'export' && subscriptionRowStatus(subscription, now.getTime())) throw notFound()
   return { share, subscription, settings }
 }
 
-async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date, actorRole: Principal['role']): Promise<ShareRecord> {
+async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date, actorRole: Principal['role'], actor = share.ownerUserId): Promise<ShareRecord> {
   if (share.status === status) return share
   if (share.status === 'revoked') throw shareError(409, 'SHARE_REVOKED', '已撤销的分享不能变更状态')
   if (status === 'active') {
@@ -209,7 +221,8 @@ async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, 
     await assertActiveCapacity(env, settings, share.ownerUserId)
   }
   const next: ShareRecord = { ...share, status, updatedAt: now.toISOString() }
-  await writeShare(env, next)
+  if (share.scope) await writeUnifiedShare(env, actor, share, next, status)
+  else await writeShare(env, next)
   if (status !== 'active') await deleteShareCompiled(env.DATA, share.tokenHash)
   return next
 }
@@ -232,16 +245,23 @@ export async function createShare(
   const settings = await readShareSettings(env)
   assertFeatureEnabled(actorRole, settings)
   if (!settings.createAllowed) throw shareError(403, 'SHARE_CREATE_DISABLED', '当前不允许创建分享')
-  const delivery = await readDelivery(env)
-  const subscription = delivery.subscriptions.find((item) => item.id === input.subscriptionId)
-  if (!subscription || subscription.userId !== ownerUserId) throw shareError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-  const status = subscriptionRowStatus(subscription, now.getTime())
-  if (status && status !== 'pending') {
-    throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
+  const unified = await unifiedOperationsEnabled(env.DB)
+  if (unified !== Boolean(input.scope)) {
+    throw shareError(422, 'SHARE_SCOPE_REQUIRED', '请选择可用的分享范围')
+  }
+  if (input.scope) {
+    if (!await isModuleReady(env.DB, SHARES_D1_READY_KEY)) throw notFound()
+    await resolveShareScope(env, { ownerUserId, scope: input.scope }, now.getTime())
+  } else {
+    const delivery = await readDelivery(env)
+    const subscription = delivery.subscriptions.find(item => item.id === input.subscriptionId)
+    if (!subscription || subscription.userId !== ownerUserId) throw shareError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+    const status = subscriptionRowStatus(subscription, now.getTime())
+    if (status && status !== 'pending') throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
+    await assertSubscriptionCapacity(env, settings, subscription.id)
   }
   const expiresAt = input.expiresAt ?? new Date(now.getTime() + settings.maxValidityDays * DAY_MS).toISOString()
   assertExpiry(expiresAt, now.getTime(), settings.maxValidityDays)
-  await assertSubscriptionCapacity(env, settings, subscription.id)
   await assertActiveCapacity(env, settings, ownerUserId)
   const mode = input.accessControl ?? (input.password ? 'password' : settings.defaultAccessControl)
   let accessControl: ShareRecord['accessControl']
@@ -259,15 +279,16 @@ export async function createShare(
   const nowIso = now.toISOString()
   const record: ShareRecord = {
     schemaVersion: 1,
-    id: await allocateShareId(env),
+    id: input.scope ? `shr_${crypto.randomUUID()}` : await allocateShareId(env),
     ownerUserId,
-    subscriptionId: subscription.id,
+    subscriptionId: input.subscriptionId ?? null,
+    scope: input.scope,
     ...sealed,
     remark: input.remark ?? '',
     status: 'active',
     accessControl,
     expiresAt,
-    allowOriginalLink: input.allowOriginalLink ?? settings.defaultAllowOriginalLink,
+    allowOriginalLink: !input.scope && (input.allowOriginalLink ?? settings.defaultAllowOriginalLink),
     showSubscriptionName: input.showSubscriptionName ?? false,
     showGroups: input.showGroups ?? false,
     showExpiry: input.showExpiry ?? false,
@@ -280,9 +301,12 @@ export async function createShare(
     createdAt: nowIso,
     updatedAt: nowIso,
   }
-  await writeShare(env, record)
-  await addIndexHash(env, userIndexKey(ownerUserId), record.tokenHash)
-  await addIndexHash(env, subscriptionIndexKey(subscription.id), record.tokenHash)
+  if (record.scope) await writeUnifiedShare(env, ownerUserId, null, record, 'create')
+  else {
+    await writeShare(env, record)
+    await addIndexHash(env, userIndexKey(ownerUserId), record.tokenHash)
+    await addIndexHash(env, subscriptionIndexKey(record.subscriptionId!), record.tokenHash)
+  }
   return { share: toShareView(record), token }
 }
 
@@ -306,7 +330,7 @@ export async function updateShare(
   const next: ShareRecord = {
     ...current,
     remark: input.remark ?? current.remark,
-    allowOriginalLink: input.allowOriginalLink ?? current.allowOriginalLink,
+    allowOriginalLink: !current.scope && (input.allowOriginalLink ?? current.allowOriginalLink),
     showSubscriptionName: input.showSubscriptionName ?? current.showSubscriptionName,
     showGroups: input.showGroups ?? current.showGroups,
     showExpiry: input.showExpiry ?? current.showExpiry,
@@ -317,7 +341,8 @@ export async function updateShare(
     assertExpiry(input.expiresAt, now.getTime(), settings.maxValidityDays)
     next.expiresAt = input.expiresAt
   }
-  await writeShare(env, next)
+  if (current.scope) await writeUnifiedShare(env, ownerUserId, current, next, 'update')
+  else await writeShare(env, next)
   return toShareView(next)
 }
 
@@ -348,10 +373,14 @@ export async function resetShareToken(
     throw shareError(409, 'SHARE_TOKEN_COLLISION', '分享令牌冲突')
   }
   const next: ShareRecord = { ...current, ...sealed, updatedAt: now.toISOString() }
+  if (current.scope) {
+    await writeUnifiedShare(env, ownerUserId, current, next, 'rotate')
+    return { share: toShareView(next), token }
+  }
   await writeShare(env, next)
   if (sealed.tokenHash !== current.tokenHash) {
     await replaceIndexHash(env, userIndexKey(current.ownerUserId), current.tokenHash, sealed.tokenHash)
-    await replaceIndexHash(env, subscriptionIndexKey(current.subscriptionId), current.tokenHash, sealed.tokenHash)
+    await replaceIndexHash(env, subscriptionIndexKey(current.subscriptionId!), current.tokenHash, sealed.tokenHash)
     await deleteShare(env, current.tokenHash)
     await deleteShareCompiled(env.DATA, current.tokenHash)
   }
@@ -360,9 +389,13 @@ export async function resetShareToken(
 
 export async function removeShare(env: DataEnv, id: string, ownerUserId: string): Promise<void> {
   const current = await requireOwned(env, id, ownerUserId)
+  if (current.scope) {
+    await setStatus(env, current, 'revoked', new Date(), 'user')
+    return
+  }
   await deleteShare(env, current.tokenHash)
   await removeIndexHash(env, userIndexKey(current.ownerUserId), current.tokenHash)
-  await removeIndexHash(env, subscriptionIndexKey(current.subscriptionId), current.tokenHash)
+  await removeIndexHash(env, subscriptionIndexKey(current.subscriptionId!), current.tokenHash)
   await deleteShareCompiled(env.DATA, current.tokenHash)
 }
 
@@ -379,7 +412,7 @@ export async function revealOriginalLink(
   if (current.status !== 'active' || Date.parse(current.expiresAt) <= now.getTime()) {
     throw shareError(409, 'SHARE_UNAVAILABLE', '分享当前不可用')
   }
-  if (!current.allowOriginalLink) throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
+  if (current.scope || await unifiedOperationsEnabled(env.DB) || !current.allowOriginalLink) throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
   const delivery = await readDelivery(env)
   const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
   if (!subscription || subscriptionRowStatus(subscription, now.getTime())) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
@@ -398,7 +431,13 @@ export async function readShareMeta(
   sessionHash: string | null,
   now = new Date(),
 ): Promise<ShareMeta> {
-  const { share, subscription } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
+  const { share, subscription, aggregate } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
+  if (aggregate) return {
+    nodeCount: aggregate.nodes.length,
+    ...(share.showExpiry ? { expiresAt: share.expiresAt } : {}),
+    ...(share.showNodeNames ? { nodeNames: aggregate.nodes.map(node => node.displayName) } : {}),
+  }
+  if (!subscription) throw notFound()
   const { catalog, nodes, authorizedGroupIds } = await resolveEntitlement(env, subscription, now.toISOString())
   // 公开预览仅返回启用节点的显示名称
   const enabled = nodes.filter((node) => node.enabled)
@@ -450,6 +489,23 @@ export async function exportShare(
   })
   if (!parsed.success) throw notFound()
   const nowIso = now.toISOString()
+  if (guarded.aggregate) {
+    const client = parsed.data.type !== 'link' && resolveShareClient(parsed.data.client ?? '')
+    if (!client) throw notFound()
+    const conversion = client === 'mihomo' || client === 'singbox'
+      ? await getEffectiveTemplate(env.DB, null, client) : undefined
+    const artifact = await renderResolvedSubscription(env, { id: null, revision: guarded.aggregate.access!.revision! },
+      client, guarded.aggregate, nowIso, undefined, undefined, conversion)
+    if (!artifact.available) throw notFound()
+    const current = await resolveShareScope(env, guarded.share, Date.now())
+    if (current.templateRevision !== guarded.aggregate.templateRevision ||
+      current.catalog.revision !== guarded.aggregate.catalog.revision ||
+      JSON.stringify(current.effectiveTemplateIds) !== JSON.stringify(guarded.aggregate.effectiveTemplateIds) ||
+      !(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, new Date().toISOString()))) throw notFound()
+    return { kind: 'client', body: artifact.body, contentType: artifact.contentType,
+      fileName: artifact.fileName, downloadName: artifact.fileName, etag: artifact.etag, profileTitle: null }
+  }
+  if (!guarded.subscription) throw notFound()
   if (parsed.data.type === 'link') {
     if (!guarded.share.allowOriginalLink) throw notFound()
     assertSubscriptionAvailable(guarded.subscription, now.getTime())
@@ -495,6 +551,44 @@ export async function adminChangeStatus(
   id: string,
   status: 'disabled' | 'revoked',
   now = new Date(),
+  actor?: string,
 ): Promise<ShareView> {
-  return toShareView(await setStatus(env, await requireById(env, id), status, now, 'admin'))
+  return toShareView(await setStatus(env, await requireById(env, id), status, now, 'admin', actor))
+}
+
+async function resolveShareScope(env: DataEnv, share: Pick<ShareRecord, 'scope' | 'ownerUserId'>, now: number) {
+  if (!share.scope || !await unifiedOperationsEnabled(env.DB)) throw notFound()
+  const scope = share.scope.type === 'template' ? share.scope.templateId : undefined
+  const aggregate = await resolveUserSubscription(env.DB, share.ownerUserId, now, await readArtifactCatalog(env), scope)
+  if (aggregate.status !== 'active' || aggregate.diagnostics.length || !aggregate.nodes.length) throw notFound()
+  return aggregate
+}
+
+export async function revokeAllShares(env: DataEnv, userId: string) {
+  if (!await isModuleReady(env.DB, SHARES_D1_READY_KEY)) {
+    const shares = await listIndexedShares(env, userIndexKey(userId))
+    for (const share of shares) await setStatus(env, share, 'revoked', new Date(), 'user')
+    return
+  }
+  const db = env.DB
+  const now = new Date().toISOString()
+  const requestId = crypto.randomUUID()
+  await db.batch([
+    db.prepare(`INSERT INTO audit_logs (id,actor_user_id,action,target_type,target_id,detail,created_at)
+      SELECT lower(hex(randomblob(16))),?,'subscription.share.revoked','share',id,
+        json_object('userId',user_id,'templateId',template_id,'requestId',?,
+          'before',json_object('status',json_extract(record_json,'$.status'),'expiresAt',json_extract(record_json,'$.expiresAt')),
+          'after',json_object('status','revoked','expiresAt',json_extract(record_json,'$.expiresAt'))),?
+      FROM user_subscription_shares WHERE user_id=? AND json_extract(record_json,'$.status')<>'revoked'`)
+      .bind(userId, requestId, now, userId),
+    db.prepare(`UPDATE user_subscription_shares SET record_json=json_set(record_json,'$.status','revoked','$.updatedAt',?)
+      WHERE user_id=? AND json_extract(record_json,'$.status')<>'revoked'`).bind(now, userId),
+    db.prepare(`INSERT INTO audit_logs (id,actor_user_id,action,target_type,target_id,detail,created_at)
+      SELECT lower(hex(randomblob(16))),?,'subscription.share.revoked','share',id,
+        json_object('userId',owner_user_id,'subscriptionId',subscription_id,'requestId',?,
+          'before',json_object('status',status,'expiresAt',expires_at),
+          'after',json_object('status','revoked','expiresAt',expires_at)),?
+      FROM shares WHERE owner_user_id=? AND status<>'revoked'`).bind(userId,requestId,now,userId),
+    db.prepare("UPDATE shares SET status='revoked',updated_at=? WHERE owner_user_id=? AND status<>'revoked'").bind(now,userId),
+  ])
 }

@@ -93,6 +93,10 @@ export function convertShares(
     }
     seenIds.add(share.id)
 
+    if (!share.subscriptionId || share.scope) {
+      report.skipped++
+      continue
+    }
     const accessControl = share.accessControl
     const isPassword = accessControl.mode === 'password'
     const passwordHash = isPassword ? (accessControl as { mode: 'password'; passwordHash: { algorithm: 'PBKDF2-SHA-256'; iterations: number; salt: string; hash: string } }).passwordHash : null

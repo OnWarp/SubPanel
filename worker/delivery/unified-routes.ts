@@ -1,9 +1,11 @@
+import { readShare, readShareSettings } from '../shares/repository.js'
+import { noteSubscriptionFetch, readUserFetchSummary, stageSubscriptionFetch } from './fetch-stats.js'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { requireAuth } from '../accounts/auth.js'
 import { listEnabledPlatforms, primaryDomainOriginSafe } from '../domains/service.js'
-import { apiError } from '../platform/api-error.js'
+import { apiError, ApiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
 import { clientAliases, clientFromUserAgent, tokenPattern } from '../public-subscriptions.js'
@@ -54,7 +56,7 @@ unifiedUserRoutes.get('/', async c => {
   const result = await resolveUserSubscription(c.env.DB, c.get('principal').id, Date.now(), catalog)
   const token = result.diagnostics.length ? null : await revealUserToken(c.env, result.access)
   const origin = token && (await primaryDomainOriginSafe(c.env.DB, 'subscription') ?? new URL(c.req.url).origin)
-  const enabledFormats = await listEnabledPlatforms(c.env.DB)
+  const [enabledFormats, shareSettings] = await Promise.all([listEnabledPlatforms(c.env.DB), readShareSettings(c.env)])
   const supportedFormats = [...new Set(enabledFormats.flatMap(({ platform }) =>
     platform === 'auto' ? [] : [clientAliases[platform] ?? platform]))]
   return c.json({
@@ -64,6 +66,7 @@ unifiedUserRoutes.get('/', async c => {
     permanent: result.permanent,
     subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
     supportedFormats,
+    shareEnabled: shareSettings.enabled && shareSettings.createAllowed,
     hasAvailableNodes: result.nodes.length > 0,
   })
 })
@@ -165,6 +168,14 @@ unifiedAdminRoutes.get(`${subscription}/preview`, async c => {
   })
 })
 
+unifiedAdminRoutes.get(`${subscription}/fetch-stats`, async c => {
+  const userId = c.req.param('id')
+  if (!await readUserAccess(c.env.DB, { userId })) throw subscriptionNotFound()
+  const ids = await c.env.DB.prepare('SELECT id FROM subscriptions WHERE user_id=? ORDER BY id')
+    .bind(userId).all<{ id: string }>()
+  return c.json({ fetches: await readUserFetchSummary(c.env.DATA, userId, ids.results.map(row => row.id)), measuredTraffic: null })
+})
+
 unifiedAdminRoutes.get(`${subscription}/shadow`, async c => {
   if (!await isModuleReady(c.env.DB, DELIVERY_D1_READY_KEY)) {
     throw apiError(503, 'UNIFIED_SHADOW_UNAVAILABLE', '旧订阅 D1 数据未就绪')
@@ -177,12 +188,25 @@ unifiedPublicRoutes.all('/s', c => {
   c.header('Cache-Control', 'private, no-store')
   throw subscriptionNotFound()
 })
+unifiedPublicRoutes.get('/s/:token', async (c, next) => {
+  const token = c.req.param('token')
+  if (c.req.header('Accept')?.includes('text/html') && tokenPattern.test(token) &&
+    await readShare(c.env, await hashToken(token))) {
+    const shell = await c.env.ASSETS.fetch(new URL('/', c.req.url))
+    const headers = new Headers(shell.headers)
+    headers.set('Cache-Control', 'private, no-store')
+    headers.set('Referrer-Policy', 'no-referrer')
+    return new Response(shell.body, { status: shell.status, headers })
+  }
+  await next()
+})
 unifiedPublicRoutes.use('/s/*', (c, next) => privateResponse(c, next, true))
 unifiedPublicRoutes.get('/s/:token/:client?', async c => {
   const limited = () => {
     c.header('Retry-After', '60')
     return apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
   }
+  const started = Date.now()
   const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
   if (!await allowSubscriptionFetch(c.env.DB, 'address', address, undefined, 'unified_subscription')) throw limited()
   const configured = Number(c.env.PUBLIC_FETCH_GLOBAL_LIMIT)
@@ -201,17 +225,33 @@ unifiedPublicRoutes.get('/s/:token/:client?', async c => {
     (detected === 'generic' ? access.default_client ?? detected : detected)).toLowerCase()
   const client = clientIdSchema.safeParse(clientAliases[requested] ?? requested)
   if (!client.success) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
-  const artifact = await loadUnifiedArtifact(c.env, access.user_id, tokenHash, client.data)
-  if (!artifact.available && (client.data === 'mihomo' || artifact.inputNodes > 0)) {
-    throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
+  let status = 500
+  try {
+    const artifact = await loadUnifiedArtifact(c.env, access.user_id, tokenHash, client.data)
+    if (!artifact.available && (client.data === 'mihomo' || artifact.inputNodes > 0)) {
+      throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
+    }
+    c.header('Content-Type', artifact.contentType)
+    c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
+    c.header('ETag', artifact.etag)
+    c.header('x-subscription-client', client.data)
+    if (artifact.available && c.req.header('If-None-Match')?.split(',')
+      .some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) {
+        status = 304
+        return c.body(null, 304)
+      }
+      status = 200
+    return c.body(artifact.body)
+  } catch (err) {
+    if (err instanceof ApiError) status = err.status
+    throw err
+  } finally {
+    const key = `user:${access.user_id}`
+    stageSubscriptionFetch(key, {
+      at: new Date().toISOString(), platform: client.data, ok: status < 400, status, durationMs: Date.now()-started,
+    })
+    c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, key))
   }
-  c.header('Content-Type', artifact.contentType)
-  c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
-  c.header('ETag', artifact.etag)
-  c.header('x-subscription-client', client.data)
-  if (artifact.available && c.req.header('If-None-Match')?.split(',')
-    .some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) return c.body(null, 304)
-  return c.body(artifact.body)
 })
 
 unifiedPublicRoutes.all('/s/*', () => { throw subscriptionNotFound() })

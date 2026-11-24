@@ -86,7 +86,7 @@ export function PersonalRedemptions() {
             onClick={() => { setPending(undefined); setMessage('') }}>返回修改</button> : null}
         </FormActions>
       </form>
-      {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{`已兑换 ${receipt.name}`}</StatusMessage><Link to={`/subscriptions?subscription=${receipt.id}`}>查看新订阅</Link></div> : null}
+      {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{`已兑换 ${receipt.name}`}</StatusMessage><Link to={receipt.templateId ? '/subscriptions' : `/subscriptions?subscription=${receipt.id}`}>查看订阅</Link></div> : null}
     </section>
     <section className="data-section user-account-card redemption-section" aria-label="兑换历史">
       <h2>兑换历史</h2>

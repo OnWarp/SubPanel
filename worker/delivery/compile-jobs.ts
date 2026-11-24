@@ -1,3 +1,4 @@
+import { unifiedOperationsEnabled } from './user-access.js'
 import { sha256Base64Url } from '../platform/hash.js'
 import { batchConfirmation, batchInput, enqueueBatch, reviewBatch, runBatchItem, type Operation } from './subscription-batch.js'
 import { Hono } from 'hono'
@@ -19,7 +20,7 @@ const scopeSchema = z.object({
 })
 type Scope = z.infer<typeof scopeSchema>
 type Job = {
-  id: string; platform: RenderClient; plan_id: string | null; group_id: string | null;
+  id: string; actor_user_id: string; platform: RenderClient; plan_id: string | null; group_id: string | null;
   operation_json: string | null; cursor: string; status: string; lease: string | null; lease_until: number | null;
 }
 const pageSize = 4
@@ -72,7 +73,7 @@ async function createJob(env: DataEnv, scope: Scope, actor: string) {
 }
 
 function rejectRetiredAction(action: unknown) {
-  if (action === 'copy') throw apiError(410, 'SUBSCRIPTION_BATCH_ACTION_REMOVED', '订阅批量操作已移除')
+  if (action === 'copy' || action === 'transfer') throw apiError(410, 'SUBSCRIPTION_BATCH_ACTION_REMOVED', '订阅批量操作已移除')
 }
 
 async function runPage(env: DataEnv, id: string) {
@@ -81,7 +82,7 @@ async function runPage(env: DataEnv, id: string) {
   const lease = crypto.randomUUID()
   const job = await db.prepare(`UPDATE compile_jobs SET lease=?, lease_until=?, status='running', updated_at=?
     WHERE id=? AND status IN ('queued','running')
-      AND json_extract(operation_json,'$.input.action') IS NOT 'copy' AND (lease_until IS NULL OR lease_until <= ?)
+      AND coalesce(json_extract(operation_json,'$.input.action'),'') NOT IN ('copy','transfer') AND (lease_until IS NULL OR lease_until <= ?)
     RETURNING *`).bind(lease, started + leaseMs, new Date(started).toISOString(), id, started).first<Job>()
   if (!job) {
     const existing = await getJob(db, id)
@@ -151,7 +152,7 @@ async function runBatchPage(env: DataEnv, job: Job, lease: string, started: numb
     for (const item of page.results) {
       if (!await db.prepare("SELECT 1 FROM compile_jobs WHERE id=? AND lease=? AND status='running'")
         .bind(job.id, lease).first()) break
-      await runBatchItem(env, { id: job.id, lease }, item, operation)
+      await runBatchItem(env, { id: job.id, lease, actor: job.actor_user_id }, item, operation)
     }
   } catch {
     pageFailed = true
@@ -185,6 +186,7 @@ compileJobRoutes.get('/', async c => c.json({ jobs: (await c.env.DB.prepare(
 compileJobRoutes.post('/', async c => c.json({ job: await createJob(
   c.env, await readJson(c, scopeSchema), c.get('principal').id,
 ) }, 201))
+compileJobRoutes.get('/batch/capabilities', async c => c.json({ unified: await unifiedOperationsEnabled(c.env.DB) }))
 compileJobRoutes.post('/batch/preview', async c => c.json((await reviewBatch(
   c.env, await readJson(c, batchInput), c.get('principal').id,
 )).preview))

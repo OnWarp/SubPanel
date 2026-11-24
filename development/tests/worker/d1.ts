@@ -1,3 +1,4 @@
+import operationsSql from '../../../migrations/0027_unified_subscription_operations.sql?raw'
 import unifiedSql from '../../../migrations/0026_unified_subscription.sql?raw'
 import coreGSql from '../../../migrations/0025_core_g.sql?raw'
 import subscriptionV2P3Sql from '../../../migrations/0023_subscription_v2_p3.sql?raw'
@@ -34,6 +35,7 @@ export const D1_TABLES = [
   'app_platforms',
   'apps',
   'audit_logs',
+  'binding_redemption_records',
   'catalog_sync_leases',
   'catalog_sync_runs',
   'compile_job_items',
@@ -47,6 +49,7 @@ export const D1_TABLES = [
   'cron_runs',
   'email_change_requests',
   'email_verifications',
+  'entitlement_plan_policies',
   'entitlement_template_versions',
   'entitlement_templates',
   'group_node_order',
@@ -68,6 +71,7 @@ export const D1_TABLES = [
   'panel_domains',
   'plan_groups',
   'plans',
+  'private_entitlement_templates',
   'rate_limits',
   'redemption_batches',
   'redemption_codes',
@@ -89,7 +93,12 @@ export const D1_TABLES = [
   'system_settings',
   'ticket_replies',
   'tickets',
+  'user_binding_requests',
   'user_entitlements_legacy',
+  'user_subscription_access',
+  'user_subscription_reminders',
+  'user_subscription_shares',
+  'user_template_bindings',
   'users',
 ] as const
 
@@ -275,6 +284,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     ] },
     { name: '0025_core_g.sql', queries: coreGSql.trim().split(/;\s*\n(?=(?:ALTER|DROP|CREATE)|$)/u).filter(Boolean) },
   ])
+  await applyUnifiedMigration(db)
 }
 
 export async function listTables(db: D1Database = env.DB): Promise<string[]> {
@@ -289,6 +299,7 @@ export async function emptyDatabase(db: D1Database = env.DB): Promise<void> {
   if (names.length === 0) return
   const sql = [
     'PRAGMA foreign_keys = OFF',
+    'DROP VIEW IF EXISTS all_redemption_records',
     'DROP VIEW IF EXISTS conversion_effective_bindings',
     'DROP VIEW IF EXISTS conversion_profile_catalog',
     'DROP VIEW IF EXISTS conversion_profile_outputs',
@@ -305,5 +316,5 @@ export async function applyUnifiedMigration(db: D1Database = env.DB) {
       ...splitSqlStatements(unifiedSql.replace(triggerPattern, '')),
       ...(unifiedSql.match(triggerPattern) ?? []),
     ],
-  }])
+  }, { name: '0027_unified_subscription_operations.sql', queries: splitSqlStatements(operationsSql) }])
 }

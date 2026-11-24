@@ -1,3 +1,4 @@
+import { createShare, readShareMeta } from '../../../worker/shares/service'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, expect, it } from 'vitest'
 import { markModuleReady, ACCOUNTS_D1_READY_KEY } from '../../../worker/db/module-switch'
@@ -182,7 +183,7 @@ it('reports an equivalent fixture and rejects a legacy limit conflict without fa
   expect(await verifyShadowUser(env, 'usr_2', instant, catalog)).toMatchObject({
     matches: false, reasons: expect.arrayContaining(['PLAN_POLICY_UNVERIFIED', 'NODES_DIFFER']), newNodes: 0, measuredTraffic: null,
   })
-  expect(await resolve(instant)).toMatchObject({ diagnostics: ['PLAN_POLICY_UNVERIFIED'], nodes: [] })
+  expect(await resolve(instant)).toMatchObject({ diagnostics: [], unverifiedQuota: true, nodes: [{ id: nodeId }, { id: otherNodeId }] })
 })
 
 it('uses a single current system conversion and keeps user artifacts isolated', async () => {
@@ -241,4 +242,18 @@ it('uses per-user batch transactions and limits artifact lifetime to the next au
   await markModuleReady(env.DB, userSubscriptionPublicReady)
   const artifact = await loadUnifiedArtifact(env, userId, access.token_hash!, 'generic')
   expect(artifact.validUntil).toBe(now + 20_000)
+})
+
+it('holds legacy shares for scope review when unified public operations are enabled', async () => {
+  const now = Date.now()
+  const { subscription } = await createSubscription(env, {
+    userId, name: 'Legacy scope', groupIds: [groupId], startsAt: now - 100, expiresAt: null,
+  })
+  const { token } = await createShare(env, userId, { subscriptionId: subscription.id })
+  expect(await readShareMeta(env, token, null, null)).toMatchObject({ nodeCount: 2 })
+  await markModuleReady(env.DB, userSubscriptionPublicReady)
+  await expect(readShareMeta(env, token, null, null)).rejects.toMatchObject({ code: 'SHARE_LEGACY_SCOPE_REVIEW' })
+  expect(await verifyShadowUser(env, userId, now, await readCatalog(env))).toMatchObject({
+    matches: false, reasons: expect.arrayContaining(['LEGACY_SHARE_SCOPE_REVIEW_REQUIRED']),
+  })
 })

@@ -104,13 +104,13 @@ async function scrubKvShares(
 ): Promise<void> {
   const shares = await listAllSharesKv(kv).catch(() => [])
   for (const share of shares) {
-    if (share.ownerUserId === userId || subscriptionIds.has(share.subscriptionId)) {
+    if (share.ownerUserId === userId || (share.subscriptionId !== null && subscriptionIds.has(share.subscriptionId))) {
       // Same cleanup removeShare performs (record, both indexes, compiled
       // artifacts), spelled out with the KV-explicit variants so it also
       // reaches KV-era records after the shares module moved to D1.
       await deleteShareKv(kv, share.tokenHash).catch(() => undefined)
       await removeIndexHashKv(kv, userIndexKey(share.ownerUserId), share.tokenHash).catch(() => undefined)
-      await removeIndexHashKv(kv, subscriptionIndexKey(share.subscriptionId), share.tokenHash).catch(() => undefined)
+      if (share.subscriptionId) await removeIndexHashKv(kv, subscriptionIndexKey(share.subscriptionId), share.tokenHash).catch(() => undefined)
       await deleteShareCompiled(kv, share.tokenHash).catch(() => undefined)
     }
   }
@@ -360,6 +360,12 @@ adminAccountRoutes.post('/users/:id/purge', async (c) => {
   if (target.role === 'admin' && !hasOtherAdmin(accounts.users, target.id)) {
     throw apiError(409, 'LAST_ADMIN', '不能永久删除最后一个管理员')
   }
+  const retained = await c.env.DB.prepare(`SELECT 1 WHERE
+    EXISTS (SELECT 1 FROM user_template_bindings WHERE user_id=?)
+    OR EXISTS (SELECT 1 FROM user_binding_requests WHERE user_id=?)
+    OR EXISTS (SELECT 1 FROM private_entitlement_templates WHERE owner_user_id=?)
+    OR EXISTS (SELECT 1 FROM user_subscription_shares WHERE user_id=?)`).bind(target.id,target.id,target.id,target.id).first()
+  if (retained) throw apiError(409, 'USER_SUBSCRIPTION_HISTORY_RETAINED', '统一订阅历史需要保留，用户将留在回收站')
   const now = new Date().toISOString()
   const userId = target.id
   if (await accountsUseD1(c.env)) {

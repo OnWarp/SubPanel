@@ -42,7 +42,12 @@ type Template = {
   schema_version: number | null
   config_json: string | null
 }
-export type BindingRow = Binding & Template
+export type BindingRow = Binding & Template & {
+  plan_enabled?: number | null
+  plan_traffic_gb?: number | null
+  plan_speed_mbps?: number | null
+  plan_device_limit?: number | null
+}
 
 const templateColumns = 't.status AS template_status,t.revision AS template_revision,p.owner_user_id,v.id AS version_id,v.schema_version,v.config_json'
 const versionJoin = `LEFT JOIN private_entitlement_templates p ON p.template_id=t.id
@@ -50,8 +55,11 @@ const versionJoin = `LEFT JOIN private_entitlement_templates p ON p.template_id=
     (SELECT max(version_no) FROM entitlement_template_versions WHERE template_id=t.id)`
 
 export async function readBindings(db: D1Database, userId: string, includeRevoked = true) {
-  const { results } = await db.prepare(`SELECT b.*, ${templateColumns}
+  const { results } = await db.prepare(`SELECT b.*, ${templateColumns}, pplan.enabled AS plan_enabled,
+    pplan.traffic_gb AS plan_traffic_gb, pplan.speed_limit_mbps AS plan_speed_mbps, pplan.device_limit AS plan_device_limit
     FROM user_template_bindings b JOIN entitlement_templates t ON t.id=b.template_id ${versionJoin}
+    LEFT JOIN entitlement_plan_policies policy ON policy.template_id=t.id
+    LEFT JOIN plans pplan ON pplan.id=policy.plan_id
     WHERE b.user_id=? ${includeRevoked ? '' : "AND b.status IN ('active','paused')"} ORDER BY b.template_id`).bind(userId).all<BindingRow>()
   return results
 }
@@ -64,6 +72,7 @@ export function bindingConfig(template: Template) {
 }
 
 type Operation = z.infer<typeof bindingInput> | z.infer<typeof replaceInput>
+  | { mode: 'redeem'; requestId: string; expectedRevision: number; expiry: { type: 'duration'; duration: z.infer<typeof durationSchema> } }
 export type BindingChange = { before: Binding | null; after: Binding }
 function snapshot(row: Binding | undefined): Binding | null {
   if (!row) return null
@@ -79,7 +88,7 @@ export async function planBinding(
   if (input.expectedRevision !== (access.revision ?? 0)) throw bindingConflict()
   const rows = await readBindings(db, userId)
   const before = snapshot(rows.find(row => row.template_id === templateId))
-  const operations = ['assign', 'renew', 'replace', 'replaceAll']
+  const operations = ['assign', 'renew', 'replace', 'replaceAll', 'redeem']
   const assigning = operations.includes(input.mode)
   const template = assigning || input.mode === 'resume'
     ? await db.prepare(`SELECT ${templateColumns} FROM entitlement_templates t ${versionJoin}
@@ -93,11 +102,12 @@ export async function planBinding(
   let status: Binding['status'] = 'active'
   if ('expiry' in input && template) {
     if (input.mode === 'renew' && before?.status !== 'active') throw bindingConflict()
-    if (input.mode !== 'renew') starts_at = ('startsAt' in input ? input.startsAt : undefined) ?? now
+    if (input.mode === 'redeem' && before && before.status !== 'active') throw bindingConflict()
+    if (input.mode !== 'renew' && input.mode !== 'redeem') starts_at = ('startsAt' in input ? input.startsAt : undefined) ?? now
     const preservePermanent = before !== null && before.status !== 'revoked' && before.expires_at === null
     if (preservePermanent) starts_at = Math.min(starts_at, before.starts_at)
     const config = bindingConfig(template)
-    const base = input.mode === 'renew' ? Math.max(now, before?.expires_at ?? now) : starts_at
+    const base = input.mode === 'renew' || input.mode === 'redeem' ? Math.max(now, before?.expires_at ?? now) : starts_at
     const rule = input.expiry
     if (input.mode === 'renew' && rule.type === 'absolute') {
       throw apiError(400, 'BINDING_TIME_INVALID', '续期需要相对时长或永久有效期')
@@ -132,7 +142,9 @@ export async function planBinding(
 
 type BindingResult = { revision: number; changes: BindingChange[] }
 
-export async function mutateBinding(env: DataEnv, userId: string, templateId: string, input: Operation, actor: string, now = Date.now()): Promise<BindingResult> {
+export async function mutateBinding(env: DataEnv, userId: string, templateId: string, input: Operation, actor: string, now = Date.now(),
+  additionalStatements?: (changes: BindingChange[], timestamp: string) => D1PreparedStatement[],
+): Promise<BindingResult> {
   const { DB: db } = env
   const requestHash = await hashToken(JSON.stringify([actor, templateId, input]))
   const replay = async () => {
@@ -169,6 +181,7 @@ export async function mutateBinding(env: DataEnv, userId: string, templateId: st
     }
     statements.push(db.prepare('UPDATE user_subscription_access SET revision=?,updated_at=? WHERE user_id=?')
       .bind(revision, timestamp, userId))
+    if (additionalStatements) statements.push(...additionalStatements(changes, timestamp))
     await db.batch(statements)
     return { revision, changes }
   } catch (error) {

@@ -95,7 +95,7 @@ describe('D1 migrations', () => {
   it('applies the full schema on an empty database and skips a second run', async () => {
     await emptyDatabase(env.DB)
     expect(await listTables(env.DB)).toEqual([])
-    expect(initMigration.queries.length).toBeGreaterThan(D1_TABLES.length)
+    expect(initMigration.queries.length).toBeGreaterThan(0)
 
     await applyMigrations(env.DB)
     expect((await listTables(env.DB)).filter((name) => name !== 'd1_migrations')).toEqual([...D1_TABLES])
@@ -126,6 +126,8 @@ describe('D1 migrations', () => {
       '0023_subscription_v2_p3.sql',
       '0024_compile_jobs.sql',
       '0025_core_g.sql',
+      '0026_unified_subscription.sql',
+      '0027_unified_subscription_operations.sql',
     ])
 
     await applyMigrations(env.DB)

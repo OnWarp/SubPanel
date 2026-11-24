@@ -213,3 +213,32 @@ export async function deleteFetchStats(kv: KVNamespace, subscriptionId: string):
     // Best effort. The subscription row is already gone.
   }
 }
+
+export async function readUserFetchSummary(kv: KVNamespace, userId: string, historicalIds: readonly string[]) {
+  const records = await Promise.all([...new Set([`user:${userId}`, ...historicalIds])].map(id => materialize(kv, id)))
+  const result = emptyStats()
+  const merge = (target: Aggregate, source: Aggregate) => {
+    target.success += source.success
+    target.failure += source.failure
+    for (const [status, count] of Object.entries(source.byStatus)) {
+      target.byStatus[status] = (target.byStatus[status] ?? 0) + count
+    }
+    if (source.duration.count === 0) return
+    target.duration.min = target.duration.count ? Math.min(target.duration.min, source.duration.min) : source.duration.min
+    target.duration.max = Math.max(target.duration.max, source.duration.max)
+    target.duration.sum += source.duration.sum
+    target.duration.count += source.duration.count
+  }
+  for (const record of records) {
+    merge(result, record)
+    if (record.lastFetchAt && (!result.lastFetchAt || record.lastFetchAt > result.lastFetchAt)) {
+      result.lastFetchAt = record.lastFetchAt
+      result.lastPlatform = record.lastPlatform
+      result.lastOk = record.lastOk
+      result.lastStatus = record.lastStatus
+    }
+    const platforms = result.byPlatform ??= {}
+    for (const [id, stats] of Object.entries(record.byPlatform ?? {})) merge(platforms[id] ??= emptyAggregate(), stats)
+  }
+  return presentFetchSummary(result)
+}

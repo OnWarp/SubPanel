@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { FormSelect } from '../../ui/Controls'
+import { FormSelect, Input } from '../../ui/Controls'
 import type { Plan } from './plan-types'
 import { Dialog } from '../../ui/Dialog'
 import { StatusMessage } from '../../ui/StatusMessage'
 
 const path = '/api/admin/compile-jobs'
 export type BatchOperation =
+  | { action: 'assign' | 'renew' | 'pause' | 'revoke'; templateId: string; days?: number }
   | { action: 'enable' | 'disable' }
   | { action: 'plan'; planId: string }
   | { action: 'binding'; templateBinding: { mode: 'inherit' | 'base' } | { mode: 'specific'; templateId: string } }
@@ -15,6 +16,7 @@ type BatchInput = { ids: string[]; operation: BatchOperation }
 type Preview = {
   previewId: string; fingerprint: string; selected: number; affected: number; missing: number
   platforms: string[]
+  changes?: { userId: string; errorCode?: string; changes?: { before: { expires_at: number | null } | null; after: { expires_at: number | null; status: string } }[] }[]
 }
 type Job = {
   id: string; action: BatchOperation['action'] | 'copy' | null; total: number; processed: number; failures: number
@@ -22,7 +24,7 @@ type Job = {
   errorCode: string | null
 }
 type Item = { id: string; outcome: 'applied' | 'failed' | null; errorCode: string | null; copyId: string | null }
-const label = { copy: '复制订阅', enable: '启用订阅', disable: '停用订阅', plan: '更换计划', binding: '更换配置' }
+const label = { assign: '绑定模板', renew: '续期授权', pause: '暂停授权', revoke: '撤销授权', copy: '已停用的批量操作', enable: '启用订阅', disable: '停用订阅', plan: '更换计划', binding: '更换配置' }
 const status = { queued: '待执行', running: '执行中', failed: '有失败', cancelled: '已取消', completed: '已完成' }
 
 type Props = {
@@ -38,6 +40,11 @@ type Props = {
 }
 
 export function SubscriptionBatchJobs({ request, choosingPlan, plans, onPreviewPlan, onClear, historyOpen, onCloseHistory, onChanged, platforms }: Props) {
+  const [unified, setUnified] = useState(false)
+  const [userIds, setUserIds] = useState('')
+  const [templateId, setTemplateId] = useState('')
+  const [action, setAction] = useState<'assign' | 'renew' | 'pause' | 'revoke'>('assign')
+  const [days, setDays] = useState('')
   const [planId, setPlanId] = useState('')
   const choosingTarget = choosingPlan && !request
   const [review, setReview] = useState<{ input: BatchInput; preview: Preview } | null>(null)
@@ -64,7 +71,8 @@ export function SubscriptionBatchJobs({ request, choosingPlan, plans, onPreviewP
 
   useEffect(() => {
     if (!historyOpen || job || review) return
-    void loadJobs().catch(showError)
+    void Promise.all([loadJobs(), api<{ unified: boolean }>(`${path}/batch/capabilities`)
+      .then(result => setUnified(result.unified))]).catch(showError)
   }, [historyOpen, job, review])
 
   const perform = async (work: () => Promise<void>) => {
@@ -152,6 +160,25 @@ export function SubscriptionBatchJobs({ request, choosingPlan, plans, onPreviewP
               <li key={item.id}>{item.id} · {item.copyId ? `新订阅 ${item.copyId}` : item.errorCode}</li>,
             )}</ul>}
           </> : <>
+            {unified && <form className="form-stack" onSubmit={event => {
+              event.preventDefault()
+              void perform(async () => {
+                const input: BatchInput = { ids: userIds.trim().split(/[\s,，]+/u), operation: {
+                  action, templateId: templateId.trim(), ...((action === 'assign' || action === 'renew') && days ? { days: Number(days) } : {}),
+                } }
+                const preview = await api<Preview>(`${path}/batch/preview`, { method: 'POST', body: jsonBody(input) })
+                setReview({ input, preview })
+              })
+            }}>
+              <Input aria-label="用户编号" placeholder="用户编号，逗号分隔" value={userIds} required onChange={event => setUserIds(event.currentTarget.value)} />
+              <Input aria-label="授权模板编号" placeholder="授权模板编号" value={templateId} required onChange={event => setTemplateId(event.currentTarget.value)} />
+              <FormSelect aria-label="授权操作" value={action} onChange={event => setAction(event.currentTarget.value as typeof action)}>
+                {(['assign', 'renew', 'pause', 'revoke'] as const).map(value => <option key={value} value={value}>{label[value]}</option>)}
+              </FormSelect>
+              {(action === 'assign' || action === 'renew') && <Input aria-label="授权天数" placeholder="默认时长" type="number"
+                min={1} max={36500} value={days} onChange={event => setDays(event.currentTarget.value)} />}
+              <button className="button primary" disabled={busy}>预览授权</button>
+            </form>}
             <button className="button secondary" type="button" disabled={busy} onClick={() => void perform(loadJobs)}>刷新任务</button>
             {jobs.length === 0 && <p>暂无订阅批量任务</p>}
             {jobs.map(item => <button className="button secondary" type="button" key={item.id} disabled={busy}
@@ -173,6 +200,11 @@ export function SubscriptionBatchJobs({ request, choosingPlan, plans, onPreviewP
         {plans.filter((plan) => plan.enabled).map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}
       </FormSelect>}
       {error && <StatusMessage tone="error">{error}</StatusMessage>}
+      {review?.preview.changes && <ul>{review.preview.changes.map(item =>
+        <li key={item.userId}>{item.userId} · {item.errorCode ?? item.changes?.map(({ before, after }) => {
+          const date = (value: number | null) => value === null ? '永久' : new Date(value).toLocaleDateString()
+          return `${before ? date(before.expires_at) : '无授权'} → ${date(after.expires_at)}`
+        }).join('、')}</li>)}</ul>}
       {review && <div>
         <p>{review.preview.platforms.length
           ? `可能失效的平台产物：${review.preview.platforms.map(id => platforms[id]).join('、')}`
