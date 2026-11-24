@@ -339,6 +339,7 @@ for (const width of [1440, 1024, 390]) {
       await page.goto('/me/security')
       await page.getByRole('button', { name: '修改密码' }).click()
       const password = page.getByRole('dialog', { name: '修改密码' })
+      await expect(password.getByText('用户名不可修改，新密码须为 12 至 128 个字符', { exact: true })).toBeVisible()
       await verify(password, 'm', width, 'account-password')
       await password.getByLabel('当前密码').fill(currentPassword)
       await password.getByLabel('新密码', { exact: true }).fill(nextPassword)
