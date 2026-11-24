@@ -159,6 +159,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/me')
   await expect(page.getByRole('button', { name: '主题' })).toBeVisible()
+  await page.getByRole('link', { name: '通知设置', exact: true }).click()
   await expect(page.getByRole('switch', { name: '到期提醒' })).toBeVisible()
   assert.deepEqual(await clipped(), [], 'mine clips a control at 390')
   console.log('Mobile theme control and reminder switch passed')

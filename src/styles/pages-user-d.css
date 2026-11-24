@@ -78,8 +78,80 @@
 
 .upd-home .sp-stat-sub { font-size: var(--font-sm); }
 
-/* Mine: hairline groups. The page title stays the only 20px heading. */
-.upd-mine .user-account-grid { gap: var(--space-5); }
+/* Personal center */
+.upd-mine-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--space-3);
+}
+
+.upd-mine-panel,
+.upd-mine-menu {
+  min-width: 0;
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-page-panel);
+  background: var(--color-surface);
+}
+
+.upd-mine-panel { padding: var(--space-4); overflow-wrap: anywhere; }
+.upd-mine-panel p { margin: 0; color: var(--color-text-muted); }
+.upd-mine-identity { display: flex; align-items: center; gap: var(--space-3); }
+.upd-mine-identity .profile-avatar { flex: none; }
+.upd-mine-identity strong { font-size: var(--font-lg); }
+
+.upd-mine-subscription-heading,
+.upd-mine-plan {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.upd-mine-subscription-heading h2 { margin: 0; font-size: var(--font-md); }
+.upd-mine-subscription-heading a,
+.upd-mine-back { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--size-touch-target); }
+.upd-mine-subscription-heading a { font-size: var(--font-sm); }
+.upd-mine-back { align-self: flex-start; color: var(--color-text-muted); }
+.upd-mine-plan strong { font-size: var(--font-lg); }
+.upd-mine-plan > :last-child { flex-shrink: 0; }
+
+.upd-mine-metrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: var(--size-divider) solid var(--color-border);
+}
+
+.upd-mine-metrics dt { color: var(--color-text-muted); font-size: var(--font-sm); }
+.upd-mine-metrics dd { margin: 0; font-weight: var(--weight-medium); }
+
+.upd-mine-subscription-link {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: var(--size-divider) solid var(--color-border);
+}
+
+.upd-mine-menu { display: grid; }
+.upd-mine-menu a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: max(var(--size-touch-target), 48px);
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.upd-mine-menu a:first-child { border-radius: var(--radius-page-panel) var(--radius-page-panel) 0 0; }
+.upd-mine-menu a:last-child { border-radius: 0 0 var(--radius-page-panel) var(--radius-page-panel); }
+.upd-mine-menu a + a { border-top: var(--size-divider) solid var(--color-border); }
+.upd-mine-menu a:hover { background: var(--color-surface-subtle); }
+.upd-mine-menu a svg { color: var(--color-text-muted); }
 
 .upd-mine .page-stack { gap: 0; }
 
@@ -88,8 +160,7 @@
   border-top: var(--size-divider) solid var(--color-border);
 }
 
-.upd-mine .user-account-card > h2,
-.upd-mine > .user-account-grid > section > h2 {
+.upd-mine .user-account-card > h2 {
   margin: 0 0 var(--space-3);
   font-size: var(--font-md);
   font-weight: var(--weight-semibold);
@@ -417,7 +488,7 @@
   .upd-home .object-card + .object-card { border-left: 0; border-top: var(--size-divider) solid var(--color-border); }
   .upd-home .object-card + .object-card .sp-stat-body,
   .upd-home .sp-stat-body { padding-left: 0; }
-  .upd-mine .user-account-card { padding: var(--space-4) 0; }
+  .upd-mine-overview { grid-template-columns: minmax(0, 1fr); }
   .upd-mine .upd-link-row { display: grid; }
   .upd-mine .upd-link-row .button { justify-content: flex-start; }
   .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr) auto; }

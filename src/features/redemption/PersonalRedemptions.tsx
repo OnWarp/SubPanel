@@ -1,16 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
-import { CopyButton } from '../../ui/CopyButton'
+import { api, ApiClientError, jsonBody } from '../../app/api'
 import { Input } from '../../ui/Controls'
 import { DataTable } from '../../ui/DataTable'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormActions, FormField } from '../../ui/FormField'
-import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { BYTES_PER_GIB, TERM_UNITS } from '../delivery/entitlement-types'
 import { formatExpiryTime } from '../delivery/expiry'
-import { pickPrimaryLink, useEnabledPlatforms } from '../delivery/platforms'
 import { errorText, myRedemptionsPath, useRedemptionPage, type Receipt, type RedemptionRecord } from './api'
 
 type Preview = {
@@ -29,26 +26,7 @@ export function PersonalRedemptions() {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [historyPage, setHistoryPage] = useState(1)
-  const [refresh, setRefresh] = useState(0)
-  const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
-  const [subscriptionError, setSubscriptionError] = useState('')
   const history = useRedemptionPage<RedemptionRecord>(myRedemptionsPath, historyPage)
-  const platforms = useEnabledPlatforms()
-
-  useEffect(() => {
-    const abort = new AbortController()
-    void api<{ subscriptions: AdminSubscription[] }>('/api/account/subscriptions', { signal: abort.signal })
-      .then((result) => {
-        if (abort.signal.aborted) return
-        setSubscriptionError('')
-        setSubscriptions(result.subscriptions.toSorted((a, b) =>
-          Number(b.status === 'active') - Number(a.status === 'active')
-          || (a.expiresAt ?? Infinity) - (b.expiresAt ?? Infinity)
-          || b.createdAt.localeCompare(a.createdAt)))
-      })
-      .catch((error) => { if (!abort.signal.aborted) setSubscriptionError(errorText(error)) })
-    return () => abort.abort()
-  }, [refresh])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -71,7 +49,6 @@ export function PersonalRedemptions() {
         setPending(undefined)
         setHistoryPage(1)
         history.reload()
-        setRefresh((value) => value + 1)
       }
     } catch (error) {
       setMessage(errorText(error))
@@ -105,32 +82,6 @@ export function PersonalRedemptions() {
         </FormActions>
       </form>
       {receipt ? <div className="redemption-actions"><StatusMessage tone="success">{`已兑换 ${receipt.name}`}</StatusMessage><Link to={`/subscriptions?subscription=${receipt.id}`}>查看新订阅</Link></div> : null}
-    </section>
-    <section className="data-section user-account-card redemption-section" aria-label="我的订阅">
-      <div className="section-heading">
-        <h2>我的订阅</h2>
-        <Link className="button secondary" to="/subscriptions">管理订阅</Link>
-      </div>
-      {subscriptionError ? <ErrorState message={subscriptionError} onRetry={() => setRefresh((value) => value + 1)} /> : null}
-      {(!subscriptionError || subscriptions) && <DataTable rows={subscriptions ?? []} rowKey={(row) => row.id}
-        loadingLabel={!subscriptions && !subscriptionError ? '正在加载订阅' : undefined} empty="暂无订阅，可使用兑换码"
-        columns={[
-          { key: 'name', header: '订阅名称' },
-          { key: 'status', header: '状态', render: (row) => <StatusBadge tone={row.status === 'active' ? 'success' : 'muted'}>{row.statusLabel ?? (row.enabled ? '启用' : '停用')}</StatusBadge> },
-          { key: 'expiresAt', header: '到期时间', render: (row) => row.expiresAt === null ? '永久有效' : formatExpiryTime(row.expiresAt) },
-          { key: 'trafficGb', header: '流量额度', render: (row) => row.trafficGb ? `${row.trafficGb} GiB` : '不限' },
-          { key: 'nodes', header: '节点策略', render: (row) => [
-            row.groupIds.length ? `${row.groupIds.length} 个动态组` : '',
-            row.directNodeCount ? `${row.directNodeCount} 个指定节点` : '',
-          ].filter(Boolean).join(' · ') || '未配置' },
-          { key: 'actions', header: '操作', render: (row) => {
-            const link = pickPrimaryLink(row.links, row.defaultClient, platforms)
-            return <div className="redemption-actions">
-              {link ? <CopyButton value={link} label="复制链接" /> : null}
-              <Link className="button secondary" to={`/subscriptions?subscription=${row.id}`}>管理</Link>
-            </div>
-          } },
-        ]} />}
     </section>
     <section className="data-section user-account-card redemption-section" aria-label="兑换历史">
       <h2>兑换历史</h2>
