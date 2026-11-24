@@ -84,6 +84,7 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
   onPending: (pending: boolean) => void
   onCreated: (share: ShareView, url: string) => void
 }) {
+  const idPrefix = formId ?? 'share'
   const [remark, setRemark] = useState('')
   const [days, setDays] = useState('')
   const [password, setPassword] = useState('')
@@ -143,12 +144,12 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
 
   return (
     <form id={formId} className="form-stack sh-form" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
-      <FormField label="备注" htmlFor="share-remark">
-        <Input id="share-remark" value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
+      <FormField label="备注" htmlFor={`${idPrefix}-remark`}>
+        <Input id={`${idPrefix}-remark`} value={remark} maxLength={200} disabled={submitting} onChange={(event) => setRemark(event.currentTarget.value)} />
       </FormField>
-      <FormField label="有效期（天）" htmlFor="share-days">
+      <FormField label="有效期（天）" htmlFor={`${idPrefix}-days`}>
         <Input
-          id="share-days"
+          id={`${idPrefix}-days`}
           inputMode="numeric"
           value={days}
           disabled={submitting}
@@ -161,9 +162,9 @@ export function CreateShareForm({ subscriptionId, scope, onCancel, onPending, on
           <FilterChip key={day} active={days === String(day)} onClick={() => { if (!submitting) setDays(String(day)) }}>{day} 天</FilterChip>
         ))}
       </div>
-      <FormField label="访问密码" htmlFor="share-password">
+      <FormField label="访问密码" htmlFor={`${idPrefix}-password`}>
         <Input
-          id="share-password"
+          id={`${idPrefix}-password`}
           type="password"
           autoComplete="new-password"
           maxLength={128}
