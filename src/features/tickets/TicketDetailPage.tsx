@@ -81,7 +81,7 @@ export function TicketDetailPage() {
 
   return (
     <div className="page-stack tk-page tk-detail">
-      <PageHero subtitle="查看工单处理进度"
+      <PageHero
         title={ticket?.title ?? '工单详情'}
         actions={(
           <span className="tk-head-actions">
@@ -102,7 +102,7 @@ export function TicketDetailPage() {
           <TicketThread ticket={thread.ticket} replies={thread.replies} viewerRole="user" />
           <section className="data-section tk-composer" aria-label="回复工单">
             {closed ? (
-              <p className="tk-closed-hint">工单已关闭，如需继续请新建工单</p>
+              <p className="tk-closed-hint">如需继续，请新建工单</p>
             ) : (
               <form className="tk-form" onSubmit={submitReply}>
                 <FormField label="追加回复" htmlFor="tk-reply-body">

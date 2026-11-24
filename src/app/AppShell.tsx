@@ -87,7 +87,7 @@ function AdminAccount({ signOut, onError, placement, layout, onLayoutChange, sho
       }}>
         <summary title="管理员账号菜单" aria-label={`${user?.username ?? ''}，管理员账号菜单`}>
           {avatar ? <img src={avatar} alt="" width={32} height={32} /> : <UserRound className="admin-avatar" size={32} aria-hidden="true" />}
-          <span className="admin-account-info"><strong>{user?.username}</strong><small>管理员</small></span>
+          <span className="admin-account-info"><strong>{user?.username}</strong></span>
           <ChevronDown size={16} aria-hidden="true" />
         </summary>
         <nav aria-label="管理员账号菜单">

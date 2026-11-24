@@ -33,7 +33,7 @@ export function MinePage() {
             <div><dt>邮箱</dt><dd>{profile.user.email ?? '未绑定'}</dd></div>
           </dl></> : error ? <ErrorState message={error} onRetry={() => { void reload() }} /> : <LoadingState label="正在加载账户资料" />}
         </section>
-        <section className="data-section user-account-card"><h2>通知设置</h2><Switch label="到期提醒" checked={reminder} onChange={updateReminder} /><p className="profile-hint">仅保存在此浏览器，订阅到期前 7 天在首页提醒</p>{preferenceError ? <p role="alert">{preferenceError}</p> : null}</section>
+        <section className="data-section user-account-card"><h2>通知设置</h2><Switch label="到期提醒" checked={reminder} onChange={updateReminder} /><p className="profile-hint">仅在此浏览器生效，到期前 7 天在首页提醒</p>{preferenceError ? <p role="alert">{preferenceError}</p> : null}</section>
         <section className="data-section user-account-card mobile-bar-settings"><h2>显示设置</h2><MobileBarOptions /></section>
         <section className="data-section user-account-card"><h2>帮助与支持</h2><nav className="upd-link-row" aria-label="帮助与支持"><Link className="button ghost" to="/notices">公告</Link><Link className="button ghost" to="/kb">知识库</Link><Link className="button ghost" to="/tickets">工单</Link>{downloadsEnabled ? <Link className="button ghost" to="/apps">客户端下载</Link> : null}</nav></section>
       </div>

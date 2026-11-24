@@ -1,4 +1,4 @@
-import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
+import { OperationsActions, OperationsFooter } from '../admin/OperationsCard'
 import { FormSelect } from '../../ui/Controls'
 import { FilterBar } from '../../ui/FilterBar'
 import { MessageSquare } from 'lucide-react'
@@ -106,7 +106,6 @@ export function AdminTicketsPage() {
     <div className="page-stack tk-page ops-page">
       <PageHeader title="工单" />
       <section className="data-section" aria-label="工单">
-        <OperationsHeading title="工单" />
         <FilterBar>
           <label className="filter-field">
             <span>工单状态</span>
@@ -122,7 +121,7 @@ export function AdminTicketsPage() {
         {!loading && !loadError ? (
           <>
             {total === 0
-              ? <EmptyState icon={MessageSquare} title="暂无工单" description={statusFilter === 'all' ? '用户提交的工单会显示在这里' : '当前筛选下没有工单'} />
+              ? <EmptyState icon={MessageSquare} title={statusFilter === 'all' ? '暂无工单' : '暂无匹配工单'} />
               : <DataTable columns={columns} rows={tickets} rowKey={(ticket) => ticket.id} empty="暂无匹配工单" />}
             <OperationsFooter total={total} pagination={{ page, pageCount, onPageChange: setPage }} />
           </>

@@ -407,7 +407,7 @@ export function ShareDrawer({ subscription, onClose, returnFocusRef }: {
 
           {loading ? <div className="sh-state"><LoadingState label="正在加载分享" /></div> : null}
           {!loading && loadError ? <div className="sh-state"><ErrorState message={loadError} onRetry={() => { if (subscriptionId) load(subscriptionId).catch(() => undefined) }} /></div> : null}
-          {!loading && !loadError && shares.length === 0 ? <div className="sh-state"><EmptyState title="还没有分享" description="创建后可以把链接发给别人" /></div> : null}
+          {!loading && !loadError && shares.length === 0 ? <div className="sh-state"><EmptyState title="还没有分享" /></div> : null}
           {!loading && !loadError && shares.length > 0 ? (
             <div className="sh-list">
               <h3 className="sh-list-title">分享列表</h3>

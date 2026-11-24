@@ -113,7 +113,7 @@ export function PersonalRedemptions() {
       </div>
       {subscriptionError ? <ErrorState message={subscriptionError} onRetry={() => setRefresh((value) => value + 1)} /> : null}
       {(!subscriptionError || subscriptions) && <DataTable rows={subscriptions ?? []} rowKey={(row) => row.id}
-        loadingLabel={!subscriptions && !subscriptionError ? '正在加载订阅' : undefined} empty="暂无订阅，可在下方输入兑换码"
+        loadingLabel={!subscriptions && !subscriptionError ? '正在加载订阅' : undefined} empty="暂无订阅，可使用兑换码"
         columns={[
           { key: 'name', header: '订阅名称' },
           { key: 'status', header: '状态', render: (row) => <StatusBadge tone={row.status === 'active' ? 'success' : 'muted'}>{row.statusLabel ?? (row.enabled ? '启用' : '停用')}</StatusBadge> },

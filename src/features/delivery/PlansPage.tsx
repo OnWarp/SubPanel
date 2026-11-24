@@ -60,7 +60,7 @@ export function PlansPage() {
     finally { setBusy(false) }
   }
   const openDraft = (plan: Plan) => { setError(''); setDraft(plan); setDraftBaseline(JSON.stringify(plan)) }
-  return <div className="page-stack ops-page"><PageHeader title="订阅计划" /><section className="data-section"><OperationsHeading title="订阅计划" action={<button className="button primary" onClick={() => openDraft({ ...empty })}>新增计划</button>} />
+  return <div className="page-stack ops-page"><PageHeader title="订阅计划" /><section className="data-section"><OperationsHeading action={<button className="button primary" onClick={() => openDraft({ ...empty })}>新增计划</button>} />
     {error && !draft ? <ErrorState message={error} onRetry={() => { void load() }} /> : null}
     {loading ? <LoadingState /> : <DataTable rows={plans} rowKey={(p) => p.id} empty="暂无计划" columns={[
       { key: 'name',header: '计划',render: (p) => <strong className="ops-main">{p.name}<span className="ops-meta">{p.description || p.id}</span></strong> },

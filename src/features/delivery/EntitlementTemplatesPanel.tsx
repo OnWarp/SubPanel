@@ -184,7 +184,7 @@ export function EntitlementTemplatesPage() {
       <PageHeader title="订阅模板" />
       {error && !editor && !pending && <StatusMessage tone="error">{error}</StatusMessage>}
       {loading ? <LoadingState label="正在加载订阅模板" /> : loadError ? <ErrorState message={loadError} onRetry={() => { void load() }} /> :
-        templates.length === 0 ? <><EmptyState title="暂无订阅模板" description="创建模板以复用有效期、流量额度和节点分配">{createButton}</EmptyState></> : <>
+        templates.length === 0 ? <><EmptyState title="暂无订阅模板">{createButton}</EmptyState></> : <>
           <FilterBar className="del-template-filters">
             <SearchInput value={query} onChange={setQuery} label="搜索模板" placeholder="搜索模板名称" />
             <FormSelect aria-label="模板状态" value={status} onChange={(event) => setStatus(event.currentTarget.value)}>

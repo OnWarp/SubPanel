@@ -261,7 +261,7 @@ export function AdminSharesPage() {
         {loadError ? <div><ErrorState message={loadError} onRetry={() => { loadShares().catch(() => undefined) }} /></div> : null}
         {sharesLoading && shares.length === 0 ? <LoadingState label="正在加载分享" /> : null}
         {!sharesLoading && !loadError && shares.length === 0 ? (
-          <div><EmptyState icon={Share2} title="暂无分享" description="用户创建分享后会在这里显示" /></div>
+          <div><EmptyState icon={Share2} title="暂无分享" /></div>
         ) : null}
         {shares.length > 0 && filtered.length === 0 ? (
           <div><EmptyState title="没有符合条件的分享" /></div>
@@ -281,7 +281,6 @@ export function AdminSharesPage() {
       <section className="data-section resource-card" aria-labelledby="ashr-settings-title">
         <DataHeader id="ashr-settings-title" title="全局策略" />
         <div className="ashr-settings-form">
-          <p className="ashr-settings-hint sp-form-hint">分享策略在系统设置的订阅分发中维护</p>
           <div className="ashr-actions form-actions">
             <Link className="button" to="/system/distribution">分享策略</Link>
           </div>

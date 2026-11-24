@@ -325,6 +325,7 @@
 /* Content line v2: scoped additions only */
 .ntc-search { width: 100%; max-width: none; }
 .ntc-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ntc-card:has(.ntc-full[open]) .ntc-summary { display: none; }
 .ntc-full { margin-top: var(--space-3); }
 .ntc-full summary { cursor: pointer; color: var(--color-text-muted); }
 .tk-card-list { display: grid; gap: var(--space-3); }

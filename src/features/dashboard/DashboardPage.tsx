@@ -44,10 +44,7 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack adm-overview">
-      <PageHeader
-        title="概览"
-        description={<span className="adm-overview-description">查看系统统计和待处理事项</span>}
-      />
+      <PageHeader title="概览" />
       {error ? <ErrorState message={error} onRetry={() => {
         setError('')
         setAttempt((current) => current + 1)

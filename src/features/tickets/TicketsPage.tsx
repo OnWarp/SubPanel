@@ -77,7 +77,7 @@ export function TicketsPage() {
 
   return (
     <div className="page-stack tk-page">
-      <PageHero subtitle="查看工单与支持回复"
+      <PageHero
         title="工单"
         actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />新建工单</button>}
       />
@@ -85,7 +85,7 @@ export function TicketsPage() {
       {loading && tickets.length === 0 ? <LoadingState label="正在加载工单" /> : null}
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !loadError && tickets.length === 0 ? (
-        <EmptyState icon={TicketIcon} title="暂无工单" description="遇到订阅或账户问题时，可以新建工单联系管理员">
+        <EmptyState icon={TicketIcon} title="暂无工单">
           <button className="button primary" type="button" onClick={openCreate}>新建工单</button>
         </EmptyState>
       ) : null}
