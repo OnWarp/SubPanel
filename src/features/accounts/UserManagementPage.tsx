@@ -1,3 +1,4 @@
+import { Button } from '../../ui/Button'
 import { UserPlus } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { OperationsHeading } from '../admin/OperationsCard'
@@ -15,10 +16,10 @@ export function UserManagementPage() {
       <PageHeader title="用户管理" />
       <section className="data-section" aria-label="用户管理">
         <OperationsHeading action={
-          <button className="button primary" type="button" onClick={() => navigate(`/invites${search}`)}>
-            <UserPlus aria-hidden="true" size={16} />
+          <Button variant="primary" size="page" onClick={() => navigate(`/invites${search}`)}>
+            <UserPlus aria-hidden="true" size={18} />
             邀请用户
-          </button>
+          </Button>
         } />
         {invite ? <InvitesPage /> : <UsersPage key={pathname} view={trash ? 'trash' : 'active'} />}
       </section>

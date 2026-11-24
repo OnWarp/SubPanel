@@ -1,3 +1,4 @@
+import { Button } from '../../ui/Button'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { UserSubscriptionPlan } from '../delivery/UserSubscriptionPlan'
 import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
@@ -85,9 +86,9 @@ function RowMenu({ label, disabled, items, onSelect }: { label: string; disabled
   }
   return (
     <details className="usr-menu" onKeyDown={onKeyDown} onToggle={(event) => { if (disabled) event.currentTarget.open = false }}>
-      <summary className="icon-button" aria-label={label} aria-haspopup="menu" aria-disabled={disabled || undefined} title="操作" onClick={(event) => { if (disabled) event.preventDefault() }}>
-        <Ellipsis aria-hidden="true" size={16} />
-      </summary>
+      <Button as="summary" size="page" aria-label={label} aria-haspopup="menu" aria-disabled={disabled || undefined} title="操作" onClick={(event) => { if (disabled) event.preventDefault() }}>
+        <Ellipsis aria-hidden="true" size={18} />
+      </Button>
       <div className="usr-menu-panel" role="menu">
         {items.map((item) => (
           <button key={item.key} type="button" role="menuitem" className={item.danger ? 'danger' : undefined} disabled={disabled || item.disabled} title={item.title} onClick={(event) => choose(event, item.key)}>

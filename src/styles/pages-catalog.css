@@ -16,7 +16,7 @@
   max-width: 320px;
 }
 
-.catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+.catalog-filters :is(.sp-search, .sp-select-trigger, .button:not(.button-page)) {
   box-sizing: border-box;
   height: var(--size-page-button);
   min-height: var(--size-page-button);
@@ -55,7 +55,7 @@
 }
 
 @media (width < 768px) {
-  .catalog-filters :is(.sp-search, .sp-select-trigger, .button) {
+  .catalog-filters :is(.sp-search, .sp-select-trigger, .button:not(.button-page)) {
     height: var(--size-touch-target);
     min-height: var(--size-touch-target);
   }
