@@ -43,7 +43,6 @@
 
   --color-focus: color-mix(in srgb, var(--color-accent) 55%, transparent);
   --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 38%, transparent);
-  --color-overlay: rgb(12 12 14 / 48%);
   --color-dialog-overlay: rgb(12 12 14 / 40%);
   --dialog-size-s: 400px;
   --dialog-size-m: 520px;
@@ -104,7 +103,6 @@
   --ease-spring: var(--ease-out);
 
   --z-topbar: 20;
-  --z-overlay: 25;
   --z-sidebar: 30;
   --z-menu: 50;
   --z-toast: 60;
@@ -143,7 +141,6 @@
 
   --color-focus: color-mix(in srgb, var(--color-accent) 55%, transparent);
   --shadow-focus: 0 0 0 2px color-mix(in srgb, var(--color-accent) 45%, transparent);
-  --color-overlay: rgb(0 0 0 / 68%);
 
   /* Dark surfaces separate by luminance, not shadow (Linear route).
      The shell keeps a hairline shadow; the border and lighter surface do the separation. */

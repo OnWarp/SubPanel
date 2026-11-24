@@ -219,8 +219,8 @@ export function Dialog({
     >
       <div className="sp-dialog-panel">
         <header className="sp-dialog-heading">
-          {headerStatus ? <div className="drawer-heading-title"><h2 id={titleId}>{title}</h2>{headerStatus}</div> : <h2 id={titleId}>{title}</h2>}
-          <div className="drawer-heading-actions">
+          {headerStatus ? <div className="sp-dialog-heading-title"><h2 id={titleId}>{title}</h2>{headerStatus}</div> : <h2 id={titleId}>{title}</h2>}
+          <div className="sp-dialog-heading-actions">
             {headerActions}
             <button ref={closeButton} className="sp-dialog-close" type="button" aria-label="关闭" title="关闭" onClick={() => requestClose()} disabled={busy}><X aria-hidden="true" size={18} /></button>
           </div>
@@ -232,7 +232,7 @@ export function Dialog({
         {actions || discarding ? (
           <footer className="sp-dialog-footer">
             {discarding ? (
-              <div className="drawer-discard" role="group" aria-label={discardCopy?.message ?? '未保存更改'}>
+              <div className="sp-dialog-discard" role="group" aria-label={discardCopy?.message ?? '未保存更改'}>
                 <p role="status">{discardCopy?.message ?? '关闭将放弃未保存的更改'}</p>
                 <button ref={stayButton} className="button secondary" type="button" disabled={busy} onClick={() => requestClose()}>{discardCopy?.stay ?? '继续编辑'}</button>
                 <button className="button danger" type="button" disabled={busy} onClick={() => requestClose('discard')}>{discardCopy?.confirm ?? '放弃更改'}</button>

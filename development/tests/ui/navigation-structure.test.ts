@@ -55,7 +55,7 @@ describe('navigation ownership and route compatibility', () => {
     expect(dock).toMatch(/<a(?=[^>]*href="\/users")(?=[^>]*aria-current="location")(?=[^>]*class="admin-mobile-dock-item active")/)
     expect(html).not.toContain('更多导航')
     const css = readFileSync(new URL('../../../src/styles/app.css', import.meta.url), 'utf8')
-    expect(css).toContain('.dock, .dock-sheet, .dock-backdrop, .admin-mobile-dock { display: none; }')
+    expect(css).toContain('.dock, .admin-mobile-dock { display: none; }')
     expect(css).toMatch(/:is\(\.dock, \.admin-mobile-dock\) \{[^}]*display:\s*flex[^}]*flex-wrap:\s*nowrap/)
     expect(css).not.toMatch(/\.admin-mobile-dock \{[^}]*grid-template-columns:\s*repeat\(3/)
     expect(css).not.toMatch(/\.admin-mobile-dock-item span \{[^}]*text-overflow:\s*ellipsis/)

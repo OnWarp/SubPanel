@@ -65,7 +65,7 @@ type AppForm = {
   platforms: PlatformFormRow[]
 }
 
-type DrawerState = { mode: 'create' } | { mode: 'edit'; app: AdminApp }
+type EditorState = { mode: 'create' } | { mode: 'edit'; app: AdminApp }
 
 const PAGE_SIZE = 10
 
@@ -140,10 +140,10 @@ export function AppsPage() {
   const [query, setQuery] = useState('')
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>('all')
   const [page, setPage] = useState(1)
-  const [drawer, setDrawer] = useState<DrawerState | null>(null)
+  const [editor, setEditor] = useState<EditorState | null>(null)
   const [form, setForm] = useState<AppForm>(emptyForm)
   const [baseline, setBaseline] = useState(form)
-  const [drawerError, setDrawerError] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<AdminApp | null>(null)
   const [busy, setBusy] = useState(false)
   const createButton = useRef<HTMLButtonElement>(null)
@@ -188,22 +188,22 @@ export function AppsPage() {
     const draft = emptyForm()
     setBaseline(draft)
     setForm(draft)
-    setDrawerError('')
-    setDrawer({ mode: 'create' })
+    setEditorError('')
+    setEditor({ mode: 'create' })
   }
 
   const openEdit = (app: AdminApp) => {
     const draft = formFromApp(app)
     setBaseline(draft)
     setForm(draft)
-    setDrawerError('')
-    setDrawer({ mode: 'edit', app })
+    setEditorError('')
+    setEditor({ mode: 'edit', app })
   }
 
-  const closeDrawer = () => {
+  const closeEditor = () => {
     if (busy) return
-    setDrawer(null)
-    setDrawerError('')
+    setEditor(null)
+    setEditorError('')
   }
 
   const updateRow = (index: number, patch: Partial<PlatformFormRow>) => {
@@ -228,10 +228,10 @@ export function AppsPage() {
 
   const saveApp = async (event: FormEvent) => {
     event.preventDefault()
-    if (busy || !drawer) return
+    if (busy || !editor) return
     const problem = validateForm(form)
     if (problem) {
-      setDrawerError(problem)
+      setEditorError(problem)
       return
     }
     const body = {
@@ -247,19 +247,19 @@ export function AppsPage() {
       })),
     }
     setBusy(true)
-    setDrawerError('')
+    setEditorError('')
     try {
-      if (drawer?.mode === 'edit') {
-        await api(`/api/admin/apps/${drawer.app.id}`, { method: 'PUT', body: jsonBody(body) })
+      if (editor?.mode === 'edit') {
+        await api(`/api/admin/apps/${editor.app.id}`, { method: 'PUT', body: jsonBody(body) })
         toast.notify('APP 已保存')
       } else {
         await api('/api/admin/apps', { method: 'POST', body: jsonBody(body) })
         toast.notify('APP 已添加')
       }
-      setDrawer(null)
+      setEditor(null)
       await load()
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '保存 APP 失败'))
+      setEditorError(errorMessage(cause, '保存 APP 失败'))
     } finally {
       setBusy(false)
     }
@@ -284,7 +284,7 @@ export function AppsPage() {
     try {
       await api(`/api/admin/apps/${pendingDelete.id}`, { method: 'DELETE' })
       toast.notify('APP 已删除')
-      if (drawer?.mode === 'edit' && drawer.app.id === pendingDelete.id) setDrawer(null)
+      if (editor?.mode === 'edit' && editor.app.id === pendingDelete.id) setEditor(null)
       setPendingDelete(null)
       await load()
     } catch (cause) {
@@ -377,15 +377,15 @@ export function AppsPage() {
 
       <AppDownloadsSection />
 
-      <Dialog open={drawer !== null} title={drawer?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="l" onClose={closeDrawer}
+      <Dialog open={editor !== null} title={editor?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="l" onClose={closeEditor}
         dirty={JSON.stringify(form) !== JSON.stringify(baseline)}
         footer={(cancel) => <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
-          <button className="button primary" form="app-editor" type="submit" disabled={busy}>{busy ? '保存中' : drawer?.mode === 'create' ? '保存 APP' : '保存修改'}</button>
+          <button className="button primary" form="app-editor" type="submit" disabled={busy}>{busy ? '保存中' : editor?.mode === 'create' ? '保存 APP' : '保存修改'}</button>
         </>}
       >
         <form id="app-editor" className="app-form" autoComplete="off" onSubmit={saveApp}>
-          {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
+          {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
           <div className="app-form-grid">
             <FormField label="名称" htmlFor="app-name">
               <Input id="app-name" value={form.name} maxLength={128} disabled={busy} onChange={(event) => setForm({ ...form, name: event.currentTarget.value })} />

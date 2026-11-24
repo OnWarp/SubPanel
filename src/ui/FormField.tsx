@@ -28,7 +28,7 @@ type FormGroupProps = {
   id?: string
 }
 
-/** Shared settings and drawer group. Title, then fields, separated by a hairline when stacked. */
+/** Shared settings and dialog group. Title, then fields, separated by a hairline when stacked. */
 export function FormGroup({ title, hint, children, id }: FormGroupProps) {
   return (
     <section className="sp-form-group" aria-labelledby={title ? id : undefined}>

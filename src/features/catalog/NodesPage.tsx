@@ -70,7 +70,7 @@ export function NodesPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [batchError, setBatchError] = useState('')
-  const drawerTrigger = useRef<HTMLButtonElement>(null)
+  const editorTrigger = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [protocol, setProtocol] = useState('all')
@@ -88,7 +88,7 @@ export function NodesPage() {
   const [connectionDirty, setConnectionDirty] = useState(false)
   const [testClient, setTestClient] = useState('mihomo')
   const [testResult, setTestResult] = useState<{ outputNodes: number; body: string; diagnostics: Array<{ code: string; message: string }> } | null>(null)
-  const [drawerError, setDrawerError] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [pending, setPending] = useState<BatchMutation | null>(null)
   const [progress, setProgress] = useState('')
   const toast = useToast()
@@ -138,7 +138,7 @@ export function NodesPage() {
   }, [filteredNodes])
 
   const openEdit = (node: CatalogNode, trigger: HTMLButtonElement | null) => {
-    drawerTrigger.current = trigger
+    editorTrigger.current = trigger
     setEditing(node)
     setAdding(false)
     setTestResult(null)
@@ -149,7 +149,7 @@ export function NodesPage() {
       protocol: node.protocol, server: node.server, port: String(node.port), tags: node.tags?.join(', ') ?? '', region: node.region ?? '' }
     setNodeBaseline(baseline)
     setNodeForm(baseline)
-    setDrawerError('')
+    setEditorError('')
   }
 
   useEffect(() => {
@@ -161,10 +161,10 @@ export function NodesPage() {
   }, [editing])
 
   function openCreate(trigger: HTMLButtonElement) {
-    drawerTrigger.current = trigger
+    editorTrigger.current = trigger
     setEditing(null)
     setAdding(true)
-    setDrawerError('')
+    setEditorError('')
     setTestResult(null)
     setConnectionDirty(true)
     setInvalidFields([])
@@ -180,16 +180,16 @@ export function NodesPage() {
       setAdding(false)
       setConnection(null)
       setTestResult(null)
-      setDrawerError('')
+      setEditorError('')
     }
   }
 
   const saveNode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (busy || invalidFields.length || (!editing && !adding)) return
-    setDrawerError('')
+    setEditorError('')
     if (!nodeForm.displayName.trim()) {
-      setDrawerError('请输入节点名称')
+      setEditorError('请输入节点名称')
       return
     }
     setBusy(true)
@@ -208,7 +208,7 @@ export function NodesPage() {
       await load()
       toast.notify('节点已更新')
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '保存节点失败'))
+      setEditorError(errorMessage(cause, '保存节点失败'))
     } finally {
       setBusy(false)
     }
@@ -225,7 +225,7 @@ export function NodesPage() {
       await load()
       toast.notify('节点副本已添加')
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '复制节点失败'))
+      setEditorError(errorMessage(cause, '复制节点失败'))
     } finally {
       setBusy(false)
     }
@@ -233,11 +233,11 @@ export function NodesPage() {
 
   async function testOutput() {
     if (!editing) return
-    setDrawerError('')
+    setEditorError('')
     try {
       setTestResult(await catalogPreview(`/api/admin/catalog/nodes/${editing.id}/test-output`, { client: testClient }))
     } catch (cause) {
-      setDrawerError(errorMessage(cause, '转换测试失败'))
+      setEditorError(errorMessage(cause, '转换测试失败'))
     }
   }
 
@@ -363,7 +363,7 @@ export function NodesPage() {
         </ResourceFooter>
       </section>
 
-      <Dialog open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="l" onClose={closeEdit} returnFocusRef={drawerTrigger}
+      <Dialog open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="l" onClose={closeEdit} returnFocusRef={editorTrigger}
         dirty={invalidFields.length > 0 || (!adding && connectionDirty) || JSON.stringify(nodeForm) !== JSON.stringify(nodeBaseline)}
         footer={(requestClose) => <>
           <button className="button secondary" type="button" onClick={requestClose} disabled={busy}>取消</button>
@@ -420,13 +420,13 @@ export function NodesPage() {
               {['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'].map((client) => <option key={client}>{client}</option>)}
             </FormSelect></label>
             <button className="button secondary" type="button" onClick={testOutput}>测试转换输出</button>
-            {connectionDirty && <p className="drawer-note">转换测试使用已保存的连接参数</p>}
+            {connectionDirty && <p className="dialog-note">转换测试使用已保存的连接参数</p>}
             {testResult && <section className="form-stack"><p>可输出 {testResult.outputNodes} 个节点</p>
               {testResult.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.message}</p>)}
               {testResult.outputNodes > 0 && <Textarea aria-label="转换结果" readOnly value={testResult.body} />}
             </section>}
           </div>}
-          {drawerError ? <StatusMessage tone="error">{drawerError}</StatusMessage> : null}
+          {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
         </form>}
       </Dialog>
 

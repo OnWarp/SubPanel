@@ -530,15 +530,6 @@
   color: var(--color-text);
 }
 
-.edit-drawer:has(.appu-detail) .dialog-heading {
-  align-items: flex-start;
-}
-
-.edit-drawer:has(.appu-detail) .dialog-heading h2 {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .appu-detail .empty-state,
 .appu-detail .sp-error,
 .appu-detail .sp-loading {
