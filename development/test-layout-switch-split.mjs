@@ -35,10 +35,10 @@ try {
   const layout = adminMenus.locator('[role="group"][aria-label="布局"]')
   const dock = page.locator('.admin-mobile-dock')
   const viewport = width => page.setViewportSize({ width, height: 844 })
-  const preferences = () => page.evaluate(() => [
-    localStorage.getItem('subpanel:admin-layout'),
-    localStorage.getItem('subpanel:mobile-bar'),
-  ])
+  const preferences = () => page.evaluate(() => {
+    const admin = JSON.parse(localStorage.getItem('subpanel:layout:admin:admin'))
+    return [admin.pc.navigation, admin.mobile.bar]
+  })
 
   await mkdir(output, { recursive: true })
   await page.goto('/dashboard')

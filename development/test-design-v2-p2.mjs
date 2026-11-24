@@ -77,8 +77,10 @@ try {
       for (const [name, path, level, title, readyText] of routes) {
         await page.goto(path)
         await page.evaluate(({ theme, layout }) => {
-          localStorage.setItem('subpanel.theme', theme)
-          localStorage.setItem('subpanel:admin-layout', layout)
+          localStorage.setItem('subpanel:layout:admin:usr_admin', JSON.stringify({
+            pc: { navigation: layout },
+            theme,
+          }))
         }, { theme, layout: width === 1440 ? 'sidebar' : 'topbar' })
         await page.reload()
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
