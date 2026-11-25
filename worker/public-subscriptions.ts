@@ -1,3 +1,4 @@
+import { tokenPattern } from './delivery/subscription-token.js'
 import type { RenderClient } from './renderers/index.js'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -12,7 +13,7 @@ import { isPublicSubscriptionCurrent, readDeliverySubscription } from './deliver
 import { readCutover, renderLegacyCompatibility } from './delivery/legacy-compatibility.js'
 import { allowSubscriptionFetch } from './delivery/public-rate-limit.js'
 
-import { clientAliases, clientFromUserAgent, tokenPattern } from './delivery/public-client.js'
+import { clientAliases, clientFromUserAgent } from './delivery/public-client.js'
 
 const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 

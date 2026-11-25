@@ -274,7 +274,7 @@ it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures maximum redemp
   }))
 })
 
-it('atomically renews one binding across concurrent codes and replays the original receipt', async () => {
+it('atomically updates one binding across concurrent codes and replays the original receipt', async () => {
   const { issue, template } = await fixture()
   const owner = await account(1)
   const { codes } = await issue()
@@ -291,9 +291,17 @@ it('atomically renews one binding across concurrent codes and replays the origin
   expect(receipts[0]).toEqual(receipts[2])
   expect(await (await confirm(owner.cookie, initial)).json()).toEqual(original)
   const expiry = (time: number) => expiryFromDuration(time, { value: 1, unit: 'month' })
+  const ledger = await env.DB.prepare('SELECT redeemed_at,expires_at FROM binding_redemption_records WHERE user_id=?')
+    .bind(owner.id).all<{ redeemed_at: string; expires_at: number }>()
+  expect(ledger.results).toHaveLength(3)
+  for (const record of ledger.results) {
+    expect(record.expires_at).toBe(expiry(Date.parse(record.redeemed_at)))
+  }
   const rows = await env.DB.prepare('SELECT template_id,expires_at FROM user_template_bindings WHERE user_id=?')
     .bind(owner.id).all()
-  expect(rows.results).toEqual([{ template_id: template.id, expires_at: expiry(expiry(original.subscription.expiresAt)) }])
+  expect(rows.results).toEqual([{ template_id: template.id, expires_at: expect.any(Number) }])
+  expect(receipts.slice(0, 2).map(receipt => receipt.subscription.expiresAt))
+    .toContain(rows.results[0].expires_at)
   expect((await readUserAccess(env.DB, { userId: owner.id }))?.token_hash).toBe(tokenHash)
   expect(await env.DB.prepare('SELECT count(*) AS total FROM legacy_subscriptions_archive').first()).toEqual({ total: 0 })
 })

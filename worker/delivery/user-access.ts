@@ -1,5 +1,6 @@
+import { randomSubscriptionToken } from './subscription-token.js'
 import { apiError } from '../platform/api-error.js'
-import { decryptText, encryptedValueSchema, hashToken, randomToken, readCryptoMaterial } from '../platform/crypto.js'
+import { decryptText, encryptedValueSchema, hashToken, readCryptoMaterial } from '../platform/crypto.js'
 import { ACCOUNTS_D1_READY_KEY, CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
 import type { RenderClient } from '../renderers/index.js'
 import { createToken } from './service.js'
@@ -41,7 +42,7 @@ export function accountAvailable(access: UserAccess | null): access is UserAcces
 }
 
 export async function prepareUserAccess(env: DataEnv, userId: string, now: string) {
-  const token = await createToken(env.DATA, randomToken())
+  const token = await createToken(env.DATA, randomSubscriptionToken())
   return env.DB.prepare(`INSERT INTO user_subscription_access
     (user_id,token_hash,token_prefix,encrypted_token,enabled,created_at,updated_at)
     SELECT id,?,?,?,1,?,? FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL
@@ -50,7 +51,7 @@ export async function prepareUserAccess(env: DataEnv, userId: string, now: strin
 }
 
 export async function resetUserToken(env: DataEnv, userId: string, expectedRevision: number, actor: string) {
-  const { tokenHash, tokenPrefix, encryptedToken } = await createToken(env.DATA, randomToken())
+  const { tokenHash, tokenPrefix, encryptedToken } = await createToken(env.DATA, randomSubscriptionToken())
   const now = new Date().toISOString()
   const [result] = await env.DB.batch([
     env.DB.prepare(`UPDATE user_subscription_access SET token_hash=?,token_prefix=?,encrypted_token=?,

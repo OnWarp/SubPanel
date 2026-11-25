@@ -1,4 +1,3 @@
-export const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
 export const clientAliases: Record<string, string> = {
   clash: 'mihomo',
   'clash-meta': 'mihomo',

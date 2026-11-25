@@ -207,6 +207,21 @@
   background: var(--content-surface);
 }
 
+.content-dialog[data-placement='end'] {
+  --drawer-safe-inline: calc(env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px));
+  --drawer-safe-block: calc(env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px));
+  inset: calc(var(--dialog-viewport-top, 0px) + env(safe-area-inset-top, 0px))
+    max(env(safe-area-inset-right, 0px), calc(100% - var(--dialog-viewport-left, 0px) - var(--dialog-viewport-width, 100%))) auto auto;
+  margin: 0;
+  translate: none;
+  width: min(calc(var(--dialog-viewport-width, 100%) - var(--drawer-safe-inline)), 560px);
+}
+.content-dialog[data-placement='end'] .sp-dialog-panel {
+  height: calc(var(--dialog-viewport-height, 100dvh) - var(--drawer-safe-block));
+  max-height: none;
+  border-radius: 0;
+}
+
 @media (hover: hover) {
   :is(.content-page, .content-dialog) .button.primary:hover:not(:disabled) {
     background: color-mix(in srgb, var(--content-control-bg) 88%, black);
@@ -227,5 +242,40 @@
   .content-page .sp-table tbody tr:hover td { background: transparent; }
   :is(.content-page, .content-dialog) :is(.button, .sp-input:not(.sp-checkbox, .sp-select-validation), .sp-select-trigger) {
     min-height: 44px;
+  }
+}
+
+.content-page .binding-summary-note {
+  display: block;
+  color: var(--content-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+.content-page .binding-row-actions {
+  display: flex;
+  justify-content: end;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.content-page .binding-summary .content-detail-list > div {
+  align-content: start;
+}
+
+@container (max-width: 500px) {
+  .content-page .section-heading:has(.binding-section-actions) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .content-page .section-heading:has(.binding-section-actions) .data-header-actions {
+    justify-content: start;
+  }
+  .content-page .binding-section-actions {
+    margin-inline-start: 0;
+  }
+  .content-page .binding-summary .content-detail-list > div:last-child {
+    grid-column: 1 / -1;
   }
 }

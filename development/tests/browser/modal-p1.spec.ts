@@ -111,7 +111,11 @@ async function setup(page: Page) {
         subscriptionUrl = `${new URL(request.url()).origin}/s/${randomUUID()}`
         return json({ revision: ++revision, changes: [{ before: null, after: binding }] })
       case `${subscriptionPath}/summary`:
-        return json({ expiresAt: null, permanent: bindings.length > 0, nodes: [], subscriptionUrl, logs: [] })
+        return json({
+          status: bindings.length ? 'active' : 'none', effectiveBindingCount: bindings.length,
+          expiresAt: null, latestExpiresAt: null, lastExpiredAt: null,
+          permanent: bindings.length > 0, nodes: [], subscriptionUrl, logs: [],
+        })
       case `${subscriptionPath}/reset-token`:
         expect(method).toBe('POST')
         expect(body()).toEqual({ expectedRevision: 2 })
@@ -259,20 +263,22 @@ for (const width of [1440, 1024, 390]) {
       await preview.click()
       await expect(editor.getByText('有效 · 长期有效')).toBeVisible()
       expect(await editor.evaluate((element, previous) => element === previous, editorWindow)).toBe(true)
-      await editor.getByRole('button', { name: '保存', exact: true }).click()
+      await editor.getByRole('button', { name: '确认绑定', exact: true }).click()
       await expect(editor).toBeHidden()
       await expect(bind).toBeFocused()
       const row = page.getByRole('row').filter({ hasText: template.name })
       await expect(row.getByText('有效', { exact: true })).toBeVisible()
       await expect(row.getByText('长期有效')).toBeVisible()
-      const update = row.getByRole('button', { name: '更新', exact: true })
+      const update = row.getByRole('button', { name: '更新绑定', exact: true })
       await update.click()
       const updateDialog = page.getByRole('dialog', { name: '更新绑定' })
       await expect(updateDialog.getByLabel('操作')).toHaveText('更新现有绑定')
       await page.keyboard.press('Escape')
       await expect(update).toBeFocused()
 
+      const linkActions = page.getByRole('button', { name: '订阅链接更多操作' })
       const reset = page.getByRole('button', { name: '重置链接' })
+      await linkActions.click()
       await reset.click()
       const confirmation = page.getByRole('dialog', { name: '重置订阅链接' })
       await expect(confirmation).toHaveAttribute('data-size', 's')
@@ -280,10 +286,11 @@ for (const width of [1440, 1024, 390]) {
       const cancel = confirmation.getByRole('button', { name: '取消' })
       await expect(cancel).toBeFocused()
       await cancel.click()
-      await expect(reset).toBeFocused()
+      await expect(linkActions).toBeFocused()
       expect(rotatedUrl()).toBeNull()
+      await linkActions.click()
       await reset.click()
-      await confirmation.getByRole('button', { name: '确认', exact: true }).click()
+      await confirmation.getByRole('button', { name: '重置链接', exact: true }).click()
       await expect(confirmation).toBeHidden()
       expect(rotatedUrl()).not.toBeNull()
       await page.getByRole('button', { name: '复制统一订阅链接' }).click()

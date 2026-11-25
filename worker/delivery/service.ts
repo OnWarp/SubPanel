@@ -1,9 +1,10 @@
+import { randomSubscriptionToken, tokenPattern } from './subscription-token.js'
 import type { BindingInput } from '../templates/repository.js'
 import { readAccounts } from '../accounts/repository.js'
 import { readCatalog } from '../catalog/repository.js'
 import { CATALOG_D1_READY_KEY, isModuleReady, type DataEnv } from '../db/module-switch.js'
 import { bytesPerGiB, getIssuableVersion, getRedemptionVersion } from './entitlement-templates.js'
-import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
+import { encryptText, getOrCreateCryptoMaterial, hashToken, readCryptoMaterial, decryptText } from '../platform/crypto.js'
 import { batch } from '../db/db.js'
 import { apiError } from '../platform/api-error.js'
 import { bumpDeliveryRevision, getPlan, requirePlanStorage, type Plan } from './plans.js'
@@ -80,7 +81,7 @@ function normalizedName(name: string): string {
 }
 
 function validToken(token: string): string {
-  if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) fail('SUBSCRIPTION_TOKEN_INVALID')
+  if (!tokenPattern.test(token)) fail('SUBSCRIPTION_TOKEN_INVALID')
   return token
 }
 
@@ -161,7 +162,7 @@ async function prepareSubscription(
     ? expiryFromDuration(startsAt ?? Date.parse(now), input.duration)
     : input.expiresAt ?? null)
   assertWindow(startsAt, expiresAt)
-  const token = validToken(suppliedToken ?? randomToken())
+  const token = validToken(suppliedToken ?? randomSubscriptionToken())
   const subscription: Omit<Subscription, 'id'> = {
     userId: input.userId ?? null,
     name: normalizedName(input.name),
@@ -435,7 +436,7 @@ export async function resetSubscriptionToken(
   const current = findSubscription(snapshot, id)
   assertActor(current, options)
   const now = options.now ?? new Date().toISOString()
-  const token = validToken(options.token ?? randomToken())
+  const token = validToken(options.token ?? randomSubscriptionToken())
   const tokenData = await createToken(env.DATA, token)
   if (snapshot.subscriptions.some((item) => item.id !== id && item.tokenHash === tokenData.tokenHash)) fail('SUBSCRIPTION_TOKEN_COLLISION')
   const updated: Subscription = {
@@ -467,7 +468,7 @@ export async function decryptSubscriptionToken(env: DataEnv, subscription: Subsc
     const material = await readCryptoMaterial(env.DATA)
     return decryptText(subscription.encryptedToken, material.encryptionKey)
   }
-  const token = randomToken()
+  const token = randomSubscriptionToken()
   const data = await createToken(env.DATA, token)
   const now = new Date().toISOString()
   const [result] = await batch(env.DB, [

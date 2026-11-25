@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronsLeft, ChevronsRight, LayoutGrid, LogOut, Megaphone, Rss, ShieldCheck, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, matchPath, useLocation, useNavigate } from 'react-router-dom'
 import { useAccountProfile } from '../features/accounts/profile'
 import { PageFrame } from '../ui/PageFrame'
 import { SectionTabs } from '../ui/SectionTabs'
@@ -225,7 +225,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
           tools={!isAdmin && <ThemeMenu />}
           account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" showMobileBarOptions={isMobile} signOut={signOut} onError={setSignOutError} /></div>}
-          tabs={adminDomain?.section && <SectionTabs {...adminDomain.section} />}
+          tabs={adminDomain?.section && (!matchPath('/users/:id', location.pathname) || matchPath('/users/recycle-bin', location.pathname))
+            && <SectionTabs {...adminDomain.section} />}
         >
           {signOutError ? <p role="alert">{signOutError}</p> : null}
           {children}

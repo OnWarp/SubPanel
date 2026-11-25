@@ -1,3 +1,4 @@
+import { tokenPattern } from './subscription-token.js'
 import { readShare, readShareSettings } from '../shares/repository.js'
 import { noteSubscriptionFetch, readUserFetchSummary, stageSubscriptionFetch } from './fetch-stats.js'
 import { Hono, type Context } from 'hono'
@@ -8,7 +9,7 @@ import { listEnabledPlatforms, primaryDomainOriginSafe } from '../domains/servic
 import { apiError, ApiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
-import { clientAliases, clientFromUserAgent, tokenPattern } from './public-client.js'
+import { clientAliases, clientFromUserAgent } from './public-client.js'
 import { resolveUserSubscription } from './aggregate.js'
 import { readArtifactCatalog } from './artifacts.js'
 import { bindingInput, mutateBinding, planBinding, readBindings, replaceInput, type Binding, type BindingChange } from './bindings.js'
@@ -177,6 +178,8 @@ unifiedAdminRoutes.get(`${subscription}/summary`, async c => {
     .bind(result.access.user_id).all<{ id: string; action: string; createdAt: string }>()
   return c.json({
     expiresAt: iso(result.expiresAt), permanent: result.permanent,
+    status: result.status, effectiveBindingCount: result.effectiveTemplateIds.length,
+    latestExpiresAt: iso(result.latestExpiresAt), lastExpiredAt: iso(result.lastExpiredAt),
     nodes: result.nodes.map(node => ({ name: node.displayName, protocol: node.protocol })),
     subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
     logs: logs.results,
