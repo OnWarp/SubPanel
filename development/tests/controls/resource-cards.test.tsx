@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import * as client from '../../../src/app/api'
 import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../../../src/features/admin-resources/ResourceCard'
 import { GroupsPage } from '../../../src/features/catalog/GroupsPage'
 import { NodesPage } from '../../../src/features/catalog/NodesPage'
@@ -16,23 +17,54 @@ const noop = () => undefined
 
 describe('admin resource list cards', () => {
   it.each([
-    { Page: GroupsPage, id: 'groups-title', title: '分组', search: '搜索名称', action: '添加分组', unit: '个分组', paged: false, flat: true },
-    { Page: NodesPage, id: 'nodes-title', title: '节点', search: '搜索节点', paged: true, flat: true, unit: '个节点' },
-    { Page: AdminSharesPage, id: 'ashr-shares-title', title: '分享管理', search: '搜索分享', unit: '个分享', paged: true },
-  ])('renders the title, search and total for $title', ({ Page, id, title, search, action, unit, paged, flat }) => {
+    { Page: GroupsPage, id: 'groups-title', title: '分组', search: '搜索名称', action: '添加分组', paged: false },
+    { Page: NodesPage, id: 'nodes-title', title: '节点', search: '搜索节点', action: '添加节点', paged: true },
+  ])('renders the title, search and loading table for $title', ({ Page, id, title, search, action, paged }) => {
     const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><Page /></ToastProvider></MemoryRouter>)
     const card = html.split(`aria-labelledby="${id}">`)[1].split('</section>')[0]
     const heading = card.split('</header>')[0]
 
-    const level = flat ? 'h1' : 'h2'
-    expect(heading).toContain(`<${level} id="${id}">${title}</${level}>`)
-    if (flat) expect(html.match(/<h1\b/g)).toHaveLength(1)
-    if (action) expect(heading).toContain(action)
-    else expect(heading).not.toContain('<button')
+    expect(heading).toContain(`<h1 id="${id}">${title}</h1>`)
+    expect(html.match(/<h1\b/g)).toHaveLength(1)
+    expect(heading).toContain(`${action}</button>`)
     expect(card).toContain(`aria-label="${search}"`)
-    expect(card).toContain(`共 0 ${unit}`)
+    expect(card).toContain(`role="status">正在加载${title}`)
+    expect(card).toMatch(/<table[^>]*aria-busy="true"/)
+    expect(card.match(/<tr aria-hidden="true">/g)).toHaveLength(3)
+    expect(card).not.toContain('sp-table-summary')
     expect(card.includes('1 / 1 页')).toBe(paged)
     expect(card.includes('aria-label="下一页"')).toBe(paged)
+
+    if (Page === GroupsPage) {
+      const date = '2026-11-26T00:00:00Z'
+      const catalog: client.CatalogResponse = {
+        schemaVersion: 2, revision: 1, updatedAt: date, nodes: [], sources: [],
+        groups: [{
+          id: 'group-1', name: '示例分组', sourceIds: [], includedNodeIds: [], excludedNodeIds: [],
+          nodeOrder: [], createdAt: date, updatedAt: date,
+        }],
+      }
+      const peek = vi.spyOn(client, 'peekApi').mockReturnValueOnce(catalog)
+      try {
+        const loaded = renderToStaticMarkup(<MemoryRouter><ToastProvider><Page /></ToastProvider></MemoryRouter>)
+        expect(loaded).toContain('共 1 个分组')
+        expect(loaded).not.toContain('aria-busy="true"')
+      } finally {
+        peek.mockRestore()
+      }
+    }
+  })
+
+  it('renders the shares page heading and labelled list while loading', () => {
+    const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><AdminSharesPage /></ToastProvider></MemoryRouter>)
+    const header = html.split('</header>')[0]
+    const list = html.split('aria-label="分享列表">')[1].split('</section>')[0]
+
+    expect(header).toContain('<h1>分享管理</h1>')
+    expect(header).toContain('分享策略</a>')
+    expect(list).toContain('aria-label="搜索分享"')
+    expect(list).toContain('正在加载分享')
+    expect(list).not.toContain('sp-table-summary')
   })
 
   it('renders one entitlement heading while loading templates', () => {
@@ -43,12 +75,14 @@ describe('admin resource list cards', () => {
     expect(html).not.toContain('添加订阅')
   })
 
-  it('renders one Sources heading and groups the search, filter and add action in a separate toolbar', () => {
+  it('renders the Sources create action in the header and search and status in the filter bar', () => {
     const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><SourcesPage /></ToastProvider></MemoryRouter>)
     expect(html.match(/<h1\b/g)).toHaveLength(1)
     expect(html).toContain('<h1 id="sources-title">来源</h1>')
-    expect(html).toMatch(/<\/header><div class="sp-filter-bar catalog-filters sources-toolbar" role="group" aria-label="筛选">.*aria-label="搜索来源".*aria-label="来源状态".*添加来源/)
-    expect(html).toContain('共 0 个来源')
+    expect(html.split('</header>')[0]).toContain('添加来源</button>')
+    expect(html).toMatch(/<\/header>.*<div class="sp-filter-bar catalog-filters sources-toolbar" role="group" aria-label="筛选">.*aria-label="搜索来源".*aria-label="来源状态"/)
+    expect(html).toContain('正在加载来源')
+    expect(html).not.toContain('sp-table-summary')
     expect(html).not.toContain('1 / 1 页')
     expect(html).not.toContain('batch-toolbar')
   })

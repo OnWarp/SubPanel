@@ -447,7 +447,7 @@ export function SourcesPage() {
       <section className="catalog-data-section" aria-labelledby="sources-title">
         <PageHeader placement="inline" id="sources-title" title="来源" actions={<button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>} />
         <AdminModuleTabs />
-        <FilterBar className="catalog-filters" searchRef={searchRef}
+        <FilterBar className="catalog-filters sources-toolbar" searchRef={searchRef}
           onReset={query || statusFilter !== 'all' ? () => { setQuery(''); setStatusFilter('all') } : undefined}>
           <SearchInput inputRef={searchRef} label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as SourceStatusFilter)}>{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
