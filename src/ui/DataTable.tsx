@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Skeleton } from './LoadingState'
 import { Pagination, type PaginationProps } from './Pagination'
 
 export type DataTableAlign = 'left' | 'right' | 'center'
@@ -22,6 +23,9 @@ type DataTableProps<T> = {
   rowKey: (row: T) => string | number
   empty?: ReactNode
   loadingLabel?: string
+  refreshingLabel?: string
+  toolbar?: ReactNode
+  rowActions?: (row: T) => ReactNode
   pagination?: PaginationProps
   flat?: boolean
   className?: string
@@ -47,48 +51,55 @@ function columnLabel(column: { header: ReactNode; label?: string }) {
   return typeof column.header === 'string' ? column.header : ''
 }
 
-export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagination, flat = false, className }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagination, toolbar, rowActions, refreshingLabel, flat = false, className }: DataTableProps<T>) {
+  const columnCount = columns.length + Number(Boolean(rowActions))
   return (
-    <div className={`sp-table-wrap${flat ? ' sp-table-flat' : ''}${className ? ` ${className}` : ''}`}>
-      {loadingLabel && <span className="sp-table-loading-label" role="status">{loadingLabel}</span>}
-      <table className="sp-table" aria-busy={loadingLabel ? true : undefined}>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.key} scope="col" style={widthStyle(column.width)} aria-sort={column.sortDirection} className={columnClass(column)}>
-                {column.headerContent ?? column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {loadingLabel ? [0, 1, 2].map((index) => (
-            <tr key={index} aria-hidden="true">
-              {columns.map((column) => (
-                <td key={column.key} className={columnClass(column)}><span className="sp-table-placeholder" /></td>
-              ))}
-            </tr>
-          )) : rows.length === 0 ? (
+    <>
+      {toolbar}
+      <div className={`sp-table-wrap${flat ? ' sp-table-flat' : ''}${className ? ` ${className}` : ''}`}>
+        {(loadingLabel || refreshingLabel) && <span className="sp-table-loading-label" role="status">{loadingLabel ?? refreshingLabel}</span>}
+        <table className="sp-table" aria-busy={Boolean(loadingLabel || refreshingLabel) || undefined}>
+          <thead>
             <tr>
-              <td colSpan={columns.length} className="empty-row">{empty ?? '暂无数据'}</td>
+              {columns.map((column) => (
+                <th key={column.key} scope="col" style={widthStyle(column.width)} aria-sort={column.sortDirection} className={columnClass(column)}>
+                  {column.headerContent ?? column.header}
+                </th>
+              ))}
+              {rowActions && <th scope="col" className="sp-align-right">操作</th>}
             </tr>
-          ) : rows.map((row) => (
-            <tr key={rowKey(row)}>
-              {columns.map((column) => {
-                const content = column.render
-                  ? column.render(row)
-                  : (row as Record<string, unknown>)[column.key] as ReactNode
-                return (
-                  <td key={column.key} data-label={columnLabel(column)} className={columnClass(column)}>
-                    {content == null || content === '' ? '—' : content}
-                  </td>
-                )
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {pagination ? <div className="sp-table-pagination"><Pagination {...pagination} /></div> : null}
-    </div>
+          </thead>
+          <tbody>
+            {loadingLabel ? [0, 1, 2].map((index) => (
+              <tr key={index} aria-hidden="true">
+                {columns.map((column) => (
+                  <td key={column.key} className={columnClass(column)}><Skeleton /></td>
+                ))}
+                {rowActions && <td><Skeleton /></td>}
+              </tr>
+            )) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={columnCount} className="empty-row">{empty ?? '暂无数据'}</td>
+              </tr>
+            ) : rows.map((row) => (
+              <tr key={rowKey(row)}>
+                {columns.map((column) => {
+                  const content = column.render
+                    ? column.render(row)
+                    : (row as Record<string, unknown>)[column.key] as ReactNode
+                  return (
+                    <td key={column.key} data-label={columnLabel(column)} className={columnClass(column)}>
+                      {content == null || content === '' ? '—' : content}
+                    </td>
+                  )
+                })}
+                {rowActions && <td className="sp-align-right" data-label="操作">{rowActions(row)}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {pagination ? <div className="sp-table-pagination"><Pagination {...pagination} /></div> : null}
+      </div>
+    </>
   )
 }

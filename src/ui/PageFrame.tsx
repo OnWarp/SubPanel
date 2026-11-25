@@ -23,7 +23,7 @@ export function PageFrame({ path, leadingTools, tools, account, tabs, children }
           <div ref={setActions} id="page-actions-slot" className="topbar-page-actions" />
           {account}
         </header>
-        <main key={path} className="workspace-content">
+        <main key={path} className="workspace-content content-scope">
           {tabs}
           {children}
         </main>

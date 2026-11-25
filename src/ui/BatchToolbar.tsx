@@ -68,3 +68,5 @@ export function BatchToolbar({
     </div>
   )
 }
+
+export { BatchToolbar as BulkActions }

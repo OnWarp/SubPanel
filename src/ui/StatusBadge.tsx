@@ -17,3 +17,5 @@ export function StatusBadge({ tone, size = 'md', children }: StatusBadgeProps) {
     </span>
   )
 }
+
+export { StatusBadge as StatusIndicator }

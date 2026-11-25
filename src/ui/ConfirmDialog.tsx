@@ -8,6 +8,7 @@ type ConfirmDialogProps = {
   confirmLabel: string
   danger?: boolean
   size?: DialogSize
+  appearance?: 'content'
   dirty?: boolean
   busy?: boolean
   confirmDisabled?: boolean
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger = false,
   size = 's',
+  appearance,
   dirty = false,
   busy = false,
   confirmDisabled = false,
@@ -38,6 +40,7 @@ export function ConfirmDialog({
       title={title}
       description={description}
       size={size}
+      appearance={appearance}
       dirty={dirty}
       busy={busy}
       closeOnBackdrop={false}

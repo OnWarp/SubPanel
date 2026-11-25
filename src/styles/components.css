@@ -855,3 +855,60 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
 .redemption-code-list li + li { border-top: 1px solid var(--color-border); }
 .redemption-code-list code { overflow-wrap: anywhere; }
 .redemption-code-list button { flex: 0 0 auto; }
+
+/* Shared row actions */
+.resource-card-actions {
+  position: fixed;
+  inset: auto;
+  position-area: bottom span-left;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  margin: 4px 0 0;
+  min-width: 108px;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-float);
+}
+
+@supports not (position-area: bottom) {
+  .resource-card-actions {
+    inset: auto var(--space-3) var(--space-3) auto;
+  }
+}
+
+.resource-card-actions button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.resource-card-actions button:hover:not(:disabled),
+.resource-card-actions button:focus-visible {
+  background: var(--color-surface-subtle);
+}
+
+.resource-card-actions button:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.resource-card-actions .resource-card-action-danger:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.resource-card-more[aria-disabled="true"] { opacity: .6; cursor: default; }
+
+@media (width < 768px) {
+  .resource-card-actions button {
+    min-height: 44px;
+  }
+}

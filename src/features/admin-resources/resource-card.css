@@ -138,54 +138,6 @@
   margin-inline-start: auto;
 }
 
-.resource-card-actions {
-  position: fixed;
-  inset: auto;
-  position-area: bottom span-left;
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-  margin: 4px 0 0;
-  min-width: 108px;
-  padding: var(--space-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-  box-shadow: var(--shadow-float);
-}
-
-@supports not (position-area: bottom) {
-  .resource-card-actions {
-    inset: auto var(--space-3) var(--space-3) auto;
-  }
-}
-
-.resource-card-actions button {
-  display: block;
-  width: 100%;
-  min-height: 36px;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.resource-card-actions button:hover:not(:disabled),
-.resource-card-actions button:focus-visible {
-  background: var(--color-surface-subtle);
-}
-
-.resource-card-actions button:disabled {
-  color: var(--color-text-muted);
-  cursor: default;
-}
-
-.resource-card-actions .resource-card-action-danger:not(:disabled) {
-  color: var(--color-danger);
-}
-
 @media (width < 768px) {
   .resource-card.data-section {
     --resource-card-padding: var(--space-4);
@@ -242,17 +194,12 @@
     display: inline;
   }
 
-  .resource-card-actions button {
-    min-height: 44px;
-  }
-
   .resource-card > .batch-toolbar > .button:nth-of-type(n+2) {
     display: inline-flex;
   }
 }
 
 .sp-table-flat .resource-card-select-all > span { display: none; }
-.resource-card-more[aria-disabled="true"] { opacity: .6; cursor: default; }
 .sp-table-flat .resource-card-name { overflow-wrap: anywhere; }
 
 @media (width < 768px) {
