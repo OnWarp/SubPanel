@@ -54,6 +54,6 @@
 - 390 宽的模板弹窗会压住既有移动底栏。底栏不在本线范围，1440 宽的内容弹窗本体是不透明的
 - `/users/:id` 仍显示外壳的用户 / 邀请 / 回收站，下面还有详情页自己的基本信息 / 订阅授权 / 操作日志。这是范围划分留下的叠层，详情页和后端字段由另一条线处理，本线没有改 `UserDetailPage.tsx` 或 `UserSubscriptionPlan.tsx`
 - 主机名 hwsg 无法解析。本机没有已登录的 instabox 会话，没有签发 SFTP 凭据，也没有把包传到 `/root/xfer`。报告提交即交付，没有用 base64 回传
-- 分支 HEAD 在推送后与 `origin/task/sub-uiux2-phase2-grok` 顶端一致，代码和本报告在同一提交
+- 功能与报告提交 `4a3fe360ae9feb774bc25b1626cf9334943e29ef`。本句所在提交是它的直接子提交，远端 `task/sub-uiux2-phase2-grok` 顶端即交付 HEAD
 
 SUB_UIUX2_PHASE2_GROK_DONE
