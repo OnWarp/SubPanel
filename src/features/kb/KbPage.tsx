@@ -5,7 +5,8 @@ import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 import { formatKbTime, type KbArticleSummary, type UserKbCategory } from './types'
 
@@ -91,8 +92,8 @@ export function KbPage() {
   const searchingActive = query.trim() !== ''
 
   return (
-    <div className="page-stack kb-page">
-      <PageHero title="知识库" />
+    <PageContainer width="list">
+      <PageHeader title="知识库" />
 
       <div className="kb-search">
         <SearchInput
@@ -148,6 +149,6 @@ export function KbPage() {
           ))}
         </div>
       ) : null}
-    </div>
+    </PageContainer>
   )
 }

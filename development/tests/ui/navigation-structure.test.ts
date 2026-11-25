@@ -16,7 +16,7 @@ vi.mock('../../../src/theme/ThemeProvider', () => ({
   useTheme: () => ({ mode: 'light', preference: 'system', setPreference: () => undefined }),
 }))
 vi.mock('../../../src/ui/PageHeader', () => ({
-  PageHeader: ({ title, actions }: { title: string; actions?: ReactNode }) => createElement('header', null, createElement('h1', null, title), actions),
+  PageHeader: ({ title, actions, leading }: { title: string; actions?: ReactNode; leading?: ReactNode }) => createElement('header', null, leading, createElement('h1', null, title), actions),
 }))
 vi.mock('react-router-dom', async importOriginal => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
@@ -95,10 +95,11 @@ describe('navigation ownership and route compatibility', () => {
     expect(links(mobileDock(html))).not.toContain('/delivery/redemptions')
   })
 
-  it('highlights the ticket tab on a ticket detail page', () => {
+  it('highlights operations in the sidebar and leaves list tabs off the ticket detail', () => {
     const html = render('/delivery/tickets/tkt_1')
     expect(nav(html, '主导航')).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="location")/)
-    expect(nav(html, '运营管理导航')).toMatch(/<a(?=[^>]*href="\/delivery\/tickets")(?=[^>]*aria-current="page")/)
+    expect(nav(html, '运营管理导航')).toBe('')
+    expect(html).toContain('返回工单')
     expect(mobileDock(html)).not.toContain('aria-current')
     expect(mobileDock(html)).not.toContain('/delivery/tickets')
   })
@@ -142,11 +143,19 @@ describe('navigation ownership and route compatibility', () => {
   ])('maps legacy location %s to %s and preserves other query parameters', (path, target) => {
     expect(render(path)).toContain(`data-redirect="${target}"`)
   })
-  it('renders the overview heading and seven placeholders in one loading grid', () => {
+  it('renders the overview heading and seven real metrics, pending work first', () => {
     const html = render('/dashboard')
     expect(html).toContain('<header><h1>概览</h1></header>')
-    const grid = html.match(/<section class="adm-stat-grid"[^>]*aria-busy="true"[^>]*>(.*?)<\/section>/)?.[1]
-    expect(grid?.match(/class="sp-stat-card sp-stat-body"/g)).toHaveLength(7)
+    const section = html.match(/<section[^>]*aria-busy="true"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? ''
+    const labels = [...section.matchAll(/<dt>([^<]+)<\/dt>/g)].map((match) => match[1])
+    expect(labels).toEqual(['待处理工单', '7 日内到期', '总用户', '有效订阅', '节点', '分组', '计划'])
+    expect(section).toContain('href="/delivery/tickets?status=open"')
+    expect(section).toContain('href="/users?expiry=soon"')
+    expect(section).toContain('href="/users"')
+    expect(section).toContain('href="/catalog/nodes"')
+    expect(section).toContain('href="/catalog/groups"')
+    expect(section).not.toContain('href="/plans"')
+    expect(section).not.toContain('href="/delivery/subscriptions')
   })
   it.each([
     ['/delivery/templates', '权益模板'],

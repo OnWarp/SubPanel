@@ -1,25 +1,28 @@
-import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
 import { FormSelect, Input, Textarea } from '../../ui/Controls'
-import { BookOpen } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { adminDomains } from '../../app/navigation'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
-import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
+import { RowActions } from '../../ui/RowActions'
+import { Section } from '../../ui/Section'
+import { ModuleTabs } from '../../ui/SectionTabs'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
+import { renderMarkdown } from './markdown'
 import { formatKbTime, type KbArticle, type KbArticleSummary, type KbCategory } from './types'
 
 const PAGE_SIZE = 20
+const opsNav = adminDomains.find((domain) => domain.to === '/delivery/tickets')?.section
 
 type PublishedFilter = 'all' | 'true' | 'false'
 
@@ -293,23 +296,6 @@ export function AdminKbPage() {
         : <StatusBadge tone="muted">草稿</StatusBadge>,
     },
     { key: 'sort', header: '排序' },
-    {
-      key: 'actions',
-      header: '操作',
-      align: 'right',
-      render: (article) => (
-        <OperationsActions label={`管理文章 ${article.title}`}>
-          <button className="button ghost" type="button" disabled={formBusy} onClick={() => { openEdit(article).catch(() => undefined) }}>编辑</button>
-          <button
-            className="button ghost"
-            type="button"
-            onClick={() => setPendingDelete({ kind: 'article', id: article.id, label: article.title })}
-          >
-            删除
-          </button>
-        </OperationsActions>
-      ),
-    },
   ]
 
   const categoryOptions = [
@@ -324,14 +310,21 @@ export function AdminKbPage() {
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  return (
-    <div className="page-stack kb-page kb-admin ops-page">
-      <PageHeader title="知识库管理" />
+  const articleEmpty = categories.length === 0
+    ? '暂无文章，请先创建分类'
+    : categoryFilter === 'all' && publishedFilter === 'all'
+      ? '暂无文章'
+      : '暂无匹配文章'
 
-      <section className="data-section" aria-label="知识库管理">
-        <OperationsHeading action={
+  return (
+    <PageContainer width="list">
+      <PageHeader title="知识库管理" />
+      {opsNav ? <ModuleTabs {...opsNav} /> : null}
+
+      <section className="content-section" aria-label="文章">
+        <div className="content-page-actions">
           <button className="button primary" type="button" onClick={openCreate} disabled={categories.length === 0}>新建文章</button>
-        } />
+        </div>
         <FilterBar>
           <label className="filter-field">
             <span>分类</span>
@@ -350,48 +343,52 @@ export function AdminKbPage() {
         </FilterBar>
         {articlesLoading && articles.length === 0 ? <LoadingState label="正在加载文章" /> : null}
         {!articlesLoading && articlesError ? <ErrorState message={articlesError} onRetry={() => { loadArticles().catch(() => undefined) }} /> : null}
-        {!articlesLoading && !articlesError && total === 0 ? (
-          <EmptyState
-            icon={BookOpen}
-            title={categories.length === 0 ? '暂无文章，请先创建分类' : categoryFilter === 'all' && publishedFilter === 'all' ? '暂无文章' : '暂无匹配文章'}
-          />
-        ) : null}
-        {!articlesLoading && !articlesError && total > 0 ? (
+        {!articlesLoading && !articlesError ? (
           <DataTable
             columns={columns}
             rows={articles}
             rowKey={(article) => article.id}
-            empty="暂无匹配文章"
+            empty={articleEmpty}
+            summary={`共 ${total} 条`}
+            pagination={{ compact: true, page, pageCount, onPageChange: setPage }}
+            rowActions={(article) => (
+              <RowActions label={`管理文章 ${article.title}`} actions={[
+                { label: '编辑', disabled: formBusy, onClick: () => { openEdit(article).catch(() => undefined) } },
+                { label: '删除', onClick: () => setPendingDelete({ kind: 'article', id: article.id, label: article.title }) },
+              ]} />
+            )}
           />
         ) : null}
-        {!articlesLoading && !articlesError && <OperationsFooter total={total} pagination={{ page, pageCount, onPageChange: setPage }} />}
       </section>
 
-      <section className="data-section" aria-labelledby="kb-admin-categories-title">
-        <DataHeader
-          id="kb-admin-categories-title"
-          title="分类"
-          actions={(
-            <button className="button ghost" type="button" disabled={categoriesLoading} onClick={() => { loadCategories().catch(() => undefined) }}>
-              刷新
-            </button>
-          )}
-        />
+      <Section
+        title="分类"
+        actions={(
+          <button className="button ghost" type="button" disabled={categoriesLoading} onClick={() => { loadCategories().catch(() => undefined) }}>
+            刷新
+          </button>
+        )}
+      >
         {categoriesLoading ? <LoadingState label="正在加载分类" /> : null}
         {!categoriesLoading && categoriesError ? <ErrorState message={categoriesError} onRetry={() => { loadCategories().catch(() => undefined) }} /> : null}
         {!categoriesLoading && !categoriesError ? (
           <div className="kb-admin-body">
-            <DataTable rows={categories} rowKey={(category) => category.id} empty="暂无分类，先在下方创建第一个分类" columns={[
-              { key: 'name', header: '分类', render: (category) => <strong className="ops-main">{category.name}<span className="ops-meta">ID {category.id}</span></strong> },
-              { key: 'sort', header: '排序' },
-              { key: 'actions', header: '操作', align: 'right', render: (category) => (
-                <OperationsActions label={`管理分类 ${category.name}`}>
-                  <button className="button ghost" type="button" disabled={categoryBusy} onClick={() => editCategory(category)}>编辑</button>
-                  <button className="button ghost" type="button" disabled={categoryBusy} onClick={() => setPendingDelete({ kind: 'category', id: category.id, label: category.name })}>删除</button>
-                </OperationsActions>
-              ) },
-            ]} />
-            <OperationsFooter total={categories.length} unit="个" />
+            <DataTable
+              rows={categories}
+              rowKey={(category) => category.id}
+              empty="暂无分类，先在下方创建第一个分类"
+              summary={`共 ${categories.length} 个`}
+              rowActions={(category) => (
+                <RowActions label={`管理分类 ${category.name}`} actions={[
+                  { label: '编辑', disabled: categoryBusy, onClick: () => editCategory(category) },
+                  { label: '删除', disabled: categoryBusy, onClick: () => setPendingDelete({ kind: 'category', id: category.id, label: category.name }) },
+                ]} />
+              )}
+              columns={[
+                { key: 'name', header: '分类', render: (category) => <strong className="ops-main">{category.name}<span className="ops-meta">ID {category.id}</span></strong> },
+                { key: 'sort', header: '排序' },
+              ]}
+            />
 
             <form className="kb-category-form" onSubmit={saveCategory} noValidate>
               <h3 className="kb-subtitle">{categoryForm.id === null ? '新建分类' : '编辑分类'}</h3>
@@ -434,10 +431,11 @@ export function AdminKbPage() {
             </form>
           </div>
         ) : null}
-      </section>
+      </Section>
 
       <Dialog
         open={editorOpen}
+        appearance="content"
         title={articleForm.id === null ? '新建文章' : '编辑文章'}
         size="xl"
         busy={formBusy}
@@ -478,6 +476,10 @@ export function AdminKbPage() {
               onChange={(event) => setArticleForm({ ...articleForm, content: event.currentTarget.value })}
             />
           </FormField>
+          <section aria-label="预览">
+            <h3 className="kb-subtitle">预览</h3>
+            <div className="kb-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(articleForm.content) }} />
+          </section>
           <div className="kb-form-grid">
             <FormField label="排序（越小越靠前）" htmlFor="kb-article-sort">
               <Input
@@ -507,6 +509,7 @@ export function AdminKbPage() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
+        appearance="content"
         title={pendingDelete?.kind === 'category' ? '删除分类' : '删除文章'}
         description={pendingDelete?.kind === 'category'
           ? `将删除分类「${pendingDelete.label}」；分类下仍有文章时不能删除`
@@ -517,6 +520,6 @@ export function AdminKbPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={() => { removePending().catch(() => undefined) }}
       />
-    </div>
+    </PageContainer>
   )
 }

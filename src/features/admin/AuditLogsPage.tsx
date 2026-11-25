@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { peekApi, watchApi } from '../../app/api'
+import { adminDomains } from '../../app/navigation'
 import { DateTimeInput, Input } from '../../ui/Controls'
 import { DataTable } from '../../ui/DataTable'
 import { FilterBar } from '../../ui/FilterBar'
 import { ErrorState } from '../../ui/ErrorState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
-import { OperationsFooter } from './OperationsCard'
+import { ModuleTabs } from '../../ui/SectionTabs'
 
 type Log = {
   id: string
@@ -49,25 +51,24 @@ export function AuditLogsPage() {
 
   useEffect(() => { void load() }, [load])
 
+  const settingsNav = adminDomains.find((domain) => domain.to === '/system/registration')?.section
   return (
-    <div className="page-stack ops-page">
+    <PageContainer width="list">
       <PageHeader title="审计日志" />
-      <section className="data-section" aria-label="审计日志">
-        <FilterBar className="audit-filters">
-          <label className="filter-field"><span>操作</span><Input value={action} onChange={(event) => { setAction(event.target.value); setPage(1) }} /></label>
-          <label className="filter-field"><span>管理员 ID</span><Input value={actor} onChange={(event) => { setActor(event.target.value); setPage(1) }} /></label>
-          <label className="filter-field"><span>开始时间</span><DateTimeInput value={from} onChange={(event) => { setFrom(event.target.value); setPage(1) }} /></label>
-          <label className="filter-field"><span>结束时间</span><DateTimeInput value={to} onChange={(event) => { setTo(event.target.value); setPage(1) }} /></label>
-        </FilterBar>
-        {error && <ErrorState message={error} onRetry={() => void load()} />}
-        <DataTable rows={logs} rowKey={(log) => log.id} empty="暂无日志" columns={[
-          { key: 'action', header: '操作', render: (log) => <strong className="ops-main">{log.action}<span className="ops-meta">{log.created_at}</span></strong> },
-          { key: 'actor_user_id', header: '管理员' },
-          { key: 'target_type', header: '目标', render: (log) => <>{log.target_type} / {log.target_id}</> },
-          { key: 'detail', header: '详情' },
-        ]} />
-        <OperationsFooter total={pagination.total} pagination={{ page, pageCount: pagination.pageCount, onPageChange: setPage }} />
-      </section>
-    </div>
+      {settingsNav ? <ModuleTabs {...settingsNav} /> : null}
+      <FilterBar className="audit-filters">
+        <label className="filter-field"><span>操作</span><Input value={action} onChange={(event) => { setAction(event.target.value); setPage(1) }} /></label>
+        <label className="filter-field"><span>管理员 ID</span><Input value={actor} onChange={(event) => { setActor(event.target.value); setPage(1) }} /></label>
+        <label className="filter-field"><span>开始时间</span><DateTimeInput value={from} onChange={(event) => { setFrom(event.target.value); setPage(1) }} /></label>
+        <label className="filter-field"><span>结束时间</span><DateTimeInput value={to} onChange={(event) => { setTo(event.target.value); setPage(1) }} /></label>
+      </FilterBar>
+      {error && <ErrorState message={error} onRetry={() => void load()} />}
+      <DataTable rows={logs} rowKey={(log) => log.id} empty="暂无日志" summary={`共 ${pagination.total} 条`} pagination={{ compact: true, page, pageCount: pagination.pageCount, onPageChange: setPage }} columns={[
+        { key: 'action', header: '操作', render: (log) => <strong className="ops-main">{log.action}<span className="ops-meta">{log.created_at}</span></strong> },
+        { key: 'actor_user_id', header: '管理员' },
+        { key: 'target_type', header: '目标', render: (log) => <>{log.target_type} / {log.target_id}</> },
+        { key: 'detail', header: '详情' },
+      ]} />
+    </PageContainer>
   )
 }

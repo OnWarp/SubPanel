@@ -93,30 +93,34 @@ export function RegisterPage({ initialMode = null }: { initialMode?: Registratio
   if (configError) {
     return (
       <AuthLayout className="upd-auth" title="注册">
-        <p className="form-message error" role="alert">{configError}</p>
-        <p className="form-message"><Link to="/login">返回登录</Link></p>
+        <div className="content-scope">
+          <p className="form-message error" role="alert">{configError}</p>
+          <p className="form-message"><Link to="/login">返回登录</Link></p>
+        </div>
       </AuthLayout>
     )
   }
   if (mode === null) {
     return (
       <AuthLayout className="upd-auth" title="注册">
-        <p className="form-message" role="status">正在加载</p>
+        <p className="content-scope form-message" role="status">正在加载</p>
       </AuthLayout>
     )
   }
   if (mode === 'closed') {
     return (
       <AuthLayout className="upd-auth" title="注册">
-        <p className="form-message">当前未开放注册，请联系管理员</p>
-        <p className="form-message"><Link to="/login">返回登录</Link></p>
+        <div className="content-scope">
+          <p className="form-message">当前未开放注册，请联系管理员</p>
+          <p className="form-message"><Link to="/login">返回登录</Link></p>
+        </div>
       </AuthLayout>
     )
   }
 
   return (
     <AuthLayout className="upd-auth" title="注册">
-      <form className="form-stack" onSubmit={submit}>
+      <form className="form-stack content-scope" onSubmit={submit}>
         <FormField label="用户名" htmlFor="register-username" error={errorField === 'username' ? error : undefined}>
           <Input id="register-username" name="username" autoComplete="username" minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" autoFocus required />
           <p className="profile-hint">3 至 32 位字母、数字或 . _ -</p>

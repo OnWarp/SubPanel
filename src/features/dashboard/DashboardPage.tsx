@@ -1,9 +1,11 @@
-import { CalendarClock, Layers, Network, Package, Ticket, Users, type LucideIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
+import { StatGroup } from '../../ui/DetailList'
+import { Skeleton } from '../../ui/LoadingState'
 
 type DashboardStats = {
   users: number
@@ -15,15 +17,27 @@ type DashboardStats = {
   nodes: number
 }
 
-const metrics: { field: keyof DashboardStats; label: string; icon: LucideIcon; to?: string }[] = [
-  { field: 'users', label: '总用户', icon: Users },
-  { field: 'activeSubscriptions', label: '有效订阅', icon: Layers },
-  { field: 'expiringSubscriptions', label: '7 日内到期', icon: CalendarClock, to: '/delivery/subscriptions?expiry=soon' },
-  { field: 'pendingTickets', label: '待处理工单', icon: Ticket, to: '/delivery/tickets' },
-  { field: 'nodes', label: '节点', icon: Network },
-  { field: 'plans', label: '计划', icon: Package },
-  { field: 'groups', label: '分组', icon: Layers },
+type Metric = {
+  id: string
+  field: keyof DashboardStats
+  label: string
+  to?: string
+}
+
+const metrics: Metric[] = [
+  { id: 'pending', field: 'pendingTickets', label: '待处理工单', to: '/delivery/tickets?status=open' },
+  { id: 'expiring', field: 'expiringSubscriptions', label: '7 日内到期', to: '/users?expiry=soon' },
+  { id: 'users', field: 'users', label: '总用户', to: '/users' },
+  { id: 'active', field: 'activeSubscriptions', label: '有效订阅' },
+  { id: 'nodes', field: 'nodes', label: '节点', to: '/catalog/nodes' },
+  { id: 'groups', field: 'groups', label: '分组', to: '/catalog/groups' },
+  { id: 'plans', field: 'plans', label: '计划' },
 ]
+
+function metricValue(value: number | undefined, to: string | undefined, loading: boolean): ReactNode {
+  const body = loading || value === undefined ? <Skeleton /> : value
+  return to ? <Link to={to}>{body}</Link> : body
+}
 
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(() => peekApi<DashboardStats>('/api/admin/stats') ?? null)
@@ -43,36 +57,20 @@ export function DashboardPage() {
   }, [attempt])
 
   return (
-    <div className="page-stack adm-overview">
+    <PageContainer width="list">
       <PageHeader title="概览" />
       {error ? <ErrorState message={error} onRetry={() => {
         setError('')
         setAttempt((current) => current + 1)
       }} /> : (
-        <section
-          className="adm-stat-grid"
-          aria-label={loading ? '正在加载概览' : '概览统计与待办'}
-          aria-busy={loading}
-        >
-          {metrics.map(({ field, label, icon: Icon, to }) => {
-            const content = (
-              <>
-                <span className="sp-stat-label">
-                  {label}
-                  <Icon size={16} aria-hidden="true" />
-                </span>
-                <strong className="sp-stat-value">{stats?.[field]}</strong>
-              </>
-            )
-
-            if (stats && to) {
-              return <Link className="sp-stat-card sp-stat-body" key={field} to={to}>{content}</Link>
-            }
-
-            return <div className="sp-stat-card sp-stat-body" key={field} aria-hidden={loading || undefined}>{content}</div>
-          })}
+        <section aria-label={loading ? '正在加载概览' : '概览统计与待办'} aria-busy={loading || undefined}>
+          <StatGroup items={metrics.map(({ id, field, label, to }) => ({
+            id,
+            label,
+            value: metricValue(stats?.[field], to, loading),
+          }))} />
         </section>
       )}
-    </div>
+    </PageContainer>
   )
 }

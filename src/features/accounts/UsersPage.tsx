@@ -1,6 +1,6 @@
 import { Button } from '../../ui/Button'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
@@ -115,6 +115,8 @@ export function UsersDirectory({
   page,
   pageCount,
   statusFilter,
+  expirySoon = false,
+  onClearExpiry,
   query,
   selectedIds,
   mutating,
@@ -136,6 +138,8 @@ export function UsersDirectory({
   page: number
   pageCount: number
   statusFilter: StatusFilter
+  expirySoon?: boolean
+  onClearExpiry?: () => void
   query: string
   selectedIds: ReadonlySet<string>
   mutating: boolean
@@ -232,6 +236,7 @@ export function UsersDirectory({
             <option value="disabled">已停用</option>
           </FormSelect>
         </label>
+        {expirySoon ? <button type="button" className="button ghost" onClick={onClearExpiry}>7 日内到期</button> : null}
       </FilterBar>
       {phase === 'error' ? <ErrorState message={loadError} onRetry={onRetry} /> : (
         <>
@@ -262,7 +267,7 @@ export function UsersDirectory({
           ) : null}
           {phase === 'ready' && total === 0 ? (
             <>
-              <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户，请先创建邀请'} />
+              <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : expirySoon ? '暂无 7 日内到期的用户' : '暂无用户，请先创建邀请'} />
               <footer className="section-footer">
                 <span className="sp-table-summary">共 {total} 位用户</span>
                 <Pagination compact page={page} pageCount={pageCount} onPageChange={onPage} />
@@ -276,7 +281,7 @@ export function UsersDirectory({
               rowKey={(user) => user.id}
               empty="暂无匹配用户"
               loadingLabel={phase === 'loading' ? '正在加载用户' : undefined}
-              summary={phase === 'ready' ? `共 ${total} 位用户` : undefined}
+              summary={phase === 'ready' ? (expirySoon ? `共 ${total} 位用户，7 日内到期` : `共 ${total} 位用户`) : undefined}
               pagination={phase === 'ready' ? { compact: true, page, pageCount, onPageChange: onPage } : undefined}
             />
           )}
@@ -287,6 +292,8 @@ export function UsersDirectory({
 }
 
 export function UsersPage({ view = 'active' }: { view?: UsersView }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const expirySoon = view === 'active' && searchParams.get('expiry') === 'soon'
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(1)
@@ -298,6 +305,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const needle = query.trim()
   if (needle) params.set('q', needle)
   if (statusFilter !== 'all') params.set('status', statusFilter)
+  if (expirySoon) params.set('expiry', 'soon')
   const usersPath = `/api/admin/users?${params.toString()}`
   const [users, setUsers] = useState<UserSummary[]>(() => peekApi<AdminUsersResponse>(usersPath)?.users ?? [])
   const [total, setTotal] = useState(() => peekApi<AdminUsersResponse>(usersPath)?.total ?? 0)
@@ -630,6 +638,13 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         page={page}
         pageCount={pageCount}
         statusFilter={statusFilter}
+        expirySoon={expirySoon}
+        onClearExpiry={() => {
+          const next = new URLSearchParams(searchParams)
+          next.delete('expiry')
+          setSearchParams(next, { replace: true })
+          setPage(1)
+        }}
         query={query}
         selectedIds={selectedUsers}
         mutating={mutating}

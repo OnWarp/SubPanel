@@ -227,6 +227,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" showMobileBarOptions={isMobile} signOut={signOut} onError={setSignOutError} /></div>}
           tabs={adminDomain?.section && !contentOwnsModuleTabs(location.pathname)
             && !matchPath('/users/:id', location.pathname)
+            && !matchPath('/delivery/tickets/:id', location.pathname)
             ? <SectionTabs {...adminDomain.section} /> : undefined}
         >
           {signOutError ? <p role="alert">{signOutError}</p> : null}

@@ -82,7 +82,11 @@ export const adminDomains: AdminDomain[] = [
 const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/templates', '/users'])
 export const adminMobileDock = adminDomains.filter((domain) => adminMobileDockTargets.has(domain.to))
 
-const contentModulePaths = new Set(['/users', '/invites', '/users/recycle-bin'])
+const contentModulePaths = new Set([
+  '/users', '/invites', '/users/recycle-bin',
+  '/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs',
+  '/delivery/tickets', '/operations/notices', '/kb/manage',
+])
 
 /** These list routes render ModuleTabs in the content page, so the shell must not repeat them. */
 export function contentOwnsModuleTabs(path: string) {

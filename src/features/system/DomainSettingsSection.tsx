@@ -5,11 +5,11 @@ import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, peekApi, readData, ApiClientError, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { InlineMessage } from '../../ui/InlineMessage'
 import { LoadingState } from '../../ui/LoadingState'
+import { Section } from '../../ui/Section'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
 import { OperationsActions, OperationsFooter } from '../admin/OperationsCard'
@@ -91,7 +91,7 @@ function DomainNote({ item, busy, error, onSave }: {
     <button className="sys-domain-note" type="button" disabled={busy} aria-label={`编辑 ${item.hostname} 备注`} onClick={() => setDraft(item.note)}>
       {item.note || '添加备注'}
     </button>
-    <Dialog open={draft !== null} title="编辑域名备注" size="m" busy={saving} dirty={draft !== null && draft !== item.note} onClose={() => setDraft(null)}
+    <Dialog open={draft !== null} title="编辑域名备注" size="m" appearance="content" busy={saving} dirty={draft !== null && draft !== item.note} onClose={() => setDraft(null)}
       footer={cancel => <>
         <button className="button secondary" type="button" disabled={saving} onClick={cancel}>取消</button>
         <button className="button primary" form={`domain-note-${item.id}`} type="submit" disabled={saving}>保存备注</button>
@@ -148,12 +148,11 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
   }
 
   return (
-    <section className="data-section" aria-labelledby={`${idPrefix}-title`}>
-      <DataHeader id={`${idPrefix}-title`} title={title} actions={<button className="button primary" type="button" disabled={adding} onClick={() => setExpanded(true)}>
-          <Plus aria-hidden="true" size={16} />添加域名
-        </button>} />
+    <Section title={title} actions={<button className="button primary" type="button" disabled={adding} onClick={() => setExpanded(true)}>
+        <Plus aria-hidden="true" size={16} />添加域名
+      </button>}>
       <p className="sys-hint">{description}</p>
-      <Dialog open={expanded} title="添加域名" size="m" busy={adding} dirty={Boolean(hostname || note)}
+      <Dialog open={expanded} title="添加域名" size="m" appearance="content" busy={adding} dirty={Boolean(hostname || note)}
         onClose={() => { setHostname(''); setNote(''); setAddError(''); setExpanded(false) }}
         footer={(cancel) => <>
           <button className="button secondary" type="button" onClick={cancel}>取消</button>
@@ -194,7 +193,9 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
                   <OperationsActions label={`${item.hostname} 更多操作`}>
                     <button className="button ghost" type="button" disabled={busy} onClick={() => onVerify(kind, item)}>验证</button>
                     {!isPrimary ? <button className="button ghost" type="button" disabled={busy || !item.enabled || item.verificationStatus !== 'verified'} onClick={() => onSetPrimary(kind, item)}>设为主域名</button> : null}
-                    <button className="button danger" type="button" disabled={busy || isPrimary} title={isPrimary ? '主域名不能删除' : '删除域名'} onClick={() => onDelete(kind, item)}>删除</button>
+                    <div className="content-danger-zone">
+                      <button className="button danger" type="button" disabled={busy || isPrimary} title={isPrimary ? '主域名不能删除' : '删除域名'} onClick={() => onDelete(kind, item)}>删除</button>
+                    </div>
                   </OperationsActions>
                 </div>
               </li>
@@ -203,7 +204,7 @@ function DomainCard({ kind, title, description, items, primaryId, busyId, onVeri
         </ul>
       )}
       <OperationsFooter total={items.length} unit="个域名" />
-    </section>
+    </Section>
   )
 }
 
@@ -311,8 +312,7 @@ export function DomainSettingsSection() {
   }
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-domains-title">
-      <DataHeader id="sys-domains-title" title="域名与平台展示" />
+    <Section title="域名与平台展示">
       {loading ? <LoadingState label="正在加载域名设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && domains ? (
@@ -381,6 +381,7 @@ export function DomainSettingsSection() {
         description={pendingDelete ? `确定删除 ${pendingDelete.item.hostname} 吗` : ''}
         confirmLabel="确认删除"
         busy={busyId !== ''}
+        appearance="content"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => {
           if (!pendingDelete) return
@@ -389,6 +390,6 @@ export function DomainSettingsSection() {
           actOnDomain(item, () => api(`/api/admin/system/domains/${kind}/${item.id}`, { method: 'DELETE' }), '域名已删除').catch(() => undefined)
         }}
       />
-    </section>
+    </Section>
   )
 }

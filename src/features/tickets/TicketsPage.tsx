@@ -4,12 +4,14 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { StatusPill } from '../../ui/StatusPill'
+import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { SegmentedControl } from '../../ui/SegmentedControl'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -18,6 +20,40 @@ import { formatTicketTime, levelLabel, ticketState, ticketTime, type Ticket } fr
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiClientError ? cause.message : fallback
 }
+
+const ticketColumns: Array<DataTableColumn<Ticket>> = [
+  {
+    key: 'title',
+    header: '标题',
+    render: (ticket) => <Link className="tk-title-link" to={`/tickets/${ticket.id}`}>{ticket.title}</Link>,
+  },
+  {
+    key: 'level',
+    header: '等级',
+    render: (ticket) => {
+      const level = levelLabel(ticket.level)
+      return <StatusBadge tone={level.tone} size="sm">{level.label}</StatusBadge>
+    },
+  },
+  {
+    key: 'state',
+    header: '状态',
+    render: (ticket) => {
+      const state = ticketState(ticket)
+      return <StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill>
+    },
+  },
+  {
+    key: 'lastReply',
+    header: '最后回复',
+    render: (ticket) => ticket.lastReplyBy === 'admin' ? '管理员' : ticket.lastReplyBy === 'user' ? '我' : '暂无回复',
+  },
+  {
+    key: 'time',
+    header: '时间',
+    render: (ticket) => <time dateTime={ticketTime(ticket)}>{formatTicketTime(ticketTime(ticket))}</time>,
+  },
+]
 
 export function TicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>(() => peekApi<{ tickets: Ticket[] }>('/api/tickets')?.tickets ?? [])
@@ -76,8 +112,8 @@ export function TicketsPage() {
   }
 
   return (
-    <div className="page-stack tk-page">
-      <PageHero
+    <PageContainer width="list">
+      <PageHeader
         title="工单"
         actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />新建工单</button>}
       />
@@ -90,20 +126,17 @@ export function TicketsPage() {
         </EmptyState>
       ) : null}
       {!loading && !loadError && tickets.length > 0 ? (
-        <section className="tk-card-list" aria-label="我的工单">
-          {tickets.map((ticket) => {
-            const state = ticketState(ticket)
-            const level = levelLabel(ticket.level)
-            return <article className="object-card" key={ticket.id}>
-              <div className="ntc-card-head"><Link className="tk-title-link object-card-title" to={`/tickets/${ticket.id}`}>{ticket.title}</Link><StatusPill tone={state.tone === 'muted' ? 'neutral' : state.tone}>{state.label}</StatusPill></div>
-              <div className="tk-card-meta"><StatusBadge tone={level.tone} size="sm">{level.label}</StatusBadge><span>最后回复：{ticket.lastReplyBy === 'admin' ? '管理员' : ticket.lastReplyBy === 'user' ? '我' : '暂无回复'}</span><time dateTime={ticketTime(ticket)}>{formatTicketTime(ticketTime(ticket))}</time></div>
-            </article>
-          })}
-        </section>
+        <DataTable
+          columns={ticketColumns}
+          rows={tickets}
+          rowKey={(ticket) => ticket.id}
+          empty="暂无工单"
+        />
       ) : null}
 
       <Dialog
         open={createOpen}
+        appearance="content"
         busy={busy}
         onClose={() => setCreateOpen(false)}
         title="新建工单"
@@ -149,6 +182,6 @@ export function TicketsPage() {
           </FormField>
         </form>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }
