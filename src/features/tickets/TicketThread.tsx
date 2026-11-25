@@ -12,7 +12,7 @@ export function TicketThread({ ticket, replies, viewerRole }: TicketThreadProps)
   const state = ticketState(ticket)
   const level = levelLabel(ticket.level)
   return (
-    <section className="data-section tk-thread" aria-labelledby="tk-thread-title">
+    <section className="content-section tk-thread" aria-labelledby="tk-thread-title">
       <div className="tk-thread-head">
         <div className="tk-thread-title">
           <h2 id="tk-thread-title">{ticket.title}</h2>

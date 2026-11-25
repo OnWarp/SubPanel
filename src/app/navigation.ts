@@ -86,6 +86,8 @@ const contentModulePaths = new Set([
   '/users', '/invites', '/users/recycle-bin',
   '/catalog/nodes', '/catalog/sources', '/catalog/groups', '/catalog/apps',
   '/delivery/templates', '/delivery/shares', '/delivery/redemptions',
+  '/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs',
+  '/delivery/tickets', '/operations/notices', '/kb/manage',
 ])
 
 /** These list routes render ModuleTabs in the content page, so the shell must not repeat them. */

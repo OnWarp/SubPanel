@@ -4,11 +4,14 @@ import { Database, Info } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
-import { DataHeader } from '../../ui/DataHeader'
+import { adminDomains } from '../../app/navigation'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField, FormGroup } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
+import { Section } from '../../ui/Section'
+import { ModuleTabs } from '../../ui/SectionTabs'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
 import { formatDate } from '../catalog/catalog-utils'
@@ -78,14 +81,13 @@ function RegistrationSection() {
   }
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-registration-title">
-      <DataHeader id="sys-registration-title" title="账户与注册" actions={
-        !loading && !loadError && mode ? (
-          <FormSelect aria-label="注册模式" value={mode} disabled={saving} onChange={(event) => { void changeMode(event.currentTarget.value as RegistrationMode) }}>
-            {REGISTRATION_MODES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </FormSelect>
-        ) : undefined
-      } />
+    <Section title="账户与注册" actions={
+      !loading && !loadError && mode ? (
+        <FormSelect aria-label="注册模式" value={mode} disabled={saving} onChange={(event) => { void changeMode(event.currentTarget.value as RegistrationMode) }}>
+          {REGISTRATION_MODES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </FormSelect>
+      ) : undefined
+    }>
       {loading ? <LoadingState label="正在加载注册设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && mode ? (
@@ -94,7 +96,7 @@ function RegistrationSection() {
           <EmailDomains />
         </div>
       ) : null}
-    </section>
+    </Section>
   )
 }
 
@@ -175,16 +177,7 @@ function EmailDomains() {
       {!loading && !notReady && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !notReady && !loadError ? (
         <>
-          {domains.length === 0 ? <p className="sys-hint">暂无白名单域名</p> : (
-            <ul className="sys-domain-list">
-              {domains.map((entry) => (
-                <li key={entry.domain} className="sys-domain-item">
-                  <span>{entry.domain}</span>
-                  <button className="button ghost" type="button" disabled={busy} onClick={() => { remove(entry.domain).catch(() => undefined) }}>移除</button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {domains.length === 0 ? <p className="sys-hint">暂无白名单域名</p> : null}
           <form className="sys-domain-form" onSubmit={add}>
             <FormField label="添加域名" htmlFor="sys-domain-input">
               <Input
@@ -199,6 +192,18 @@ function EmailDomains() {
             </FormField>
             <button className="button" type="submit" disabled={busy || draft.trim() === ''}>添加</button>
           </form>
+          {domains.length > 0 ? (
+            <div className="content-danger-zone">
+              <ul className="sys-domain-list">
+                {domains.map((entry) => (
+                  <li key={entry.domain} className="sys-domain-item">
+                    <span>{entry.domain}</span>
+                    <button className="button ghost" type="button" disabled={busy} onClick={() => { remove(entry.domain).catch(() => undefined) }}>移除</button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </>
       ) : null}
     </FormGroup>
@@ -294,10 +299,9 @@ function MailSection() {
   }
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-mail-title">
-      <DataHeader id="sys-mail-title" title="邮件" actions={
-        !loading && !loadError && form && settings ? <button className="button primary" type="submit" form="ops-mail-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
-      } />
+    <Section title="邮件" actions={
+      !loading && !loadError && form && settings ? <button className="button primary" type="submit" form="ops-mail-settings" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+    }>
       {loading ? <LoadingState label="正在加载邮件设置" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && form && settings ? (
@@ -367,7 +371,7 @@ function MailSection() {
           </FormGroup>
         </form>
       ) : null}
-    </section>
+    </Section>
   )
 }
 
@@ -382,14 +386,16 @@ function HealthSection() {
     catch (cause) { setError(errorMessage(cause, '加载服务健康失败')) }
   }, [])
   useEffect(() => { void load() }, [load])
-  return <section className="data-section sys-section"><DataHeader title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>} />
-    <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
-      <p>服务健康：{health.ok ? '正常' : '异常'}</p>
-      <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hint="每 15 分钟检查需要刷新的来源">
-        {health.cron ? <dl className="key-value-rows"><div><dt>最近结果</dt><dd>{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</dd></div><div><dt>开始</dt><dd>{formatDate(health.cron.ranAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</dd></div></dl> : <p className="sys-hint">暂无任务运行记录</p>}
-      </FormGroup>
-    </>}</div>
-  </section>
+  return (
+    <Section title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>}>
+      <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
+        <p>服务健康：{health.ok ? '正常' : '异常'}</p>
+        <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hint="每 15 分钟检查需要刷新的来源">
+          {health.cron ? <dl className="key-value-rows"><div><dt>最近结果</dt><dd>{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</dd></div><div><dt>开始</dt><dd>{formatDate(health.cron.ranAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</dd></div></dl> : <p className="sys-hint">暂无任务运行记录</p>}
+        </FormGroup>
+      </>}</div>
+    </Section>
+  )
 }
 
 function StatusSection() {
@@ -414,12 +420,10 @@ function StatusSection() {
   useEffect(() => { load().catch(() => undefined) }, [load])
 
   return (
-    <section className="data-section sys-section" aria-labelledby="sys-status-title">
-      <DataHeader
-        id="sys-status-title"
-        title="系统状态"
-        actions={<button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>}
-      />
+    <Section
+      title="系统状态"
+      actions={<button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>}
+    >
       {loading && !status ? <LoadingState label="正在加载系统状态" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {status ? (
@@ -458,7 +462,7 @@ function StatusSection() {
           <p className="sys-hint">存储后端由迁移流程统一切换，此页仅供查看</p>
         </div>
       ) : null}
-    </section>
+    </Section>
   )
 }
 
@@ -477,13 +481,17 @@ export function SystemPage() {
     const search = query.size ? `?${query}` : ''
     return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.includes(active) ? active : 'registration'}`) + search} />
   }
-  return <div className="page-stack sys-page ops-page">
-    <PageHeader title="系统设置" />
-    <div className="page-stack settings-sections">
+  const settingsNav = adminDomains.find((domain) => domain.to === '/system/registration')?.section
+  return (
+    <PageContainer width="list">
+      <PageHeader title="系统设置" />
+      {settingsNav ? <ModuleTabs {...settingsNav} /> : null}
+      <div className="content-stack">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
         {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
-    </div>
-  </div>
+      </div>
+    </PageContainer>
+  )
 }

@@ -196,6 +196,8 @@ export interface AdminUserFilters {
   role: 'admin' | 'user' | null
   enabled: boolean | null
   deleted: 'active' | 'only' | 'all'
+  /** Same 7-day window as the overview expiring count. Read filter only. */
+  expirySoon: boolean
 }
 
 export type AdminUser = AccountUser & { subscriptionCount: number }
@@ -204,7 +206,7 @@ interface AdminUserRow extends UserRow {
   subscription_count: number
 }
 
-function adminUserWhere(filters: AdminUserFilters): { clause: string, binds: Array<string | number> } {
+function adminUserWhere(filters: AdminUserFilters, now = Date.now()): { clause: string, binds: Array<string | number> } {
   const clauses: string[] = []
   const binds: Array<string | number> = []
   if (filters.deleted === 'active') clauses.push('u.deleted_at IS NULL')
@@ -220,6 +222,24 @@ function adminUserWhere(filters: AdminUserFilters): { clause: string, binds: Arr
   if (filters.query !== null && filters.query !== '') {
     clauses.push('(instr(lower(u.username), ?) > 0 OR instr(lower(coalesce(u.email, \'\')), ?) > 0)')
     binds.push(filters.query, filters.query)
+  }
+  if (filters.expirySoon) {
+    const end = now + 7 * 86_400_000
+    clauses.push(`u.enabled = 1 AND u.id IN (
+      SELECT w.user_id FROM (
+        SELECT b.user_id, CASE WHEN count(*) = count(b.expires_at) THEN max(b.expires_at) END AS expires_at
+        FROM user_template_bindings b
+        JOIN entitlement_templates t ON t.id = b.template_id
+        JOIN user_subscription_access a ON a.user_id = b.user_id
+        LEFT JOIN entitlement_plan_policies ep ON ep.template_id = t.id
+        LEFT JOIN plans p ON p.id = ep.plan_id
+        WHERE b.status = 'active' AND t.status = 'enabled' AND a.enabled = 1 AND coalesce(p.enabled, 1) = 1
+          AND b.starts_at <= ? AND (b.expires_at IS NULL OR b.expires_at > ?)
+        GROUP BY b.user_id
+      ) w
+      WHERE w.expires_at IS NOT NULL AND w.expires_at <= ?
+    )`)
+    binds.push(now, now, end)
   }
   return { clause: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', binds }
 }

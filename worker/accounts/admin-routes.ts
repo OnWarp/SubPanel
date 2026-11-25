@@ -48,6 +48,7 @@ const parseAdminUserFilters = (query: Record<string, string | undefined>): Admin
     role: query.role === 'admin' || query.role === 'user' ? query.role : null,
     enabled: query.status === 'enabled' ? true : query.status === 'disabled' ? false : null,
     deleted: query.deleted === 'only' || query.deleted === 'all' ? query.deleted : 'active',
+    expirySoon: query.expiry === 'soon',
   }
 }
 
@@ -132,7 +133,7 @@ adminAccountRoutes.get('/users', async (c) => {
     })
   }
   const accounts = await readAccounts(c.env)
-  const filtered = accounts.users.filter((user) => {
+  const filtered = filters.expirySoon ? [] : accounts.users.filter((user) => {
     if (filters.deleted === 'active' && user.deletedAt) return false
     if (filters.deleted === 'only' && !user.deletedAt) return false
     if (filters.role !== null && user.role !== filters.role) return false

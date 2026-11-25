@@ -1,12 +1,13 @@
 import { Network } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, peekApi, watchApi, type AdminSubscription } from '../../app/api'
 import { useSession } from '../../app/session'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
 import { NoticeCarousel } from '../../ui/NoticeCarousel'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { StatCard } from '../../ui/StatCard'
 import { StatusPill } from '../../ui/StatusPill'
 import { QuickEntryCard } from '../../ui/QuickEntryCard'
@@ -41,6 +42,17 @@ export function HomeDashboard({ reminder, subscriptionLabel, subscriptionTone, s
   </>
 }
 
+function HomeFrame({ children }: { children: ReactNode }) {
+  return (
+    <PageContainer width="list">
+      <div className="page-stack nav-home upd-page upd-home">
+        <PageHeader title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
+        {children}
+      </div>
+    </PageContainer>
+  )
+}
+
 function LegacyHomePage() {
   const navigate = useNavigate()
   const { user } = useSession()
@@ -72,8 +84,7 @@ function LegacyHomePage() {
   const inferredLabel = valid ? '有效' : expiry?.kind === 'expired' ? '已过期' : expiry?.kind === 'pending' ? '待生效' : current?.planState === 'disabled' || current?.planState === 'revoked' ? '已停用' : '未开通'
   const subscriptionLabel = current?.status ? (current.statusLabel ?? inferredLabel) : inferredLabel
   const validity = nextExpiry !== null && remaining !== null ? `有效期剩余 ${remaining} 天` : null
-  return <div className="page-stack nav-home upd-page upd-home">
-    <PageHero title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
+  return <HomeFrame>
     {loading ? <LoadingState label="正在加载首页" /> : error ? <ErrorState message={error} onRetry={() => { void load() }} /> : <>
       <HomeDashboard
         reminder={remaining !== null && remaining <= 7 && reminderEnabled(user?.id) ? `订阅将在 ${remaining} 天内到期，请联系管理员续期` : null}
@@ -92,7 +103,7 @@ function LegacyHomePage() {
     <nav className="user-quick-grid" aria-label="快捷入口">
       <QuickEntryCard icon={<Network />} title="节点" href="/nodes" />
     </nav>
-  </div>
+  </HomeFrame>
 }
 
 export function HomePage() {
@@ -106,8 +117,7 @@ export function HomePage() {
     void watchApi<{ notices: Notice[] }>('/api/notices', result => setNotices(result.notices)).catch(() => setNotices([]))
   }, [unified])
   if (state.kind === 'legacy') return <LegacyHomePage />
-  return <div className="page-stack nav-home upd-page upd-home">
-    <PageHero title="首页" actions={<Link className="button primary" to="/subscriptions">打开订阅</Link>} />
+  return <HomeFrame>
     {state.kind === 'ready' ? <>
       <HomeDashboard
         reminder={unifiedExpiryReminder(state.summary, user?.id)}
@@ -121,5 +131,5 @@ export function HomePage() {
       />
       <NoticeCarousel items={notices.map(notice => ({ id: String(notice.id), title: notice.title }))} onSelect={id => navigate(`/notices?notice=${encodeURIComponent(id)}`)} labels={{ previous: '上一条公告', next: '下一条公告', close: '关闭公告' }} />
     </> : state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />}
-  </div>
+  </HomeFrame>
 }

@@ -1,7 +1,7 @@
 import { subscriptionError, unifiedSubscriptionPath, useUnifiedSubscription, type SubscriptionNode } from '../delivery/unified-subscription'
 import { GateEmptyState } from '../../ui/GateEmptyState'
 import { Network } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError } from '../../app/api'
 import { FormSelect } from '../../ui/Controls'
@@ -9,7 +9,8 @@ import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { SearchInput } from '../../ui/SearchInput'
 
 type NodeRef = {
@@ -37,6 +38,17 @@ type UserNodesResponse = {
 
 const PAGE_SIZE = 20
 const EMPTY_REFS: NodeRef[] = []
+
+function NodesPageFrame({ children }: { children: ReactNode }) {
+  return (
+    <PageContainer width="list">
+      <div className="page-stack node-page upd-page upd-nodes">
+        <PageHeader title="我的节点" />
+        {children}
+      </div>
+    </PageContainer>
+  )
+}
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiClientError ? cause.message : fallback
@@ -198,16 +210,14 @@ function LegacyMyNodesPage() {
 
   if (!loading && !error && !hasActiveSubscription) {
     return (
-      <div className="page-stack node-page upd-page upd-nodes">
-        <PageHero title="我的节点" />
+      <NodesPageFrame>
         <GateEmptyState icon={<Network size={48} />} message="需要有效订阅才能查看节点" action={<Link className="button primary" to="/subscriptions">去订阅</Link>} />
-      </div>
+      </NodesPageFrame>
     )
   }
 
   return (
-    <div className="page-stack node-page upd-page upd-nodes">
-      <PageHero title="我的节点" />
+    <NodesPageFrame>
       {loading ? <LoadingState label="正在加载节点" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !error && total === 0 && !filtersActive ? (
@@ -232,7 +242,7 @@ function LegacyMyNodesPage() {
           <UserNodesFooter total={total} page={page} pageCount={pageCount} onPage={setPage} />
         </section>
       ) : null}
-    </div>
+    </NodesPageFrame>
   )
 }
 
@@ -249,8 +259,7 @@ function UnifiedNodes({ reloadSummary }: { reloadSummary: () => void }) {
       })
     return () => controller.abort()
   }, [revision])
-  return <div className="page-stack">
-    <PageHero title="我的节点" />
+  return <NodesPageFrame>
     {error ? <ErrorState message={error} onRetry={() => {
       setError(''); setRevision(value => value + 1); reloadSummary()
     }} /> : !nodes ? <LoadingState label="正在加载节点" /> : <>
@@ -258,14 +267,14 @@ function UnifiedNodes({ reloadSummary }: { reloadSummary: () => void }) {
         columns={[{ key: 'name', header: '节点' }, { key: 'protocol', header: '协议' }]} />
       {!nodes.length && <Link to="/subscriptions">打开订阅</Link>}
     </>}
-  </div>
+  </NodesPageFrame>
 }
 
 export function MyNodesPage() {
   const { state, reload } = useUnifiedSubscription()
   if (state.kind === 'legacy') return <LegacyMyNodesPage />
   if (state.kind === 'ready') return <UnifiedNodes reloadSummary={reload} />
-  return <div className="page-stack"><PageHero title="我的节点" />
+  return <NodesPageFrame>
     {state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />}
-  </div>
+  </NodesPageFrame>
 }

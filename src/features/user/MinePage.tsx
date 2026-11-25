@@ -1,14 +1,16 @@
 import { ArrowLeft, Bell, ChevronRight, Gift, LifeBuoy, Monitor, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, ApiClientError, jsonBody, type AdminSubscription } from '../../app/api'
 import { MobileBarOptions } from '../../app/MobileBarOptions'
 import { useSession } from '../../app/session'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
+import { DetailList } from '../../ui/DetailList'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { Switch } from '../../ui/Switch'
@@ -23,6 +25,28 @@ import { PersonalRedemptions } from '../redemption/PersonalRedemptions'
 import { SubscriptionImports } from '../delivery/SubscriptionImports'
 import { formatTrafficGb } from './home-traffic'
 import { reminderEnabled, reminderKey } from './reminder'
+
+function maskedSubscriptionUrl(link: string) {
+  try {
+    const url = new URL(link)
+    const parts = url.pathname.split('/')
+    if (parts.length > 1 && parts[parts.length - 1]) parts[parts.length - 1] = '••••••••'
+    return `${url.origin}${parts.join('/')}`
+  } catch {
+    return '••••••••'
+  }
+}
+
+function MineFrame({ title, width = 'detail', children }: { title: string; width?: 'list' | 'detail' | 'form'; children: ReactNode }) {
+  return (
+    <PageContainer width={width}>
+      <div className="page-stack upd-page upd-mine">
+        <PageHeader title={title} />
+        {children}
+      </div>
+    </PageContainer>
+  )
+}
 
 function NotificationSettings() {
   const { user } = useSession()
@@ -81,11 +105,14 @@ export function MineSettingsPage() {
   const setting = section === mineSubscriptions.path ? mineSubscriptions : mineSettings.find(item => item.path === section)
   if (!setting) return <Navigate to="/home" replace />
   const { label, Content } = setting
-  return <div className="page-stack upd-page upd-mine">
-    <Link className="upd-mine-back" to="/me"><ArrowLeft size={16} aria-hidden="true" />个人中心</Link>
-    <PageHero title={label} />
-    <Content />
-  </div>
+  return (
+    <PageContainer width={section === 'redemption' || section === 'subscription' ? 'list' : 'form'}>
+      <div className="page-stack upd-page upd-mine">
+        <PageHeader title={label} leading={<Link className="upd-mine-back" to="/me"><ArrowLeft size={16} aria-hidden="true" />个人中心</Link>} />
+        <Content />
+      </div>
+    </PageContainer>
+  )
 }
 
 function isActive(subscription: AdminSubscription) {
@@ -94,6 +121,7 @@ function isActive(subscription: AdminSubscription) {
 }
 
 function LegacySubscriptionOverview({ details = false }: { details?: boolean }) {
+  const platforms = useEnabledPlatforms()
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>()
   const [error, setError] = useState('')
   const load = useCallback((signal?: AbortSignal) => {
@@ -113,6 +141,7 @@ function LegacySubscriptionOverview({ details = false }: { details?: boolean }) 
   }, [load])
 
   const current = subscriptions?.find(isActive) ?? subscriptions?.[0]
+  const link = current ? pickPrimaryLink(current.links, current.defaultClient, platforms) : ''
   return <section className="upd-mine-panel" aria-label="订阅">
     {details ? null : <div className="upd-mine-subscription-heading">
       <h2>订阅</h2>
@@ -129,14 +158,19 @@ function LegacySubscriptionOverview({ details = false }: { details?: boolean }) 
           </StatusBadge>
         </div>
         <p>{current.planName ?? current.entitlementTemplateName ?? '未分配计划'}</p>
-        <dl className="upd-mine-metrics">
-          <div><dt>到期时间</dt><dd>{current.expiresAt === null ? '永久有效' : formatExpiryTime(current.expiresAt)}</dd></div>
-          <div><dt>剩余额度</dt><dd>{typeof current.remainingGb === 'number' && Number.isFinite(current.remainingGb) && current.remainingGb >= 0
+        <DetailList items={[
+          { id: 'expiry', label: '到期时间', value: current.expiresAt === null ? '永久有效' : formatExpiryTime(current.expiresAt) },
+          { id: 'quota', label: '剩余额度', value: typeof current.remainingGb === 'number' && Number.isFinite(current.remainingGb) && current.remainingGb >= 0
             ? `${formatTrafficGb(current.remainingGb)} GB`
-            : current.remainingGb === null || current.trafficGb === 0 ? '不限' : '暂无数据'}</dd></div>
-        </dl>
+            : current.remainingGb === null || current.trafficGb === 0 ? '不限' : '暂无数据' },
+        ]} />
         {details ? <SubscriptionLink key={current.id} subscription={current}
-          onReset={(updated) => setSubscriptions(rows => rows?.map(row => row.id === updated.id ? updated : row))} /> : null}
+          onReset={(updated) => setSubscriptions(rows => rows?.map(row => row.id === updated.id ? updated : row))} /> : link ? (
+          <div className="del-link-line">
+            <p className="del-link-text">{maskedSubscriptionUrl(link)}</p>
+            <CopyButton key={link} value={link} label="复制链接" />
+          </div>
+        ) : null}
       </>}
   </section>
 }
@@ -178,7 +212,7 @@ function SubscriptionLink({ subscription, onReset }: {
   return <section className="upd-mine-subscription-link" aria-labelledby="mine-subscription-link">
     <div className="upd-mine-subscription-heading"><h2 id="mine-subscription-link">订阅链接</h2></div>
     {link ? <div className="del-link-line">
-      <p className="del-link-text">{link}</p>
+      <p className="del-link-text">{maskedSubscriptionUrl(link)}</p>
       <CopyButton key={link} value={link} label="复制链接" />
     </div> : <p>暂无可用链接</p>}
     <div className="upd-link-row">
@@ -192,7 +226,7 @@ function SubscriptionLink({ subscription, onReset }: {
       }}>重置链接</button>
     </div>
     {resetDone ? <StatusMessage tone="success">订阅链接已重置</StatusMessage> : null}
-    <ConfirmDialog open={resetOpen} title="重置订阅链接" description="重置后旧链接会立即失效，请将新链接重新添加到客户端"
+    <ConfirmDialog open={resetOpen} appearance="content" title="重置订阅链接" description="重置后旧链接会立即失效，请将新链接重新添加到客户端"
       confirmLabel="确认重置" danger busy={busy} returnFocusRef={resetButton}
       onClose={() => setResetOpen(false)} onConfirm={() => { void resetLink() }}>
       {resetError ? <StatusMessage tone="error">{resetError}</StatusMessage> : null}
@@ -210,11 +244,28 @@ function RedemptionSettings() {
 function SubscriptionOverview({ details = false }: { details?: boolean }) {
   const { state, reload } = useUnifiedSubscription()
   if (state.kind === 'legacy') return <LegacySubscriptionOverview details={details} />
-  if (state.kind === 'ready') return details ? <Navigate to="/subscriptions" replace /> :
-    <section className="upd-mine-panel">
-      <Link to="/subscriptions">我的订阅<ChevronRight size={16} aria-hidden="true" /></Link>
-      <StatusBadge tone={state.summary.status === 'active' ? 'success' : 'muted'}>{subscriptionStatus[state.summary.status]}</StatusBadge>
-    </section>
+  if (state.kind === 'ready') {
+    const subscriptionLink = state.summary.subscriptionUrl
+    const expiry = state.summary.expiresAt ?? state.summary.lastExpiredAt
+    return details ? <Navigate to="/subscriptions" replace /> : (
+      <section className="upd-mine-panel" aria-label="订阅">
+        <div className="upd-mine-subscription-heading">
+          <h2>订阅</h2>
+          <Link to="/subscriptions">我的订阅<ChevronRight size={16} aria-hidden="true" /></Link>
+        </div>
+        <StatusBadge tone={state.summary.status === 'active' ? 'success' : 'muted'}>{subscriptionStatus[state.summary.status]}</StatusBadge>
+        <DetailList items={[{
+          id: 'expiry',
+          label: '到期时间',
+          value: state.summary.permanent ? '长期有效' : expiry ? formatExpiryTime(Date.parse(expiry)) : '—',
+        }]} />
+        {subscriptionLink ? <div className="del-link-line">
+          <p className="del-link-text">{maskedSubscriptionUrl(subscriptionLink)}</p>
+          <CopyButton value={subscriptionLink} label="复制链接" />
+        </div> : <p>订阅链接暂不可用</p>}
+      </section>
+    )
+  }
   return state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />
 }
 
@@ -228,19 +279,19 @@ function SubscriptionInfo() {
 export function MinePage() {
   const { profile, error, reload } = useAccountProfile()
 
-  return <div className="page-stack upd-page upd-mine">
-    <PageHero title="个人中心" />
-    <div className="upd-mine-overview">
-      <section className="upd-mine-panel upd-mine-identity" aria-label="账户信息">
-        {profile ? <>
-          <img className="profile-avatar" src={profile.avatar.url} alt="" width={56} height={56} />
-          <div><strong>{profile.user.username}</strong><p>{profile.user.email ?? '未绑定'}</p></div>
-        </> : error ? <ErrorState message={error} onRetry={() => { void reload() }} /> : <LoadingState label="正在加载账户资料" />}
-      </section>
-      <SubscriptionOverview />
+  return <MineFrame title="个人中心">
+    <SubscriptionOverview />
+    <div className="upd-link-row">
+      <Link className="button secondary" to="/me/redemption">兑换订阅</Link>
     </div>
+    <section className="upd-mine-panel upd-mine-identity" aria-label="账户信息">
+      {profile ? <>
+        <img className="profile-avatar" src={profile.avatar.url} alt="" width={56} height={56} />
+        <div><strong>{profile.user.username}</strong><p>{profile.user.email ?? '未绑定'}</p></div>
+      </> : error ? <ErrorState message={error} onRetry={() => { void reload() }} /> : <LoadingState label="正在加载账户资料" />}
+    </section>
     <nav className="upd-mine-menu" aria-label="设置">
-      {mineSettings.map(({ path, label, icon: Icon }) => (
+      {mineSettings.filter((item) => item.path !== 'redemption').map(({ path, label, icon: Icon }) => (
         <Link key={path} to={`/me/${path}`}>
           <Icon size={19} aria-hidden="true" />
           <span>{label}</span>
@@ -248,5 +299,5 @@ export function MinePage() {
         </Link>
       ))}
     </nav>
-  </div>
+  </MineFrame>
 }

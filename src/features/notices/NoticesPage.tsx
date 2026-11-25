@@ -7,7 +7,8 @@ import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { formatNoticeTime, type Notice } from './types'
 
 function errorMessage(cause: unknown, fallback: string): string {
@@ -57,8 +58,8 @@ export function NoticesPage() {
   useEffect(() => { if (page > pageCount) setPage(pageCount) }, [page, pageCount])
 
   return (
-    <div className="page-stack ntc-page">
-      <PageHero title="公告" />
+    <PageContainer width="list">
+      <PageHeader title="公告" />
       <SearchInput className="ntc-search" label="搜索公告" placeholder="搜索公告标题或内容" value={query} onChange={(value) => { setQuery(value); setPage(1) }} />
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
@@ -80,6 +81,6 @@ export function NoticesPage() {
           <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
         </div>
       ) : null}
-    </div>
+    </PageContainer>
   )
 }

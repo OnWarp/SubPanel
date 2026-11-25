@@ -1,6 +1,5 @@
 import { Dialog } from '../../ui/Dialog'
 import { Textarea } from '../../ui/Controls'
-import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
@@ -8,6 +7,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
@@ -102,12 +102,13 @@ export function AdminTicketDetailPage() {
   const closed = ticket?.status === 'closed'
 
   return (
-    <div className="page-stack tk-page tk-detail">
+    <PageContainer width="detail">
       <PageHeader
+        placement="inline"
         title={ticket?.title ?? '工单详情'}
+        leading={<Link to="/delivery/tickets">返回工单</Link>}
         actions={(
           <span className="tk-head-actions">
-            <Link className="button ghost" to="/delivery/tickets"><ArrowLeft aria-hidden="true" size={16} />返回队列</Link>
             {ticket ? (
               closed ? (
                 <button className="button secondary" type="button" disabled={busy} onClick={() => { setActionError(''); setReopenOpen(true) }}>重开工单</button>
@@ -148,7 +149,7 @@ export function AdminTicketDetailPage() {
         </>
       ) : null}
 
-      <Dialog open={reopenOpen} title="重开工单" size="m" busy={busy} onClose={() => { setReopenOpen(false); setActionError('') }}
+      <Dialog open={reopenOpen} appearance="content" title="重开工单" size="m" busy={busy} onClose={() => { setReopenOpen(false); setActionError('') }}
         footer={cancel => <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
           <button className="button primary" type="button" disabled={busy} onClick={() => { void reopenTicket() }}>确认重开</button>
@@ -158,6 +159,7 @@ export function AdminTicketDetailPage() {
       </Dialog>
       <ConfirmDialog
         open={closeOpen}
+        appearance="content"
         title="关闭工单"
         description="关闭后用户不能再回复，管理员回复会自动重开"
         confirmLabel="关闭工单"
@@ -168,6 +170,6 @@ export function AdminTicketDetailPage() {
       >
         {actionError && <StatusMessage tone="error">{actionError}</StatusMessage>}
       </ConfirmDialog>
-    </div>
+    </PageContainer>
   )
 }

@@ -164,6 +164,15 @@
 .content-page .usr-directory,
 .content-page .content-stack { display: grid; gap: 12px; align-content: start; }
 .content-page-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.content-page .content-danger-zone {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--content-border);
+}
+.content-page .sys-body,
+.content-page .sys-form { padding-inline: 0; }
 .content-page .usr-table.sp-table-wrap { overflow: visible; }
 .content-dialog .sp-form-group + .sp-form-group { border-top-color: var(--content-border); }
 .content-dialog .sp-form-field-label,

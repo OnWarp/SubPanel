@@ -1,5 +1,4 @@
 import { Textarea } from '../../ui/Controls'
-import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
@@ -7,7 +6,8 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { TicketThread } from './TicketThread'
 import type { Ticket, TicketReply, TicketThreadData } from './types'
@@ -80,17 +80,14 @@ export function TicketDetailPage() {
   const closed = ticket?.status === 'closed'
 
   return (
-    <div className="page-stack tk-page tk-detail">
-      <PageHero
+    <PageContainer width="detail">
+      <PageHeader
+        placement="inline"
         title={ticket?.title ?? '工单详情'}
-        actions={(
-          <span className="tk-head-actions">
-            <Link className="button ghost" to="/tickets"><ArrowLeft aria-hidden="true" size={16} />返回列表</Link>
-            {ticket && !closed ? (
-              <button className="button secondary" type="button" disabled={busy} onClick={() => setCloseOpen(true)}>关闭工单</button>
-            ) : null}
-          </span>
-        )}
+        leading={<Link to="/tickets">返回工单</Link>}
+        actions={ticket && !closed ? (
+          <button className="button secondary" type="button" disabled={busy} onClick={() => setCloseOpen(true)}>关闭工单</button>
+        ) : null}
       />
 
       {loading && !thread ? <LoadingState label="正在加载工单" /> : null}
@@ -127,6 +124,7 @@ export function TicketDetailPage() {
 
       <ConfirmDialog
         open={closeOpen}
+        appearance="content"
         title="关闭工单"
         description="关闭后不能再回复，如需继续请新建工单；管理员回复已关闭的工单会自动重开"
         confirmLabel="关闭工单"
@@ -135,6 +133,6 @@ export function TicketDetailPage() {
         onClose={() => setCloseOpen(false)}
         onConfirm={() => { closeTicket().catch(() => undefined) }}
       />
-    </div>
+    </PageContainer>
   )
 }

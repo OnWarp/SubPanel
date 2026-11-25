@@ -1,10 +1,10 @@
-import { ArrowLeft } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { peekApi, watchApi, ApiClientError } from '../../app/api'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { renderMarkdown } from './markdown'
 import { formatKbTime, type KbArticle } from './types'
 
@@ -36,11 +36,12 @@ export function KbArticlePage() {
   useEffect(() => { load().catch(() => undefined) }, [load])
 
   return (
-    <div className="page-stack kb-page kb-article-page">
-      <PageHero
+    <PageContainer width="detail">
+      <PageHeader
+        placement="inline"
         id="kb-article-title"
         title={article?.title ?? '文章'}
-        actions={<Link className="button ghost" to="/kb"><ArrowLeft aria-hidden="true" size={16} />返回知识库</Link>}
+        leading={<Link to="/kb">返回知识库</Link>}
       />
 
       {loading && !article ? <LoadingState label="正在加载文章" /> : null}
@@ -57,6 +58,6 @@ export function KbArticlePage() {
           <div className="kb-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(article.content) }} />
         </article>
       ) : null}
-    </div>
+    </PageContainer>
   )
 }
