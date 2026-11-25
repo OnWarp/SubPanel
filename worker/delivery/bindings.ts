@@ -107,7 +107,8 @@ export async function planBinding(
     const preservePermanent = before !== null && before.status !== 'revoked' && before.expires_at === null
     if (preservePermanent) starts_at = Math.min(starts_at, before.starts_at)
     const config = bindingConfig(template)
-    const base = input.mode === 'renew' || input.mode === 'redeem' ? Math.max(now, before?.expires_at ?? now) : starts_at
+    const base = input.mode === 'redeem' ? now
+      : input.mode === 'renew' ? Math.max(now, before?.expires_at ?? now) : starts_at
     const rule = input.expiry
     if (input.mode === 'renew' && rule.type === 'absolute') {
       throw apiError(400, 'BINDING_TIME_INVALID', '续期需要相对时长或永久有效期')

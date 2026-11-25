@@ -12,6 +12,8 @@ type DialogProps = {
   children?: ReactNode
   footer?: ReactNode | ((requestClose: () => void) => ReactNode)
   size?: DialogSize
+  appearance?: 'content'
+  placement?: 'center' | 'end'
   focusStep?: string
   headerStatus?: ReactNode
   headerActions?: ReactNode
@@ -87,7 +89,7 @@ function trackDialogViewport(element: HTMLDialogElement) {
 
 export function Dialog({
   open, onClose, title, description, children, footer, size = 'm', busy = false, dirty = false,
-  sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
+  appearance, placement = 'center', sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
 }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -197,8 +199,9 @@ export function Dialog({
   return (
     <dialog
       ref={dialog}
-      className="sp-dialog"
+      className={appearance === 'content' ? "sp-dialog content-scope content-dialog" : "sp-dialog"}
       data-size={size}
+      data-placement={placement === 'end' ? placement : undefined}
       aria-modal="true"
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}

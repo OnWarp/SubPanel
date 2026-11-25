@@ -1,12 +1,7 @@
-import { DataHeader } from '../../ui/DataHeader'
-import { useId, type PropsWithChildren, type ReactNode } from 'react'
+import { useId, type PropsWithChildren } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { PaginationProps } from '../../ui/Pagination'
 import '../../styles/pages-admin-ops.css'
-
-export function OperationsHeading({ title, action }: { title?: string; action?: ReactNode }) {
-  return <DataHeader title={title} actions={action} />
-}
 
 export function OperationsFooter({ total, unit = '条', pagination }: { total: number; unit?: string; pagination?: PaginationProps }) {
   const pageCount = Math.max(1, pagination?.pageCount ?? 1)

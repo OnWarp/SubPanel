@@ -1,4 +1,6 @@
-import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
+import { ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, Input, FormSelect, Textarea, FileInput } from '../../ui/Controls'
 import { CheckCircle2, FileUp, Plus, Trash2, XCircle, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
@@ -14,18 +16,31 @@ import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge, type StatusBadgeTone } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { PasswordInput } from '../../ui/PasswordInput'
 import { Dialog } from '../../ui/Dialog'
 import { useToast } from '../../ui/Toast'
 import { formatDate, formatLabel, matchesText, sourceStatus, sourceTypeLabel } from './catalog-utils'
+
+type PreviewWarning = { code: string; message: string; line?: number }
+
+function ImportWarnings({ warnings }: { warnings: PreviewWarning[] }) {
+  if (!warnings.length) return null
+  return <details open>
+    <summary>{warnings.length} 条解析提示</summary>
+    <ul>{warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>
+      {warning.line !== undefined && `第 ${warning.line} 行 · `}{warning.message}
+    </li>)}</ul>
+  </details>
+}
 
 type PreviewResult = {
   format: string
   diff?: SyncPreview['diff']
   nodes: Array<{ protocol: string; displayName: string; server: string; port: number }>
-  warnings: Array<{ code: string; message: string; line?: number }>
+  warnings: PreviewWarning[]
 }
 
-type SyncPreview = { id: string; format: string; diff: Record<'added' | 'updated' | 'missing' | 'duplicates' | 'skipped' | 'parseFailed', number> }
+type SyncPreview = { id: string; format: string; warnings?: PreviewWarning[]; diff: Record<'added' | 'updated' | 'missing' | 'duplicates' | 'skipped' | 'parseFailed', number> }
 const diffLabels = [['added', '新增'], ['updated', '更新'], ['missing', '失效'], ['duplicates', '重复'],
   ['skipped', '跳过'], ['parseFailed', '解析失败']] as const
 
@@ -47,7 +62,12 @@ type SourceForm = {
   enabled: boolean
 }
 
-type PendingBatch = 'disable' | 'delete'
+const batchEffects = {
+  enable: { label: '启用', impact: '来源将重新参与分发' },
+  disable: { label: '停用', impact: '仅由这些来源提供的节点可能退出分发' },
+  delete: { label: '删除', impact: '失去最后一个来源且未设为保留的节点可能被清理' },
+}
+type PendingBatch = keyof typeof batchEffects
 
 type SourceStatusFilter = 'all' | 'enabled' | 'disabled' | 'error'
 
@@ -88,6 +108,19 @@ function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiClientError || cause instanceof Error ? cause.message : fallback
 }
 
+function parseHeaders(value: string): Record<string, unknown> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('请求 Headers 必须是有效 JSON 对象')
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('请求 Headers 必须是 JSON 对象')
+  }
+  return parsed as Record<string, unknown>
+}
+
 function statusTone(source: CatalogSource): StatusBadgeTone {
   if (source.lastErrorCode) return 'danger'
   return source.enabled ? 'success' : 'muted'
@@ -106,12 +139,15 @@ export function SourcesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editor, setEditor] = useState<'create' | CatalogSource | null>(null)
   const [form, setForm] = useState<SourceForm>(emptyForm)
+  const [previewWarnings, setPreviewWarnings] = useState<PreviewWarning[]>([])
   const [previewContent, setPreviewContent] = useState('')
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const syncRequest = useRef(0)
   const syncQueue = useRef<CatalogSource[]>([])
+  const [syncRemaining, setSyncRemaining] = useState(0)
   const [syncSource, setSyncSource] = useState<CatalogSource | null>(null)
   const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null)
+  const [syncWarnings, setSyncWarnings] = useState<PreviewWarning[]>([])
   const [syncError, setSyncError] = useState('')
   const [syncRuns, setSyncRuns] = useState<SyncRun[] | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
@@ -167,6 +203,7 @@ export function SourcesPage() {
     if (busy || previewBusy) return
     setEditor(null)
     setPreview(null)
+    setPreviewWarnings([])
     setPreviewContent('')
     setEditorError('')
   }
@@ -175,6 +212,7 @@ export function SourcesPage() {
     editorTrigger.current = event.currentTarget
     setForm(emptyForm())
     setPreview(null)
+    setPreviewWarnings([])
     setPreviewContent('')
     setEditorError('')
     setEditor('create')
@@ -184,6 +222,7 @@ export function SourcesPage() {
     editorTrigger.current = trigger ?? createButton.current
     setForm(sourceForm(source))
     setPreview(null)
+    setPreviewWarnings([])
     setPreviewContent('')
     setEditorError('')
     setEditor(source)
@@ -192,7 +231,10 @@ export function SourcesPage() {
 
   const updateForm = <K extends keyof SourceForm>(key: K, value: SourceForm[K]) => {
     setForm((current) => ({ ...current, [key]: value }))
-    if (key === 'content') setPreview(null)
+    if (key === 'content' || key === 'type') {
+      setPreview(null)
+      setPreviewWarnings([])
+    }
   }
 
   const loadFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -201,8 +243,9 @@ export function SourcesPage() {
     if (!file) return
     setEditorError('')
     setPreview(null)
+    setPreviewWarnings([])
     if (file.size > MAX_FILE_BYTES) {
-      setEditorError('文件超过 5 MiB 大小限制')
+      setEditorError('文件超过 5 MB 大小限制')
       input.value = ''
       return
     }
@@ -232,6 +275,10 @@ export function SourcesPage() {
       setPreviewContent(form.content)
     } catch (cause) {
       setPreview(null)
+      setPreviewWarnings([])
+      if (cause instanceof ApiClientError && cause.code === 'IMPORT_ZERO_NODES' && Array.isArray(cause.details)) {
+        setPreviewWarnings(cause.details)
+      }
       setEditorError(errorMessage(cause, '预览来源失败'))
     } finally {
       setPreviewBusy(false)
@@ -258,7 +305,7 @@ export function SourcesPage() {
               type: 'remote' as const,
               name: form.name,
               url: form.url,
-              headers: form.headers.trim() ? JSON.parse(form.headers) as Record<string, string> : {},
+              headers: form.headers.trim() ? parseHeaders(form.headers) : {},
               refreshIntervalMinutes: Number(form.refreshIntervalMinutes),
               formatOverride: form.formatOverride || undefined,
               enabled: form.enabled,
@@ -267,6 +314,7 @@ export function SourcesPage() {
         const result = await api<{ success?: boolean; source?: CatalogSource }>('/api/admin/catalog/sources', { method: 'POST', body: jsonBody(payload) })
         setEditor(null)
         setPreview(null)
+        setPreviewWarnings([])
         await load()
         if (form.type === 'remote' && result.source) void executeSingleRefresh(result.source)
         else toast.notify('来源已添加')
@@ -276,18 +324,7 @@ export function SourcesPage() {
         const payload: Record<string, unknown> = { name: form.name, enabled: form.enabled }
         if (form.type === 'remote') {
           if (form.url.trim()) payload.url = form.url.trim()
-          if (form.headers.trim()) {
-            let parsed: unknown
-            try {
-              parsed = JSON.parse(form.headers)
-            } catch {
-              throw new Error('请求 Headers 必须是有效 JSON 对象')
-            }
-            if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-              throw new Error('请求 Headers 必须是 JSON 对象')
-            }
-            payload.headers = parsed
-          }
+          if (form.headers.trim()) payload.headers = parseHeaders(form.headers)
           const refreshIntervalMinutes = Number(form.refreshIntervalMinutes)
           if (!Number.isInteger(refreshIntervalMinutes) || refreshIntervalMinutes < 15 || refreshIntervalMinutes % 15 !== 0) {
             throw new Error('刷新周期必须是 15 分钟的正整数倍')
@@ -298,6 +335,7 @@ export function SourcesPage() {
         await api(`/api/admin/catalog/sources/${sourceId}`, { method: 'PUT', body: jsonBody(payload) })
         setEditor(null)
         setPreview(null)
+        setPreviewWarnings([])
         await load()
         toast.notify('来源已更新')
       }
@@ -318,7 +356,7 @@ export function SourcesPage() {
     })
   }
 
-  const executeBatch = async (action: PendingBatch | 'enable') => {
+  const executeBatch = async (action: PendingBatch) => {
     const ids = [...selected]
     if (!ids.length) return
     setPendingBatch(null)
@@ -352,13 +390,18 @@ export function SourcesPage() {
 
   const askBatch = (action: PendingBatch) => setPendingBatch(action)
   const batchActions: BatchAction[] = [
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
+    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => askBatch('enable') },
     { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => askBatch('disable') },
     { key: 'delete', label: '删除', icon: Trash2, tone: 'danger', onClick: () => askBatch('delete') },
     { key: 'refresh', label: '刷新', icon: RefreshCw, onClick: () => {
       syncQueue.current = sources.filter((source) => selected.has(source.id) && source.type === 'remote')
       const first = syncQueue.current.shift()
-      if (first) void executeSingleRefresh(first)
+      if (first) {
+        const skipped = selected.size - syncQueue.current.length - 1
+        setBatchError('')
+        setWarning(skipped > 0 ? `已跳过 ${skipped} 个非远程来源` : '')
+        void executeSingleRefresh(first)
+      }
       else setBatchError('请选择远程订阅来源')
     } },
   ]
@@ -399,30 +442,29 @@ export function SourcesPage() {
   ]
 
   return (
-    <div className="page-stack resource-pages sources-page">
+    <PageContainer width="list">
+      <div className="page-stack resource-pages phase3-catalog sources-page">
       <section className="catalog-data-section" aria-labelledby="sources-title">
-        <PageHeader id="sources-title" title="来源" />
+        <PageHeader placement="inline" id="sources-title" title="来源" actions={<button ref={createButton} className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>} />
+        <AdminModuleTabs />
         <FilterBar className="catalog-filters sources-toolbar" searchRef={searchRef}
           onReset={query || statusFilter !== 'all' ? () => { setQuery(''); setStatusFilter('all') } : undefined}>
           <SearchInput inputRef={searchRef} label="搜索来源" placeholder="搜索名称或主机" value={query} onChange={setQuery} />
-          <label className="filter-field"><span className="sources-filter-label">状态</span><FormSelect aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as SourceStatusFilter)}>{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
-          <button ref={createButton} className="button primary sources-create" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加来源</button>
+          <label className="filter-field"><span>状态</span><FormSelect aria-label="来源状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as SourceStatusFilter)}>{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
         </FilterBar>
         {error ? <ErrorState message={error} onRetry={() => load()} /> : null}
         {warning ? <StatusMessage tone="warning">{warning}</StatusMessage> : null}
         {batchError && <ErrorState message={batchError} />}
         <BatchToolbar compact selectedCount={selected.size} totalCount={filteredSources.length} onSelectAll={() => setSelected(new Set(filteredSources.map((source) => source.id)))} onClear={() => { setSelected(new Set()); searchRef.current?.focus() }} actions={batchActions} busy={busy} progress={batchProgress} />
         {!catalog && error ? null : !loading && sources.length === 0 ? (
-          <EmptyState title="暂无来源"><button className="button secondary" type="button" onClick={openCreate} aria-label="创建首个来源">添加来源</button></EmptyState>
+          <EmptyState title="暂无来源" />
         ) : (
-          <DataTable flat columns={columns} rows={filteredSources} loadingLabel={loading && !catalog ? '正在加载来源' : undefined} rowKey={(source) => source.id} empty="暂无匹配来源" />
+          <DataTable columns={columns} rows={filteredSources} loadingLabel={loading && !catalog ? '正在加载来源' : undefined} rowKey={(source) => source.id} empty="暂无匹配来源"
+            summary={catalog && `共 ${filteredSources.length} 个来源${filteredSources.length !== sources.length ? ` · 全部 ${sources.length} 个` : ''}`} />
         )}
-        <ResourceFooter count={filteredSources.length} unit="个来源">
-          {filteredSources.length !== sources.length && <span>全部 {sources.length} 个来源</span>}
-        </ResourceFooter>
       </section>
 
-      <Dialog open={editor !== null} title={editor === 'create' ? '添加来源' : '编辑来源'} size="l" busy={busy || previewBusy} onClose={closeEditor} returnFocusRef={editorTrigger}
+      <Dialog appearance="content" open={editor !== null} title={editor === 'create' ? '添加来源' : '编辑来源'} size="l" busy={busy || previewBusy} onClose={closeEditor} returnFocusRef={editorTrigger}
         dirty={editor !== null && JSON.stringify(form) !== JSON.stringify(editor === 'create' ? emptyForm() : sourceForm(editor))}
         footer={(requestClose) => <>
           <button className="button secondary" type="button" onClick={requestClose} disabled={busy || previewBusy}>取消</button>
@@ -431,9 +473,9 @@ export function SourcesPage() {
       >
         {editor && <form id="source-editor-form" className="form-stack" onSubmit={saveSource}>
           <label className="field"><span>来源名称</span><Input aria-label="来源名称" value={form.name} maxLength={128} onChange={(event) => updateForm('name', event.currentTarget.value)} required /></label>
-          {editor === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => { updateForm('type', event.currentTarget.value as CatalogSource['type']); setPreview(null) }}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="dialog-note">类型：{sourceTypeLabel(form.type)}</p>}
+          {editor === 'create' ? <label className="field"><span>来源类型</span><FormSelect aria-label="来源类型" value={form.type} onChange={(event) => updateForm('type', event.currentTarget.value as CatalogSource['type'])}><option value="manual">手动文本</option><option value="file">文件导入</option><option value="remote">远程订阅</option></FormSelect></label> : <p className="dialog-note">类型：{sourceTypeLabel(form.type)}</p>}
           {form.type === 'remote' ? <>
-            <label className="field"><span>远程 URL</span><Input aria-label="远程 URL" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={editor === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={editor === 'create'} /></label>
+            <div className="field"><label htmlFor="source-url">远程 URL</label><PasswordInput id="source-url" autoComplete="off" value={form.url} onChange={(event) => updateForm('url', event.currentTarget.value)} placeholder={editor === 'create' ? 'https://example.com/source' : '留空保持当前 URL'} required={editor === 'create'} /></div>
             <details className="sources-advanced" onInvalidCapture={(event) => { event.currentTarget.open = true }}>
               <summary>高级设置</summary>
               <label className="field"><span>导入格式</span><FormSelect value={form.formatOverride} onChange={(event) => updateForm('formatOverride', event.currentTarget.value)}><option value="">自动识别</option>{syncFormats.map((format) => <option key={format} value={format}>{formatLabel(format)}</option>)}</FormSelect></label>
@@ -451,7 +493,8 @@ export function SourcesPage() {
               if (editor.type === 'remote') void api<{ runs: SyncRun[] }>(`/api/admin/catalog/sources/${editor.id}/sync-runs`)
                 .then(({ runs }) => setSyncRuns(runs)).catch((cause) => setEditorError(errorMessage(cause, '加载同步记录失败')))
             }}>同步详情</summary>
-            <p className="dialog-note">格式：{formatLabel(editor.detectedFormat)} · 最近同步：{formatDate(editor.lastSuccessAt)}</p>
+            <p className="dialog-note">格式 {formatLabel(editor.detectedFormat)} · 最近同步 {formatDate(editor.lastSuccessAt)}</p>
+            <ImportWarnings warnings={editor.warnings} />
             {editor.sync?.firstFailureAt && <p>首次失败 {formatDate(editor.sync.firstFailureAt)} · 连续失败 {editor.sync.consecutiveFailures} 次</p>}
             <ul>{syncRuns?.map((run) => <li key={run.id}>{formatDate(run.started_at)} · {run.status === 'success' ? '成功' : run.status === 'failed' ? '失败' : '已取消'}
               {run.details.httpStatus && ` · HTTP ${run.details.httpStatus}`}{run.details.durationMs !== undefined && ` · ${run.details.durationMs} ms`}
@@ -460,12 +503,24 @@ export function SourcesPage() {
             </li>)}</ul>
           </details>}
           <Switch label="启用来源" checked={form.enabled} onChange={(checked) => updateForm('enabled', checked)} />
-          {preview ? <section className="form-stack" aria-label="来源预览"><strong>检测到 {preview.nodes.length} 个节点</strong><span>格式：{formatLabel(preview.format)}</span>{preview.diff && <DiffCounts diff={preview.diff} />}{preview.warnings.length ? <ul>{preview.warnings.map((warning, index) => <li key={`${warning.code}-${index}`}>{warning.message}{warning.line ? `（第 ${warning.line} 行）` : ''}</li>)}</ul> : null}</section> : null}
+          {preview && <section className="form-stack" aria-label="来源预览">
+            <strong>{formatLabel(preview.format)} · 已解析 {preview.nodes.length} 个节点</strong>
+            {preview.diff && <DiffCounts diff={preview.diff} />}
+            <details>
+              <summary>查看已解析节点</summary>
+              <DataTable columns={[
+                { key: 'displayName', header: '名称' }, { key: 'protocol', header: '协议' },
+                { key: 'server', header: '服务器' }, { key: 'port', header: '端口', align: 'right' },
+              ]} rows={preview.nodes.map((node, index) => ({ ...node, index }))} rowKey={(node) => node.index} empty="暂无可导入节点" />
+            </details>
+            <ImportWarnings warnings={preview.warnings} />
+          </section>}
+          <ImportWarnings warnings={previewWarnings} />
           {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
         </form>}
       </Dialog>
 
-      <Dialog open={syncSource !== null} title="同步差异预览" size="l" busy={busy} onClose={closeSync} returnFocusRef={editorTrigger}
+      <Dialog appearance="content" open={syncSource !== null} title="同步差异预览" size="l" busy={busy} onClose={closeSync} returnFocusRef={editorTrigger}
         footer={(requestClose) => <>
             <button className="button secondary" type="button" disabled={busy} onClick={requestClose}>取消</button>
             <button className="button primary" type="button" disabled={!syncPreview || busy} onClick={confirmSync}>确认同步</button>
@@ -473,22 +528,33 @@ export function SourcesPage() {
       >
         <div className="form-stack catalog-sync-form">
           <strong>{syncSource?.name}</strong>
+          {syncRemaining > 0 && <p>还有 {syncRemaining} 个远程来源待确认</p>}
           {syncError && <StatusMessage tone="error">{syncError}</StatusMessage>}
+          <ImportWarnings warnings={syncWarnings} />
           {syncPreview ? <section className="form-stack" aria-label="同步差异">
             <span>识别格式 {formatLabel(syncPreview.format)}</span>
             <DiffCounts diff={syncPreview.diff} />
+            <ImportWarnings warnings={syncPreview.warnings ?? []} />
             <span>失效节点会保留 24 小时，在后续成功同步时清理</span>
           </section> : !syncError && <p role="status">正在获取差异</p>}
         </div>
       </Dialog>
 
-      <ConfirmDialog open={pendingBatch !== null} title={pendingBatch === 'delete' ? '删除来源' : '停用来源'} description={pendingBatch === 'delete' ? `将删除选中的 ${selected.size} 个来源，并清理不再关联的节点` : `将停用选中的 ${selected.size} 个来源`} confirmLabel={pendingBatch === 'delete' ? '确认删除' : '确认停用'} danger busy={busy} onClose={() => setPendingBatch(null)} onConfirm={() => executeBatch(pendingBatch ?? 'delete')} />
+      <ConfirmDialog appearance="content" open={pendingBatch !== null}
+        title={pendingBatch ? `${batchEffects[pendingBatch].label}来源` : ''}
+        description={pendingBatch ? `将${batchEffects[pendingBatch].label}选中的 ${selected.size} 个来源，${batchEffects[pendingBatch].impact}` : ''}
+        confirmLabel={pendingBatch ? batchEffects[pendingBatch].label : '确认'} danger={pendingBatch !== 'enable'}
+        busy={busy} onClose={() => setPendingBatch(null)}
+        onConfirm={() => { if (pendingBatch) return executeBatch(pendingBatch) }} />
     </div>
+    </PageContainer>
   )
 
   async function executeSingleRefresh(source: CatalogSource) {
     const request = ++syncRequest.current
     setSyncSource(source)
+    setSyncRemaining(syncQueue.current.length)
+    setSyncWarnings([])
     setSyncError('')
     setSyncPreview(null)
     try {
@@ -496,6 +562,9 @@ export function SourcesPage() {
       if (request === syncRequest.current) setSyncPreview(result)
     } catch (cause) {
       if (request === syncRequest.current) {
+        if (cause instanceof ApiClientError && cause.code === 'IMPORT_ZERO_NODES' && Array.isArray(cause.details)) {
+          setSyncWarnings(cause.details)
+        }
         setSyncError(errorMessage(cause, '刷新来源失败，请检查来源设置后重试'))
         await load()
       }

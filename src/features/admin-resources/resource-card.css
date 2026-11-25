@@ -1,37 +1,3 @@
-.resource-card.data-section {
-  --resource-card-padding: var(--space-4);
-  overflow: visible;
-}
-
-.resource-card .section-heading {
-  padding-inline: var(--resource-card-padding);
-}
-
-@media (width >= 768px) {
-  .admin-layout .resource-card.data-section {
-    --resource-card-padding: var(--space-page-inline);
-  }
-
-  .admin-layout .resource-card .sp-table :is(th, td):first-child {
-    padding-inline-start: var(--resource-card-padding);
-  }
-
-  .admin-layout .resource-card .sp-table :is(th, td):last-child {
-    padding-inline-end: var(--resource-card-padding);
-  }
-}
-
-
-
-
-.resource-card .resource-card-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--resource-card-padding);
-}
-
 .resource-card-filters .sp-search {
   flex: 1 1 180px;
   width: auto;
@@ -60,31 +26,6 @@
   max-width: 100%;
 }
 
-.resource-card > .batch-toolbar {
-  width: auto;
-  height: auto;
-  min-height: 44px;
-  margin: 0;
-  padding: var(--space-2) var(--resource-card-padding) var(--space-3);
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.resource-card > .resource-card-table {
-  overflow: auto;
-  border: 0;
-  border-radius: 0;
-}
-
-.resource-card-table .sp-table .sp-align-right {
-  padding-inline-end: var(--resource-card-padding);
-  text-align: right;
-}
-
 .resource-card-name {
   display: block;
 }
@@ -92,14 +33,6 @@
 .resource-card-name strong {
   color: var(--color-text);
   font-weight: var(--weight-semibold);
-}
-
-.resource-card-table .sp-badge {
-  width: max-content;
-  height: auto;
-  padding: 0;
-  border: 0;
-  background: transparent;
 }
 
 .resource-card-select-all {
@@ -120,88 +53,23 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
-  padding: var(--space-2) var(--resource-card-padding);
   border-top: 1px solid var(--color-border);
   color: var(--color-text-muted);
   font-size: var(--font-xs);
 }
 
-.resource-card-footer-controls,
-.resource-card-page-size {
+.resource-card-footer-controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
-}
-
-.resource-card-footer-controls {
   margin-inline-start: auto;
 }
 
-.resource-card-actions {
-  position: fixed;
-  inset: auto;
-  position-area: bottom span-left;
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
-  margin: 4px 0 0;
-  min-width: 108px;
-  padding: var(--space-1);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-raised);
-  color: var(--color-text);
-  box-shadow: var(--shadow-float);
-}
-
-@supports not (position-area: bottom) {
-  .resource-card-actions {
-    inset: auto var(--space-3) var(--space-3) auto;
-  }
-}
-
-.resource-card-actions button {
-  display: block;
-  width: 100%;
-  min-height: 36px;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: inherit;
-  text-align: start;
-  cursor: pointer;
-}
-
-.resource-card-actions button:hover:not(:disabled),
-.resource-card-actions button:focus-visible {
-  background: var(--color-surface-subtle);
-}
-
-.resource-card-actions button:disabled {
-  color: var(--color-text-muted);
-  cursor: default;
-}
-
-.resource-card-actions .resource-card-action-danger:not(:disabled) {
-  color: var(--color-danger);
-}
-
 @media (width < 768px) {
-  .resource-card.data-section {
-    --resource-card-padding: var(--space-4);
-  }
-
-  .admin-layout .resource-card.data-section {
-    --resource-card-padding: 0px;
-  }
-
   .resource-card-filters :is(.sp-search, .sp-select-trigger, .button) {
     height: var(--size-touch-target);
     min-height: var(--size-touch-target);
-  }
-
-  .resource-card .resource-card-filters {
-    gap: var(--space-2) var(--space-3);
   }
 
   .resource-card-filters .sp-search {
@@ -209,50 +77,12 @@
     max-width: none;
   }
 
-  .resource-card > .resource-card-table {
-    width: auto;
-    margin-inline: var(--resource-card-padding);
-    overflow: visible;
-  }
-
-  .resource-card-table .sp-table :is(th:first-child, td:first-child, .sp-align-right) {
-    padding-inline: 0;
-  }
-
-
-  .resource-card-table .sp-table .sp-align-right > .resource-card-more {
-    justify-self: end;
-  }
-
-  .resource-card-selectable .sp-table thead {
-    display: block;
-  }
-
-  .resource-card-selectable .sp-table thead th:not(:first-child) {
-    display: none;
-  }
-
-  .resource-card-selectable .sp-table thead th:first-child {
-    height: auto;
-    padding-block: var(--space-2);
-    border: 0;
-  }
-
   .resource-card-select-all > span {
     display: inline;
-  }
-
-  .resource-card-actions button {
-    min-height: 44px;
-  }
-
-  .resource-card > .batch-toolbar > .button:nth-of-type(n+2) {
-    display: inline-flex;
   }
 }
 
 .sp-table-flat .resource-card-select-all > span { display: none; }
-.resource-card-more[aria-disabled="true"] { opacity: .6; cursor: default; }
 .sp-table-flat .resource-card-name { overflow-wrap: anywhere; }
 
 @media (width < 768px) {

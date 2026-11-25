@@ -5,9 +5,11 @@ import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
 import { Dialog } from '../../ui/Dialog'
+import { DetailList } from '../../ui/DetailList'
 import { ErrorState } from '../../ui/ErrorState'
 import { LoadingState } from '../../ui/LoadingState'
-import { PageHero } from '../../ui/PageHero'
+import { PageContainer } from '../../ui/PageContainer'
+import { PageHeader } from '../../ui/PageHeader'
 import { StatusPill } from '../../ui/StatusPill'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useDownloadsEnabled } from '../apps/downloads-visibility'
@@ -60,16 +62,18 @@ function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; rel
   const entries = link ? summary.importPlatforms.map(({ platform, displayName }) => ({
     client: platform, label: displayName || CLIENT_LABELS[platform] || platform, link: subscriptionFormatLink(link, platform),
   })) : []
-  return <div className="page-stack upd-page upd-subs">
-    <PageHero title="我的订阅" />
-    <section className="data-section" aria-label="订阅详情">
-      <dl className="key-value-rows">
-        <div><dt>状态</dt><dd><StatusPill tone={summary.status === 'active' ? 'success' : summary.status === 'expired' ? 'danger' : 'neutral'}>{subscriptionStatus[summary.status]}</StatusPill></dd></div>
-        <div><dt>到期时间</dt><dd>{summary.permanent ? '长期有效' : expiry ? formatExpiryTime(Date.parse(expiry)) : '—'}</dd></div>
-      </dl>
+  const maskedLink = link ? `${new URL(link).origin}/s/••••••••` : ''
+  return <PageContainer width="list">
+    <div className="page-stack upd-page upd-subs">
+    <PageHeader title="我的订阅" />
+    <section className="content-section" aria-label="订阅详情">
+      <DetailList items={[
+        { id: 'status', label: '状态', value: <StatusPill tone={summary.status === 'active' ? 'success' : summary.status === 'expired' ? 'danger' : 'neutral'}>{subscriptionStatus[summary.status]}</StatusPill> },
+        { id: 'expiry', label: '到期时间', value: summary.permanent ? '长期有效' : expiry ? formatExpiryTime(Date.parse(expiry)) : '—' },
+      ]} />
       <div className="subscription-link-section">
         <h2>订阅链接</h2>
-        {link ? <div className="del-link-line"><p className="del-link-text">{new URL(link).origin}/s/••••••••</p><CopyButton value={link} /></div>
+        {link ? <div className="del-link-line"><p className="del-link-text">{maskedLink}</p><CopyButton value={link} /></div>
           : <p>订阅链接暂不可用</p>}
       </div>
       {!summary.hasAvailableNodes && <p role="status">{summary.status === 'expired' ? '订阅已过期，可兑换或联系管理员续期' : '暂无可用节点'}</p>}
@@ -87,28 +91,30 @@ function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; rel
       </div>
     </section>
     <Button variant="secondary" onClick={() => open('redeem')}>兑换订阅</Button>
-    <Dialog open={dialog === 'import'} title="导入客户端" onClose={close}>
+    <Dialog open={dialog === 'import'} appearance="content" title="导入客户端" onClose={close}>
       <SubscriptionImports entries={entries} />
     </Dialog>
-    <Dialog open={dialog === 'redeem'} title="兑换订阅" size="l" onClose={close} busy={busy}>
+    <Dialog open={dialog === 'redeem'} appearance="content" title="兑换订阅" size="l" onClose={close} busy={busy}>
       {dialog === 'redeem' && <PersonalRedemptions unified onRedeemed={reload} onPending={setBusy} />}
     </Dialog>
-    <Dialog open={dialog === 'share'} title="分享订阅" onClose={close} busy={busy}>
+    <Dialog open={dialog === 'share'} appearance="content" title="分享订阅" onClose={close} busy={busy}>
       {dialog === 'share' && (shareUrl ? <CopyButton value={shareUrl} label="复制分享链接" />
         : <CreateShareForm scope={{ type: 'unified' }} onCancel={close} onPending={setBusy} onCreated={(_share, url) => setShareUrl(url)} />)}
     </Dialog>
-    <ConfirmDialog open={dialog === 'reset' || dialog === 'revoke'} title={dialog === 'reset' ? '重置订阅链接' : '撤销全部分享'}
+    <ConfirmDialog open={dialog === 'reset' || dialog === 'revoke'} appearance="content" title={dialog === 'reset' ? '重置订阅链接' : '撤销全部分享'}
       description={error || (dialog === 'reset' ? '旧链接将立即失效，请重新导入客户端' : '现有分享链接将失效')}
       confirmLabel={dialog === 'reset' ? '重置' : '撤销'} danger busy={busy} onClose={close}
       onConfirm={() => dialog === 'reset' ? submit(`${unifiedSubscriptionPath}/reset-token`, '旧链接已失效') : submit('/api/shares/revoke-all', '已撤销全部分享')} />
-  </div>
+    </div>
+  </PageContainer>
 }
 
 export function MySubscriptionsPage() {
   const { state, reload } = useUnifiedSubscription()
-  if (state.kind === 'legacy') return <LegacySubscriptionsPage />
+  if (state.kind === 'legacy') return <PageContainer width="list"><LegacySubscriptionsPage /></PageContainer>
   if (state.kind === 'ready') return <UnifiedDetails summary={state.summary} reload={reload} />
-  return <div className="page-stack"><PageHero title="我的订阅" />
+  return <PageContainer width="list">
+    <PageHeader title="我的订阅" />
     {state.kind === 'loading' ? <LoadingState label="正在加载订阅" /> : <ErrorState message={state.message} onRetry={reload} />}
-  </div>
+  </PageContainer>
 }

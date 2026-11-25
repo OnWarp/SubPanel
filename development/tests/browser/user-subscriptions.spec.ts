@@ -85,7 +85,7 @@ test.describe.serial('Ordinary user subscription workspace', () => {
     await expect(link).toHaveText(/\/s\/••••••••$/u)
     await page.getByRole('button', { name: '复制', exact: true }).click()
     const clipboard = () => page.evaluate(() => navigator.clipboard.readText())
-    await expect.poll(clipboard).toMatch(/\/s\/[\w-]{43}$/u)
+    await expect.poll(clipboard).toMatch(/\/s\/[A-Za-z0-9]{16}$/u)
     const originalLink = await clipboard()
     const download = (url: string) => page.request.get(`${new URL(url).pathname}/mihomo`)
     expect((await download(originalLink)).status()).toBe(200)

@@ -1,7 +1,7 @@
 import { Button } from '../../ui/Button'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { Link, useNavigate } from 'react-router-dom'
-import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { CheckCircle2, Copy, Ellipsis, KeyRound, Trash2, Users, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminUsersResponse, type UserSummary } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
@@ -12,8 +12,9 @@ import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
-import { LoadingState } from '../../ui/LoadingState'
+import { Pagination } from '../../ui/Pagination'
 import { SearchInput } from '../../ui/SearchInput'
+import { StatusBadge } from '../../ui/StatusBadge'
 import { FilterBar } from '../../ui/FilterBar'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
@@ -114,6 +115,8 @@ export function UsersDirectory({
   page,
   pageCount,
   statusFilter,
+  expirySoon = false,
+  onClearExpiry,
   query,
   selectedIds,
   mutating,
@@ -135,6 +138,8 @@ export function UsersDirectory({
   page: number
   pageCount: number
   statusFilter: StatusFilter
+  expirySoon?: boolean
+  onClearExpiry?: () => void
   query: string
   selectedIds: ReadonlySet<string>
   mutating: boolean
@@ -195,7 +200,7 @@ export function UsersDirectory({
       render: (user) => {
         const tone = view === 'trash' ? 'danger' : user.enabled ? 'success' : 'muted'
         const label = view === 'trash' ? '已删除' : user.enabled ? '正常' : '已停用'
-        return <span className={`usr-status usr-status-${tone}`}><i aria-hidden="true" />{label}</span>
+        return <StatusBadge tone={tone} size="sm">{label}</StatusBadge>
       },
     },
     { key: 'subscriptions', header: '订阅', render: (user) => <span>{user.subscriptionCount ?? 0} 个</span> },
@@ -231,12 +236,11 @@ export function UsersDirectory({
             <option value="disabled">已停用</option>
           </FormSelect>
         </label>
+        {expirySoon ? <button type="button" className="button ghost" onClick={onClearExpiry}>7 日内到期</button> : null}
       </FilterBar>
-      {phase === 'loading' ? <LoadingState label="正在加载用户" /> : null}
-      {phase === 'error' ? <ErrorState message={loadError} onRetry={onRetry} /> : null}
-      {phase === 'ready' ? (
+      {phase === 'error' ? <ErrorState message={loadError} onRetry={onRetry} /> : (
         <>
-          {view === 'active' && selectedIds.size > 0 ? (
+          {view === 'active' ? (
             <div className="usr-batch">
               <BatchToolbar
                 selectedCount={selectedIds.size}
@@ -249,7 +253,7 @@ export function UsersDirectory({
               />
             </div>
           ) : null}
-          {view === 'active' && users.length > 0 ? (
+          {phase === 'ready' && view === 'active' && users.length > 0 ? (
             <div className="usr-select-all-narrow">
               <Checkbox
                 type="checkbox"
@@ -261,30 +265,35 @@ export function UsersDirectory({
               <span>全选</span>
             </div>
           ) : null}
-          {total === 0 ? (
-            <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : '暂无用户，请先创建邀请'} />
+          {phase === 'ready' && total === 0 ? (
+            <>
+              <EmptyState icon={Users} title={view === 'trash' ? '回收站是空的' : expirySoon ? '暂无 7 日内到期的用户' : '暂无用户，请先创建邀请'} />
+              <footer className="section-footer">
+                <span className="sp-table-summary">共 {total} 位用户</span>
+                <Pagination compact page={page} pageCount={pageCount} onPageChange={onPage} />
+              </footer>
+            </>
           ) : (
-            <DataTable className="usr-table" columns={columns} rows={users} rowKey={(user) => user.id} empty="暂无匹配用户" />
+            <DataTable
+              className="usr-table"
+              columns={columns}
+              rows={phase === 'loading' ? [] : users}
+              rowKey={(user) => user.id}
+              empty="暂无匹配用户"
+              loadingLabel={phase === 'loading' ? '正在加载用户' : undefined}
+              summary={phase === 'ready' ? (expirySoon ? `共 ${total} 位用户，7 日内到期` : `共 ${total} 位用户`) : undefined}
+              pagination={phase === 'ready' ? { compact: true, page, pageCount, onPageChange: onPage } : undefined}
+            />
           )}
-          <footer className="section-footer">
-            <span>共 {total} 位用户</span>
-            <div className="usr-pager">
-              <button type="button" className="icon-button" aria-label="上一页" disabled={page <= 1 || mutating} onClick={() => onPage(page - 1)}>
-                <ChevronLeft aria-hidden="true" size={16} />
-              </button>
-              <span>{page} / {pageCount} 页</span>
-              <button type="button" className="icon-button" aria-label="下一页" disabled={page >= pageCount || mutating} onClick={() => onPage(page + 1)}>
-                <ChevronRight aria-hidden="true" size={16} />
-              </button>
-            </div>
-          </footer>
         </>
-      ) : null}
+      )}
     </div>
   )
 }
 
 export function UsersPage({ view = 'active' }: { view?: UsersView }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const expirySoon = view === 'active' && searchParams.get('expiry') === 'soon'
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [page, setPage] = useState(1)
@@ -296,6 +305,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const needle = query.trim()
   if (needle) params.set('q', needle)
   if (statusFilter !== 'all') params.set('status', statusFilter)
+  if (expirySoon) params.set('expiry', 'soon')
   const usersPath = `/api/admin/users?${params.toString()}`
   const [users, setUsers] = useState<UserSummary[]>(() => peekApi<AdminUsersResponse>(usersPath)?.users ?? [])
   const [total, setTotal] = useState(() => peekApi<AdminUsersResponse>(usersPath)?.total ?? 0)
@@ -628,6 +638,13 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         page={page}
         pageCount={pageCount}
         statusFilter={statusFilter}
+        expirySoon={expirySoon}
+        onClearExpiry={() => {
+          const next = new URLSearchParams(searchParams)
+          next.delete('expiry')
+          setSearchParams(next, { replace: true })
+          setPage(1)
+        }}
         query={query}
         selectedIds={selectedUsers}
         mutating={mutating}
@@ -648,6 +665,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         onClose={() => { if (!mutating) setEditUser(null) }}
         title="编辑用户"
         size="m"
+        appearance="content"
         footer={(requestClose) => <>
           <button className="button secondary" type="button" disabled={mutating} onClick={requestClose}>取消</button>
           <button className="button primary" type="submit" form="edit-user-form" disabled={mutating}>保存</button>
@@ -671,6 +689,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         sensitive={!!tempPassword}
         onClose={closePasswordReset}
         title="重置用户密码"
+        appearance="content"
         footer={(requestClose) => tempPassword
           ? (
               <button className="button primary" type="button" onClick={requestClose} disabled={mutating}>完成</button>
@@ -714,6 +733,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         confirmLabel={confirmCopy?.confirmLabel ?? ''}
         danger={confirmAction?.kind !== 'promote'}
         busy={mutating}
+        appearance="content"
         onClose={() => setConfirmAction(null)}
         onConfirm={executeConfirmAction}
       />
@@ -725,6 +745,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         confirmLabel={batchCopy.confirmLabel}
         danger
         busy={mutating}
+        appearance="content"
         onClose={() => setBatchConfirm(null)}
         onConfirm={() => { if (batchConfirm) void executeBatch(batchConfirm) }}
       />

@@ -1,6 +1,6 @@
 import { Dialog } from '../../ui/Dialog'
-import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
 import { DataTable } from '../../ui/DataTable'
+import { RowActions } from '../../ui/RowActions'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { Input, Textarea, DateTimeInput } from '../../ui/Controls'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
@@ -163,34 +163,36 @@ export function NoticesSection() {
   }
 
   return (
-    <section className="data-section" aria-label="公告">
-      <OperationsHeading action={
-        <>
-          <button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>
-          <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); setOpen(true) }}>新建公告</button>
-        </>
-      } />
+    <section className="content-section" aria-label="公告">
+      <div className="content-page-actions">
+        <button className="button ghost" type="button" disabled={loading} onClick={() => { load().catch(() => undefined) }}>刷新</button>
+        <button className="button primary" type="button" disabled={loading || !!loadError || busy} onClick={() => { resetForm(); setOpen(true) }}>新建公告</button>
+      </div>
       {loading ? <LoadingState label="正在加载公告" /> : null}
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError ? (
-        <>
-          <DataTable rows={items} rowKey={(notice) => notice.id} empty="暂无公告" columns={[
-            { key: 'title', header: '公告', render: (notice) => <strong className="ops-main">{notice.title}<span className="ops-meta">{formatNoticeTime(notice.publishedAt)}</span></strong> },
-            { key: 'sortOrder', header: '排序' },
+        <DataTable
+          rows={items}
+          rowKey={(notice) => notice.id}
+          empty="暂无公告"
+          summary={`共 ${items.length} 条`}
+          rowActions={(notice) => (
+            <RowActions label={`管理公告 ${notice.title}`} actions={[
+              { label: '编辑', disabled: busy, onClick: () => startEdit(notice) },
+              { label: notice.visible ? '隐藏' : '显示', disabled: busy, onClick: () => { void toggleVisible(notice, !notice.visible) } },
+              { label: '删除', disabled: busy, onClick: () => setPendingDelete(notice) },
+            ]} />
+          )}
+          columns={[
+            { key: 'title', header: '标题', render: (notice) => <strong className="ops-main">{notice.title}</strong> },
             { key: 'visible', header: '状态', render: (notice) => <StatusBadge tone={notice.visible ? 'success' : 'muted'}>{notice.visible ? '显示中' : '已隐藏'}</StatusBadge> },
-            { key: 'actions', header: '操作', align: 'right', render: (notice) => (
-              <OperationsActions label={`管理公告 ${notice.title}`}>
-                <button className="button ghost" type="button" disabled={busy} onClick={() => { startEdit(notice) }}>编辑</button>
-                <button className="button ghost" type="button" disabled={busy} onClick={() => { void toggleVisible(notice, !notice.visible) }}>{notice.visible ? '隐藏' : '显示'}</button>
-                <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(notice)}>删除</button>
-              </OperationsActions>
-            ) },
-          ]} />
-          <OperationsFooter total={items.length} />
-        </>
+            { key: 'sortOrder', header: '排序' },
+            { key: 'publishedAt', header: '发布时间', render: (notice) => formatNoticeTime(notice.publishedAt) },
+          ]}
+        />
       ) : null}
 
-      <Dialog open={open} title={editingId === null ? '新建公告' : '编辑公告'} size="l" busy={busy}
+      <Dialog open={open} appearance="content" title={editingId === null ? '新建公告' : '编辑公告'} size="l" busy={busy}
         dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={resetForm}
         footer={(cancel) => <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
@@ -257,6 +259,7 @@ export function NoticesSection() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
+        appearance="content"
         title="删除公告"
         description="删除后用户端不再显示，且无法恢复"
         confirmLabel="删除公告"

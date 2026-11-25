@@ -6,11 +6,13 @@ import { api, ApiClientError, jsonBody } from '../../app/api'
 import { Button } from '../../ui/Button'
 import { useSession } from '../../app/session'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
+import { DetailList } from '../../ui/DetailList'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
+import { Section } from '../../ui/Section'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { EmailBindChangeForm } from './EmailBindChangeForm'
 import { ProfileCard } from './ProfileCard'
@@ -73,9 +75,8 @@ export function AccountPage({
     }
   }
 
-  return (
-    <div className="page-stack">
-      {!embedded ? <PageHeader title="个人中心" /> : null}
+  const body = (
+    <>
       {!embedded && profile ? (
         <ProfileCard profile={profile} />
       ) : profileError ? (
@@ -83,11 +84,10 @@ export function AccountPage({
       ) : !embedded ? (
         <LoadingState label="正在加载账户资料" />
       ) : null}
-      <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
-        <DataHeader title="密码" actions={<Button onClick={() => { setError(''); setPasswordOpen(true) }}>修改密码</Button>} />
+      <Section title="密码" actions={<Button onClick={() => { setError(''); setPasswordOpen(true) }}>修改密码</Button>}>
         {message && <StatusMessage tone="success">{message}</StatusMessage>}
         {!passwordOpen && error && <StatusMessage tone="error">{error}</StatusMessage>}
-        <Dialog open={passwordOpen} title="修改密码" size="m" busy={passwordBusy} dirty={passwordDirty} sensitive
+        <Dialog open={passwordOpen} appearance="content" title="修改密码" size="m" busy={passwordBusy} dirty={passwordDirty} sensitive
           onClose={() => { setPasswordDirty(false); setPasswordOpen(false); setError('') }}
           footer={(cancel) => <>
             <Button onClick={cancel} disabled={passwordBusy}>取消</Button>
@@ -95,7 +95,7 @@ export function AccountPage({
           </>}>
           {passwordOpen && <>
             <p>用户名不可修改，新密码须为 12 至 128 个字符</p>
-            <form id="account-password-editor" onChange={(event) => setPasswordDirty([...new FormData(event.currentTarget).values()].some(Boolean))} className="form-stack" onSubmit={changePassword}>
+            <form id="account-password-editor" onChange={(event) => setPasswordDirty([...new FormData(event.currentTarget).values()].some(Boolean))} className="form-stack content-scope" onSubmit={changePassword}>
               <FormField label="当前密码" htmlFor="account-current-password">
                 <Input id="account-current-password" name="currentPassword" type="password" autoComplete="current-password" required />
               </FormField>
@@ -109,10 +109,9 @@ export function AccountPage({
             </form>
           </>}
         </Dialog>
-      </section>
+      </Section>
       {profile ? (
-        <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
-          <DataHeader title="邮箱" />
+        <Section title="邮箱">
           <EmailBindChangeForm
             profile={profile}
             onUpdated={async () => {
@@ -120,35 +119,25 @@ export function AccountPage({
               await refresh()
             }}
           />
-        </section>
+        </Section>
       ) : null}
-      <section className={embedded ? "data-section user-account-card" : "data-section security-section"}>
-        <DataHeader title="会话与安全" />
-        <div className="security-form">
-          {profile?.session ? (
-            <dl className="key-value-rows">
-              <div>
-                <dt>本次登录</dt>
-                <dd>{formatProfileDate(profile.session.issuedAt)}</dd>
-              </div>
-              <div>
-                <dt>会话过期</dt>
-                <dd>{formatProfileDate(profile.session.expiresAt)}</dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="profile-hint">会话信息加载中</p>
-          )}
-          <div>
-            <Button variant="danger" onClick={() => setConfirmLogoutAll(true)}>
-              <LogOut aria-hidden="true" size={17} />
-              退出全部设备
-            </Button>
-          </div>
-        </div>
-      </section>
+      <Section title="会话与安全">
+        {profile?.session ? (
+          <DetailList items={[
+            { id: 'issued', label: '本次登录', value: formatProfileDate(profile.session.issuedAt) },
+            { id: 'expires', label: '会话过期', value: formatProfileDate(profile.session.expiresAt) },
+          ]} />
+        ) : (
+          <p className="profile-hint">会话信息加载中</p>
+        )}
+        <Button variant="danger" onClick={() => setConfirmLogoutAll(true)}>
+          <LogOut aria-hidden="true" size={17} />
+          退出全部设备
+        </Button>
+      </Section>
       <ConfirmDialog
         open={confirmLogoutAll}
+        appearance="content"
         title="退出全部设备"
         description="所有设备上的会话都会失效，包括当前设备，需要重新登录"
         confirmLabel="退出全部设备"
@@ -157,6 +146,9 @@ export function AccountPage({
         onClose={() => setConfirmLogoutAll(false)}
         onConfirm={() => { logoutAll().catch(() => undefined) }}
       />
-    </div>
+    </>
   )
+
+  if (embedded) return <div className="page-stack">{body}</div>
+  return <PageContainer width="form"><PageHeader title="个人中心" />{body}</PageContainer>
 }

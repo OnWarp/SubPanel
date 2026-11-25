@@ -176,8 +176,8 @@ describe('user page presentation', () => {
     expect(open).toContain('邀请码（选填）')
 
     const invite = page(createElement(RegisterPage, { initialMode: 'invite' }))
-    expect(invite).toContain('id="register-invite-code"')
-    expect(invite).toContain('当前仅接受邀请码注册，请向管理员获取邀请码')
+    expect(invite).toMatch(/<input[^>]*id="register-invite-code"[^>]*\brequired=""/)
+    expect(invite).toContain('请向管理员获取邀请码')
     expect(invite).not.toContain('id="register-code"')
     expect(invite).not.toContain('发送验证码')
 

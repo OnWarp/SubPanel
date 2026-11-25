@@ -3,13 +3,14 @@ import { useRef, type ReactNode, type RefObject } from 'react'
 type FilterBarProps = {
   children: ReactNode
   className?: string
+  actions?: ReactNode
   more?: ReactNode
   moreActive?: boolean
   onReset?: () => void
   searchRef?: RefObject<HTMLInputElement | null>
 }
 
-export function FilterBar({ children, className, more, moreActive, onReset, searchRef }: FilterBarProps) {
+export function FilterBar({ children, className, more, moreActive, onReset, searchRef, actions }: FilterBarProps) {
   const advanced = useRef<HTMLDetailsElement>(null)
 
   return (
@@ -32,6 +33,9 @@ export function FilterBar({ children, className, more, moreActive, onReset, sear
           searchRef?.current?.focus()
         }}>重置筛选</button>
       )}
+      {actions && <div className="content-toolbar-actions">{actions}</div>}
     </div>
   )
 }
+
+export { FilterBar as TableToolbar }

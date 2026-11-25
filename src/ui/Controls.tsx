@@ -44,11 +44,13 @@ type FormSelectProps = {
   disabled?: boolean
   required?: boolean
   'aria-label'?: string
+  'aria-describedby'?: string
+  'aria-invalid'?: boolean
   onChange?: (event: ValueChange) => void
 }
 
 /** Adapt option markup to the existing project Select, preserving string values */
-export function FormSelect({ children, value = '', id, name, disabled, required, onChange, 'aria-label': label }: FormSelectProps) {
+export function FormSelect({ children, value = '', id, name, disabled, required, onChange, 'aria-label': label, 'aria-describedby': describedBy, 'aria-invalid': invalid }: FormSelectProps) {
   const options: SelectOption[] = []
   const collect = (nodes: ReactNode) => Children.forEach(nodes, (child) => {
     if (!isValidElement<{ value?: string | number; children?: ReactNode }>(child)) return
@@ -64,5 +66,5 @@ export function FormSelect({ children, value = '', id, name, disabled, required,
   // React's native single select falls back to the first option for an unmatched value
   const requested = String(value)
   const current = options.some((option) => option.value === requested) ? requested : (options[0]?.value ?? '')
-  return <div className="sp-form-select"><Select id={id} label={label} value={current} options={options} disabled={disabled} invalid={!!error} describedBy={error ? errorId : undefined} onChange={(next) => { setError(''); onChange?.({ target: { value: next }, currentTarget: { value: next } }) }} />{name ? <input type="hidden" name={name} value={current} disabled={disabled} /> : null}{required ? <Input className="sp-select-validation" tabIndex={-1} aria-hidden="true" value={current} required disabled={disabled} onChange={() => {}} onInvalid={(event) => { event.preventDefault(); setError('请选择一项'); event.currentTarget.parentElement?.querySelector('button')?.focus() }} /> : null}{error ? <span className="sp-form-field-error" id={errorId} role="alert">{error}</span> : null}</div>
+  return <div className="sp-form-select"><Select id={id} label={label} value={current} options={options} disabled={disabled} invalid={Boolean(error) || invalid} describedBy={[describedBy, error && errorId].filter(Boolean).join(' ') || undefined} onChange={(next) => { setError(''); onChange?.({ target: { value: next }, currentTarget: { value: next } }) }} />{name ? <input type="hidden" name={name} value={current} disabled={disabled} /> : null}{required ? <Input className="sp-select-validation" tabIndex={-1} aria-hidden="true" value={current} required disabled={disabled} onChange={() => {}} onInvalid={(event) => { event.preventDefault(); setError('请选择一项'); event.currentTarget.parentElement?.querySelector('button')?.focus() }} /> : null}{error ? <span className="sp-form-field-error" id={errorId} role="alert">{error}</span> : null}</div>
 }

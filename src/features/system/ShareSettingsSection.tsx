@@ -1,10 +1,10 @@
 import { Input, FormSelect } from '../../ui/Controls'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError } from '../../app/api'
-import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { Section } from '../../ui/Section'
 import { Switch } from '../../ui/Switch'
 import { useToast } from '../../ui/Toast'
 
@@ -153,30 +153,24 @@ export function ShareSettingsSection() {
 
   return (
     <form id="ops-share-settings" className="sys-share-settings" onSubmit={save} noValidate>
-      <section className="data-section" aria-labelledby="sys-share-title">
-        <DataHeader id="sys-share-title" title="分享开关" actions={
-          ready ? <button className="button primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
-        } />
+      <Section title="分享开关" actions={
+        ready ? <button className="button primary" type="submit" disabled={saving}>{saving ? '保存中' : '保存设置'}</button> : undefined
+      }>
         {loading ? <LoadingState label="正在加载分享设置" /> : null}
         {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
         {ready ? (
           <div className="sys-form">
-            <p className="sys-hint">分享功能开关控制普通用户的分享权限，管理员仍可分享。关闭期间所有分享链接暂停访问</p>
             <div className="sys-toggles">
-              <FormField label="分享功能">
-                <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
-              </FormField>
               <FormField label="创建分享">
                 <Switch checked={form.createAllowed} disabled={saving} ariaLabel="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
               </FormField>
             </div>
           </div>
         ) : null}
-      </section>
+      </Section>
       {ready ? (
         <>
-          <section className="data-section" aria-labelledby="sys-share-policy-title">
-            <DataHeader id="sys-share-policy-title" title="默认策略" />
+          <Section title="默认策略">
             <div className="sys-form">
               <div className="sys-toggles">
                 <FormField label="默认允许原始链接">
@@ -197,9 +191,8 @@ export function ShareSettingsSection() {
               </FormField>
               <p className="sys-hint">公网基址留空时使用当前访问地址</p>
             </div>
-          </section>
-          <section className="data-section" aria-labelledby="sys-share-limits-title">
-            <DataHeader id="sys-share-limits-title" title="分享限额" />
+          </Section>
+          <Section title="分享限额">
             <div className="sys-form sys-share-limits">
               <FormField label="单订阅分享上限" htmlFor="sys-share-max-shares" error={errors.maxSharesPerSubscription}>
                 <Input id="sys-share-max-shares" type="number" inputMode="numeric" min={1} max={100} step={1} value={form.maxSharesPerSubscription} disabled={saving} onChange={(event) => setForm({ ...form, maxSharesPerSubscription: event.currentTarget.value })} />
@@ -211,7 +204,13 @@ export function ShareSettingsSection() {
                 <Input id="sys-share-max-days" type="number" inputMode="numeric" min={1} max={3650} step={1} value={form.maxValidityDays} disabled={saving} onChange={(event) => setForm({ ...form, maxValidityDays: event.currentTarget.value })} />
               </FormField>
             </div>
-          </section>
+          </Section>
+          <div className="content-danger-zone">
+            <FormField label="分享功能">
+              <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
+            </FormField>
+            <p className="sys-hint">关闭后仅管理员可创建分享，所有分享链接暂停访问</p>
+          </div>
         </>
       ) : null}
     </form>

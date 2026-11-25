@@ -11,9 +11,9 @@ test('fills the desktop workspace away from the selected navigation edge', async
   const main = page.locator('.workspace-content')
   const topbar = page.locator('.admin-desktop-topbar')
   const routes = [
-    { path: '/dashboard', name: 'dashboard', card: '.adm-overview', ready: page.getByRole('region', { name: '概览统计与待办' }) },
-    { path: '/users', name: 'users', card: '.data-section', ready: page.getByRole('row', { name: /admin/i }) },
-    { path: '/system/registration', name: 'settings', card: '.sys-page', ready: page.getByRole('heading', { name: '邮箱域名白名单' }) },
+    { path: '/dashboard', name: 'dashboard', card: '.content-page[data-width="list"]', ready: page.getByRole('region', { name: '概览统计与待办' }) },
+    { path: '/users', name: 'users', card: '.content-page[data-width="list"]', ready: page.getByRole('row', { name: /admin/i }) },
+    { path: '/system/registration', name: 'settings', card: '.content-page[data-width="list"]', ready: page.getByRole('heading', { name: '邮箱域名白名单' }) },
   ]
 
   for (const layout of ['sidebar', 'topbar'] as const) {
@@ -35,13 +35,19 @@ test('fills the desktop workspace away from the selected navigation edge', async
       const cardBox = (await surface.boundingBox())!
       expect(workspaceBox.x + workspaceBox.width).toBe(1440)
       expect(workspaceBox.y + workspaceBox.height).toBe(900)
-      expect(cardBox.x).toBe(contentBox.x)
-      expect(cardBox.y + cardBox.height).toBeGreaterThanOrEqual(900)
-      const dimensions = await main.evaluate(element => ({
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-      }))
-      expect(cardBox.width).toBe(dimensions.clientWidth)
+      const dimensions = await main.evaluate(element => {
+        const style = getComputedStyle(element)
+        return {
+          clientWidth: element.clientWidth,
+          scrollWidth: element.scrollWidth,
+          paddingLeft: parseFloat(style.paddingLeft),
+          paddingRight: parseFloat(style.paddingRight),
+        }
+      })
+      expect(cardBox.x).toBeCloseTo(contentBox.x + dimensions.paddingLeft, 0)
+      expect(cardBox.width).toBeCloseTo(dimensions.clientWidth - dimensions.paddingLeft - dimensions.paddingRight, 0)
+      if (name === 'users') await expect(surface.getByRole('navigation', { name: '用户管理子页' })).toBeVisible()
+      if (name === 'settings') await expect(surface.getByRole('navigation', { name: '系统设置导航' })).toBeVisible()
       expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
 
       if (layout === 'topbar') {

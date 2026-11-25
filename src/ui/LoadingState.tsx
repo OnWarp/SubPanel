@@ -10,3 +10,8 @@ export function LoadingState({ label = '正在加载' }: LoadingStateProps) {
     </div>
   )
 }
+
+/** Decorative placeholder. The surrounding loading region announces its state. */
+export function Skeleton() {
+  return <span className="sp-table-placeholder content-skeleton" aria-hidden="true" />
+}

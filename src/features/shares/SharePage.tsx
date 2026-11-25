@@ -9,6 +9,7 @@ import { ErrorState } from '../../ui/ErrorState'
 import { Button } from '../../ui/Button'
 import { CopyButton } from '../../ui/CopyButton'
 import { SubscriptionImports } from '../delivery/SubscriptionImports'
+import { DetailList } from '../../ui/DetailList'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
 import { StatusMessage } from '../../ui/StatusMessage'
@@ -225,11 +226,11 @@ function ShareContent({ token }: { token: string }) {
 
   return (
     <AuthLayout title={title}>
-      <div className="sh-public">
+      <div className="sh-public content-scope">
         {phase.kind === 'loading' ? <LoadingState label="正在加载" /> : null}
         {phase.kind === 'error' ? <ErrorState message={phase.message} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {phase.kind === 'password' ? (
-          <form className="form-stack" onSubmit={(event) => { submitPassword(event).catch(() => undefined) }}>
+          <form className="form-stack content-scope" onSubmit={(event) => { submitPassword(event).catch(() => undefined) }}>
             <FormField label="访问密码" htmlFor="share-access-password">
               <Input id="share-access-password" name="password" type="password" autoComplete="off" maxLength={128} required />
             </FormField>
@@ -240,7 +241,6 @@ function ShareContent({ token }: { token: string }) {
         ) : null}
         {phase.kind === 'login' ? (
           <>
-            <p>此链接需要登录后查看</p>
             {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
             {user ? <button className="button primary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button> : <button className="button primary" type="button" onClick={goLogin}>去登录</button>}
           </>
@@ -280,11 +280,11 @@ function ReadyShare({ meta, feedback, originalBlocked, originalLink, pendingActi
   const remaining = meta.expiresAt ? formatRemaining(meta.expiresAt) : ''
   return (
     <>
-      <dl className="sh-meta">
-        {meta.groupNames ? <div><dt>分组</dt><dd>{meta.groupNames.length ? meta.groupNames.join('、') : '无'}</dd></div> : null}
-        {meta.expiresAt ? <div><dt>到期</dt><dd>{formatShareTime(meta.expiresAt)}{remaining ? ` · ${remaining}` : ''}</dd></div> : null}
-        <div><dt>节点</dt><dd>{meta.nodeCount} 个</dd></div>
-      </dl>
+      <DetailList items={[
+        ...(meta.groupNames ? [{ id: 'groups', label: '分组', value: meta.groupNames.length ? meta.groupNames.join('、') : '无' }] : []),
+        ...(meta.expiresAt ? [{ id: 'expiry', label: '到期', value: `${formatShareTime(meta.expiresAt)}${remaining ? ` · ${remaining}` : ''}` }] : []),
+        { id: 'nodes', label: '节点', value: `${meta.nodeCount} 个` },
+      ]} />
       {meta.nodeNames && meta.nodeNames.length > 0 ? (
         <ul className="sh-nodes">
           {meta.nodeNames.map((name, index) => <li key={`${index}-${name}`}>{name}</li>)}

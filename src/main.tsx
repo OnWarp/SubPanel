@@ -28,3 +28,4 @@ import './styles/user-shell.css'
 import './styles/pages-user-d.css'
 
 import './styles/controls.css'
+import './styles/content-ui.css'

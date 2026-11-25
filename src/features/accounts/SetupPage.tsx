@@ -38,7 +38,7 @@ export function SetupPage() {
 
   return (
     <AuthLayout title="初始化管理员">
-      <form className="form-stack" onSubmit={submit}>
+      <form className="form-stack content-scope" onSubmit={submit}>
         <FormField label="管理员用户名" htmlFor="setup-username">
           <Input id="setup-username" name="username" autoComplete="username" minLength={3} maxLength={32} required />
         </FormField>

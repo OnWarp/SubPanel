@@ -79,7 +79,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
   return <>
     <Button onClick={() => { setMessage(''); setOpen(true) }}>{title}</Button>
     {!open && message && <StatusMessage tone="success">{message}</StatusMessage>}
-    <Dialog open={open} title={title} size="m" focusStep={step} busy={busy} dirty={Boolean(email || currentPassword || code)} sensitive onClose={close}
+    <Dialog open={open} appearance="content" title={title} size="m" focusStep={step} busy={busy} dirty={Boolean(email || currentPassword || code)} sensitive onClose={close}
       footer={(cancel) => <>
         <Button variant="ghost" disabled={busy} onClick={step === 'code' ? () => { setStep('email'); setCode(''); setError(''); setMessage('') } : cancel}>
           {step === 'code' ? '重新填写邮箱' : '取消'}
@@ -89,7 +89,7 @@ export function EmailBindChangeForm({ profile, onUpdated }: EmailBindChangeFormP
           {step === 'code' ? bound ? '确认更换' : '确认绑定' : '获取验证码'}
         </Button>
       </>}>
-      <form id="account-email-editor" className="form-stack" onSubmit={step === 'code' ? confirm : sendCode}>
+      <form id="account-email-editor" className="form-stack content-scope" onSubmit={step === 'code' ? confirm : sendCode}>
         {step === 'code' ? <FormField label="邮箱验证码" htmlFor="account-email-code">
           <Input id="account-email-code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}"
             maxLength={6} required value={code} onChange={(event) => setCode(event.target.value)} />

@@ -69,6 +69,42 @@ it('replays the same request, upserts a single binding, and leaves its token sta
   expect(await env.DB.prepare('PRAGMA foreign_key_check').all()).toMatchObject({ results: [] })
 })
 
+it('measures redemption from the redemption instant even when a binding is still active', async () => {
+  const existing = await mutateBinding(env, userId, templateId,
+    assign(0, instant - 100, instant + 86400_000), userId, instant)
+  const redeemed = await mutateBinding(env, userId, templateId, {
+    mode: 'redeem', expectedRevision: existing.revision, requestId: crypto.randomUUID(),
+    expiry: { type: 'duration', duration: { unit: 'month', value: 1 } },
+  }, userId, instant)
+  expect(redeemed.changes[0].after.expires_at).toBe(Date.parse('2027-02-28T13:00:00.000Z'))
+})
+
+it('reports administrative summary states and separates permanent and finite grants', async () => {
+  const path = `/api/admin/users/${userId}/subscription/summary`
+  const summary = async () => {
+    const response = await invoke(path, withCookie(cookie))
+    expect(response.status).toBe(200)
+    return response.json()
+  }
+  expect(await summary()).toMatchObject({
+    status: 'none', effectiveBindingCount: 0, latestExpiresAt: null, lastExpiredAt: null, permanent: false, nodes: [],
+  })
+  const now = Date.now()
+  const expired = now - 1000
+  const finite = now + 60_000
+  const first = await mutateBinding(env, userId, templateId, assign(0, now - 10_000, expired), userId, now)
+  expect(await summary()).toMatchObject({
+    status: 'expired', effectiveBindingCount: 0, latestExpiresAt: null, lastExpiredAt: new Date(expired).toISOString(),
+  })
+  const other = await makeTemplate([nodeId])
+  const next = await mutateBinding(env, userId, templateId, assign(first.revision, now - 100, finite), userId, now)
+  await mutateBinding(env, userId, other.id, assign(next.revision, now - 100, null), userId, now)
+  expect(await summary()).toMatchObject({
+    status: 'active', effectiveBindingCount: 2, latestExpiresAt: new Date(finite).toISOString(),
+    expiresAt: null, permanent: true, nodes: [{ name: expect.any(String), protocol: expect.any(String) }],
+  })
+})
+
 it('enforces private scope in SQL and resolves concurrent replacement without partial writes', async () => {
   await createFixtureAccount('other', crypto.randomUUID())
   const privateTemplate = await makeTemplate([otherNodeId], undefined, userId)
@@ -205,7 +241,7 @@ it('keeps an account link before the first binding and exposes only display node
   }>()
   const empty = await summary()
   expect(empty).toMatchObject({ status: 'none', nodeCount: 0, hasAvailableNodes: false })
-  expect(new URL(empty.subscriptionUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9_-]{43}$/u)
+  expect(new URL(empty.subscriptionUrl).pathname).toMatch(/^\/s\/[A-Za-z0-9]{16}$/u)
   expect((await summary()).subscriptionUrl).toBe(empty.subscriptionUrl)
   const access = await readUserAccess(env.DB, { userId })
   const now = Date.now()

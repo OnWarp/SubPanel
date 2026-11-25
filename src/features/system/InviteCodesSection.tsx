@@ -4,12 +4,14 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { api, ApiClientError, jsonBody } from '../../app/api'
 import { Trash2 } from 'lucide-react'
 import { BatchToolbar } from '../../ui/BatchToolbar'
+import { Button } from '../../ui/Button'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { CopyButton } from '../../ui/CopyButton'
+import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterChip } from '../../ui/FilterChip'
 import { FormField } from '../../ui/FormField'
-import { LoadingState } from '../../ui/LoadingState'
+import { Section } from '../../ui/Section'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { useToast } from '../../ui/Toast'
 import { formatDate } from '../catalog/catalog-utils'
@@ -39,6 +41,13 @@ type CreatedInviteCode = {
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof ApiClientError ? cause.message : fallback
+}
+
+function inviteStatus(item: InviteCodeItem): { tone: 'success' | 'warning' | 'muted'; label: string } {
+  if (item.disabled) return { tone: 'muted', label: '已停用' }
+  if (item.expiresAt && Date.parse(item.expiresAt) <= Date.now()) return { tone: 'muted', label: '已过期' }
+  if (item.remaining === 0) return { tone: 'warning', label: '已用完' }
+  return { tone: 'success', label: '可使用' }
 }
 
 export function InviteCodesSection() {
@@ -143,58 +152,110 @@ export function InviteCodesSection() {
   }
 
   const selectable = items.filter((item) => !item.disabled)
+  const allSelected = selectable.length > 0 && selectable.every((item) => selected.has(item.id))
+  const columns: Array<DataTableColumn<InviteCodeItem>> = [
+    {
+      key: 'select',
+      header: (
+        <Checkbox
+          type="checkbox"
+          aria-label="选择全部邀请码"
+          checked={allSelected}
+          disabled={busy || selectable.length === 0}
+          onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map((item) => item.id)))}
+        />
+      ),
+      label: '选择',
+      width: 52,
+      render: (item) => (
+        <Checkbox
+          type="checkbox"
+          aria-label={`选择邀请码 ${item.prefix}`}
+          checked={selected.has(item.id)}
+          disabled={busy || item.disabled}
+          onChange={() => setSelected((current) => {
+            const next = new Set(current)
+            if (next.has(item.id)) next.delete(item.id)
+            else next.add(item.id)
+            return next
+          })}
+        />
+      ),
+    },
+    { key: 'prefix', header: '邀请码', render: (item) => <span className="sys-invite-code">{item.prefix}…</span> },
+    { key: 'type', header: '类型', render: (item) => item.type === 'multi' ? '多次使用' : '单次使用' },
+    {
+      key: 'usage',
+      header: '使用',
+      render: (item) => item.maxUses === null ? `已用 ${item.usedCount} 次（不限次数）` : `已用 ${item.usedCount} / ${item.maxUses} 次`,
+    },
+    { key: 'expires', header: '到期', render: (item) => item.expiresAt ? `${formatDate(item.expiresAt)} 过期` : '不过期' },
+    { key: 'created', header: '创建时间', render: (item) => formatDate(item.createdAt) },
+    {
+      key: 'status',
+      header: '状态',
+      render: (item) => {
+        const status = inviteStatus(item)
+        return <StatusBadge tone={status.tone} size="sm">{status.label}</StatusBadge>
+      },
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      align: 'right',
+      render: (item) => item.disabled
+        ? (item.usedCount === 0 ? <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(item)}>删除</button> : null)
+        : <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDisable([item])}>停用</button>,
+    },
+  ]
 
   return (
-    <div className="sys-subsection">
-      <h3 className="sys-subtitle">注册邀请码</h3>
-      <button className="button primary" type="button" disabled={busy || loading || !!loadError} onClick={() => {
-        setCreated(null)
-        setCreateError('')
-        setKind('multi')
-        setMaxUses('')
-        setCount('10')
-        setExpiresAt('')
-        setOpen(true)
-      }}>创建邀请码</button>
-      <p className="sys-hint">邀请注册无需邮箱验证码</p>
-      {loading ? <LoadingState label="正在加载邀请码" /> : null}
-      {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
-      {!loading && !loadError ? (
+    <Section
+      title="注册邀请码"
+      actions={(
+        <Button variant="primary" disabled={busy || loading || !!loadError} onClick={() => {
+          setCreated(null)
+          setCreateError('')
+          setKind('multi')
+          setMaxUses('')
+          setCount('10')
+          setExpiresAt('')
+          setOpen(true)
+        }}>创建邀请码</Button>
+      )}
+    >
+      <p className="sp-form-hint">邀请注册无需邮箱验证码</p>
+      {loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : (
         <>
           <BatchToolbar selectedCount={selected.size} totalCount={selectable.length}
             onSelectAll={() => setSelected(new Set(selectable.map((item) => item.id)))}
             onClear={() => setSelected(new Set())}
             actions={[{ key: 'disable', label: '停用', icon: Trash2, tone: 'danger', onClick: () => setPendingDisable(items.filter((item) => selected.has(item.id))) }]}
             busy={busy} progress={progress} />
-          {items.length === 0 ? <p className="sys-hint">暂无邀请码</p> : (
-            <ul className="sys-domain-list">
-              {items.map((item) => (
-                <li key={item.id} className="sys-domain-item">
-                  <Checkbox type="checkbox" aria-label={`选择邀请码 ${item.prefix}`} checked={selected.has(item.id)} disabled={busy || item.disabled}
-                    onChange={() => setSelected((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next })} />
-                  <div className="sys-invite-main">
-                    <span className="sys-invite-code">{item.prefix}…</span>
-                    <span className="sys-invite-meta">
-                      {item.type === 'multi' ? '多次使用' : '单次使用'}
-                      {` · 已用 ${item.usedCount}${item.maxUses === null ? ' 次（不限次数）' : ` / ${item.maxUses} 次`}`}
-                      {item.expiresAt ? ` · ${formatDate(item.expiresAt)} 过期` : ' · 不过期'}
-                      {` · 创建于 ${formatDate(item.createdAt)}`}
-                    </span>
-                  </div>
-                  {!item.disabled ? <StatusBadge tone={item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? 'muted' : item.remaining === 0 ? 'warning' : 'success'} size="sm">
-                    {item.expiresAt && Date.parse(item.expiresAt) <= Date.now() ? '已过期' : item.remaining === 0 ? '已用完' : '可使用'}
-                  </StatusBadge> : null}
-                  {item.disabled
-                    ? <><StatusBadge tone="muted" size="sm">已停用</StatusBadge>{item.usedCount === 0 ? <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDelete(item)}>删除</button> : null}</>
-                    : <button className="button ghost" type="button" disabled={busy} onClick={() => setPendingDisable([item])}>停用</button>}
-                </li>
-              ))}
-            </ul>
-          )}
-
+          {!loading && selectable.length > 0 ? (
+            <div className="usr-select-all-narrow">
+              <Checkbox
+                type="checkbox"
+                aria-label="选择全部邀请码"
+                checked={allSelected}
+                disabled={busy}
+                onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map((item) => item.id)))}
+              />
+              <span>全选</span>
+            </div>
+          ) : null}
+          <DataTable
+            className="usr-table"
+            columns={columns}
+            rows={loading ? [] : items}
+            rowKey={(item) => item.id}
+            empty="暂无邀请码"
+            loadingLabel={loading ? '正在加载邀请码' : undefined}
+            summary={loading ? undefined : `共 ${items.length} 个邀请码`}
+          />
         </>
-      ) : null}
-      <Dialog open={open} title={created ? '邀请码已生成' : '创建邀请码'} size="m" busy={busy} focusStep={created ? 'result' : 'form'}
+      )}
+      <Dialog open={open} title={created ? '邀请码已生成' : '创建邀请码'} size="m" appearance="content" busy={busy} focusStep={created ? 'result' : 'form'}
         dirty={!created && (kind !== 'multi' || maxUses !== '' || count !== '10' || expiresAt !== '')}
         sensitive={created !== null} onClose={() => { setOpen(false); setCreated(null) }}
         footer={(cancel) => created ? <button className="button primary" type="button" data-dialog-initial-focus onClick={cancel}>完成</button> : <>
@@ -274,6 +335,7 @@ export function InviteCodesSection() {
         confirmLabel="删除"
         danger
         busy={busy}
+        appearance="content"
         onClose={() => setPendingDelete(null)}
         onConfirm={() => { remove().catch(() => undefined) }}
       />
@@ -284,9 +346,10 @@ export function InviteCodesSection() {
         confirmLabel="停用"
         danger
         busy={busy}
+        appearance="content"
         onClose={() => setPendingDisable(null)}
         onConfirm={() => { disable().catch(() => undefined) }}
       />
-    </div>
+    </Section>
   )
 }

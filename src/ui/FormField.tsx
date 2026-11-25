@@ -1,22 +1,29 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
 type FormFieldProps = {
   label: string
   error?: string
   hint?: string
-  children: ReactNode
+  children: ReactNode | ((control: { id: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }) => ReactNode)
   htmlFor?: string
   /** Content editors opt out of the 460px field cap. */
   wide?: boolean
 }
 
 export function FormField({ label, error, hint, children, htmlFor, wide = false }: FormFieldProps) {
+  const id = useId()
+  const controlId = htmlFor ?? id
+  const describedBy = [hint && `${id}-hint`, error && `${id}-error`].filter(Boolean).join(' ')
   return (
     <div className={`sp-form-field${wide ? ' sp-form-field-wide' : ''}`}>
-      <label className="sp-form-field-label" htmlFor={htmlFor}>{label}</label>
-      {children}
-      {hint ? <p className="sp-form-hint">{hint}</p> : null}
-      {error ? <p className="sp-form-field-error" role="alert">{error}</p> : null}
+      <label className="sp-form-field-label" htmlFor={typeof children === 'function' ? controlId : htmlFor}>{label}</label>
+      {typeof children === 'function' ? children({
+        id: controlId,
+        'aria-describedby': describedBy || undefined,
+        'aria-invalid': error ? true : undefined,
+      }) : children}
+      {hint ? <p className="sp-form-hint" id={`${id}-hint`}>{hint}</p> : null}
+      {error ? <p className="sp-form-field-error" id={`${id}-error`} role="alert">{error}</p> : null}
     </div>
   )
 }
@@ -30,9 +37,11 @@ type FormGroupProps = {
 
 /** Shared settings and dialog group. Title, then fields, separated by a hairline when stacked. */
 export function FormGroup({ title, hint, children, id }: FormGroupProps) {
+  const generatedId = useId()
+  const titleId = id ?? generatedId
   return (
-    <section className="sp-form-group" aria-labelledby={title ? id : undefined}>
-      {title ? <h3 className="sp-form-group-title" id={id}>{title}</h3> : null}
+    <section className="sp-form-group" aria-labelledby={title ? titleId : undefined}>
+      {title ? <h3 className="sp-form-group-title" id={titleId}>{title}</h3> : null}
       {hint ? <p className="sp-form-hint">{hint}</p> : null}
       {children}
     </section>
@@ -53,3 +62,7 @@ export function AdvancedFields({ label = '高级选项', children }: { label?: s
   )
 }
 
+
+export { FormGroup as FormSection }
+
+export { FormActions as FormFooter }

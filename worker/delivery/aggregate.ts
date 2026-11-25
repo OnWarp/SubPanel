@@ -74,6 +74,7 @@ export function aggregateBindings(access: UserAccess | null, rows: BindingRow[],
     ? status : nodes.length ? null : 'noEnabledNodes'
   return {
     catalog, nodes, status, permanent, expiresAt: !permanent && expiry.length ? Math.max(...expiry) : null,
+    latestExpiresAt: expiry.length ? Math.max(...expiry) : null,
     lastExpiredAt: history.length ? Math.max(...history) : null,
     nextTransitionAt: Number.isFinite(next) ? next : null,
     effectiveTemplateIds: effective.map(row => row.template_id),
