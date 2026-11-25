@@ -103,6 +103,7 @@ async function mockApp(page: Page, options: { empty?: boolean; baseDefault?: boo
       case `${root}/default`:
         defaultId = body?.templateId as string | null
         return json({ ok: true, revision: ++defaultRevision, references: row.references, inheritedCount: defaultId ? (options.baseDefault ? 1 : 8) : 0 })
+      case `${root}/office/versions/v3`: return json({ yaml: draft })
       case `${root}/office/versions`:
         return json({ versions: [version, { ...version, id: 'v2', sequence: 2 }], total: 2, page: 1, pageSize: 20 })
       case `${root}/office/rollback`:
