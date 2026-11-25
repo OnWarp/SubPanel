@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { api, ApiClientError, jsonBody, type CatalogResponse } from '../../app/api'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
-import { FormField, FormGroup } from '../../ui/FormField'
+import { AdvancedFields, FormField, FormGroup } from '../../ui/FormField'
+import { DetailList } from '../../ui/DetailList'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -202,13 +203,15 @@ export function EntitlementTemplatesPage() {
           </FilterBar>
           <DataTable columns={columns} rows={visible} rowKey={({ id }) => id} empty="没有匹配的订阅模板" className="del-template-table" />
         </>}
-      <Dialog size="l" open={!!editor} title={original ? '编辑权益模板' : owner ? '新建专属模板' : '新建权益模板'} busy={busy}
+      <Dialog size="l" appearance="content" open={!!editor} title={original ? '编辑权益模板' : owner ? '新建专属模板' : '新建权益模板'} busy={busy}
         dirty={!!draft && JSON.stringify(draft) !== JSON.stringify(baseDraft)} onClose={closeEditor}
-        footer={<>
-          {configChanged && <span className="drawer-note" role="status">{`发布后影响 ${original.boundUserCount} 位已绑定用户`}</span>}
+        footer={(requestClose) => <>
+          {configChanged && original ? <span className="sp-form-hint" role="status">{`保存后，${original.boundUserCount} 位已绑定用户立即按最新配置交付，授权起止时间不变`}</span> : null}
+          <button className="button secondary" type="button" disabled={busy} onClick={requestClose}>取消</button>
           <button className="button primary" form="entitlement-template-form" type="submit" disabled={busy}>保存模板</button>
         </>}>
         {draft && config && <form id="entitlement-template-form" className="drawer-form" onSubmit={save}>
+          {!original && owner ? <p className="sp-form-hint">创建后回到订阅授权，需要再绑定才生效</p> : null}
           <FormGroup title="基本信息">
             <FormField label="模板名称" htmlFor="entitlement-name"><Input id="entitlement-name" required maxLength={128} value={draft.name}
               onChange={(event) => changeDraft({ name: event.currentTarget.value })} /></FormField>
@@ -216,19 +219,20 @@ export function EntitlementTemplatesPage() {
               onChange={(event) => changeDraft({ description: event.currentTarget.value })} /></FormField>
           </FormGroup>
           <FormGroup title="有效期与流量">
-            <FormField label="期限" htmlFor="entitlement-duration"><Input id="entitlement-duration" required type="number" min={1} max={36_500} step={1}
-              value={config.duration.value || ''} onChange={(event) => changeConfig({ duration: { ...config.duration, value: Number(event.currentTarget.value) } })} /></FormField>
-            <FormField label="单位" htmlFor="entitlement-unit"><FormSelect id="entitlement-unit" value={config.duration.unit}
-              onChange={(event) => changeConfig({ duration: { ...config.duration, unit: event.currentTarget.value as keyof typeof TERM_UNITS } })}>
-              {Object.entries(TERM_UNITS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
-            </FormSelect></FormField>
-            <FormField label="流量 GiB（留空为不限，仅配置额度）" htmlFor="entitlement-quota"><Input id="entitlement-quota" type="number" min={1 / BYTES_PER_GIB} max={MAX_QUOTA_GIB} step="any"
+            <div className="content-form-grid">
+              <FormField label="期限" htmlFor="entitlement-duration"><Input id="entitlement-duration" required type="number" min={1} max={36_500} step={1}
+                value={config.duration.value || ''} onChange={(event) => changeConfig({ duration: { ...config.duration, value: Number(event.currentTarget.value) } })} /></FormField>
+              <FormField label="单位" htmlFor="entitlement-unit"><FormSelect id="entitlement-unit" value={config.duration.unit}
+                onChange={(event) => changeConfig({ duration: { ...config.duration, unit: event.currentTarget.value as keyof typeof TERM_UNITS } })}>
+                {Object.entries(TERM_UNITS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
+              </FormSelect></FormField>
+            </div>
+            <FormField label="流量 GiB" htmlFor="entitlement-quota" hint="留空为不限，只记录额度且不重置"><Input id="entitlement-quota" type="number" min={1 / BYTES_PER_GIB} max={MAX_QUOTA_GIB} step="any"
               value={quota} onChange={(event) => {
                 const value = event.currentTarget.value
                 setQuota(value)
                 changeConfig({ quotaBytes: value ? Math.round(Number(value) * BYTES_PER_GIB) : null })
               }} /></FormField>
-            <span className="drawer-note">流量额度不重置</span>
           </FormGroup>
           <FormGroup title="节点分配">
             <fieldset className="choice-section"><legend>动态分组</legend>
@@ -241,13 +245,12 @@ export function EntitlementTemplatesPage() {
             </fieldset>
             <NodeAssignmentPicker nodes={catalog?.nodes ?? []} selected={config.nodeIds} onChange={(nodeIds) => changeConfig({ nodeIds })} />
           </FormGroup>
-          <details className="choice-section">
-            <summary>高级限制</summary>
-            <FormField label="限速 Mbps（0 为不限，仅适用部分 Hysteria 客户端）" htmlFor="entitlement-speed">
+          <AdvancedFields label="高级限制">
+            <FormField label="限速 Mbps" htmlFor="entitlement-speed" hint="0 为不限，仅适用部分 Hysteria 客户端">
               <Input id="entitlement-speed" type="number" min={0} max={1_000_000} step={1} value={config.limits.speedLimitMbps}
                 onChange={(event) => changeConfig({ limits: { speedLimitMbps: Number(event.currentTarget.value) } })} />
             </FormField>
-          </details>
+          </AdvancedFields>
           <FormGroup title="发放设置">
             <label className="choice-row"><Checkbox disabled={!!owner || !!original?.ownerUserId} checked={draft.allowRedemption}
               onChange={(event) => changeDraft({ allowRedemption: event.currentTarget.checked })} />开放兑换码发放</label>
@@ -256,22 +259,26 @@ export function EntitlementTemplatesPage() {
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
         </form>}
       </Dialog>
-      <Dialog size="l" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
+      <Dialog size="l" appearance="content" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
+        <p className="sp-form-hint">已绑定用户读取最新版，这里只展示历史配置</p>
         {history?.error && <ErrorState message={history.error} onRetry={() => { void openHistory(history.template) }} />}
         {history && !history.versions && !history.error && <LoadingState label="正在加载版本" />}
         {history?.versions?.map((version, index, versions) => {
           const previous = versions[index + 1]
           const before = previous ? configFields(previous.config, catalog) : {}
-          return <details className="choice-section" key={version.id} open={index === 0 || undefined}>
+          const fields = configFields(version.config, catalog)
+          return <details className="content-version" key={version.id} open={index === 0 || undefined}>
             <summary>v{version.number} · {formatDate(version.createdAt)} · {version.subscriptionCount} 个订阅</summary>
             <p className="drawer-note">修改人 {version.createdBy}</p>
-            <dl>{Object.entries(configFields(version.config, catalog)).map(([field, value]) => <div key={field}>
-              <dt>{field}</dt><dd>{previous && before[field] !== value ? `${before[field]} → ${value}` : value}</dd>
-            </div>)}</dl>
+            <DetailList items={Object.entries(fields).map(([field, value]) => ({
+              id: field,
+              label: field,
+              value: previous && before[field] !== value ? `${before[field]} → ${value}` : value,
+            }))} />
           </details>
         })}
       </Dialog>
-      <ConfirmDialog open={!!pending} title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
+      <ConfirmDialog open={!!pending} appearance="content" title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
         description={error || `将影响 ${pending?.template.boundUserCount ?? 0} 位已绑定用户`}
         confirmLabel={pending?.action === 'archive' ? '确认归档' : '确认停用'} danger busy={busy}
         onClose={() => { setPending(null); setError('') }}

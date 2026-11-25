@@ -67,9 +67,9 @@ describe('users directory', () => {
     expect(html).toContain('wuyang@example.com')
     expect(html).toContain('管理员')
     expect(html).toContain('用户')
-    expect(html).toContain('usr-status-success')
+    expect(html).toContain('sp-badge-success')
     expect(html).toContain('正常')
-    expect(html).toContain('usr-status-muted')
+    expect(html).toContain('sp-badge-muted')
     expect(html).toContain('已停用')
     expect(html).toContain('0 个')
     expect(html).toContain('2 个')
@@ -128,7 +128,7 @@ describe('users directory', () => {
     expect(menu).toContain('恢复')
     expect(menu).toContain('永久删除')
     expect(html).toContain('已删除')
-    expect(html).toContain('usr-status-danger')
+    expect(html).toContain('sp-badge-danger')
     expect(html).toContain('1 个')
     expect(html).toContain('>删除时间</th>')
     expect(html).toContain('共 1 位用户')
@@ -139,7 +139,7 @@ describe('users directory', () => {
 describe('user management shell', () => {
   it('puts the title and invite action around the users list in one section', () => {
     const html = shell('/users')
-    expect(html).toContain('class="data-section"')
+    expect(html).toContain('content-page')
     expect(html).toContain('用户管理')
     expect(html).toContain('邀请用户')
     expect(html).toContain('正在加载用户')
@@ -151,7 +151,7 @@ describe('user management shell', () => {
 
   it('keeps invite management inside the same section', () => {
     const html = shell('/invites')
-    expect(html).toContain('class="data-section"')
+    expect(html).toContain('content-page')
     expect(html).toContain('邀请用户')
     expect(html).toContain('注册邀请码')
     expect(html).toContain('无需邮箱验证码')

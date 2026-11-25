@@ -27,6 +27,8 @@ type DataTableProps<T> = {
   toolbar?: ReactNode
   rowActions?: (row: T) => ReactNode
   pagination?: PaginationProps
+  /** Count or scope line shown with the pager. */
+  summary?: ReactNode
   flat?: boolean
   className?: string
 }
@@ -51,7 +53,7 @@ function columnLabel(column: { header: ReactNode; label?: string }) {
   return typeof column.header === 'string' ? column.header : ''
 }
 
-export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagination, toolbar, rowActions, refreshingLabel, flat = false, className }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagination, summary, toolbar, rowActions, refreshingLabel, flat = false, className }: DataTableProps<T>) {
   const columnCount = columns.length + Number(Boolean(rowActions))
   return (
     <>
@@ -98,7 +100,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty, loadingLabel, pagin
             ))}
           </tbody>
         </table>
-        {pagination ? <div className="sp-table-pagination"><Pagination {...pagination} /></div> : null}
+        {(pagination || summary) ? <div className="sp-table-pagination">{summary ? <span className="sp-table-summary">{summary}</span> : null}{pagination ? <Pagination {...pagination} /> : null}</div> : null}
       </div>
     </>
   )
