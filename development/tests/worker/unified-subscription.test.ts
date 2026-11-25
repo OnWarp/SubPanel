@@ -1,20 +1,13 @@
-import { executeBackfill, previewBackfill, reconcileBackfill } from '../../../worker/delivery/backfill'
-import { cutoverSetting } from '../../../worker/delivery/legacy-compatibility'
-import { createShare, readShareMeta } from '../../../worker/shares/service'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, expect, it } from 'vitest'
-import { markModuleReady, ACCOUNTS_D1_READY_KEY } from '../../../worker/db/module-switch'
+import { markModuleReady } from '../../../worker/db/module-switch'
 import { readCatalog, writeCatalog } from '../../../worker/catalog/repository'
 import { createEntitlementTemplate, updateEntitlementTemplate } from '../../../worker/delivery/entitlement-templates'
 import { mutateBinding, mutateBindingsByUser, readBindings } from '../../../worker/delivery/bindings'
 import { aggregateBindings, resolveUserSubscription, uniqueConnections } from '../../../worker/delivery/aggregate'
-import { createSubscription, resetSubscriptionToken } from '../../../worker/delivery/service'
-import { savePlan } from '../../../worker/delivery/plans'
-import { readUserAccess, userSubscriptionPublicReady, userSubscriptionReady } from '../../../worker/delivery/user-access'
+import { readUserAccess, userSubscriptionPublicReady } from '../../../worker/delivery/user-access'
 import { enforceUnifiedOutputLimit, loadUnifiedArtifact } from '../../../worker/delivery/unified-artifacts'
-import { verifyShadowUser } from '../../../worker/delivery/shadow'
-import { applyBackfillMigration, applyMigrations, applyUnifiedMigration } from './d1'
-import { createFixtureAccount, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { createFixtureAccount, jsonRequest, login, setupContractedAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const userId = 'usr_1'
 const instant = Date.parse('2027-01-31T13:00:00.000Z')
@@ -39,23 +32,7 @@ const assign = (expectedRevision: number, startsAt: number, expiresAt: number | 
 const resolve = async (now: number, id = userId) => resolveUserSubscription(env.DB, id, now, await readCatalog(env))
 
 beforeEach(async () => {
-  await resetData()
-  await applyMigrations()
-  await applyUnifiedMigration()
-  await applyBackfillMigration()
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM unified_subscription_mappings'),
-    env.DB.prepare('DELETE FROM unified_subscription_checkpoints'),
-    env.DB.prepare('DELETE FROM system_settings WHERE key=?').bind(cutoverSetting),
-  ])
-  await env.DB.batch(['user_binding_requests', 'user_template_bindings', 'user_subscription_access'].map(table =>
-    env.DB.prepare(`DELETE FROM ${table}`)))
-  await env.DB.prepare("UPDATE entitlement_templates SET status='archived' WHERE status<>'archived'").run()
-  await enableD1Modules()
-  await env.DB.prepare('DELETE FROM system_settings WHERE key=?').bind(userSubscriptionPublicReady).run()
-  await markModuleReady(env.DB, ACCOUNTS_D1_READY_KEY)
-  await markModuleReady(env.DB, userSubscriptionReady)
-  await setupAdmin()
+  await setupContractedAdmin()
   cookie = await login()
   const create = async (path: string, body: unknown) => {
     const response = await invoke(path, withCookie(cookie, jsonRequest(body)))
@@ -87,7 +64,6 @@ it('replays the same request, upserts a single binding, and leaves its token sta
     mode: 'renew', expectedRevision: reassigned.revision, requestId: crypto.randomUUID(), expiry: { type: 'default' },
   }, userId, instant)
   expect(renewed.changes[0].after.expires_at).toBeNull()
-  await applyUnifiedMigration()
   expect(await readBindings(env.DB, userId)).toHaveLength(1)
   expect((await readUserAccess(env.DB, { userId }))!.token_hash).toBe(tokenBefore)
   expect(await env.DB.prepare('PRAGMA foreign_key_check').all()).toMatchObject({ results: [] })
@@ -139,6 +115,7 @@ it('resolves the union across future, permanent, disabled and exact expiry bound
 it('validates conditional GET against account and token changes, and invalidates published templates and catalog content', async () => {
   const now = Date.now()
   const binding = await mutateBinding(env, userId, templateId, assign(0, now - 100, null), userId, now)
+  await env.DB.prepare('DELETE FROM system_settings WHERE key=?').bind(userSubscriptionPublicReady).run()
   expect((await invoke('/api/user/subscription', withCookie(cookie))).status).toBe(404)
   await markModuleReady(env.DB, userSubscriptionPublicReady)
   const summary = await invoke('/api/user/subscription', withCookie(cookie))
@@ -170,31 +147,16 @@ it('validates conditional GET against account and token changes, and invalidates
   expect((await invoke(current.pathname, conditional)).status).toBe(404)
 })
 
-it('reports an equivalent fixture and rejects a legacy limit conflict without fabricating traffic', async () => {
-  const startsAt = instant - 1000
-  await createSubscription(env, { userId, name: 'Shadow baseline', groupIds: [groupId], startsAt, expiresAt: null })
-  const unlimited = await createEntitlementTemplate(env.DB, {
-    name: 'Shadow baseline', description: '', allowRedemption: false,
-    config: { ...config([]), groupIds: [groupId] },
-  }, userId)
-  const base = await mutateBinding(env, userId, unlimited.id, assign(0, startsAt, null), userId, instant)
-  const catalog = await readCatalog(env)
-  expect(await verifyShadowUser(env, userId, instant, catalog)).toMatchObject({
-    matches: true, reasons: [], oldNodes: 2, newNodes: 2, measuredTraffic: null,
-  })
-  await createFixtureAccount('other', crypto.randomUUID())
-  const plan = await savePlan(env.DB, { name: 'Limited fixture', groupIds: [groupId], durationDays: 30, trafficGb: 1, speedLimitMbps: 10, deviceLimit: 2 })
-  await createSubscription(env, { userId: 'usr_2', name: 'Limited baseline', planId: plan.id, groupIds: [groupId], startsAt, expiresAt: null })
+it('flags unverified quotas across unified bindings', async () => {
   const limited = await makeTemplate([nodeId], 1)
-  await mutateBinding(env, 'usr_2', limited.id, assign(0, startsAt, null), userId, instant)
-  await mutateBinding(env, userId, limited.id, assign(base.revision, startsAt, null), userId, instant)
-  expect(await verifyShadowUser(env, 'usr_2', instant, catalog)).toMatchObject({
-    matches: false, reasons: expect.arrayContaining(['PLAN_POLICY_UNVERIFIED', 'NODES_DIFFER']), newNodes: 0, measuredTraffic: null,
+  const first = await mutateBinding(env, userId, templateId, assign(0, instant - 1000, null), userId, instant)
+  await mutateBinding(env, userId, limited.id, assign(first.revision, instant - 1000, null), userId, instant)
+  expect(await resolve(instant)).toMatchObject({
+    diagnostics: [], unverifiedQuota: true, nodes: [{ id: nodeId }],
   })
-  expect(await resolve(instant)).toMatchObject({ diagnostics: [], unverifiedQuota: true, nodes: [{ id: nodeId }, { id: otherNodeId }] })
 })
 
-it('uses a single current system conversion and keeps user artifacts isolated', async () => {
+it('uses built-in conversion and keeps user artifacts isolated', async () => {
   const now = Date.now()
   const other = await makeTemplate([otherNodeId])
   await createFixtureAccount('other', crypto.randomUUID())
@@ -210,25 +172,8 @@ it('uses a single current system conversion and keeps user artifacts isolated', 
   expect(b.body).not.toContain('one.example')
   await expect(loadUnifiedArtifact(env, 'usr_2', one.token_hash!, 'mihomo')).rejects.toMatchObject({ status: 404 })
 
-  const root = '/api/admin/system/subscription-templates'
-  const admin = (path: string, body: unknown, method = 'POST') => invoke(path, withCookie(cookie, jsonRequest(body, { method })))
-  const created = await admin(root, { name: 'Unified conversion fixture', yaml: `proxy-groups:
-  - name: UnifiedPolicy
-    type: select
-    proxies: ["$SUBPANEL_NODES"]
-rules:
-  - MATCH,UnifiedPolicy
-` })
-  expect(created.status).toBe(201)
-  const { id, revision, draftHash } = await created.json() as { id: string; revision: number; draftHash: string }
-  const published = await admin(`${root}/${id}/publish`, { expectedRevision: revision, draftHash })
-  expect(published.status).toBe(200)
-  const { versionId } = await published.json() as { versionId: string }
-  expect((await admin(`${root}/default`, { templateId: id, expectedRevision: 1 }, 'PUT')).status).toBe(200)
-  const updated = await loadUnifiedArtifact(env, userId, one.token_hash!, 'mihomo')
-  expect(updated.conversionVersion).toBe(versionId)
-  expect(updated.etag).not.toBe(a.etag)
-  expect(updated.body).toContain('UnifiedPolicy')
+  expect(a.conversionVersion).toBe(b.conversionVersion)
+  expect((await invoke('/api/admin/system/subscription-templates', withCookie(cookie))).status).toBe(404)
 })
 
 it('uses per-user batch transactions and limits artifact lifetime to the next authorization transition', async () => {
@@ -250,20 +195,6 @@ it('uses per-user batch transactions and limits artifact lifetime to the next au
   await markModuleReady(env.DB, userSubscriptionPublicReady)
   const artifact = await loadUnifiedArtifact(env, userId, access.token_hash!, 'generic')
   expect(artifact.validUntil).toBe(now + 20_000)
-})
-
-it('holds legacy shares for scope review when unified public operations are enabled', async () => {
-  const now = Date.now()
-  const { subscription } = await createSubscription(env, {
-    userId, name: 'Legacy scope', groupIds: [groupId], startsAt: now - 100, expiresAt: null,
-  })
-  const { token } = await createShare(env, userId, { subscriptionId: subscription.id })
-  expect(await readShareMeta(env, token, null, null)).toMatchObject({ nodeCount: 2 })
-  await markModuleReady(env.DB, userSubscriptionPublicReady)
-  await expect(readShareMeta(env, token, null, null)).rejects.toMatchObject({ code: 'SHARE_LEGACY_SCOPE_REVIEW' })
-  expect(await verifyShadowUser(env, userId, now, await readCatalog(env))).toMatchObject({
-    matches: false, reasons: expect.arrayContaining(['LEGACY_SHARE_SCOPE_REVIEW_REQUIRED']),
-  })
 })
 
 it('keeps an account link before the first binding and exposes only display nodes', async () => {
@@ -297,65 +228,6 @@ it('returns a binding conflict when a reviewed revision is stale', async () => {
   await mutateBinding(env, userId, templateId, input, userId, now)
   const stale = await invoke(path, withCookie(cookie, jsonRequest({ ...input, requestId: crypto.randomUUID() }, { method: 'PUT' })))
   expect(stale.status).toBe(409)
-})
-
-it('backfills private templates atomically and keeps old tokens scoped through the grace period', async () => {
-  await applyBackfillMigration()
-  const startsAt = Date.now() - 1_000
-  const first = await createSubscription(env, {
-    userId, name: 'Legacy scoped test', groupIds: [], nodeIds: [nodeId], startsAt, expiresAt: null, enabled: true,
-  })
-  const second = await createSubscription(env, {
-    userId, name: 'Other legacy scope', groupIds: [], nodeIds: [otherNodeId], startsAt, expiresAt: null, enabled: true,
-  })
-  const preview = await previewBackfill(env, userId, userId)
-  expect(preview.blockers).toEqual([])
-  expect(await readBindings(env.DB, userId)).toHaveLength(0)
-  expect(JSON.stringify(preview)).not.toContain(first.token)
-  await expect(executeBackfill(env, userId, userId, 'stale')).rejects.toMatchObject({ status: 409 })
-  const attempts = await Promise.allSettled([
-    executeBackfill(env, userId, userId, preview.digest), executeBackfill(env, userId, userId, preview.digest),
-  ])
-  expect(attempts.some(result => result.status === 'fulfilled')).toBe(true)
-  for (const attempt of attempts) if (attempt.status === 'rejected') expect(attempt.reason).toMatchObject({ status: 409 })
-  const before = await readUserAccess(env.DB, { userId })
-  await executeBackfill(env, userId, userId, preview.digest)
-  expect(await readUserAccess(env.DB, { userId })).toEqual(before)
-  expect(await readBindings(env.DB, userId)).toHaveLength(2)
-  expect(await reconcileBackfill(env, userId)).toMatchObject({ matches: true, oldNodes: 2, newNodes: 2 })
-  expect((await invoke(`/sub/${first.token}`)).status).toBe(200)
-  await markModuleReady(env.DB, userSubscriptionPublicReady)
-  const setCutover = (instant: number) => env.DB.prepare('INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,?,?)')
-    .bind(cutoverSetting, String(instant), new Date().toISOString()).run()
-  await setCutover(Date.now() - 100)
-  const response = await invoke(`/sub/${first.token}`, { headers: { 'If-None-Match': '*' } })
-  expect(response.status).toBe(200)
-  expect(response.headers.get('cache-control')).toBe('private, no-store')
-  const contents = atob(await response.text())
-  expect(contents).toContain('one.example')
-  expect(contents).not.toContain('two.example')
-  const mapping = (await reconcileBackfill(env, userId)).mappings.find(item => item.legacyId === first.subscription.id)!
-  await mutateBinding(env, userId, mapping.templateId, { mode: 'pause', expectedRevision: before!.revision!, requestId: crypto.randomUUID() }, userId)
-  expect((await invoke(`/sub/${first.token}`)).status).toBe(404)
-  expect((await invoke(`/sub/${second.token}`)).status).toBe(200)
-  await setCutover(Date.now() - 90 * 86_400_000)
-  expect((await invoke(`/sub/${second.token}`)).status).toBe(404)
-  await setCutover(Date.now() - 100)
-  const rotated = await resetSubscriptionToken(env, second.subscription.id, { actorUserId: userId, actorRole: 'admin' })
-  expect((await invoke(`/sub/${second.token}`, { headers: { 'If-None-Match': '*' } })).status).toBe(404)
-  expect((await invoke(`/sub/${rotated.token}`)).status).toBe(404)
-  expect(await reconcileBackfill(env, userId)).toMatchObject({ matches: false, reasons: expect.arrayContaining(['SOURCE_CHANGED']) })
-})
-
-it('reports legacy plan limits and blocks shadow writes', async () => {
-  await applyBackfillMigration()
-  await createSubscription(env, {
-    userId, name: 'Limited test', groupIds: [], nodeIds: [nodeId], expiresAt: null, enabled: true, deviceLimit: 1,
-  })
-  const preview = await previewBackfill(env, userId, userId)
-  expect(preview.blockers).toContain('PLAN_POLICY_UNVERIFIED')
-  await expect(executeBackfill(env, userId, userId, preview.digest)).rejects.toMatchObject({ status: 409 })
-  expect(await readBindings(env.DB, userId)).toHaveLength(0)
 })
 
 it('bounds a synthetic 32-binding aggregate, rejects the next binding and node, and rejects oversized output', async () => {
