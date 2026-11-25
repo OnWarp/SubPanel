@@ -160,6 +160,7 @@ export function ShareSettingsSection() {
         {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
         {ready ? (
           <div className="sys-form">
+            <p className="sys-hint">分享功能开关控制普通用户的分享权限，管理员仍可分享。关闭期间所有分享链接暂停访问</p>
             <div className="sys-toggles">
               <FormField label="创建分享">
                 <Switch checked={form.createAllowed} disabled={saving} ariaLabel="允许创建分享" onChange={(createAllowed) => setForm({ ...form, createAllowed })} />
