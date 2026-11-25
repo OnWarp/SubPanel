@@ -86,9 +86,10 @@ function mapCatalogError(error: unknown): never {
     const status = error.code === 'CATALOG_SOURCE_NOT_FOUND' ? 404 : ['CATALOG_NODE_LIMIT', 'CATALOG_PREVIEW_STALE', 'CATALOG_SYNC_BUSY'].includes(error.code) ? 409 : error.code === 'CATALOG_SOURCE_TYPE_INVALID' ? 409 : 422
     const message = error.code === 'CATALOG_PREVIEW_STALE' ? '预览已过期或目录已变更，请重新预览'
       : error.code === 'CATALOG_SYNC_BUSY' ? '同步正在进行，请稍后重试'
+      : error.code === 'IMPORT_ZERO_NODES' ? '未检测到可导入节点，请检查格式或修正解析错误后重试'
       : error.code === 'CATALOG_NODE_LIMIT' ? '节点数量超出上限，请清理节点后重试'
       : '目录操作未完成，请检查来源和输入后重试'
-    throw apiError(status, error.code, message)
+    throw apiError(status, error.code, message, error.warnings)
   }
   if (error instanceof Error && error.message === 'GROUP_NOT_FOUND') throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   throw error
@@ -187,7 +188,7 @@ catalogRoutes.post('/preview', async (c) => {
   const input = await readJson(c, previewSchema)
   assertContentSize(input.content)
   const result = await run(async () => detectImport(input.content))
-  if (result.nodes.length === 0) throw apiError(422, 'IMPORT_ZERO_NODES', '未检测到可导入节点')
+  if (result.nodes.length === 0) throw apiError(422, 'IMPORT_ZERO_NODES', '未检测到可导入节点，请检查格式或修正解析错误后重试', result.warnings)
   const catalog = await readCatalog(c.env)
   const source = catalog.sources.find(({ id }) => id === input.sourceId)
   if (input.sourceId && !source) throw apiError(404, 'CATALOG_SOURCE_NOT_FOUND', '来源不存在')

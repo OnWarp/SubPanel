@@ -196,7 +196,7 @@ describe('navigation ownership and route compatibility', () => {
   it('places the download switch and item editor together', () => {
     const html = render('/catalog/apps')
     expect(html).toContain('sys-app-downloads-title')
-    expect(html).toContain('添加 APP')
+    expect(html).toContain('添加客户端')
     expect(render('/operations/notices')).toContain('公告')
   })
   it('keeps security, appearance and logout in the administrator avatar menu', () => {

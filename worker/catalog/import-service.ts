@@ -92,12 +92,14 @@ type ImportErrorCode =
 
 export class CatalogImportError extends Error {
   readonly code: ImportErrorCode
+  readonly warnings?: SourceWarning[]
   httpStatus?: number
 
-  constructor(code: ImportErrorCode) {
+  constructor(code: ImportErrorCode, warnings?: SourceWarning[]) {
     super(code)
     this.name = 'CatalogImportError'
     this.code = code
+    this.warnings = warnings
   }
 }
 
@@ -113,7 +115,7 @@ function safeImportResult(content: string, format?: ImportFormat): ImportResult 
     if (error instanceof Error && error.message === 'UNSUPPORTED_IMPORT_FORMAT') fail('UNSUPPORTED_IMPORT_FORMAT')
     fail('IMPORT_FAILED')
   }
-  if (result.nodes.length === 0) fail('IMPORT_ZERO_NODES')
+  if (result.nodes.length === 0) throw new CatalogImportError('IMPORT_ZERO_NODES', result.warnings)
   return result
 }
 
@@ -693,11 +695,11 @@ export async function previewSourceSync(env: DataEnv, sourceId: string, options:
     if (source.type !== 'remote') fail('CATALOG_SOURCE_TYPE_INVALID')
     const startedAt = options.now ?? new Date().toISOString()
     try {
-      const { prepared } = await prepareSync(env, snapshot, source, signal, options)
+      const { prepared, parsed } = await prepareSync(env, snapshot, source, signal, options)
       await checkCancelled()
       const id = crypto.randomUUID()
       await env.DATA.put(previewKey(id), JSON.stringify(prepared), { expirationTtl: 600 })
-      return { id, diff: prepared.diff, format: prepared.format, durationMs: prepared.durationMs, httpStatus: prepared.httpStatus }
+      return { id, diff: prepared.diff, format: prepared.format, warnings: parsed.warnings, durationMs: prepared.durationMs, httpStatus: prepared.httpStatus }
     } catch (error) {
       const code = signal.aborted ? 'REMOTE_CANCELLED' : safeErrorCode(error)
       const finishedAt = new Date().toISOString()

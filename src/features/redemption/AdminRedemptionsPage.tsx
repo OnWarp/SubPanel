@@ -1,24 +1,29 @@
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { api, jsonBody } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DateTimeInput, FormSelect, FormStack, Input, Textarea } from '../../ui/Controls'
 import { CopyButton } from '../../ui/CopyButton'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
+import { DetailList } from '../../ui/DetailList'
 import { ErrorState } from '../../ui/ErrorState'
 import { FilterBar } from '../../ui/FilterBar'
 import { FormField } from '../../ui/FormField'
 import { LoadingState } from '../../ui/LoadingState'
+import { DetailTabs, SectionTabs } from '../../ui/SectionTabs'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
-import { entitlementTemplatesPath, nodePolicyLabel, quotaLabel, termLabel, type EntitlementTemplate, type EntitlementVersion } from '../delivery/entitlement-types'
+import { distinguishTemplateName, durationLabel, entitlementTemplatesPath, nodePolicyLabel, quotaLabel, termLabel, type EntitlementConfig, type EntitlementTemplate, type EntitlementVersion } from '../delivery/entitlement-types'
 import { batchesPath, errorText, recordsPath, useRedemptionPage, type RedemptionRecord } from './api'
 
 type Batch = {
   id: string; name: string; templateName: string; templateVersion: number; quantity: number; usedCount: number
   maxUses: number; remaining: number; redeemDeadline: number; status: 'active' | 'disabled' | 'expired'
+  durationValue?: number | null; durationUnit?: EntitlementConfig['duration']['unit'] | null
   createdBy: string; createdAt: string; note: string
 }
 type Code = { id: string; tail: string; usedCount: number; maxUses: number; revoked: number }
@@ -34,6 +39,12 @@ const auditActions: Record<string, string> = {
 }
 
 function date(value: string | number) { return new Date(value).toLocaleString() }
+
+function batchDurationLabel(batch: Batch) {
+  return batch.durationValue != null && batch.durationUnit
+    ? durationLabel({ value: batch.durationValue, unit: batch.durationUnit })
+    : '未记录'
+}
 
 function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (result: Release) => void }) {
   const [release, setRelease] = useState<Release>()
@@ -112,7 +123,7 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
     }
   }
 
-  return <Dialog open title={release ? '兑换码已生成' : '生成兑换码'} size={release ? 'm' : 'l'} busy={busy}
+  return <Dialog appearance="content" open title={release ? '兑换码已生成' : '生成兑换码'} size={release ? 'm' : 'l'} busy={busy}
     dirty={!!(release || name || note || deadline || templateId || quantity !== '1' || uses !== '1')}
     sensitive={!!release}
     discardCopy={release ? { message: '关闭后仅显示尾码，请确认已保存完整码', stay: '返回结果', confirm: '确认关闭' } : undefined}
@@ -148,11 +159,11 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
             <FormSelect id="batch-template" aria-label="订阅模板" value={templateId} required disabled={busy || !templates?.length}
               onChange={(event) => { setTemplateId(event.target.value); setVersionId(''); setSelection(undefined); setError('') }}>
               <option value="">选择模板</option>
-              {templates?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              {templates?.map((item) => <option key={item.id} value={item.id}>{distinguishTemplateName(item, templates)}</option>)}
             </FormSelect>
           </FormField>
           {templateId && <FormField label="固定版本" htmlFor="batch-version"
-            hint={config ? `${termLabel(config)} · ${quotaLabel(config)} · ${nodePolicyLabel(config)}` : undefined}>
+            hint={config ? `兑换后授权时长 ${termLabel(config)}，从兑换时起算 · ${quotaLabel(config)} · ${nodePolicyLabel(config)}` : undefined}>
             <FormSelect id="batch-version" aria-label="固定版本" value={versionId} disabled={busy || !versions.length}
               onChange={(event) => setVersionId(event.target.value)}>
               {versions.length === 0 && <option value="">正在加载版本</option>}
@@ -165,7 +176,7 @@ function BatchEditor({ onClose, onRelease }: { onClose: () => void; onRelease: (
           <FormField label="每码使用次数" htmlFor="batch-uses" hint="每个账户对同一码最多兑换一次">
             <Input id="batch-uses" type="number" min={1} max={100} required value={uses} onChange={(event) => setUses(event.target.value)} />
           </FormField>
-          <FormField label="兑换截止时间" htmlFor="batch-deadline">
+          <FormField label="可兑截止时间" htmlFor="batch-deadline">
             <DateTimeInput id="batch-deadline" required value={deadline} onChange={(event) => setDeadline(event.target.value)} />
           </FormField>
           <FormField label="备注" htmlFor="batch-note">
@@ -184,6 +195,7 @@ function PagedTable<T extends { id: string }>({ path, page, onPageChange, column
   if (list.error) return <ErrorState message={list.error} onRetry={list.reload} />
   return <DataTable columns={columns} rows={list.data?.items ?? []} rowKey={(row) => row.id} empty={empty}
     loadingLabel={list.loading ? '正在加载' : undefined}
+    summary={list.data ? `共 ${list.data.total} 条` : undefined}
     pagination={list.data && list.data.total > list.data.pageSize ? {
       page, pageCount: Math.ceil(list.data.total / list.data.pageSize), onPageChange, compact: true,
     } : undefined} />
@@ -204,16 +216,18 @@ export function AdminRedemptionsPage() {
   const [error, setError] = useState('')
   const [detail, setDetail] = useState<{ id: string; batch?: Batch; error?: string }>()
 
+  function nextSearch(values: Record<string, string>) {
+    const next = new URLSearchParams(search)
+    if (!('page' in values)) next.delete('page')
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value)
+      else next.delete(key)
+    }
+    return next
+  }
+
   function update(values: Record<string, string>, replace = false) {
-    setSearch((previous) => {
-      const next = new URLSearchParams(previous)
-      if (!('page' in values)) next.delete('page')
-      for (const [key, value] of Object.entries(values)) {
-        if (value) next.set(key, value)
-        else next.delete(key)
-      }
-      return next
-    }, { replace })
+    setSearch(nextSearch(values), { replace })
   }
 
   useEffect(() => {
@@ -249,30 +263,36 @@ export function AdminRedemptionsPage() {
     path: `${batchesPath}/${item.id}/disable`,
   })
 
-  return <div className="page-stack resource-pages redemption-admin">
-    <PageHeader title="兑换码管理" actions={<button className="button primary" type="button"
-      onClick={() => setEditing(true)}>生成兑换码</button>} />
-    <div className="redemption-actions"><Link className="button secondary" to="/delivery/subscriptions">返回订阅管理</Link></div>
+  const views = batchId ? [['codes', '兑换码'], ['records', '兑换记录'], ['audit', '操作日志']]
+    : [['batches', '批次'], ['records', '兑换记录']]
+  const ViewTabs = batchId ? DetailTabs : SectionTabs
+  const viewUrl = (key: string) => `/delivery/redemptions?${nextSearch({ view: key })}`
+
+  return <PageContainer width={batchId ? "detail" : "list"}>
+    <div className="page-stack redemption-admin">
+    <PageHeader placement="inline" title={batch?.name ?? "兑换码管理"}
+      leading={batchId ? <button type="button" className="button ghost" onClick={() => update({ batch: '', view: '' })}>← 返回批次</button> : undefined}
+      actions={!batchId ? <button className="button primary" type="button"
+      onClick={() => setEditing(true)}>生成兑换码</button> : undefined} />
+    {!batchId && <AdminModuleTabs />}
     {error && <StatusMessage tone="error">{error}</StatusMessage>}
     {batchId && (current?.error ? <ErrorState message={current.error} onRetry={() => setRefresh((value) => value + 1)} />
-      : !batch ? <LoadingState label="正在加载批次" /> : <section className="data-section redemption-section">
-        <h2>{batch.name}</h2>
-        <p>{batch.templateName} · v{batch.templateVersion} · {batchStatuses[batch.status]}</p>
-        <p>共 {batch.quantity} 码 · 已兑 {batch.usedCount} 次 · 可兑 {batch.remaining} 次</p>
-        <p>兑换截止 {date(batch.redeemDeadline)}</p>
-        {batch.note && <p>{batch.note}</p>}
+      : !batch ? <LoadingState label="正在加载批次" /> : <section className="page-stack">
+        <DetailList items={[
+          { id: 'template', label: '模板版本', value: `${batch.templateName} · v${batch.templateVersion}` },
+          { id: 'status', label: '状态', value: batchStatuses[batch.status] },
+          { id: 'usage', label: '兑换情况', value: `${batch.quantity} 码 · 已兑 ${batch.usedCount} 次 · 可兑 ${batch.remaining} 次` },
+          { id: 'deadline', label: '可兑截止', value: date(batch.redeemDeadline) },
+          { id: 'duration', label: '兑换后授权时长', value: batchDurationLabel(batch) },
+          ...(batch.note ? [{ id: 'note', label: '备注', value: batch.note }] : []),
+        ]} />
         <div className="redemption-actions">
-          <button type="button" className="button secondary" onClick={() => update({ batch: '', view: '' })}>返回批次</button>
           {batch.status === 'active' && <button type="button" className="button danger" onClick={() => disable(batch)}>停用批次</button>}
         </div>
       </section>)}
-    <section className="data-section redemption-section">
-      <div className="redemption-actions" aria-label="兑换管理视图">
-        {(batchId ? [['codes', '兑换码'], ['records', '兑换记录'], ['audit', '审计']]
-          : [['batches', '批次'], ['records', '兑换记录']]).map(([key, label]) =>
-          <button type="button" key={key} className={`button ${view === key ? 'primary' : 'secondary'}`}
-            aria-pressed={view === key} onClick={() => update({ view: key })}>{label}</button>)}
-      </div>
+    <section className="page-stack">
+      <ViewTabs label={batchId ? '批次详情' : '兑换管理视图'} activeTo={viewUrl(view)}
+        tabs={views.map(([key, label]) => ({ to: viewUrl(key), label }))} />
       {view === 'batches' && <>
         <FilterBar>
           <Input aria-label="搜索批次" placeholder="搜索批次" value={q} maxLength={100} onChange={(event) => update({ q: event.target.value }, true)} />
@@ -285,7 +305,8 @@ export function AdminRedemptionsPage() {
             { key: 'name', header: '批次', render: (item) => <button type="button" className="button ghost" onClick={() => update({ batch: item.id, view: 'codes' })}>{item.name}</button> },
             { key: 'version', header: '模板版本', render: (item) => `${item.templateName} · v${item.templateVersion}` },
             { key: 'quantity', header: '码数' }, { key: 'usedCount', header: '已兑次数' }, { key: 'remaining', header: '可兑次数' },
-            { key: 'deadline', header: '兑换截止', render: (item) => date(item.redeemDeadline) },
+            { key: 'deadline', header: '可兑截止', render: (item) => date(item.redeemDeadline) },
+            { key: 'duration', header: '兑换后授权时长', render: batchDurationLabel },
             { key: 'status', header: '状态', render: (item) => <StatusBadge tone={item.status === 'active' ? 'success' : 'muted'}>{batchStatuses[item.status]}</StatusBadge> },
             { key: 'createdBy', header: '创建人' },
           ]} />
@@ -308,6 +329,7 @@ export function AdminRedemptionsPage() {
         })}`} empty="暂无兑换记录" columns={[
           { key: 'batchName', header: '批次' }, { key: 'tail', header: '尾码' }, { key: 'userId', header: '用户' },
           { key: 'subscriptionName', header: '订阅' }, { key: 'subscriptionId', header: '订阅 ID' },
+          { key: 'expiresAt', header: '授权到期', render: (item) => item.expiresAt === null ? '永久' : date(item.expiresAt) },
           { key: 'redeemedAt', header: '兑换时间', render: (item) => date(item.redeemedAt) },
         ]} />
       </>}
@@ -321,7 +343,8 @@ export function AdminRedemptionsPage() {
       setRefresh((value) => value + 1)
       update({ batch: result.id, view: 'codes' })
     }} />}
-    <ConfirmDialog open={!!pending} title={pending?.title ?? ''} description={pending?.description ?? ''}
+    <ConfirmDialog appearance="content" open={!!pending} title={pending?.title ?? ''} description={pending?.description ?? ''}
       confirmLabel="确认" danger busy={busy} onClose={() => setPending(undefined)} onConfirm={confirm} />
   </div>
+    </PageContainer>
 }

@@ -55,10 +55,10 @@ describe('share URI imports', () => {
   })
 
   it('keeps valid siblings when one URI is invalid', () => {
-    const content = `${uriList.trim().split('\n')[0]}\nvless://not-a-uuid@bad.example.com:443`
+    const content = `${uriList.trim().split('\n')[0]}\n\nvless://not-a-uuid@bad.example.com:443`
     const result = parseUriList(content)
     expect(result.nodes).toHaveLength(1)
-    expect(result.warnings).toEqual([{ code: 'INVALID_URI', message: 'Unable to parse vless URI', line: 2 }])
+    expect(result.warnings).toEqual([{ code: 'INVALID_URI', message: 'Unable to parse vless URI', line: 3 }])
     expect(JSON.stringify(result.warnings)).not.toContain('not-a-uuid')
   })
 

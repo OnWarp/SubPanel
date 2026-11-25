@@ -1,4 +1,6 @@
-import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
+import { ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -272,9 +274,11 @@ export function GroupsPage() {
   ]
 
   return (
-    <div className="page-stack resource-pages">
+    <PageContainer width="list">
+      <div className="page-stack resource-pages phase3-catalog">
       <section className="catalog-data-section" aria-labelledby="groups-title">
-        <PageHeader id="groups-title" title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+        <PageHeader placement="inline" id="groups-title" title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+        <AdminModuleTabs />
         <FilterBar className="catalog-filters" searchRef={searchRef} onReset={query ? () => setQuery('') : undefined}>
           <SearchInput inputRef={searchRef} label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
         </FilterBar>
@@ -282,14 +286,13 @@ export function GroupsPage() {
         {batchError && <ErrorState message={batchError} />}
         <BatchToolbar compact selectedCount={selected.size} totalCount={filteredGroups.length} onSelectAll={() => setSelected(new Set(filteredGroups.map((group) => group.id)))} onClear={() => { setSelected(new Set()); searchRef.current?.focus() }} actions={actions} busy={busy} progress={progress} />
         {!catalog && error ? null : !loading && groups.length === 0 ? (
-          <EmptyState title="暂无分组"><button className="button secondary" type="button" onClick={openCreate} aria-label="创建首个分组">添加分组</button></EmptyState>
+          <EmptyState title="暂无分组" />
         ) : (
-          <DataTable flat columns={columns} rows={filteredGroups} loadingLabel={loading && !catalog ? '正在加载分组' : undefined} rowKey={(group) => group.id} empty="暂无匹配分组" />
+          <DataTable columns={columns} rows={filteredGroups} loadingLabel={loading && !catalog ? '正在加载分组' : undefined} rowKey={(group) => group.id} empty="暂无匹配分组" summary={catalog && `共 ${filteredGroups.length} 个分组`} />
         )}
-        <ResourceFooter count={filteredGroups.length} unit="个分组" />
       </section>
 
-      <Dialog open={editing !== null} title={choosingNodes ? '选择关联节点' : editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} focusStep={choosingNodes ? 'nodes' : 'details'} size={choosingNodes ? 'l' : 'm'} dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={closeEdit} returnFocusRef={editorTrigger}
+      <Dialog appearance="content" open={editing !== null} title={choosingNodes ? '选择关联节点' : editing === 'create' ? '添加分组' : '编辑分组'} busy={busy} focusStep={choosingNodes ? 'nodes' : 'details'} size="l" dirty={JSON.stringify(form) !== JSON.stringify(baseline)} onClose={closeEdit} returnFocusRef={editorTrigger}
         footer={(cancel) => choosingNodes ? <button className="button primary" type="button" data-dialog-initial-focus onClick={() => setChoosingNodes(false)}>完成</button> : <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
           <button className="button primary" form="group-editor" type="submit" disabled={busy || !rulesPreview}>{busy ? '保存中' : editing === 'create' ? '保存分组' : '保存修改'}</button>
@@ -342,7 +345,8 @@ export function GroupsPage() {
         </form>
       </Dialog>
 
-      <ConfirmDialog open={confirmDelete} title="删除分组" description={`将删除选中的 ${selected.size} 个分组${affectedSubscriptions ? ` · 有 ${affectedSubscriptions} 个订阅引用这些分组` : ''}`} confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={deleteSelected} />
+      <ConfirmDialog appearance="content" open={confirmDelete} title="删除分组" description={`将删除选中的 ${selected.size} 个分组${affectedSubscriptions ? ` · 有 ${affectedSubscriptions} 个订阅引用这些分组` : ''}`} confirmLabel="确认删除" danger busy={busy} onClose={() => setConfirmDelete(false)} onConfirm={deleteSelected} />
     </div>
+    </PageContainer>
   )
 }

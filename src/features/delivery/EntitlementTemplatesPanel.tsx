@@ -1,3 +1,5 @@
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
 import { Button } from '../../ui/Button'
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
@@ -21,7 +23,7 @@ import { ResourceRowActions } from '../admin-resources/ResourceCard'
 import { formatDate } from '../catalog/catalog-utils'
 import { NodeAssignmentPicker } from './NodeAssignmentPicker'
 import {
-  BYTES_PER_GIB, ENTITLEMENT_STATUS, MAX_QUOTA_GIB, TERM_UNITS, entitlementTemplatesPath, nodePolicyLabel, quotaLabel, termLabel,
+  BYTES_PER_GIB, ENTITLEMENT_STATUS, MAX_QUOTA_GIB, TERM_UNITS, distinguishTemplateName, entitlementTemplatesPath, nodePolicyLabel, quotaLabel, termLabel,
   type EntitlementConfig, type EntitlementTemplate, type EntitlementVersion,
 } from './entitlement-types'
 
@@ -160,8 +162,11 @@ export function EntitlementTemplatesPage() {
   }
 
   const columns: DataTableColumn<EntitlementTemplate>[] = [
-    { key: 'name', header: '名称' },
-    { key: 'resources', header: '资源数', render: ({ currentVersion: { config } }) => config.groupIds.length + config.nodeIds.length },
+    { key: 'name', header: '名称', render: (template) => distinguishTemplateName(template, templates) },
+    { key: 'resources', header: '节点范围', render: ({ currentVersion: { config } }) => {
+      const total = config.groupIds.length + config.nodeIds.length
+      return total ? `${total} 项 · ${nodePolicyLabel(config)}` : '无'
+    } },
     { key: 'boundUserCount', header: '绑定用户数', align: 'right' },
     { key: 'term', header: '默认时长', render: ({ currentVersion }) => termLabel(currentVersion.config) },
     { key: 'status', header: '状态', render: ({ status }) => <StatusBadge tone={status === 'enabled' ? 'success' : 'muted'} size="sm">{ENTITLEMENT_STATUS[status]}</StatusBadge> },
@@ -188,20 +193,21 @@ export function EntitlementTemplatesPage() {
   const createButton = <Button variant="primary" size="page" onClick={() => openEditor()}><Plus aria-hidden size={18} />新建模板</Button>
 
   return (
-    <section className="page-stack del-templates-page" aria-label="订阅模板">
-      <PageHeader title="权益模板" />
+    <PageContainer width="list">
+      <section className="page-stack" aria-label="权益模板">
+      <PageHeader placement="inline" title="权益模板" actions={createButton} />
+      <AdminModuleTabs />
       {error && !editor && !pending && <StatusMessage tone="error">{error}</StatusMessage>}
       {loading ? <LoadingState label="正在加载订阅模板" /> : loadError ? <ErrorState message={loadError} onRetry={() => { void load() }} /> :
-        templates.length === 0 ? <><EmptyState title="暂无订阅模板">{createButton}</EmptyState></> : <>
+        templates.length === 0 ? <EmptyState title="暂无权益模板" /> : <>
           <FilterBar className="del-template-filters">
             <SearchInput value={query} onChange={setQuery} label="搜索模板" placeholder="搜索模板名称" />
             <FormSelect aria-label="模板状态" value={status} onChange={(event) => setStatus(event.currentTarget.value)}>
               <option value="">全部状态</option>
               {Object.entries(ENTITLEMENT_STATUS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </FormSelect>
-            {createButton}
           </FilterBar>
-          <DataTable columns={columns} rows={visible} rowKey={({ id }) => id} empty="没有匹配的订阅模板" className="del-template-table" />
+          <DataTable columns={columns} rows={visible} rowKey={({ id }) => id} empty="暂无匹配模板" summary={`${visible.length} 个模板`} />
         </>}
       <Dialog size="l" appearance="content" open={!!editor} title={original ? '编辑权益模板' : owner ? '新建专属模板' : '新建权益模板'} busy={busy}
         dirty={!!draft && JSON.stringify(draft) !== JSON.stringify(baseDraft)} onClose={closeEditor}
@@ -218,7 +224,7 @@ export function EntitlementTemplatesPage() {
             <FormField label="管理员备注" htmlFor="entitlement-description"><Input id="entitlement-description" maxLength={2000} value={draft.description}
               onChange={(event) => changeDraft({ description: event.currentTarget.value })} /></FormField>
           </FormGroup>
-          <FormGroup title="有效期与流量">
+          <FormGroup title="默认时长与流量">
             <div className="content-form-grid">
               <FormField label="期限" htmlFor="entitlement-duration"><Input id="entitlement-duration" required type="number" min={1} max={36_500} step={1}
                 value={config.duration.value || ''} onChange={(event) => changeConfig({ duration: { ...config.duration, value: Number(event.currentTarget.value) } })} /></FormField>
@@ -259,7 +265,7 @@ export function EntitlementTemplatesPage() {
           {error && <StatusMessage tone="error">{error}</StatusMessage>}
         </form>}
       </Dialog>
-      <Dialog size="l" appearance="content" open={!!history} title={history ? `${history.template.name} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
+      <Dialog size="l" appearance="content" open={!!history} title={history ? `${distinguishTemplateName(history.template, templates)} · 版本历史` : '版本历史'} onClose={() => setHistory(null)}>
         <p className="sp-form-hint">已绑定用户读取最新版，这里只展示历史配置</p>
         {history?.error && <ErrorState message={history.error} onRetry={() => { void openHistory(history.template) }} />}
         {history && !history.versions && !history.error && <LoadingState label="正在加载版本" />}
@@ -278,11 +284,12 @@ export function EntitlementTemplatesPage() {
           </details>
         })}
       </Dialog>
-      <ConfirmDialog open={!!pending} appearance="content" title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
+      <ConfirmDialog appearance="content" open={!!pending} title={pending?.action === 'archive' ? '归档模板' : '停用模板'}
         description={error || `将影响 ${pending?.template.boundUserCount ?? 0} 位已绑定用户`}
         confirmLabel={pending?.action === 'archive' ? '确认归档' : '确认停用'} danger busy={busy}
         onClose={() => { setPending(null); setError('') }}
         onConfirm={() => { if (pending) void mutate(pending.template, pending.action) }} />
     </section>
+    </PageContainer>
   )
 }

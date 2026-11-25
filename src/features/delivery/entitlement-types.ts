@@ -38,7 +38,25 @@ export type EntitlementTemplate = {
 export const ENTITLEMENT_STATUS = { enabled: '已启用', disabled: '已停用', archived: '已归档' } as const
 
 export function termLabel(config: EntitlementConfig) {
-  return `${config.duration.value} ${TERM_UNITS[config.duration.unit]}`
+  return durationLabel(config.duration)
+}
+
+export function durationLabel({ value, unit }: EntitlementConfig['duration']) {
+  return `${value} ${TERM_UNITS[unit]}`
+}
+
+export function distinguishTemplateName(template: EntitlementTemplate, templates: readonly EntitlementTemplate[]) {
+  const sameName = templates.filter((other) => other.name === template.name)
+  if (sameName.length < 2) return template.name
+
+  const isPrivate = Boolean(template.ownerUserId)
+  const sameScope = sameName.filter((other) => Boolean(other.ownerUserId) === isPrivate)
+  const scope = isPrivate ? '专属' : '共享'
+  if (sameScope.length < 2) return `${template.name}（${scope}）`
+
+  const prefix = template.id.slice(0, 8)
+  const id = sameScope.some((other) => other.id !== template.id && other.id.startsWith(prefix)) ? template.id : prefix
+  return `${template.name}（${scope} · ${id}）`
 }
 
 export function quotaLabel(config: EntitlementConfig) {

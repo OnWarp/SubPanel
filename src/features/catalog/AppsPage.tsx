@@ -1,4 +1,6 @@
-import { OperationsActions, OperationsFooter, OperationsHeading } from '../admin/OperationsCard'
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
+import { RowActions } from '../../ui/RowActions'
 import { Input, Textarea, FormSelect } from '../../ui/Controls'
 import { FilterBar } from '../../ui/FilterBar'
 import { SearchInput } from '../../ui/SearchInput'
@@ -251,15 +253,15 @@ export function AppsPage() {
     try {
       if (editor?.mode === 'edit') {
         await api(`/api/admin/apps/${editor.app.id}`, { method: 'PUT', body: jsonBody(body) })
-        toast.notify('APP 已保存')
+        toast.notify('客户端已保存')
       } else {
         await api('/api/admin/apps', { method: 'POST', body: jsonBody(body) })
-        toast.notify('APP 已添加')
+        toast.notify('客户端已添加')
       }
       setEditor(null)
       await load()
     } catch (cause) {
-      setEditorError(errorMessage(cause, '保存 APP 失败'))
+      setEditorError(errorMessage(cause, '保存客户端 失败'))
     } finally {
       setBusy(false)
     }
@@ -328,33 +330,30 @@ export function AppsPage() {
       key: 'actions',
       header: '操作',
       align: 'right',
-      render: (app) => (
-        <OperationsActions label={`管理 APP ${app.name}`}>
-          <button className="button ghost" type="button" aria-label={`${app.enabled ? '停用' : '启用'} ${app.name}`} disabled={busy} onClick={() => { void toggleEnabled(app) }}>{app.enabled ? '停用' : '启用'}</button>
-          <button className="button ghost" type="button" aria-label={`编辑 ${app.name}`} disabled={busy} onClick={() => openEdit(app)}>编辑</button>
-          <button className="button ghost" type="button" aria-label={`删除 ${app.name}`} disabled={busy} onClick={() => setPendingDelete(app)}>删除</button>
-        </OperationsActions>
-      ),
+      render: (app) => <RowActions label={`管理客户端 ${app.name}`} actions={[
+        { label: '编辑', accessibleLabel: `编辑 ${app.name}`, disabled: busy, onClick: () => openEdit(app) },
+        { label: app.enabled ? '停用' : '启用', accessibleLabel: `${app.enabled ? '停用' : '启用'} ${app.name}`, disabled: busy, onClick: () => { void toggleEnabled(app) } },
+        { label: '删除', accessibleLabel: `删除 ${app.name}`, danger: true, disabled: busy, onClick: () => setPendingDelete(app) },
+      ]} />,
     },
   ]
 
 
   return (
-    <div className="page-stack app-page ops-page">
-      <PageHeader title="客户端下载" />
-      <section className="data-section app-data" aria-label="APP 列表">
-        <OperationsHeading action={
-          <>
-            <Link className="button secondary" to="/apps">查看用户端</Link>
-            <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加 APP</button>
-          </>
-        } />
-        {loading ? <LoadingState label="正在加载 APP" /> : null}
+    <PageContainer width="list">
+      <div className="page-stack app-page ops-page phase3-catalog">
+      <PageHeader placement="inline" title="客户端下载" actions={<>
+        <Link className="button secondary" to="/apps">查看用户端</Link>
+        <button ref={createButton} className="button primary" type="button" onClick={openCreate}>添加客户端</button>
+      </>} />
+      <AdminModuleTabs />
+      <section className="page-stack" aria-label="客户端列表">
+        {loading ? <LoadingState label="正在加载客户端" /> : null}
         {!loading && error ? <ErrorState message={error} onRetry={() => { load().catch(() => undefined) }} /> : null}
         {!loading && !error ? (
           <>
             <FilterBar className="app-filters">
-              <SearchInput className="app-search" label="搜索 APP" placeholder="搜索名称或简介" value={query} onChange={setQuery} />
+              <SearchInput className="app-search" label="搜索客户端" placeholder="搜索名称或简介" value={query} onChange={setQuery} />
               <label className="filter-field">
                 <span>状态</span>
                 <FormSelect aria-label="按启用筛选" value={enabledFilter} onChange={(event) => setEnabledFilter(event.currentTarget.value as EnabledFilter)}>
@@ -368,20 +367,21 @@ export function AppsPage() {
               columns={columns}
               rows={visible}
               rowKey={(app) => app.id}
-              empty="没有符合筛选条件的 APP"
+              empty={catalog?.apps.length ? '暂无匹配客户端' : '暂无客户端'}
+              summary={`共 ${filtered.length} 个客户端`}
+              pagination={{ page, pageCount, onPageChange: setPage, compact: true }}
             />
-            <OperationsFooter total={filtered.length} unit="个" pagination={{ page, pageCount, onPageChange: setPage }} />
           </>
         ) : null}
       </section>
 
       <AppDownloadsSection />
 
-      <Dialog open={editor !== null} title={editor?.mode === 'create' ? '添加 APP' : '编辑 APP'} busy={busy} size="l" onClose={closeEditor}
+      <Dialog open={editor !== null} title={editor?.mode === 'create' ? '添加客户端' : '编辑客户端'} busy={busy} size="l" appearance="content" onClose={closeEditor}
         dirty={JSON.stringify(form) !== JSON.stringify(baseline)}
         footer={(cancel) => <>
           <button className="button secondary" type="button" disabled={busy} onClick={cancel}>取消</button>
-          <button className="button primary" form="app-editor" type="submit" disabled={busy}>{busy ? '保存中' : editor?.mode === 'create' ? '保存 APP' : '保存修改'}</button>
+          <button className="button primary" form="app-editor" type="submit" disabled={busy}>{busy ? '保存中' : editor?.mode === 'create' ? '保存客户端' : '保存修改'}</button>
         </>}
       >
         <form id="app-editor" className="app-form" autoComplete="off" onSubmit={saveApp}>
@@ -431,7 +431,7 @@ export function AppsPage() {
         </form>
       </Dialog>
 
-      <ConfirmDialog
+      <ConfirmDialog appearance="content"
         open={pendingDelete !== null}
         title="删除 APP"
         description={pendingDelete ? `将删除「${pendingDelete.name}」及其全部平台配置，此操作无法撤销` : '将删除该 APP 及其全部平台配置'}
@@ -443,5 +443,6 @@ export function AppsPage() {
         returnFocusRef={createButton}
       />
     </div>
+    </PageContainer>
   )
 }

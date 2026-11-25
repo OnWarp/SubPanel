@@ -1,5 +1,7 @@
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
 import { Button } from '../../ui/Button'
-import { ResourceFooter, ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
+import { ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input, Textarea } from '../../ui/Controls'
 import { CheckCircle2, Plus, ShieldCheck, ShieldOff, XCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -15,6 +17,8 @@ import { SearchInput } from '../../ui/SearchInput'
 import { StatusBadge } from '../../ui/StatusBadge'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
+import { DetailList } from '../../ui/DetailList'
+import { PasswordInput } from '../../ui/PasswordInput'
 import { Dialog } from '../../ui/Dialog'
 import { Link } from 'react-router-dom'
 import { useToast } from '../../ui/Toast'
@@ -42,14 +46,19 @@ type NodeForm = {
   retained: boolean
 }
 
-type BatchMutation = 'disable' | 'retain'
-type DirectMutation = 'enable' | 'unretain'
+const batchActions = {
+  enable: { label: '启用', impact: '重新参与订阅分发，仍受来源和分组规则限制' },
+  disable: { label: '停用', impact: '从后续订阅交付中移除' },
+  retain: { label: '保留', impact: '失去最后一个来源后仍保留' },
+  unretain: { label: '取消保留', impact: '失去最后一个来源后可被清理' },
+}
+type BatchMutation = keyof typeof batchActions
 type NodeRow = CatalogNode & { sequence: number }
 type NodeStatusFilter = 'all' | 'enabled' | 'disabled'
 
 const NODE_STATUS_FILTERS: Array<{ value: NodeStatusFilter; label: string }> = [
   { value: 'all', label: '全部' },
-  { value: 'enabled', label: '正常' },
+  { value: 'enabled', label: '启用' },
   { value: 'disabled', label: '已停用' },
 ]
 
@@ -61,7 +70,7 @@ function errorMessage(cause: unknown, fallback: string): string {
 }
 
 function nodeStatus(node: CatalogNode): string {
-  return node.enabled ? node.missingSince ? '待失效' : '正常' : '已停用'
+  return node.enabled ? node.missingSince ? '待失效' : '启用' : '已停用'
 }
 
 export function NodesPage() {
@@ -89,6 +98,8 @@ export function NodesPage() {
   const [testClient, setTestClient] = useState('mihomo')
   const [testResult, setTestResult] = useState<{ outputNodes: number; body: string; diagnostics: Array<{ code: string; message: string }> } | null>(null)
   const [editorError, setEditorError] = useState('')
+  const [detail, setDetail] = useState<CatalogNode | null>(null)
+  const [groupId, setGroupId] = useState('all')
   const [pending, setPending] = useState<BatchMutation | null>(null)
   const [progress, setProgress] = useState('')
   const toast = useToast()
@@ -117,19 +128,25 @@ export function NodesPage() {
   const sources = catalog?.sources ?? EMPTY_SOURCES
   const sourceNames = useMemo(() => new Map(sources.map((source) => [source.id, source.name])), [sources])
   const protocols = useMemo(() => [...new Set(nodes.map((node) => node.protocol))].sort(), [nodes])
+  const groups = catalog?.groups
+  const groupMembers = useMemo(() => groups?.map((group) => ({
+    id: group.id, name: group.name, members: groupNodeIds(group, sources, nodes),
+  })) ?? [], [groups, sources, nodes])
+  const groupNames = (node: CatalogNode) => groupMembers.filter(({ members }) => members.has(node.id)).map(({ name }) => name).join('、') || '—'
   const filteredNodes = useMemo(() => nodes.filter((node) => {
     if (!matchesText(`${node.displayName} ${node.server} ${node.protocol}`, query)) return false
     if (protocol !== 'all' && node.protocol !== protocol) return false
     if (sourceId !== 'all' && !node.sourceIds.includes(sourceId)) return false
+    if (groupId !== 'all' && !groupMembers.some(({ id, members }) => id === groupId && members.has(node.id))) return false
     if (status === 'enabled' && !node.enabled) return false
     if (status === 'disabled' && node.enabled) return false
     return true
-  }), [nodes, protocol, query, sourceId, status])
+  }), [groupId, groupMembers, nodes, protocol, query, sourceId, status])
   const pageCount = Math.max(1, Math.ceil(filteredNodes.length / pageSize))
   const visibleNodes = useMemo(() => filteredNodes.slice((page - 1) * pageSize, page * pageSize), [filteredNodes, page, pageSize])
   const visibleRows = useMemo<NodeRow[]>(() => visibleNodes.map((node, index) => ({ ...node, sequence: (page - 1) * pageSize + index + 1 })), [page, pageSize, visibleNodes])
 
-  useEffect(() => { setPage(1) }, [pageSize, protocol, query, sourceId, status])
+  useEffect(() => { setPage(1) }, [groupId, pageSize, protocol, query, sourceId, status])
   useEffect(() => { setPage((current) => Math.min(current, pageCount)) }, [pageCount])
 
   useEffect(() => {
@@ -139,6 +156,7 @@ export function NodesPage() {
 
   const openEdit = (node: CatalogNode, trigger: HTMLButtonElement | null) => {
     editorTrigger.current = trigger
+    setDetail(null)
     setEditing(node)
     setAdding(false)
     setTestResult(null)
@@ -156,7 +174,7 @@ export function NodesPage() {
     if (!editing) return
     let active = true
     void catalogPreview<NodeDetails>(`/api/admin/catalog/nodes/${editing.id}/details`, {})
-      .then((details) => { if (active) setConnection(details) }).catch(() => undefined)
+      .then((details) => { if (active) setConnection(details) }).catch(() => { if (active) setEditorError('加载连接参数失败，请关闭后重新打开') })
     return () => { active = false }
   }, [editing])
 
@@ -253,7 +271,7 @@ export function NodesPage() {
     }
   }
 
-  const executeBatch = async (action: BatchMutation | DirectMutation) => {
+  const executeBatch = async (action: BatchMutation) => {
     const ids = [...selected]
     if (!ids.length) return
     setPending(null)
@@ -291,11 +309,22 @@ export function NodesPage() {
   }
 
   const actions: BatchAction[] = [
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => executeBatch('enable') },
+    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => setPending('enable') },
     { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => setPending('disable') },
     { key: 'retain', label: '保留', icon: ShieldCheck, onClick: () => setPending('retain') },
-    { key: 'unretain', label: '取消保留', icon: ShieldOff, onClick: () => executeBatch('unretain') },
+    { key: 'unretain', label: '取消保留', icon: ShieldOff, onClick: () => setPending('unretain') },
   ]
+
+  const selectCurrentPage = (checked: boolean) => {
+    setSelected((current) => {
+      const next = new Set(current)
+      for (const node of visibleNodes) {
+        if (checked) next.add(node.id)
+        else next.delete(node.id)
+      }
+      return next
+    })
+  }
 
   const columns: Array<DataTableColumn<NodeRow>> = [
     {
@@ -310,44 +339,43 @@ export function NodesPage() {
     { key: 'protocol', width: '15%', header: '协议', render: (node) => <StatusBadge tone="info" size="xs">{node.protocol}</StatusBadge> },
     { key: 'sources', hideBelow: 'tablet', header: '来源', render: (node) => node.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
     { key: 'status', width: '17%', header: '状态', render: (node) => <StatusBadge tone={node.enabled ? 'success' : 'muted'} size="sm">{nodeStatus(node)}</StatusBadge> },
-    { key: 'groups', hideBelow: 'tablet', header: '分组', render: (node) => catalog?.groups.filter((group) => groupNodeIds(group, sources, nodes).has(node.id)).map((group) => group.name).join('、') || '—' },
+    { key: 'groups', hideBelow: 'tablet', header: '分组', render: (node) => groupNames(node) },
     { key: 'updated', hideBelow: 'desktop', header: '最后同步', render: (node) => formatDate(node.lastSeenAt) },
     {
       key: 'actions',
       width: 52,
       header: '操作',
       align: 'right',
-      render: (node) => <ResourceRowActions actions={[{ label: '编辑', disabled: busy, onClick: (trigger) => openEdit(node, trigger) }]} />,
+      render: (node) => <ResourceRowActions actions={[
+        { label: '查看', onClick: (trigger) => { editorTrigger.current = trigger; setDetail(node) } },
+        { label: '编辑', disabled: busy, onClick: (trigger) => openEdit(node, trigger) },
+      ]} />,
     },
   ]
 
-  const selectCurrentPage = (checked: boolean) => {
-    setSelected((current) => {
-      const next = new Set(current)
-      for (const node of visibleNodes) {
-        if (checked) next.add(node.id)
-        else next.delete(node.id)
-      }
-      return next
-    })
-  }
-
   return (
-    <div className="page-stack resource-pages">
+    <PageContainer width="list">
+      <div className="page-stack resource-pages phase3-catalog">
       <section className="catalog-data-section" aria-labelledby="nodes-title">
-        <PageHeader id="nodes-title" title="节点" />
+        <PageHeader placement="inline" id="nodes-title" title="节点" actions={<Button variant="primary" size="page" onClick={(event) => openCreate(event.currentTarget)}><Plus aria-hidden="true" size={18} />添加节点</Button>} />
+        <AdminModuleTabs />
         <FilterBar className="catalog-filters" searchRef={searchRef}
-          onReset={query || protocol !== 'all' || sourceId !== 'all' || status !== 'all'
-            ? () => { setQuery(''); setProtocol('all'); setSourceId('all'); setStatus('all') }
+          onReset={query || protocol !== 'all' || sourceId !== 'all' || groupId !== 'all' || status !== 'all'
+            ? () => { setQuery(''); setProtocol('all'); setSourceId('all'); setGroupId('all'); setStatus('all') }
             : undefined}
-          moreActive={protocol !== 'all' || sourceId !== 'all'}
+          moreActive={protocol !== 'all' || sourceId !== 'all' || groupId !== 'all'}
           more={<>
             <label className="filter-field"><span>协议</span><FormSelect aria-label="节点协议" value={protocol} onChange={(event) => setProtocol(event.currentTarget.value)}><option value="all">全部</option>{protocols.map((item) => <option key={item} value={item}>{item}</option>)}</FormSelect></label>
             <label className="filter-field"><span>来源</span><FormSelect aria-label="节点来源" value={sourceId} onChange={(event) => setSourceId(event.currentTarget.value)}><option value="all">全部</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</FormSelect></label>
+            <label className="filter-field"><span>分组</span><FormSelect aria-label="节点分组" value={groupId} onChange={(event) => setGroupId(event.currentTarget.value)}>
+              <option value="all">全部</option>{groupMembers.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </FormSelect></label>
           </>}>
           <SearchInput inputRef={searchRef} label="搜索节点" placeholder="搜索名称、服务器或协议" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="节点状态" value={status} onChange={(event) => setStatus(event.currentTarget.value as NodeStatusFilter)}>{NODE_STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</FormSelect></label>
-          <Button variant="primary" size="page" onClick={(event) => openCreate(event.currentTarget)}><Plus aria-hidden="true" size={18} />添加节点</Button>
+          <label className="filter-field"><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>
+            {[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}
+          </FormSelect></label>
         </FilterBar>
         {error && <ErrorState message={error} onRetry={() => load()} />}
         {batchError && <ErrorState message={batchError} />}
@@ -355,15 +383,29 @@ export function NodesPage() {
         {!catalog && error ? null : !loading && nodes.length === 0 ? (
           <EmptyState title="暂无节点"><Link className="button secondary" to="/catalog/sources">管理来源</Link></EmptyState>
         ) : (
-          <DataTable flat columns={columns} rows={visibleRows} loadingLabel={loading && !catalog ? '正在加载节点' : undefined} rowKey={(node) => node.id} empty="暂无匹配节点" />
+          <DataTable columns={columns} rows={visibleRows} loadingLabel={loading && !catalog ? '正在加载节点' : undefined}
+            rowKey={(node) => node.id} empty="暂无匹配节点"
+            summary={catalog && `共 ${filteredNodes.length} 个节点 · ${nodes.filter((node) => node.enabled).length} 个启用${filteredNodes.length !== nodes.length ? ` · 全部 ${nodes.length} 个` : ''}`}
+            pagination={{ page, pageCount, onPageChange: setPage, compact: true }} />
         )}
-        <ResourceFooter count={filteredNodes.length} unit="个节点" pagination={{ page, pageCount, onPageChange: setPage }}>
-          <span>{filteredNodes.length !== nodes.length && `全部 ${nodes.length} 个节点 · `}{nodes.filter((node) => node.enabled).length} 个启用</span>
-          <label className="resource-card-page-size"><span>每页显示</span><FormSelect aria-label="每页显示" value={pageSize} onChange={(event) => setPageSize(Number(event.currentTarget.value))}>{[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size}</option>)}</FormSelect></label>
-        </ResourceFooter>
       </section>
 
-      <Dialog open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="l" onClose={closeEdit} returnFocusRef={editorTrigger}
+      <Dialog appearance="content" open={detail !== null} title={detail?.displayName ?? '节点详情'} size="l"
+        onClose={() => setDetail(null)} returnFocusRef={editorTrigger}
+        footer={detail && <button type="button" className="button secondary" disabled={busy}
+          onClick={() => openEdit(detail, editorTrigger.current)}>编辑节点</button>}>
+        {detail && <PageContainer width="detail"><DetailList items={[
+          { id: 'protocol', label: '协议', value: detail.protocol },
+          { id: 'server', label: '服务器与端口', value: `${detail.server} · ${detail.port}` },
+          { id: 'status', label: '状态', value: nodeStatus(detail) },
+          { id: 'sources', label: '来源', value: detail.sourceIds.map((id) => sourceNames.get(id) ?? id).join('、') || '手工保留' },
+          { id: 'groups', label: '分组', value: groupNames(detail) },
+          { id: 'updated', label: '最后同步', value: formatDate(detail.lastSeenAt) },
+          { id: 'retained', label: '无来源时保留', value: detail.retained ? '是' : '否' },
+        ]} /></PageContainer>}
+      </Dialog>
+
+      <Dialog appearance="content" open={editing !== null || adding} title={adding ? '添加节点' : '编辑节点'} busy={busy} size="l" onClose={closeEdit} returnFocusRef={editorTrigger}
         dirty={invalidFields.length > 0 || (!adding && connectionDirty) || JSON.stringify(nodeForm) !== JSON.stringify(nodeBaseline)}
         footer={(requestClose) => <>
           <button className="button secondary" type="button" onClick={requestClose} disabled={busy}>取消</button>
@@ -391,12 +433,15 @@ export function NodesPage() {
               <label className="field"><span>端口</span><Input type="number" min={1} max={65535} value={nodeForm.port} onChange={(event) => {
                 setNodeForm({ ...nodeForm, port: event.currentTarget.value }); setConnectionDirty(true)
               }} required disabled={!connection} /></label>
-              {connection && credentialKeys[nodeForm.protocol]?.map((key) => <label key={key} className="field"><span>{key}</span>
-                <Input type={/password|privateKey|psk|auth/u.test(key) ? 'password' : 'text'} value={String(connection.credentials[key] ?? '')}
+              {connection && credentialKeys[nodeForm.protocol]?.map((key) => {
+                const CredentialInput = /^(password|privateKey|psk|auth|uuid)$/u.test(key) ? PasswordInput : Input
+                return <div key={key} className="field"><label htmlFor={`credential-${key}`}>{key}</label>
+                <CredentialInput id={`credential-${key}`} autoComplete="off" value={String(connection.credentials[key] ?? '')}
                   required={!['http', 'https', 'socks5'].includes(nodeForm.protocol)} onChange={(event) => {
                     setConnection({ ...connection, credentials: { ...connection.credentials, [key]: event.currentTarget.value } })
                     setConnectionDirty(true)
-                  }} /></label>)}
+                  }} /></div>
+              })}
             </>}
           </fieldset>
           {connection && nodeForm.protocol && <details><summary>TLS / 传输</summary>
@@ -423,14 +468,19 @@ export function NodesPage() {
             {connectionDirty && <p className="dialog-note">转换测试使用已保存的连接参数</p>}
             {testResult && <section className="form-stack"><p>可输出 {testResult.outputNodes} 个节点</p>
               {testResult.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.message}</p>)}
-              {testResult.outputNodes > 0 && <Textarea aria-label="转换结果" readOnly value={testResult.body} />}
+              {testResult.outputNodes > 0 && <details><summary>显示转换结果（含连接凭据）</summary><Textarea aria-label="转换结果" readOnly value={testResult.body} /></details>}
             </section>}
           </div>}
           {editorError ? <StatusMessage tone="error">{editorError}</StatusMessage> : null}
         </form>}
       </Dialog>
 
-      <ConfirmDialog open={pending !== null} title={pending === 'retain' ? '保留节点' : '停用节点'} description={pending === 'retain' ? `将保留选中的 ${selected.size} 个节点，即使来源后续移除它们` : `将停用选中的 ${selected.size} 个节点，它们不会出现在后续订阅中`} confirmLabel={pending === 'retain' ? '确认保留' : '确认停用'} danger={pending === 'disable'} busy={busy} onClose={() => setPending(null)} onConfirm={() => executeBatch(pending ?? 'disable')} />
+      <ConfirmDialog appearance="content" open={pending !== null}
+        title={pending ? `${batchActions[pending].label}节点` : ''}
+        description={pending ? `选中的 ${selected.size} 个节点将${batchActions[pending].impact}` : ''}
+        confirmLabel={pending ? batchActions[pending].label : '确认'} danger={pending === 'disable'} busy={busy}
+        onClose={() => setPending(null)} onConfirm={() => { if (pending) return executeBatch(pending) }} />
     </div>
+    </PageContainer>
   )
 }

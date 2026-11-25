@@ -65,8 +65,11 @@ async function paginate(db: D1Database, page: number, pageSize: number, sql: str
 
 const batchStatus = `CASE WHEN b.enabled=0 THEN 'disabled'
   WHEN b.redeem_deadline <= unixepoch('subsec') * 1000 THEN 'expired' ELSE 'active' END`
+const batchDuration = `coalesce(b.duration_json,
+  (SELECT json_extract(config_json, '$.duration') FROM entitlement_template_versions WHERE id=b.template_version_id))`
 const batchFields = `b.id, b.name, b.template_name AS templateName, b.template_id AS templateId, b.template_version_id AS templateVersionId,
   (SELECT version_no FROM entitlement_template_versions WHERE id=b.template_version_id) AS templateVersion,
+  json_extract(${batchDuration}, '$.value') AS durationValue, json_extract(${batchDuration}, '$.unit') AS durationUnit,
   b.quantity, b.max_uses AS maxUses, b.redeem_deadline AS redeemDeadline, ${batchStatus} AS status,
   b.note, b.created_by AS createdBy, b.created_at AS createdAt,
   coalesce((SELECT sum(used_count) FROM redemption_codes WHERE batch_id=b.id),0) AS usedCount,

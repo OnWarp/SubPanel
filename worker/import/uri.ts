@@ -1,5 +1,5 @@
 import type { ImportFormat, JsonValue, Protocol } from '../catalog/schema.js'
-import { decodeBase64Utf8 } from './base64.js'
+import { containsRecognizedUri, decodeBase64Utf8 } from './base64.js'
 import type { ImportResult, ParsedNode } from './model.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
@@ -601,15 +601,17 @@ export function parseShareUri(raw: string): ParsedNode {
   return parseStandard(raw.trim(), scheme)
 }
 
-function coalesceUriLines(lines: string[]): string[] {
-  const output: string[] = []
-  for (const line of lines) {
-    const previous = output[output.length - 1]
-    const fragment = /^[A-Za-z0-9+/=_-]{8,}$/u.test(line) && !line.includes('://')
-    if (previous && fragment && /^(?:v2rayn|vmess):\/\//iu.test(previous)) {
-      output[output.length - 1] = previous + line
+function coalesceUriLines(content: string): { text: string; number: number }[] {
+  const output: { text: string; number: number }[] = []
+  for (const [index, raw] of content.split(/\r?\n/u).entries()) {
+    const text = raw.replace(/^\uFEFF/u, '').trim()
+    if (!text) continue
+    const previous = output.at(-1)
+    const fragment = /^[A-Za-z0-9+/=_-]{8,}$/u.test(text) && !text.includes('://')
+    if (previous && fragment && /^(?:v2rayn|vmess):\/\//iu.test(previous.text)) {
+      previous.text += text
     } else {
-      output.push(line)
+      output.push({ text, number: index + 1 })
     }
   }
   return output
@@ -618,14 +620,13 @@ function coalesceUriLines(lines: string[]): string[] {
 export function parseUriList(content: string): ImportResult {
   const nodes: ParsedNode[] = []
   const warnings: ImportResult['warnings'] = []
-  const lines = coalesceUriLines(content.split(/\r?\n/u).map((line) => line.replace(/^\uFEFF/u, '').trim()).filter(Boolean))
-  for (const [index, line] of lines.entries()) {
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue
-    const scheme = /^([a-z][a-z0-9+.-]*):\/\//iu.exec(line)?.[1].toLowerCase() ?? 'unknown'
+  for (const { text, number } of coalesceUriLines(content)) {
+    if (text.startsWith('#') || text.startsWith(';')) continue
     try {
-      nodes.push(parseShareUri(line))
+      nodes.push(parseShareUri(text))
     } catch {
-      warnings.push({ code: 'INVALID_URI', message: `Unable to parse ${scheme} URI`, line: index + 1 })
+      const scheme = containsRecognizedUri(text) ? text.split('://', 1)[0].toLowerCase() : 'unknown'
+      warnings.push({ code: 'INVALID_URI', message: `Unable to parse ${scheme} URI`, line: number })
     }
   }
   return { format, nodes, warnings }

@@ -89,3 +89,9 @@
 }
 
 .catalog-sync-form { align-content: start; }
+
+@media (min-width: 641px) {
+  .phase3-catalog .content-dialog[data-size="l"] {
+    --dialog-size-l: 840px;
+  }
+}

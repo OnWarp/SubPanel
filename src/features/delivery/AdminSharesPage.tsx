@@ -1,11 +1,12 @@
-import { ResourceFooter, ResourceHeading, ResourceRowActions } from '../admin-resources/ResourceCard'
+import { PageContainer } from '../../ui/PageContainer'
+import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
+import { ResourceRowActions } from '../admin-resources/ResourceCard'
 import { FormSelect } from '../../ui/Controls'
 import { Share2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadAdminUserOptions, peekAdminUserOptions, api, peekApi, readData, watchApi, ApiClientError, type AdminSubscription, type UserSummary } from '../../app/api'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
-import { DataHeader } from '../../ui/DataHeader'
 import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { EmptyState } from '../../ui/EmptyState'
 import { ErrorState } from '../../ui/ErrorState'
@@ -25,7 +26,8 @@ type PendingAction = 'disable' | 'revoke'
 type AdminShare = {
   id: string
   ownerUserId: string
-  subscriptionId: string
+  subscriptionId: string | null
+  scope?: { type: 'unified' } | { type: 'template'; templateId: string }
   tokenPrefix: string
   remark: string
   status: ShareStatus
@@ -129,7 +131,7 @@ export function AdminSharesPage() {
       if (statusFilter !== 'all' && effectiveStatus(share, now) !== statusFilter) return false
       if (!needle) return true
       const owner = userNames.get(share.ownerUserId) ?? share.ownerUserId
-      const subscription = subscriptionNames.get(share.subscriptionId) ?? share.subscriptionId
+      const subscription = share.subscriptionId ? subscriptionNames.get(share.subscriptionId) ?? share.subscriptionId : ''
       return [share.remark, share.tokenPrefix, share.id, owner, subscription].some((value) => matchesText(value, needle))
     })
   }, [query, shares, statusFilter, subscriptionNames, userNames])
@@ -174,6 +176,10 @@ export function AdminSharesPage() {
       key: 'subscription',
       header: '关联订阅',
       render: (share) => {
+        if (!share.subscriptionId) {
+          if (share.scope?.type === 'unified') return '统一订阅'
+          return share.scope?.type === 'template' ? `模板 · ${share.scope.templateId}` : '—'
+        }
         const name = subscriptionNames.get(share.subscriptionId)
         return (
           <span className="resource-card-name">
@@ -189,7 +195,7 @@ export function AdminSharesPage() {
       render: (share) => (
         <span className="resource-card-name">
           <strong>{share.remark.trim() || '未填写'}</strong>
-          <span className="cell-note">{share.id} · {share.tokenPrefix}…</span>
+          <span className="cell-note">{share.id}</span>
         </span>
       ),
     },
@@ -236,10 +242,11 @@ export function AdminSharesPage() {
   ], [busy, subscriptionNames, userNames])
 
   return (
-    <div className="page-stack resource-pages">
-      <PageHeader title="分享管理" />
-      <section className="data-section resource-card" aria-labelledby="ashr-shares-title">
-        <ResourceHeading id="ashr-shares-title" title="分享管理" />
+    <PageContainer width="list">
+      <div className="page-stack">
+      <PageHeader placement="inline" title="分享管理" actions={<Link className="button secondary" to="/system/distribution">分享策略</Link>} />
+      <AdminModuleTabs />
+      <section className="page-stack" aria-label="分享列表">
         <FilterBar className="resource-card-filters">
           <SearchInput label="搜索分享" placeholder="搜索备注、前缀或用户" value={query} onChange={setQuery} />
           <label className="filter-field"><span>状态</span><FormSelect aria-label="分享状态" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value as StatusFilter)}>{STATUS_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</FormSelect></label>
@@ -268,26 +275,17 @@ export function AdminSharesPage() {
         ) : null}
         {filtered.length > 0 ? (
           <DataTable
-            className="resource-card-table"
             columns={columns}
             rows={visibleRows}
             rowKey={(share) => share.id}
             empty="暂无匹配分享"
+            summary={`共 ${filtered.length} 个分享`}
+            pagination={{ page: currentPage, pageCount, onPageChange: setPage, compact: true }}
           />
         ) : null}
-        <ResourceFooter count={filtered.length} unit="个分享" pagination={{ page: currentPage, pageCount, onPageChange: setPage }} />
       </section>
 
-      <section className="data-section resource-card" aria-labelledby="ashr-settings-title">
-        <DataHeader id="ashr-settings-title" title="全局策略" />
-        <div className="ashr-settings-form">
-          <div className="ashr-actions form-actions">
-            <Link className="button" to="/system/distribution">分享策略</Link>
-          </div>
-        </div>
-      </section>
-
-      <ConfirmDialog
+      <ConfirmDialog appearance="content"
         open={pending !== null}
         title={pending?.action === 'revoke' ? '撤销分享' : '禁用分享'}
         description={pending
@@ -300,5 +298,6 @@ export function AdminSharesPage() {
         onConfirm={() => { confirmAction().catch(() => undefined) }}
       />
     </div>
+    </PageContainer>
   )
 }
