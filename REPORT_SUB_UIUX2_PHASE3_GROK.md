@@ -10,14 +10,14 @@
 - `src/features/accounts/UsersPage.tsx` 在活跃列表读取 `expiry=soon`。这是概览「7 日内到期」的落点，只读筛选，不改用户写接口。清除按钮文案是「7 日内到期」，空态是「暂无 7 日内到期的用户」，摘要是「共 N 位用户，7 日内到期」
 - `worker/accounts/d1-repository.ts` 的 `expirySoon` 与概览到期计数使用同一窗口：启用用户、有效绑定、模板启用、访问启用、计划未停用、已开始且未过期；任一永久绑定使该用户不计入；`expires_at` 非空且不晚于现在加 7 日。`worker/accounts/admin-routes.ts` 在 KV 回退路径遇到该参数时返回空列表，避免把无法计算的到期显示成全量用户。没有改表结构
 - `src/features/system/SystemPage.tsx` 用 `PageContainer`（list）、`PageHeader`「系统设置」和页内 `ModuleTabs`。注册、邮件、分发、运行按现有主题分区，区块内是标题、字段和保存。`width` 保持 `list`，因为顶栏铺满规格要量列表内容区，并继续找到「邮箱域名白名单」和「系统设置导航」。加载失败走 `ErrorState`，不把空表单交给保存
-- `src/features/system/AdminMailSection.tsx` 只有邮件模板读取成功后才渲染模板、群发和到期提醒。恢复默认放在编辑区底部，确认文案是「自定义模板及当前编辑将被清除」。密码和 API Key 仍是密码框，留空表示不修改
+- `src/features/system/AdminMailSection.tsx` 只有邮件模板读取成功后才渲染模板、群发和到期提醒。编辑区底部的「恢复默认」需确认，提示为「自定义模板及当前编辑将被清除」。密码和 API Key 仍是密码框，留空表示不修改
 - `src/features/system/ShareSettingsSection.tsx` 分享设置仍是一次提交。读取失败时不渲染字段和保存按钮。总开关放在表单底部的危险区
 - `src/features/system/DomainSettingsSection.tsx` 域名删除留在行内危险区。备注和平台展示仍各自保存
 - `src/features/admin/AuditLogsPage.tsx` 改接列表容器、设置页签、`FilterBar` 和 `DataTable` 摘要。去掉重复的页脚计数
 - `src/features/user/HomePage.tsx`、`MyNodesPage.tsx`、`MinePage.tsx`、`src/features/delivery/MySubscriptionsPage.tsx`、`src/features/redemption/PersonalRedemptions.tsx`、`src/features/accounts/AccountPage.tsx` 换上内容区容器。首页仍用 `StatCard`。个人中心先放当前订阅、遮挡后的复制链接、兑换入口和账户信息。显示设置仍走现有外壳偏好
 - `src/features/accounts/LoginPage.tsx`、`RegisterPage.tsx`、`SetupPage.tsx`、`EmailBindChangeForm.tsx` 只给表单加上内容区作用域。认证外壳、字段、校验和错误提示未改。邀请页仍是跳到 `/register?inviteCode=`，本线没有改那个文件。没有补公开找回密码
 - 工单、公告、知识库列表改接 `PageContainer`（list）、`PageHeader` 和表格或既有卡片。管理员工单详情和用户工单详情用 `width="detail"`，返回文案都是「返回工单」。文章详情返回「返回知识库」。对话和正文只展示已有字段
-- `src/features/shares/SharePage.tsx` 在现有公开骨架上加内容区作用域，分组、到期、节点改用 `DetailList`。凭据语义、阶段、登录回跳、客户端下载路径未改
+- `src/features/shares/SharePage.tsx` 在现有公开骨架上加内容区作用域，分组、到期、节点改用 `DetailList`。凭据语义、访问阶段和客户端下载路径沿用原实现。登录后返回分享页
 - `src/styles/content-ui.css` 增加危险区上边线和系统表单的水平内边距归零。未改冻结组件的样式文件
 - `development/tests/ui/navigation-structure.test.ts` 让页头模拟渲染 `leading`，概览断言七个指标和五个真实链接，工单详情断言侧栏高亮且列表页签为空、正文含「返回工单」
 - `development/tests/browser/topbar-fill.spec.ts` 把概览和系统设置的测量目标改成 `content-page[data-width="list"]`，系统设置继续要求「系统设置导航」可见

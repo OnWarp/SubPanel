@@ -209,7 +209,7 @@ export function ShareSettingsSection() {
             <FormField label="分享功能">
               <Switch checked={form.enabled} disabled={saving} ariaLabel="分享功能" onChange={(enabled) => setForm({ ...form, enabled })} />
             </FormField>
-            <p className="sys-hint">分享功能开关控制普通用户的分享权限，管理员仍可分享。关闭期间所有分享链接暂停访问</p>
+            <p className="sys-hint">关闭后仅管理员可创建分享，所有分享链接暂停访问</p>
           </div>
         </>
       ) : null}

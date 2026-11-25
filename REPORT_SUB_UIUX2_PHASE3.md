@@ -51,7 +51,7 @@ Phase 2 冻结的共享接口未改：PageContainer、PageHeader、SectionTabs�
 - 三组旧失败仍在（pages-node 1、subscriptions-node 5、templates 1），基底既有，旧订阅相关
 - 390 宽模板编辑弹窗与底栏垂直交叠约 35px、旧移动底栏脚本入口超时、一处旧首页空状态文案断言，均为基底既有
 - bundle 与截图只在 loop5/loop2（SFTP 证书签不出，hwsg 主机名在 loop 机上无法解析）；报告与提交已在 origin，取回待证书恢复后走 hwsg /root/xfer 中转
-- Grok 线报告有两处乱码字符（邮件恢复默认说明、分享登录回跳段落），内容可读，Phase 4 顺手订正
+- Grok 线报告的邮件恢复默认说明与分享登录回跳段落已在 Phase 4 对照源码核定
 - 公开分享本地无真实分享（本地无节点），未知令牌整页导航仍由 Worker 返回 JSON 404，React 访问验证只在真实分享令牌或客户端导航下出现
 - 完整 Playwright 业务套件与真机软键盘验证仍待 Phase 4；Phase 3 各线已跑本模块 Playwright 与交互截图
 

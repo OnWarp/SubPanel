@@ -139,7 +139,7 @@ export function RegisterPage({ initialMode = null }: { initialMode?: Registratio
         <FormField label={mode === 'invite' ? "邀请码" : "邀请码（选填）"} htmlFor="register-invite-code" error={errorField === 'inviteCode' ? error : undefined}>
             <Input id="register-invite-code" name="inviteCode" autoComplete="off" required={mode === 'invite'} value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} />
           </FormField>
-        {mode === 'invite' ? <p className="profile-hint">当前仅接受邀请码注册，请向管理员获取邀请码</p> : null}
+        {mode === 'invite' ? <p className="profile-hint">请向管理员获取邀请码</p> : null}
         <FormField label="密码" htmlFor="register-password" error={errorField === 'password' ? error : undefined}>
           <PasswordInput id="register-password" name="password" autoComplete="new-password" minLength={12} maxLength={128} required />
           <p className="profile-hint">密码长度为 12 至 128 个字符</p>

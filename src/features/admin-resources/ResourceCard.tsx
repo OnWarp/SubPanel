@@ -1,16 +1,7 @@
-import { DataHeader } from '../../ui/DataHeader'
 import type { ReactNode } from 'react'
 import { Checkbox } from '../../ui/Controls'
 import { Pagination, type PaginationProps } from '../../ui/Pagination'
 import './resource-card.css'
-
-export function ResourceHeading({ id, title, action }: { id: string; title: string; action?: ReactNode }) {
-  return (
-    <header>
-      <DataHeader id={id} title={title} actions={action} />
-    </header>
-  )
-}
 
 export function ResourceFooter({ count, unit, pagination, children }: {
   count: number

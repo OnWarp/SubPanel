@@ -79,12 +79,6 @@
 .upd-home .sp-stat-sub { font-size: var(--font-sm); }
 
 /* Personal center */
-.upd-mine-overview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
-  gap: var(--space-3);
-}
-
 .upd-mine-panel,
 .upd-mine-menu {
   min-width: 0;
@@ -114,18 +108,6 @@
 .upd-mine-back { align-self: flex-start; color: var(--color-text-muted); }
 .upd-mine-plan strong { font-size: var(--font-lg); }
 .upd-mine-plan > :last-child { flex-shrink: 0; }
-
-.upd-mine-metrics {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: var(--space-3);
-  margin: var(--space-3) 0 0;
-  padding-top: var(--space-3);
-  border-top: var(--size-divider) solid var(--color-border);
-}
-
-.upd-mine-metrics dt { color: var(--color-text-muted); font-size: var(--font-sm); }
-.upd-mine-metrics dd { margin: 0; font-weight: var(--weight-medium); }
 
 .upd-mine-subscription-link {
   display: grid;
@@ -488,7 +470,6 @@
   .upd-home .object-card + .object-card { border-left: 0; border-top: var(--size-divider) solid var(--color-border); }
   .upd-home .object-card + .object-card .sp-stat-body,
   .upd-home .sp-stat-body { padding-left: 0; }
-  .upd-mine-overview { grid-template-columns: minmax(0, 1fr); }
   .upd-mine .upd-link-row { display: grid; }
   .upd-mine .upd-link-row .button { justify-content: flex-start; }
   .upd-subs .ui3-platform-row { grid-template-columns: minmax(0, 1fr) auto; }

@@ -241,7 +241,6 @@ function ShareContent({ token }: { token: string }) {
         ) : null}
         {phase.kind === 'login' ? (
           <>
-            <p>此链接需要登录后查看</p>
             {formError ? <StatusMessage tone="error">{formError}</StatusMessage> : null}
             {user ? <button className="button primary" type="button" onClick={() => { load().catch(() => undefined) }}>重试</button> : <button className="button primary" type="button" onClick={goLogin}>去登录</button>}
           </>
