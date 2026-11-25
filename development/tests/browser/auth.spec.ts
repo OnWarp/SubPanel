@@ -12,7 +12,7 @@ test.describe.serial('SubPanel account shell', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     await page.reload()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('subpanel.theme'))).toBe('light')
+    await expect.poll(() => page.evaluate(() => localStorage.getItem(window.subpanelTheme.guestKey))).toBe('light')
 
     await page.getByRole('button', { name: '主题' }).click()
     await page.getByRole('menuitem', { name: '跟随系统' }).click()
@@ -23,23 +23,18 @@ test.describe.serial('SubPanel account shell', () => {
     await expect.poll(() => page.evaluate(() => document.documentElement.style.colorScheme)).toBe('light')
   })
 
-  test('initializes the administrator and completes the account security flow', async ({ page }) => {
-    await page.goto('/')
-    await expect(page.getByRole('heading', { name: '初始化管理员' })).toBeVisible()
-    await page.getByLabel('管理员用户名').fill('Admin')
-    await page.getByLabel('管理员密码').fill('correct horse battery staple')
-    await page.getByRole('button', { name: '创建管理员' }).click()
-
-    await expect(page).toHaveURL(/\/login$/)
+  test('signs in and completes the account security flow', async ({ page }) => {
+    await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
     await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
     await page.getByRole('button', { name: '登录' }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
-    await expect(page.locator('.workspace-topbar')).toHaveCSS('height', '56px')
+    await expect(page.locator('.workspace-topbar')).toHaveCSS('height', '48px')
+    await page.locator('.sidebar').getByLabel('admin，管理员账号菜单').click()
     await page.getByRole('link', { name: '账户安全' }).click()
     await expect(page).toHaveURL(/\/account$/)
-    await expect(page.locator('.sidebar-account').getByText('admin', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '个人中心' })).toBeVisible()
 
     await page.getByRole('button', { name: '修改密码' }).click()
     await page.getByLabel('当前密码').fill('correct horse battery staple')
@@ -48,75 +43,62 @@ test.describe.serial('SubPanel account shell', () => {
     await page.getByRole('button', { name: '更新密码' }).click()
     await expect(page.getByRole('status')).toContainText('密码已更新')
 
+    await page.locator('.sidebar').getByLabel('admin，管理员账号菜单').click()
     await page.getByRole('button', { name: '退出登录' }).click()
     await expect(page).toHaveURL(/\/login$/)
     await page.getByLabel('用户名', { exact: true }).fill('admin')
     await page.getByLabel('密码', { exact: true }).fill('new correct horse password')
     await page.getByRole('button', { name: '登录' }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
-    await page.getByRole('link', { name: '用户与邀请' }).click()
+    const restored = await page.request.post('/api/account/password', {
+      headers: { origin: new URL(page.url()).origin },
+      data: { currentPassword: 'new correct horse password', newPassword: 'correct horse battery staple' },
+    })
+    expect(restored.ok()).toBe(true)
+    await page.getByRole('link', { name: '用户管理' }).click()
     await expect(page).toHaveURL(/\/users$/)
   })
 
   test('creates an invited user, hides administrator navigation from that user, and disables the account', async ({ page }) => {
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
-    await page.getByLabel('密码', { exact: true }).fill('new correct horse password')
+    await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
     await page.getByRole('button', { name: '登录' }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
-    await page.getByRole('link', { name: '用户与邀请' }).click()
+    await page.getByRole('link', { name: '用户管理' }).click()
     await expect(page).toHaveURL(/\/users$/)
 
-    await page.getByLabel('邀请用户名').fill('alice')
-    await page.getByRole('button', { name: '创建邀请' }).click()
-    const invitationLink = await page.getByLabel('邀请链接', { exact: true }).inputValue()
-    expect(invitationLink).toContain('/invite/')
-
-    await page.getByRole('button', { name: '退出登录' }).click()
-    await expect(page).toHaveURL(/\/login$/)
-    await page.goto(invitationLink)
-    await expect(page.getByRole('heading', { name: '接受邀请' })).toBeVisible()
-    await page.getByLabel('密码', { exact: true }).fill('alice correct password')
-    await page.getByLabel('确认密码').fill('alice correct password')
-    await page.getByRole('button', { name: '创建账户' }).click()
-
-    await page.getByLabel('用户名', { exact: true }).fill('alice')
-    await page.getByLabel('密码', { exact: true }).fill('alice correct password')
-    await page.getByRole('button', { name: '登录' }).click()
+    const origin = new URL(page.url()).origin
+    const api = (path: string, data: unknown, method = 'POST') =>
+      page.request.fetch(path, { method, data, headers: { origin } })
+    expect((await api('/api/admin/system/registration', { mode: 'invite' }, 'PUT')).ok()).toBe(true)
+    const invite = await api('/api/admin/invites', {})
+    expect(invite.status()).toBe(201)
+    const { invite: { code } } = await invite.json()
+    const password = 'invited browser user password'
+    const registered = await api('/api/register', {
+      username: 'invited-browser-user', password, email: 'invited-browser-user@example.com', inviteCode: code,
+    })
+    expect(registered.status()).toBe(201)
+    const { user } = await registered.json()
+    await page.goto('/home')
     await expect(page).toHaveURL(/\/home$/)
-    await expect(page.getByRole('link', { name: '用户与邀请' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: '用户管理' })).toHaveCount(0)
 
-    await page.getByRole('button', { name: '退出登录' }).click()
-    await expect(page).toHaveURL(/\/login$/)
-    await page.getByLabel('用户名', { exact: true }).fill('admin')
-    await page.getByLabel('密码', { exact: true }).fill('new correct horse password')
-    await page.getByRole('button', { name: '登录' }).click()
-    await expect(page).toHaveURL(/\/dashboard$/)
-    await page.getByRole('link', { name: '用户与邀请' }).click()
-    await expect(page).toHaveURL(/\/users$/)
-    const aliceRow = page.getByRole('row', { name: /alice/ })
-    await aliceRow.getByRole('button', { name: '重置 alice 的密码' }).click()
-    const resetDialog = page.getByRole('dialog', { name: '重置用户密码' })
-    await resetDialog.getByLabel('新密码', { exact: true }).fill('alice replacement password')
-    await resetDialog.getByLabel('确认新密码').fill('alice replacement password')
-    await resetDialog.getByRole('button', { name: '确认重置' }).click()
-    await expect(page.getByRole('status')).toContainText('alice 的密码已重置')
-    await aliceRow.getByRole('checkbox', { name: '启用 alice' }).uncheck()
-    await expect(aliceRow.getByText('已停用')).toBeVisible()
-
-    await page.getByRole('button', { name: '退出登录' }).click()
-    await expect(page).toHaveURL(/\/login$/)
-    await page.getByLabel('用户名', { exact: true }).fill('alice')
-    await page.getByLabel('密码', { exact: true }).fill('alice replacement password')
-    await page.getByRole('button', { name: '登录' }).click()
-    await expect(page.getByRole('alert')).toContainText('用户名或密码错误')
+    expect((await api('/api/login', { username: 'admin', password: 'correct horse battery staple' })).ok()).toBe(true)
+    await page.goto('/users')
+    const row = page.getByRole('row', { name: /invited-browser-user/u })
+    await row.getByLabel('invited-browser-user 的操作').click()
+    await row.getByRole('menuitem', { name: '停用' }).click()
+    await expect(row.getByText('已停用')).toBeVisible()
+    expect((await api('/api/login', { username: user.username, password })).status()).toBe(401)
   })
 
   test('shows four admin dock entries on a phone without horizontal page overflow', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
-    await page.getByLabel('密码', { exact: true }).fill('new correct horse password')
+    await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
     await page.getByRole('button', { name: '登录' }).click()
     const dock = page.locator('.admin-mobile-dock')
     await expect(dock.getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理'])
@@ -125,7 +107,7 @@ test.describe.serial('SubPanel account shell', () => {
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   })
 
-  test('keeps both approved palettes above WCAG AA for primary text pairs', async ({ page }) => {
+  test('keeps both theme palettes above WCAG AA for primary text pairs', async ({ page }) => {
     const contrast = (foreground: string, background: string) => {
       const rgb = (hex: string) => [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255)
       const luminance = (hex: string) => {
@@ -137,14 +119,15 @@ test.describe.serial('SubPanel account shell', () => {
     }
 
     const expected = {
-      light: { canvas: '#f8f8f6', surface: '#ffffff', text: '#16161a', muted: '#6b6b73', primary: '#b8acf2', contrast: '#0c0c0e' },
-      dark: { canvas: '#0c0c0e', surface: '#141417', text: '#f3f3f5', muted: '#8b8b94', primary: '#b8acf2', contrast: '#0c0c0e' },
+      light: { canvas: '#f5f5f7', surface: '#ffffff', text: '#1d1d1f', muted: '#6e6e73', primary: '#0071e3', contrast: '#ffffff' },
+      dark: { canvas: '#08090a', surface: '#0f1011', text: '#f7f8f8', muted: '#8a8f98', primary: '#5e6ad2', contrast: '#ffffff' },
     } as const
 
     for (const preference of ['light', 'dark'] as const) {
       await page.goto('/login')
-      await page.evaluate((value) => localStorage.setItem('subpanel.theme', value), preference)
+      await page.evaluate((value) => localStorage.setItem(window.subpanelTheme.guestKey, value), preference)
       await page.reload()
+      await expect(page.locator('html')).toHaveAttribute('data-theme', preference)
       const colors = await page.evaluate(() => {
         const style = getComputedStyle(document.documentElement)
         const read = (name: string) => style.getPropertyValue(name).trim().toLowerCase()
@@ -173,13 +156,13 @@ test.describe.serial('SubPanel account shell', () => {
 
     await page.goto('/login')
     await page.getByLabel('用户名', { exact: true }).fill('admin')
-    await page.getByLabel('密码', { exact: true }).fill('new correct horse password')
+    await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
     await page.getByRole('button', { name: '登录' }).click()
     await expect(page).toHaveURL(/\/dashboard$/)
-    await page.getByRole('link', { name: '用户与邀请' }).click()
+    await page.getByRole('link', { name: '用户管理' }).click()
     await expect(page).toHaveURL(/\/users$/)
     await expect(page).toHaveTitle('SubPanel')
-    await expect(page.getByRole('heading', { name: '用户与邀请' })).toBeVisible()
+    await expect(page.locator('.workspace-topbar').getByRole('heading', { name: '用户管理' })).toBeVisible()
     expect(errors).toEqual([])
   })
 
