@@ -45,9 +45,8 @@ export async function prepareUserAccess(env: DataEnv, userId: string, now: strin
   return env.DB.prepare(`INSERT INTO user_subscription_access
     (user_id,token_hash,token_prefix,encrypted_token,enabled,created_at,updated_at)
     SELECT id,?,?,?,1,?,? FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL
-    AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE token_hash=?)
     ON CONFLICT(user_id) DO NOTHING`)
-    .bind(token.tokenHash, token.tokenPrefix, JSON.stringify(token.encryptedToken), now, now, userId, token.tokenHash)
+    .bind(token.tokenHash, token.tokenPrefix, JSON.stringify(token.encryptedToken), now, now, userId)
 }
 
 export async function resetUserToken(env: DataEnv, userId: string, expectedRevision: number, actor: string) {
@@ -56,9 +55,8 @@ export async function resetUserToken(env: DataEnv, userId: string, expectedRevis
   const [result] = await env.DB.batch([
     env.DB.prepare(`UPDATE user_subscription_access SET token_hash=?,token_prefix=?,encrypted_token=?,
       revision=revision+1,updated_at=? WHERE user_id=? AND revision=? AND enabled=1
-      AND EXISTS (SELECT 1 FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM subscriptions WHERE token_hash=?)`)
-      .bind(tokenHash, tokenPrefix, JSON.stringify(encryptedToken), now, userId, expectedRevision, userId, tokenHash),
+      AND EXISTS (SELECT 1 FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL)`)
+      .bind(tokenHash, tokenPrefix, JSON.stringify(encryptedToken), now, userId, expectedRevision, userId),
     env.DB.prepare(`INSERT INTO audit_logs (id,actor_user_id,action,target_type,target_id,detail,created_at)
       SELECT ?,?,'subscription.user_token_reset','user',?,'{}',? WHERE changes()=1`)
       .bind(crypto.randomUUID(), actor, userId, now),

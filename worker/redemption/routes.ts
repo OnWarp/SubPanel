@@ -150,7 +150,7 @@ async function auditedChange(db: D1Database, update: D1PreparedStatement, actor:
 userRedemptionRoutes.get('/', async (c) => {
   const { page, pageSize } = query(c)
   return c.json(await paginate(c.env.DB, page, pageSize,
-    'FROM all_redemption_records r LEFT JOIN subscriptions s ON s.id=r.subscription_id AND s.user_id=r.user_id WHERE r.user_id=?', `${recordFields}, s.id IS NOT NULL AS hasSubscription`,
+    'FROM all_redemption_records r WHERE r.user_id=?', `${recordFields}, 0 AS hasSubscription`,
     'r.redeemed_at DESC, r.id DESC', [c.get('principal').id]))
 })
 

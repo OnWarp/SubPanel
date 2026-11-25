@@ -2,7 +2,6 @@ import type { DataEnv } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
 import type { RenderClient } from '../renderers/index.js'
-import { getEffectiveTemplate } from '../templates/repository.js'
 import { resolveUserSubscription } from './aggregate.js'
 import { readArtifactCatalog } from './artifacts.js'
 import { renderResolvedSubscription, RENDERER_VERSION } from './compiler.js'
@@ -28,24 +27,21 @@ async function loadInputs(env: DataEnv, userId: string, tokenHash: string, clien
   if (aggregate.status === 'pending') throw apiError(403, 'SUB_NOT_STARTED', '订阅尚未生效')
   if (aggregate.status !== 'active') throw subscriptionNotFound()
 
-  const conversion = client === 'mihomo' || client === 'singbox'
-    ? await getEffectiveTemplate(env.DB, null, client) : undefined
-  const conversionVersion = conversion?.version_id ?? null
   const catalogRevision = await catalogRelevantRevision(aggregate.nodes, aggregate.speed, client)
   const key = JSON.stringify([userId, access.revision, tokenHash, aggregate.templateRevision,
-    catalog.revision, catalogRevision, conversionVersion, client, RENDERER_VERSION, aggregate.effectiveTemplateIds])
-  return { aggregate, conversion, conversionVersion, catalogRevision, key }
+    catalog.revision, catalogRevision, client, RENDERER_VERSION, aggregate.effectiveTemplateIds])
+  return { aggregate, catalogRevision, key }
 }
 
 async function compile(env: DataEnv, inputs: Awaited<ReturnType<typeof loadInputs>>, client: RenderClient, now: number) {
-  const { aggregate, conversion, conversionVersion, catalogRevision } = inputs
+  const { aggregate, catalogRevision } = inputs
   const revision = aggregate.access!.revision!
   const result = await renderResolvedSubscription(env, { id: null, revision }, client,
-    aggregate, new Date(now).toISOString(), undefined, undefined, conversion)
+    aggregate, new Date(now).toISOString())
   enforceUnifiedOutputLimit(result.body)
   const { subscriptionRevision: userRevision, ...rendered } = result
   return {
-    ...rendered, schemaVersion: 3 as const, userRevision, conversionVersion,
+    ...rendered, schemaVersion: 3 as const, userRevision, conversionVersion: null,
     templateDependencyRevision: aggregate.templateRevision, catalogRelevantRevision: catalogRevision,
     validUntil: Math.min(now + ttl, aggregate.nextTransitionAt ?? Infinity),
   }
@@ -55,7 +51,7 @@ export type UnifiedCompiledArtifact = Awaited<ReturnType<typeof compile>>
 
 // Bounded per-isolate storage avoids persisting credential-bearing payloads.
 const artifacts = new WeakMap<D1Database, Map<string, UnifiedCompiledArtifact>>()
-// Compilation uses the authorized snapshot and preloaded conversion, with no request-owned DB or KV reads.
+// Compilation uses the authorized snapshot, with no request-owned DB or KV reads.
 const compiles = new WeakMap<D1Database, Map<string, Promise<UnifiedCompiledArtifact>>>()
 let activeCompiles = 0
 

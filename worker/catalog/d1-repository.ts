@@ -528,11 +528,8 @@ export async function persistCatalogSnapshot(db: AppDatabase, snapshot: CatalogS
         SELECT id FROM groups WHERE id NOT IN (SELECT value FROM json_each(?))
         AND id IN (
           SELECT pg.group_id FROM plan_groups pg JOIN plans p ON p.id = pg.plan_id WHERE p.enabled = 1
-          UNION ALL
-          SELECT sg.group_id FROM subscription_groups sg JOIN subscriptions s ON s.id = sg.subscription_id
-            WHERE s.enabled = 1 AND s.plan_revoked = 0 AND (s.expires_at IS NULL OR s.expires_at > ?)
         )
-      )`).bind(meta.updatedAt, JSON.stringify(snapshot.groups.map(({ id }) => id)), Date.now())]),
+      )`).bind(meta.updatedAt, JSON.stringify(snapshot.groups.map(({ id }) => id)))]),
     deleteMissing(db, 'groups', converted.rows.groups.map((row) => row.id)),
     ...converted.rows.group_sources.map((row) => groupSourceInsert(db, row)),
     ...converted.rows.group_nodes.map((row) => groupNodeInsert(db, row)),

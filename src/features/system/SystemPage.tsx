@@ -2,7 +2,7 @@ import { Input, FormSelect } from '../../ui/Controls'
 import { AdminMailSection } from './AdminMailSection'
 import { Database, Info } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { DataHeader } from '../../ui/DataHeader'
 import { ErrorState } from '../../ui/ErrorState'
@@ -469,7 +469,7 @@ export function SystemPage() {
   const location = useLocation()
   const query = new URLSearchParams(location.search)
   const legacy = query.get('section') ?? query.get('tab') ?? location.hash.slice(1)
-  const aliases: Record<string, string> = { 'admin-mail': 'mail', share: 'distribution', domain: 'distribution', 'app-downloads': '/catalog/apps', notices: '/operations/notices', templates: '/delivery/conversions' }
+  const aliases: Record<string, string> = { 'admin-mail': 'mail', share: 'distribution', domain: 'distribution', 'app-downloads': '/catalog/apps', notices: '/operations/notices', templates: '/delivery/templates' }
   const requested = section ?? legacy ?? 'registration'
   const active = aliases[requested] ?? requested
   if (!section || active !== requested || !SECTIONS.includes(active)) {
@@ -477,15 +477,12 @@ export function SystemPage() {
     const search = query.size ? `?${query}` : ''
     return <Navigate replace to={(active.startsWith('/') ? active : `/system/${SECTIONS.includes(active) ? active : 'registration'}`) + search} />
   }
-  if (active === 'distribution' && (query.has('config') || query.has('archived') || legacy === 'templates')) {
-    return <Navigate replace to={`/delivery/conversions?${query}`} />
-  }
   return <div className="page-stack sys-page ops-page">
     <PageHeader title="系统设置" />
     <div className="page-stack settings-sections">
         {active === 'registration' ? <RegistrationSection /> : null}
         {active === 'mail' ? <><MailSection /><AdminMailSection /></> : null}
-        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /><section className="data-section sys-section"><DataHeader title="转换配置" actions={<Link className="button secondary" to="/delivery/conversions" aria-label="打开转换配置">打开</Link>} /></section></> : null}
+        {active === 'distribution' ? <><DomainSettingsSection /><ShareSettingsSection /></> : null}
         {active === 'status' ? <><HealthSection /><StatusSection /></> : null}
     </div>
   </div>

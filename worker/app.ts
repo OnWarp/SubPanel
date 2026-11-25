@@ -1,6 +1,5 @@
 import { adminRedemptionRoutes, userRedemptionRoutes } from './redemption/routes.js'
 import { compileJobRoutes } from './delivery/compile-jobs.js'
-import { templateRoutes } from './templates/routes.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
 import { adminPlanRoutes, userPlanRoutes } from './delivery/plan-routes.js'
@@ -15,7 +14,6 @@ import { catalogRoutes } from './catalog/routes.js'
 import { ApiError } from './platform/api-error.js'
 import { noStore, originGuard, securityHeaders } from './platform/http.js'
 import { entitlementTemplateRoutes } from './delivery/entitlement-template-routes.js'
-import { adminDeliveryRoutes, userDeliveryRoutes } from './delivery/routes.js'
 import { userNodeRoutes } from './delivery/user-nodes.js'
 import { adminAppRoutes, userAppRoutes } from './apps/routes.js'
 import { adminShareRoutes, shareRoutes } from './shares/routes.js'
@@ -24,8 +22,6 @@ import { migrationRoutes } from './migration/routes.js'
 import { adminSystemRoutes } from './system/routes.js'
 import { hostGate } from './domains/host-gate.js'
 import { adminDomainRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
-import { publicSubscriptionRoutes } from './public-subscriptions.js'
-import { backfillRoutes } from './delivery/backfill-routes.js'
 import { unifiedAdminRoutes, unifiedPublicRoutes, unifiedUserRoutes } from './delivery/unified-routes.js'
 import { adminNoticeRoutes, adminTicketRoutes, noticeRoutes, userTicketRoutes } from './tickets/routes.js'
 import { adminKbRoutes, userKbRoutes } from './kb/routes.js'
@@ -78,7 +74,6 @@ app.route('/api/account', userPlanRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)
 app.route('/api/admin', adminSystemRoutes)
-app.route('/api/admin/system/subscription-templates', templateRoutes)
 app.route('/api/admin', adminDomainRoutes)
 app.route('/api/admin', adminTicketRoutes)
 app.route('/api/admin', adminNoticeRoutes)
@@ -88,15 +83,6 @@ app.route('/api', publicSystemRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscription-templates', entitlementTemplateRoutes)
 app.route('/api/admin/compile-jobs', compileJobRoutes)
-app.route('/api/admin/subscriptions', adminDeliveryRoutes)
-app.route('/api/admin/delivery/subscriptions', adminDeliveryRoutes)
-app.route('/api/admin/delivery', adminDeliveryRoutes)
-app.route('/api/account/subscriptions', userDeliveryRoutes)
-app.route('/api/account/delivery/subscriptions', userDeliveryRoutes)
-app.route('/api/account/delivery', userDeliveryRoutes)
-app.route('/api/me/subscriptions', userDeliveryRoutes)
-app.route('/api/subscriptions', userDeliveryRoutes)
-app.route('/api/user/subscriptions', userDeliveryRoutes)
 app.route('/api/user/nodes', userNodeRoutes)
 app.route('/api/shares', shareRoutes)
 app.route('/api/admin', adminShareRoutes)
@@ -105,10 +91,8 @@ app.route('/api/admin/apps', adminAppRoutes)
 app.route('/api/tickets', userTicketRoutes)
 app.route('/api/notices', noticeRoutes)
 app.route('/api/kb', userKbRoutes)
-app.route('/', publicSubscriptionRoutes)
 app.route('/api/user/subscription', unifiedUserRoutes)
 app.route('/api/admin', unifiedAdminRoutes)
-app.route('/api/admin', backfillRoutes)
 app.route('/', unifiedPublicRoutes)
 
 // SPA fallback: browser navigations (GET/HEAD, non-API path, Accept
@@ -122,6 +106,7 @@ app.notFound(async (c) => {
   if (
     (c.req.method === 'GET' || c.req.method === 'HEAD') &&
     !isApiPath &&
+    !/^\/(?:sub|s)(?:\/|$)/u.test(pathname) &&
     accept.includes('text/html')
   ) {
     const shell = await c.env.ASSETS.fetch(new URL('/index.html', c.req.url))

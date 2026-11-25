@@ -8,7 +8,11 @@
 
 下方早期结构说明记录初始迁移。检查现行外键以迁移后的 schema 为准，特别是 0003 已解除 `shares.subscription_id` 的外键，0028 的 `unified_subscription_mappings` 仍外键引用 `subscriptions`。0027 的兑换联合视图和权益模板保护必须在正式收缩时保留。转换规则模板及版本、发布指针和转换配置仍有自己的完整 schema。
 
-正式收缩发布时同步更新新库初始化、存量库迁移检测和 `development/tests/worker/d1.ts` 的夹具，并重跑恢复演练。[发布门槛和回滚路径](../unified-subscription-migration.md) 适用于这两条安装路径。
+## PR6 全量收缩后的 schema
+
+在 0028 与就绪标志的基础上应用 [收缩 SQL](../unified-subscription-pr6-full-NOT-EXECUTED.sql)。六张历史子表改指 `legacy_subscriptions_archive`，归档保留对 `users` 和 `plans` 的限制外键。保留 `all_redemption_records` 和权益分组保护。移除四张旧订阅模板表及指向其数据的转换表、视图和同步触发器。独立规则来源和规则集仍保留。统一订阅继续使用 `entitlement_templates`、`entitlement_template_versions`、`private_entitlement_templates` 和 `user_template_bindings`。
+
+常规迁移目录保留至 0028。隔离演练或发行时在该迁移基线之后单独应用收缩批次。[恢复方案](../unified-subscription-pr6-full-rollback.md) 适用于存量升级和备份恢复。
 
 ## 初始迁移约定
 

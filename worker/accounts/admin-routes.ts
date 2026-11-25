@@ -13,7 +13,6 @@ import {
   findUserByEmailNormalized,
   countAdminUsers,
   listAdminUserRedemptions,
-  listAdminUserSubscriptions,
   listAdminUsers,
   purgeUserFromD1,
   type AdminUserFilters,
@@ -25,7 +24,7 @@ import {
   toPublicAccountUser,
   toPublicUser,
 } from './schema.js'
-import { deleteCompiledArtifacts, readDelivery, readDeliveryKv, writeDeliveryKv } from '../delivery/repository.js'
+import { deleteCompiledArtifacts, readDeliveryKv, writeDeliveryKv } from '../delivery/repository.js'
 import {
   deleteShareCompiled,
   deleteShareKv,
@@ -133,12 +132,6 @@ adminAccountRoutes.get('/users', async (c) => {
     })
   }
   const accounts = await readAccounts(c.env)
-  const delivery = await readDelivery(c.env).catch(() => null)
-  const counts = new Map<string, number>()
-  for (const subscription of delivery?.subscriptions ?? []) {
-    if (!subscription.userId) continue
-    counts.set(subscription.userId, (counts.get(subscription.userId) ?? 0) + 1)
-  }
   const filtered = accounts.users.filter((user) => {
     if (filters.deleted === 'active' && user.deletedAt) return false
     if (filters.deleted === 'only' && !user.deletedAt) return false
@@ -150,7 +143,7 @@ adminAccountRoutes.get('/users', async (c) => {
   return c.json({
     users: filtered
       .slice((page - 1) * pageSize, page * pageSize)
-      .map((user) => ({ ...toPublicUser(user), subscriptionCount: counts.get(user.id) ?? 0 })),
+      .map((user) => ({ ...toPublicUser(user), subscriptionCount: 0 })),
     total: filtered.length,
     page,
     pageSize,
@@ -162,41 +155,22 @@ adminAccountRoutes.get('/users/:id', async (c) => {
   const accountUser = await findAccountUserById(c.env, userId)
   if (!accountUser) throw apiError(404, 'USER_NOT_FOUND', '用户不存在')
   if (await accountsUseD1(c.env)) {
-    const [subscriptions, invitationRedemptions] = await Promise.all([
-      listAdminUserSubscriptions(c.env.DB, userId),
+    const [access, invitationRedemptions] = await Promise.all([
+      c.env.DB.prepare("SELECT count(*) AS count FROM user_template_bindings WHERE user_id=? AND status='active'")
+        .bind(userId).first<{ count: number }>(),
       listAdminUserRedemptions(c.env.DB, userId),
     ])
     return c.json({
-      user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
+      user: { ...toPublicAccountUser(accountUser), subscriptionCount: access?.count ?? 0 },
       entitlement: await getSubscriptionPlanSummary(c.env.DB, accountUser.id),
-      subscriptions,
+      subscriptions: [],
       invitationRedemptions,
     })
   }
-  const delivery = await readDelivery(c.env).catch(() => null)
-  const subscriptions = (delivery?.subscriptions ?? [])
-    .filter((subscription) => subscription.userId === userId)
-    .map((subscription) => ({
-      id: subscription.id,
-      name: subscription.name,
-      planId: subscription.planId ?? null,
-      trafficGb: subscription.trafficGb ?? 0,
-      speedLimitMbps: subscription.speedLimitMbps ?? 0,
-      deviceLimit: subscription.deviceLimit ?? 0,
-      tokenPrefix: subscription.tokenPrefix,
-      enabled: subscription.enabled,
-      defaultClient: subscription.defaultClient,
-      revision: subscription.revision,
-      startsAt: subscription.startsAt,
-      expiresAt: subscription.expiresAt,
-      groupIds: subscription.groupIds,
-      createdAt: subscription.createdAt,
-      updatedAt: subscription.updatedAt,
-    }))
   return c.json({
-    user: { ...toPublicAccountUser(accountUser), subscriptionCount: subscriptions.length },
+    user: { ...toPublicAccountUser(accountUser), subscriptionCount: 0 },
     entitlement: await getSubscriptionPlanSummary(c.env.DB, accountUser.id),
-    subscriptions,
+    subscriptions: [],
     // KV mode never recorded redemptions once an invite was consumed.
     invitationRedemptions: [],
   })
@@ -364,31 +338,26 @@ adminAccountRoutes.post('/users/:id/purge', async (c) => {
     EXISTS (SELECT 1 FROM user_template_bindings WHERE user_id=?)
     OR EXISTS (SELECT 1 FROM user_binding_requests WHERE user_id=?)
     OR EXISTS (SELECT 1 FROM private_entitlement_templates WHERE owner_user_id=?)
-    OR EXISTS (SELECT 1 FROM user_subscription_shares WHERE user_id=?)`).bind(target.id,target.id,target.id,target.id).first()
-  if (retained) throw apiError(409, 'USER_SUBSCRIPTION_HISTORY_RETAINED', '统一订阅历史需要保留，用户将留在回收站')
+    OR EXISTS (SELECT 1 FROM user_subscription_shares WHERE user_id=?)
+    OR EXISTS (SELECT 1 FROM legacy_subscriptions_archive WHERE user_id=?)`).bind(target.id,target.id,target.id,target.id,target.id).first()
+  if (retained) throw apiError(409, 'USER_SUBSCRIPTION_HISTORY_RETAINED', '订阅历史需要保留，用户将留在回收站')
   const now = new Date().toISOString()
   const userId = target.id
   if (await accountsUseD1(c.env)) {
     // D1 first: the cascade clears every foreign key that RESTRICTs the
     // users row, so the snapshot write below can drop the row cleanly.
     const accountUser = await findAccountUserById(c.env, userId)
-    const ownedSubscriptions = await listAdminUserSubscriptions(c.env.DB, userId)
-    const { tokenHashes } = await purgeUserFromD1(c.env.DB, {
+    await purgeUserFromD1(c.env.DB, {
       id: userId,
       username: target.username,
       emailNormalized: accountUser?.emailNormalized ?? null,
     })
-    for (const tokenHash of tokenHashes) await deleteCompiledArtifacts(c.env.DATA, tokenHash)
     const removedKv = await scrubKvDelivery(c.env.DATA, userId, now)
     await scrubKvShares(c.env.DATA, userId, new Set([
-      ...ownedSubscriptions.map((subscription) => subscription.id),
       ...removedKv.map((subscription) => subscription.id),
     ]))
   } else {
     const removed = await scrubKvDelivery(c.env.DATA, userId, now)
-    if (removed.length) await c.env.DB.prepare(`
-      DELETE FROM subscription_template_bindings WHERE subscription_id IN (SELECT value FROM json_each(?))
-    `).bind(JSON.stringify(removed.map(subscription => subscription.id))).run()
     await scrubKvShares(c.env.DATA, userId, new Set(removed.map((subscription) => subscription.id)))
   }
   await writeAccounts(c.env, { ...accounts, users: accounts.users.filter((user) => user.id !== userId) }, now)
