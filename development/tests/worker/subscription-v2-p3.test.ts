@@ -1,16 +1,12 @@
-import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
 import { expiryFromDuration } from '../../../shared/subscription-duration'
-import { ACCOUNTS_D1_READY_KEY, markModuleReady } from '../../../worker/db/module-switch'
-import { readUserAccess, userSubscriptionPublicReady, userSubscriptionReady } from '../../../worker/delivery/user-access'
+import { readUserAccess } from '../../../worker/delivery/user-access'
 import { env } from 'cloudflare:workers'
 import { formatCode, normalizeCode, redemptionAlphabet } from '../../../shared/redemption-code'
 import { codeDigest, generateCode, matchesCodeTag, readKeyring } from '../../../worker/redemption/credentials'
 import { beforeEach, expect, it } from 'vitest'
 import { app } from '../../../worker/app'
-import { readDelivery } from '../../../worker/delivery/repository'
 import { toBase64Url } from '../../../worker/platform/crypto'
-import { applyMigrations } from './d1'
-import { createFixtureAccount, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { createFixtureAccount, jsonRequest, login, setupContractedAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const batches = '/api/admin/redemption-batches'
 const me = '/api/me/redemptions'
@@ -25,23 +21,7 @@ let oldKey: string
 let bindings: Env
 
 beforeEach(async () => {
-  await resetData()
-  await applyMigrations()
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM binding_redemption_records'),
-    env.DB.prepare('DELETE FROM user_binding_requests'),
-    env.DB.prepare('DELETE FROM user_template_bindings'),
-    env.DB.prepare('DELETE FROM user_subscription_access'),
-    env.DB.prepare("DELETE FROM system_settings WHERE key IN ('unified_subscription_ready','unified_subscription_public_ready','accounts_d1_ready')"),
-    env.DB.prepare('DELETE FROM redemption_records'),
-    env.DB.prepare('DELETE FROM redemption_codes'),
-    env.DB.prepare('DELETE FROM redemption_batches'),
-    env.DB.prepare("DELETE FROM audit_logs WHERE target_type='redemption_batches'"),
-    env.DB.prepare("DELETE FROM rate_limits WHERE bucket GLOB 'redemption_*'"),
-    env.DB.prepare("UPDATE entitlement_templates SET status='archived'"),
-  ])
-  await enableD1Modules()
-  await setupAdmin()
+  await setupContractedAdmin()
   oldKey = newKey()
   bindings = { ...env, REDEMPTION_HMAC_KEYS: JSON.stringify({ active: 'v1', keys: { v1: oldKey } }) }
 })
@@ -164,9 +144,10 @@ it('pins batch entitlements across template changes, rotation and disabling issu
   expect((await call(batches, holder.cookie)).status).toBe(403)
   expect((await call(me, '')).status).toBe(401)
   const changed = await call(`${templates}/${template.id}`, admin, {
-    expectedRevision: template.revision, status: 'disabled', config: { ...config, groupIds: [group.id], quotaBytes: 20 * 1024 ** 3 },
+    expectedRevision: template.revision, config: { ...config, groupIds: [group.id], quotaBytes: 20 * 1024 ** 3 },
   }, 'PATCH')
   expect(changed.status).toBe(200)
+  const { template: edited } = await changed.json<{ template: Template }>()
   const newRelease = await call(batches, admin, { ...input, idempotencyKey: crypto.randomUUID() })
   expect(newRelease.status).toBe(409)
   bindings = { ...bindings, REDEMPTION_HMAC_KEYS: JSON.stringify({ active: 'v2', keys: { v1: oldKey, v2: newKey() } }) }
@@ -180,22 +161,22 @@ it('pins batch entitlements across template changes, rotation and disabling issu
   const result = await confirm(holder.cookie, request)
   expect(result.status).toBe(200)
   const { subscription } = await result.json<ConfirmOutput>()
-  const { subscriptions } = await readDelivery(bindings)
-  expect(subscriptions).toHaveLength(1)
-  expect(subscriptions[0]).toMatchObject({
-    id: subscription.id, userId: holder.id, trafficGb: 15, sourceType: 'redemption', templateVersionId: template.currentVersion.id,
+  expect(await env.DB.prepare('SELECT user_id,template_id,expires_at FROM user_template_bindings WHERE user_id=? AND template_id=?')
+    .bind(holder.id, template.id).first()).toMatchObject({
+    user_id: holder.id, template_id: template.id, expires_at: subscription.expiresAt,
   })
-  expect((await call(`/api/me/subscriptions/${subscription.id}`, outsider.cookie)).status).toBe(404)
   const other = await preview(holder.cookie, codes[1])
   expect((await confirm(holder.cookie, { ...other, idempotencyKey: request.idempotencyKey })).status).toBe(409)
+  expect((await call(`${templates}/${template.id}`, admin, {
+    expectedRevision: edited.revision, status: 'disabled',
+  }, 'PATCH')).status).toBe(200)
   expect((await call(`${batches}/${id}/disable`, admin, {})).status).toBe(200)
   await unavailable(await confirm(holder.cookie, other))
   expect(await (await confirm(holder.cookie, request)).json()).toEqual({ subscription })
   bindings = { ...bindings, REDEMPTION_HMAC_KEYS: JSON.stringify({ active: 'v2', keys: { v2: newKey() } }) }
   expect(await (await confirm(holder.cookie, request)).json()).toEqual({ subscription })
-  expect((await call(`/api/me/subscriptions/${subscription.id}`, holder.cookie)).status).toBe(200)
   expect(await (await call(me, outsider.cookie)).json()).toMatchObject({ total: 0 })
-  expect(await (await call(me, holder.cookie)).json()).toMatchObject({ total: 1, items: [{ subscriptionId: subscription.id }] })
+  expect(await (await call(me, holder.cookie)).json()).toMatchObject({ total: 1, items: [{ subscriptionId: null, templateId: template.id }] })
   const audit = await (await call(`${batches}/${id}/audit`, admin)).text()
   expect(audit).toContain('redemption.confirm')
   expect(audit).toContain('redemption.batch.release')
@@ -215,9 +196,9 @@ it('accepts exactly one of ten concurrent users for a single-use code and replay
   const repeats = await Promise.all(Array.from({ length: 5 }, () => confirm(holders[index].cookie, requests[index])))
   for (const repeat of repeats) expect(await repeat.json()).toEqual(receipt)
   expect(await env.DB.prepare('SELECT used_count FROM redemption_codes').first()).toEqual({ used_count: 1 })
-  expect(await env.DB.prepare('SELECT count(*) AS total FROM redemption_records').first()).toEqual({ total: 1 })
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM binding_redemption_records').first()).toEqual({ total: 1 })
   expect(await env.DB.prepare("SELECT count(*) AS total FROM audit_logs WHERE action='redemption.confirm'").first()).toEqual({ total: 1 })
-  expect((await readDelivery(bindings)).subscriptions).toHaveLength(1)
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM user_template_bindings').first()).toEqual({ total: 1 })
 })
 
 it('deduplicates simultaneous retries and rolls back quota, subscription and history on audit failure', async () => {
@@ -233,8 +214,8 @@ it('deduplicates simultaneous retries and rolls back quota, subscription and his
     await env.DB.prepare('DROP TRIGGER fail_redemption_audit').run()
   }
   expect(await env.DB.prepare('SELECT used_count FROM redemption_codes').first()).toEqual({ used_count: 0 })
-  expect(await env.DB.prepare('SELECT count(*) AS total FROM redemption_records').first()).toEqual({ total: 0 })
-  expect((await readDelivery(bindings)).subscriptions).toHaveLength(0)
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM binding_redemption_records').first()).toEqual({ total: 0 })
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM user_template_bindings').first()).toEqual({ total: 0 })
   const results = await Promise.all([confirm(holder.cookie, request), confirm(holder.cookie, request)])
   expect(results.map(({ status }) => status)).toEqual([200, 200])
   expect(await results[0].json()).toEqual(await results[1].json())
@@ -244,7 +225,7 @@ it('deduplicates simultaneous retries and rolls back quota, subscription and his
   await env.DB.prepare('UPDATE redemption_batches SET redeem_deadline=?').bind(Date.now() - 1).run()
   await unavailable(await confirm(another.cookie, next))
   expect((await confirm(holder.cookie, request)).status).toBe(200)
-  expect((await readDelivery(bindings)).subscriptions).toHaveLength(1)
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM user_template_bindings').first()).toEqual({ total: 1 })
 })
 
 it('caps batch generation and account-level attempts, including malformed codes without echoing input', async () => {
@@ -293,18 +274,9 @@ it.skipIf(import.meta.env.VITE_SUB_V2_P4_BENCH !== '1')('measures maximum redemp
   }))
 })
 
-async function enableUnifiedOperations() {
-  const snapshot = await readAccounts(env)
-  await markModuleReady(env.DB, ACCOUNTS_D1_READY_KEY)
-  await writeAccounts(env, snapshot, new Date().toISOString())
-  await markModuleReady(env.DB, userSubscriptionReady)
-  await markModuleReady(env.DB, userSubscriptionPublicReady)
-}
-
 it('atomically renews one binding across concurrent codes and replays the original receipt', async () => {
   const { issue, template } = await fixture()
   const owner = await account(1)
-  await enableUnifiedOperations()
   const { codes } = await issue()
   expect(codes.every(code => /^.{4}-.{4}-.{4}$/.test(code))).toBe(true)
   const initial = await preview(owner.cookie, codes[0])
@@ -323,13 +295,12 @@ it('atomically renews one binding across concurrent codes and replays the origin
     .bind(owner.id).all()
   expect(rows.results).toEqual([{ template_id: template.id, expires_at: expiry(expiry(original.subscription.expiresAt)) }])
   expect((await readUserAccess(env.DB, { userId: owner.id }))?.token_hash).toBe(tokenHash)
-  expect((await readDelivery(bindings)).subscriptions).toHaveLength(0)
+  expect(await env.DB.prepare('SELECT count(*) AS total FROM legacy_subscriptions_archive').first()).toEqual({ total: 0 })
 })
 
 it('rolls back the losing claim and refuses an administrator-paused binding', async () => {
   const { admin, issue, template } = await fixture()
   const users = [await account(1), await account(2)]
-  await enableUnifiedOperations()
   const { codes } = await issue()
   const inputs = await Promise.all(users.map(owner => preview(owner.cookie, codes[0])))
   const result = await Promise.all(users.map((owner, index) => confirm(owner.cookie, inputs[index])))

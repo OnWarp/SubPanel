@@ -1,10 +1,9 @@
-import { createDeliveryFixturePlan } from './helpers'
 import { createFixtureAccount } from './helpers'
 import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { catalogSnapshotSchema, type CatalogSnapshot, type Node } from '../../../worker/catalog/schema'
 import { collectUserNodes, type UserNodeSubscription } from '../../../worker/delivery/user-nodes'
-import { enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { bindFixtureTemplate, jsonRequest, login, setupContractedAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const NOW = '2026-06-01T00:00:00.000Z'
 const NOW_MS = Date.parse(NOW)
@@ -74,14 +73,8 @@ async function createGroup(adminCookie: string, name: string, sourceIds: string[
   return (await created.json() as { group: { id: string } }).group.id
 }
 
-async function createSubscription(adminCookie: string, userId: string, name: string, groupIds: string[], extra: Record<string, unknown> = {}): Promise<string> {
-  const plan = await createDeliveryFixturePlan(groupIds)
-  const created = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/admin/subscriptions`,
-    jsonRequest({ userId, name, planId: plan.id, groupIds, defaultClient: 'mihomo', ...extra }, withCookie(adminCookie)),
-  )
-  expect(created.status).toBe(201)
-  return (await created.json() as { subscription: { id: string } }).subscription.id
+async function bindTemplate(userId: string, name: string, groupIds: string[], extra: { paused?: boolean; expiresAt?: number; startsAt?: number } = {}): Promise<string> {
+  return (await bindFixtureTemplate(userId, { name, groupIds, ...extra })).id
 }
 
 async function listNodes(cookie: string): Promise<UserNode[]> {
@@ -147,11 +140,7 @@ function subscription(overrides: Partial<UserNodeSubscription> = {}): UserNodeSu
   }
 }
 
-beforeEach(async () => {
-  await resetData()
-  await enableD1Modules()
-  await setupAdmin()
-})
+beforeEach(setupContractedAdmin)
 
 describe('GET /api/user/nodes', () => {
   it('requires a signed-in user', async () => {
@@ -170,8 +159,8 @@ describe('GET /api/user/nodes', () => {
     const privateSource = await importSource(admin, 'Bob source', [ssLine('鲍勃专属', 'bob.example')])
     const sharedGroup = await createGroup(admin, '共用分组', [shared.sourceId], [], shared.nodes.map((node) => node.id))
     const privateGroup = await createGroup(admin, '鲍勃分组', [privateSource.sourceId], [], privateSource.nodes.map((node) => node.id))
-    await createSubscription(admin, alice.id, '爱丽丝订阅', [sharedGroup])
-    await createSubscription(admin, bob.id, '鲍勃订阅', [sharedGroup, privateGroup])
+    await bindTemplate(alice.id, '爱丽丝订阅', [sharedGroup])
+    await bindTemplate(bob.id, '鲍勃订阅', [sharedGroup, privateGroup])
 
     const aliceNodes = await listNodes(alice.cookie)
     const bobNodes = await listNodes(bob.cookie)
@@ -199,9 +188,9 @@ describe('GET /api/user/nodes', () => {
     const liveGroup = await createGroup(admin, '启用分组', [live.sourceId], [], live.nodes.map((node) => node.id))
     const offGroup = await createGroup(admin, '停用订阅分组', [off.sourceId], [], off.nodes.map((node) => node.id))
     const quietGroup = await createGroup(admin, '停用来源分组', [quiet.sourceId], [], quiet.nodes.map((node) => node.id))
-    await createSubscription(admin, user.id, '有效订阅', [liveGroup])
-    await createSubscription(admin, user.id, '停用订阅', [offGroup], { enabled: false })
-    await createSubscription(admin, user.id, '来源停用订阅', [quietGroup])
+    await bindTemplate(user.id, '有效订阅', [liveGroup])
+    await bindTemplate(user.id, '停用订阅', [offGroup], { paused: true })
+    await bindTemplate(user.id, '来源停用订阅', [quietGroup])
     const hidden = live.nodes.find((node) => node.displayName === '停用节点')
     expect(hidden).toBeTruthy()
     const disabledNode = await exports.default.fetch(
@@ -233,9 +222,9 @@ describe('GET /api/user/nodes', () => {
     const liveGroup = await createGroup(admin, '有效分组', [live.sourceId], [], live.nodes.map((node) => node.id))
     const expiredGroup = await createGroup(admin, '过期分组', [expired.sourceId], [], expired.nodes.map((node) => node.id))
     const pendingGroup = await createGroup(admin, '未生效分组', [pending.sourceId], [], pending.nodes.map((node) => node.id))
-    await createSubscription(admin, user.id, '有效订阅', [liveGroup])
-    await createSubscription(admin, user.id, '过期订阅', [expiredGroup, liveGroup], { expiresAt: Date.now() - 120_000 })
-    await createSubscription(admin, user.id, '未生效订阅', [pendingGroup], { startsAt: Date.now() + 3_600_000 })
+    await bindTemplate(user.id, '有效订阅', [liveGroup])
+    await bindTemplate(user.id, '过期订阅', [expiredGroup, liveGroup], { startsAt: Date.now() - 240_000, expiresAt: Date.now() - 120_000 })
+    await bindTemplate(user.id, '未生效订阅', [pendingGroup], { startsAt: Date.now() + 3_600_000 })
 
     const nodes = await listNodes(user.cookie)
     expect(names(nodes)).toEqual(['留存节点'])
@@ -255,8 +244,8 @@ describe('GET /api/user/nodes', () => {
     expect(shared && eastOnly).toBeTruthy()
     const eastGroup = await createGroup(admin, '东部分组', [east.sourceId], [], [eastOnly!.id, shared!.id])
     const bothGroup = await createGroup(admin, '汇合分组', [], [shared!.id], [shared!.id])
-    await createSubscription(admin, user.id, '东线订阅', [eastGroup, bothGroup])
-    await createSubscription(admin, user.id, '汇合订阅', [bothGroup])
+    await bindTemplate(user.id, '东线订阅', [eastGroup, bothGroup])
+    await bindTemplate(user.id, '汇合订阅', [bothGroup])
 
     const nodes = await listNodes(user.cookie)
     expect(names(nodes)).toEqual(['东部节点', '共用节点'])
@@ -324,8 +313,8 @@ describe('GET /api/user/nodes pagination', () => {
     const extra = await importSource(adminCookie, 'Extra source', [ssLine('节点己', 'f.example')])
     const mainGroup = await createGroup(adminCookie, '主分组', [main.sourceId], [], main.nodes.map((node) => node.id))
     const extraGroup = await createGroup(adminCookie, '副分组', [extra.sourceId], [], extra.nodes.map((node) => node.id))
-    const mainSubscription = await createSubscription(adminCookie, user.id, '主订阅', [mainGroup])
-    const extraSubscription = await createSubscription(adminCookie, user.id, '副订阅', [extraGroup])
+    const mainSubscription = await bindTemplate(user.id, '主订阅', [mainGroup])
+    const extraSubscription = await bindTemplate(user.id, '副订阅', [extraGroup])
     return { user, mainGroup, extraGroup, mainSubscription, extraSubscription }
   }
 

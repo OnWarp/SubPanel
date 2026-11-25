@@ -1,15 +1,11 @@
-import { createDeliveryFixturePlan } from './helpers'
+import { bindFixtureTemplate, setupContractedAdmin } from './helpers'
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { clearAccountsStorage } from '../../../worker/accounts/d1-repository'
 import { hashPassword } from '../../../worker/accounts/password'
 import { readAccounts, writeAccounts } from '../../../worker/accounts/repository'
 import type { AccountUser } from '../../../worker/accounts/schema'
 import {
   ACCOUNTS_D1_READY_KEY,
-  DELIVERY_D1_READY_KEY,
-  markModuleReady,
-  SHARES_D1_READY_KEY,
 } from '../../../worker/db/module-switch'
 import { readDeliveryKv, writeDeliveryKv } from '../../../worker/delivery/repository'
 import {
@@ -20,12 +16,9 @@ import {
   writeShareKv,
 } from '../../../worker/shares/repository'
 import type { ShareRecord } from '../../../worker/shares/schema'
-import { applyMigrations } from './d1'
 import {
-  enableD1Modules,
   jsonRequest,
   login,
-  resetData,
   setupAdmin,
   TEST_ORIGIN,
   withCookie,
@@ -108,17 +101,11 @@ async function seedGroup(id: string): Promise<void> {
 
 async function seedSubscription(id: string, userId: string, name = 'Seeded'): Promise<void> {
   await env.DB.prepare(
-    `INSERT INTO subscriptions (
+    `INSERT INTO legacy_subscriptions_archive (
        id, user_id, name, token_hash, token_prefix, encrypted_token, enabled,
        default_client, revision, starts_at, expires_at, created_at, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, 1, 'mihomo', 1, NULL, NULL, ?, ?)`,
   ).bind(id, userId, name, `hash-${id}`, `pre-${id}`, ENCRYPTED, NOW, NOW).run()
-}
-
-async function seedGroupLink(subscriptionId: string, groupId: string, position: number): Promise<void> {
-  await env.DB.prepare(
-    'INSERT INTO subscription_groups (subscription_id, group_id, position) VALUES (?, ?, ?)',
-  ).bind(subscriptionId, groupId, position).run()
 }
 
 async function countRows(sql: string, ...binds: Array<string>): Promise<number> {
@@ -128,7 +115,7 @@ async function countRows(sql: string, ...binds: Array<string>): Promise<number> 
 
 async function wipeModuleTables(): Promise<void> {
   for (const table of [
-    'subscription_groups', 'shares', 'subscriptions', 'invitation_redemptions',
+    'subscription_groups', 'shares', 'legacy_subscriptions_archive', 'invitation_redemptions',
     'invitations', 'groups', 'email_verifications', 'email_change_requests', 'rate_limits',
   ]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run()
@@ -137,25 +124,21 @@ async function wipeModuleTables(): Promise<void> {
 
 describe('D1 admin user management (batch 8)', () => {
   beforeEach(async () => {
-    await resetData()
-    await applyMigrations()
+    await setupContractedAdmin()
     await wipeModuleTables()
-    await clearAccountsStorage(env.DB)
-    await markModuleReady(env.DB, ACCOUNTS_D1_READY_KEY, new Date().toISOString())
-    await setupAdmin()
   })
 
   it('lists users with search, filters, pagination and aggregated subscription counts', async () => {
     const admin = await login()
     const alice = await createAccountUser('alice', 'alice password 1', { email: 'Alice@Example.com' })
     await bindEmailD1(alice.id, 'Alice@Example.com')
-    const bob = await createAccountUser('bob', 'bob password 123', { enabled: false })
+    const bob = await createAccountUser('bob', 'bob password 123')
     await createAccountUser('carol', 'carol password 1')
     await seedGroup('grp_1')
-    await seedSubscription('sub_11', alice.id, 'Alice main')
-    await seedSubscription('sub_12', alice.id, 'Alice backup')
-    await seedSubscription('sub_13', bob.id, 'Bob sub')
-    await seedGroupLink('sub_11', 'grp_1', 0)
+    await bindFixtureTemplate(alice.id, { name: 'Alice main', groupIds: ['grp_1'] })
+    await bindFixtureTemplate(alice.id, { name: 'Alice backup', groupIds: ['grp_1'] })
+    await bindFixtureTemplate(bob.id, { name: 'Bob template', groupIds: ['grp_1'] })
+    await env.DB.prepare('UPDATE users SET enabled=0 WHERE id=?').bind(bob.id).run()
 
     const all = await listUsers(admin)
     expect(all.status).toBe(200)
@@ -186,8 +169,7 @@ describe('D1 admin user management (batch 8)', () => {
       invitationRedemptions: Array<{ invitationUsername: string }>
     }
     expect(detail.user.subscriptionCount).toBe(2)
-    expect(detail.subscriptions).toHaveLength(2)
-    expect(detail.subscriptions.find((subscription) => subscription.id === 'sub_11')!.groupIds).toEqual(['grp_1'])
+    expect(detail.subscriptions).toEqual([])
 
     await env.DB.prepare(
       `INSERT INTO invitations (id, schema_version, user_id, username, created_at, expires_at)
@@ -307,7 +289,6 @@ describe('D1 admin user management (batch 8)', () => {
   })
 
   it('soft delete blocks login, sessions and public delivery until restored', async () => {
-    await enableD1Modules()
     const admin = await login()
     const dave = await createAccountUser('dave', 'dave password 12')
     const daveCookie = await login('dave', 'dave password 12')
@@ -323,13 +304,11 @@ describe('D1 admin user management (batch 8)', () => {
       name: 'Dave group', sourceIds: [sourceId], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [catalog.nodes[0].id],
     }))
     const groupId = ((await groupResponse.json()) as { group: { id: string } }).group.id
-    const plan = await createDeliveryFixturePlan([groupId])
-    const created = await adminCall(admin, '/api/admin/subscriptions', jsonRequest({
-      userId: dave.id, name: 'Dave sub', planId: plan.id, groupIds: [groupId], defaultClient: 'mihomo',
-    }))
-    expect(created.status).toBe(201)
-    const token = ((await created.json()) as { token: string }).token
-    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(200)
+    await bindFixtureTemplate(dave.id, { name: 'Dave access', groupIds: [groupId] })
+    const summary = await fetchApi('/api/user/subscription', withCookie(daveCookie))
+    const { subscriptionUrl } = await summary.json<{ subscriptionUrl: string }>()
+    const download = new URL(subscriptionUrl).pathname + '/mihomo'
+    expect((await fetchApi(download)).status).toBe(200)
 
     const deleted = await deleteCall(admin, `/api/admin/users/${dave.id}`)
     expect(deleted.status).toBe(200)
@@ -338,7 +317,7 @@ describe('D1 admin user management (batch 8)', () => {
     const loginResponse = await fetchApi('/api/login', jsonRequest({ username: 'dave', password: 'dave password 12' }))
     expect(loginResponse.status).toBe(401)
     expect((await fetchApi('/api/account', withCookie(daveCookie))).status).toBe(401)
-    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(404)
+    expect((await fetchApi(download)).status).toBe(404)
 
     const active = await listUsers(admin)
     expect(active.body.users.some((user) => user.id === dave.id)).toBe(false)
@@ -358,7 +337,7 @@ describe('D1 admin user management (batch 8)', () => {
     expect(restored.status).toBe(200)
     expect(((await restored.json()) as UserBody).user.deletedAt).toBeNull()
     await login('dave', 'dave password 12')
-    expect((await fetchApi(`/sub/${token}/mihomo`)).status).toBe(200)
+    expect((await fetchApi(download)).status).toBe(200)
   })
 
   it('purge removes every dependent record across D1 and KV and releases the username', async () => {
@@ -368,9 +347,6 @@ describe('D1 admin user management (batch 8)', () => {
     const frank = await createAccountUser('frank', 'frank password 1')
 
     await seedGroup('grp_1')
-    await seedSubscription('sub_21', erin.id, 'Erin D1 A')
-    await seedSubscription('sub_22', erin.id, 'Erin D1 B')
-    await seedGroupLink('sub_21', 'grp_1', 0)
     await env.DB.prepare(
       `INSERT INTO shares (
          id, schema_version, owner_user_id, subscription_id, token_hash, token_prefix,
@@ -469,10 +445,6 @@ describe('D1 admin user management (batch 8)', () => {
     expect(await purged.json()).toMatchObject({ purged: true, userId: erin.id })
 
     expect(await countRows('SELECT COUNT(*) AS count FROM users WHERE id = ?', erin.id)).toBe(0)
-    expect(await countRows('SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = ?', erin.id)).toBe(0)
-    expect(await countRows(
-      'SELECT COUNT(*) AS count FROM subscription_groups WHERE subscription_id IN (?, ?)', 'sub_21', 'sub_22',
-    )).toBe(0)
     expect(await countRows('SELECT COUNT(*) AS count FROM shares WHERE owner_user_id = ?', erin.id)).toBe(0)
     expect(await countRows('SELECT COUNT(*) AS count FROM invitations WHERE user_id = ?', erin.id)).toBe(0)
     expect(await countRows('SELECT COUNT(*) AS count FROM invitation_redemptions WHERE invitation_id = ?', 'inv_e')).toBe(0)
@@ -494,6 +466,17 @@ describe('D1 admin user management (batch 8)', () => {
 
     const invite = await adminCall(admin, '/api/admin/invites', jsonRequest({ username: 'erin' }))
     expect(invite.status).toBe(201)
+  })
+
+  it('keeps accounts with archived subscription history in the recycle bin', async () => {
+    const admin = await login()
+    const account = await createAccountUser('historical', 'historical password')
+    await seedSubscription('sub_archived', account.id)
+    expect((await deleteCall(admin, `/api/admin/users/${account.id}`)).status).toBe(200)
+    const purge = await adminCall(admin, `/api/admin/users/${account.id}/purge`, jsonRequest({}))
+    expect(purge.status).toBe(409)
+    expect(await purge.json()).toMatchObject({ error: { code: 'USER_SUBSCRIPTION_HISTORY_RETAINED' } })
+    expect(await countRows('SELECT COUNT(*) AS count FROM legacy_subscriptions_archive WHERE user_id=?', account.id)).toBe(1)
   })
 
   it('reset-password reveals the temporary password once and rotates the session', async () => {
@@ -524,21 +507,10 @@ describe('D1 admin user management (batch 8)', () => {
   })
 })
 
-describe('KV fallback mode (batch 8)', () => {
+describe('KV account fallback', () => {
   beforeEach(async () => {
-    await resetData()
-    await applyMigrations()
-    await wipeModuleTables()
-    await clearAccountsStorage(env.DB)
-    // Explicitly un-mark the accounts, delivery and shares modules so this
-    // block runs fully on KV even when it shares a database with the D1
-    // block above (the delivery flag matters in integ: the admin user list
-    // counts subscriptions through the dispatching delivery reader).
-    await env.DB.prepare('DELETE FROM system_settings WHERE key IN (?, ?, ?)').bind(
-      ACCOUNTS_D1_READY_KEY,
-      DELIVERY_D1_READY_KEY,
-      SHARES_D1_READY_KEY,
-    ).run()
+    await setupContractedAdmin()
+    await env.DB.prepare('DELETE FROM system_settings WHERE key=?').bind(ACCOUNTS_D1_READY_KEY).run()
     await setupAdmin()
   })
 
@@ -571,7 +543,7 @@ describe('KV fallback mode (batch 8)', () => {
     await env.DATA.put(`compiled:${kvTokenHash}:mihomo`, 'compiled-body')
 
     const listed = await listUsers(admin)
-    expect(listed.body.users.find((user) => user.username === 'ivan')!.subscriptionCount).toBe(1)
+    expect(listed.body.users.find((user) => user.username === 'ivan')!.subscriptionCount).toBe(0)
 
     expect((await deleteCall(admin, `/api/admin/users/${ivan.id}`)).status).toBe(200)
     const loginResponse = await fetchApi('/api/login', jsonRequest({ username: 'ivan', password: 'ivan password 12' }))

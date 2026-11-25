@@ -4,7 +4,8 @@ import { getSetting } from '../../../worker/db/settings-repository'
 import { invalidateGateCache } from '../../../worker/domains/service'
 import { applyMigrations } from './d1'
 import {
-  enableD1Modules,
+  bindFixtureTemplate,
+  setupContractedAdmin,
   jsonRequest,
   login,
   resetData,
@@ -286,79 +287,38 @@ describe('domain CRUD and verification rules', () => {
 
 describe('delivery links and share links', () => {
   beforeEach(async () => {
-    await resetData()
-    await enableD1Modules()
+    await setupContractedAdmin()
     await reseedDomains()
-    await setupAdmin()
     adminCookie = await login()
   })
 
-  const ssLine = (name: string, host = 'ss.example.com') =>
-    `ss://${btoa('aes-128-gcm:password')}@${host}:8388#${encodeURIComponent(name)}`
-
-  async function createSubscription(): Promise<{ id: string; token: string; links: Record<string, string>; linkError: string | null }> {
-    const sourceResponse = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/catalog/sources`,
-      jsonRequest({ type: 'manual', name: 'Domain source', content: ssLine('Domain node') }, withCookie(adminCookie)),
-    )
-    const sourceId = ((await sourceResponse.json()) as { source: { id: string } }).source.id
-    const catalog = (await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(adminCookie))).json()) as { nodes: Array<{ id: string }> }
-    const groupResponse = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/catalog/groups`,
-      jsonRequest({ name: 'Domain group', sourceIds: [sourceId], includedNodeIds: [], excludedNodeIds: [], nodeOrder: [catalog.nodes[0].id] }, withCookie(adminCookie)),
-    )
-    const groupId = ((await groupResponse.json()) as { group: { id: string } }).group.id
-    const created = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: 'usr_1', name: '域名订阅', groupIds: [groupId], defaultClient: 'mihomo' }, withCookie(adminCookie)),
-    )
-    expect(created.status).toBe(201)
-    const body = (await created.json()) as {
-      subscription: { id: string; links: Record<string, string>; linkError: string | null }
-      token: string
-    }
-    return { id: body.subscription.id, token: body.token, links: body.subscription.links, linkError: body.subscription.linkError }
-  }
-
-  it('generates subscription and share links on the primary subscription domain', async () => {
-    const subscription = await createSubscription()
-    expect(subscription.linkError).toBeNull()
-    expect(subscription.links.mihomo).toBe(`https://sub.warp.dpdns.org/sub/${subscription.token}/mihomo`)
-    expect(subscription.links.auto).toBe(`https://sub.warp.dpdns.org/sub/${subscription.token}`)
-
-    const shareResponse = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/shares`,
-      jsonRequest({ subscriptionId: subscription.id, allowOriginalLink: true }, withCookie(adminCookie)),
-    )
-    expect(shareResponse.status).toBe(201)
-    const shareBody = (await shareResponse.json()) as { share: { id: string }; token: string; linkBaseUrl: string | null }
-    expect(shareBody.linkBaseUrl).toBe('https://sub.warp.dpdns.org')
-
-    const metaResponse = await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${shareBody.token}/meta`)
-    expect(metaResponse.status).toBe(200)
-    expect(((await metaResponse.json()) as { linkBaseUrl: string | null }).linkBaseUrl).toBe('https://sub.warp.dpdns.org')
-
-    const reveal = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/shares/${shareBody.share.id}/reveal`,
-      jsonRequest({}, withCookie(adminCookie)),
-    )
-    expect(reveal.status).toBe(200)
-    const link = ((await reveal.json()) as { link: string }).link
-    expect(link).toBe(`https://sub.warp.dpdns.org/sub/${subscription.token}`)
+  it('generates unified subscription and share links on the primary subscription domain', async () => {
+    const auth = withCookie(adminCookie)
+    const source = await fetchApi('/api/admin/catalog/sources', jsonRequest({
+      type: 'manual', name: 'Domain source', content: `ss://${btoa('aes-128-gcm:fixture')}@domain.example:8388#Domain`,
+    }, auth))
+    expect(source.status).toBe(201)
+    const { nodes } = await (await fetchApi('/api/admin/catalog', auth)).json<{ nodes: { id: string }[] }>()
+    const template = await bindFixtureTemplate('usr_1', { name: 'Domain template', nodeIds: [nodes[0].id] })
+    const summary = await fetchApi('/api/user/subscription', auth)
+    expect(summary.status).toBe(200)
+    const { subscriptionUrl } = await summary.json<{ subscriptionUrl: string }>()
+    expect(new URL(subscriptionUrl).origin).toBe('https://sub.warp.dpdns.org')
+    expect(new URL(subscriptionUrl).pathname).toMatch(/^\/s\//u)
+    const share = await fetchApi('/api/shares', jsonRequest({ scope: { type: 'template', templateId: template.id } }, auth))
+    expect(share.status).toBe(201)
+    const body = await share.json<{ token: string; linkBaseUrl: string }>()
+    expect(body.linkBaseUrl).toBe('https://sub.warp.dpdns.org')
+    expect(await (await fetchApi(`/api/shares/${body.token}/meta`)).json()).toMatchObject({ linkBaseUrl: body.linkBaseUrl })
   })
 
-  it('reports a recognizable error instead of falling back to the request host', async () => {
-    const subscription = await createSubscription()
+  it('uses the request origin for the unified link when no primary domain remains', async () => {
     await env.DB.prepare('DELETE FROM subscription_domains').run()
     await env.DB.prepare("DELETE FROM system_settings WHERE key = 'primary_subscription_domain_id'").run()
-
-    const list = await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(adminCookie))
-    expect(list.status).toBe(200)
-    const body = (await list.json()) as { subscriptions: Array<{ id: string; links: Record<string, string>; linkError: string | null }> }
-    const mine = body.subscriptions.find((entry) => entry.id === subscription.id)
-    expect(mine).toBeDefined()
-    expect(mine!.links).toEqual({})
-    expect(mine!.linkError).toBe('SUBSCRIPTION_DOMAIN_NOT_CONFIGURED')
+    const summary = await fetchApi('/api/user/subscription', withCookie(adminCookie))
+    expect(summary.status).toBe(200)
+    const { subscriptionUrl } = await summary.json<{ subscriptionUrl: string }>()
+    expect(new URL(subscriptionUrl).origin).toBe(TEST_ORIGIN)
   })
 })
 
