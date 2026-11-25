@@ -3,9 +3,7 @@ import { formatCode, normalizeCode } from '../../shared/redemption-code.js'
 import { auditStatement } from '../admin/audit.js'
 import { mutateBinding } from '../delivery/bindings.js'
 import { readUserAccess, unifiedOperationsEnabled } from '../delivery/user-access.js'
-import { durationSchema, entitlementConfigSchema, getRedemptionVersion } from '../delivery/entitlement-templates.js'
-import { createSubscription, DeliveryError } from '../delivery/service.js'
-import type { Subscription } from '../delivery/schema.js'
+import { durationSchema, entitlementConfigSchema } from '../delivery/entitlement-templates.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { ApiError, apiError } from '../platform/api-error.js'
 import { codeDigest, generateCode, issuePreview, matchesCodeTag, readKeyring, receiptVerifier, verifyPreview } from './credentials.js'
@@ -54,7 +52,7 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
   const unified = await unifiedOperationsEnabled(db)
-  if (input.templateId && !unified) throw apiError(409, 'REDEMPTION_TEMPLATE_UNAVAILABLE', '请选择可发放的模板版本')
+  if (!unified) throw apiError(409, 'REDEMPTION_TEMPLATE_UNAVAILABLE', '请选择可发放的模板版本')
   const versionId = input.templateVersionId ?? await db.prepare(`SELECT id FROM entitlement_template_versions
     WHERE template_id=? ORDER BY version_no DESC LIMIT 1`).bind(input.templateId).first<string>('id')
   if (!versionId) throw apiError(409, 'REDEMPTION_TEMPLATE_UNAVAILABLE', '请选择启用且允许兑换发放的模板')
@@ -63,16 +61,16 @@ export async function createBatch(env: RedemptionEnv, actor: string, input: z.in
     (id, name, template_version_id, template_name, quantity, max_uses, redeem_deadline, note, created_by, created_at, request_key, template_id, duration_json)
     SELECT ?, ?, ?, (SELECT t.name FROM entitlement_templates t JOIN entitlement_template_versions v ON v.template_id=t.id
       WHERE v.id=? AND t.status='enabled' AND t.allow_redemption=1
-        AND (NOT ? OR v.version_no=(SELECT max(version_no) FROM entitlement_template_versions WHERE template_id=t.id))
+        AND v.version_no=(SELECT max(version_no) FROM entitlement_template_versions WHERE template_id=t.id)
         AND NOT EXISTS (SELECT 1 FROM json_each(v.config_json, '$.groupIds') g
           WHERE NOT EXISTS (SELECT 1 FROM groups WHERE id=g.value))
         AND NOT EXISTS (SELECT 1 FROM json_each(v.config_json, '$.nodeIds') n
           WHERE NOT EXISTS (SELECT 1 FROM nodes WHERE id=n.value AND enabled=1))),
       ?, ?, ?, ?, ?, ?, ?,
-      CASE WHEN ? THEN (SELECT template_id FROM entitlement_template_versions WHERE id=?) END,
-      CASE WHEN ? THEN (SELECT json_extract(config_json,'$.duration') FROM entitlement_template_versions WHERE id=?) END`).bind(id, input.name, versionId, versionId, Number(unified),
+      (SELECT template_id FROM entitlement_template_versions WHERE id=?),
+      (SELECT json_extract(config_json,'$.duration') FROM entitlement_template_versions WHERE id=?)`).bind(id, input.name, versionId, versionId,
     input.quantity, input.maxUses, input.redeemDeadline, input.note, actor, now, input.idempotencyKey,
-    Number(unified), versionId, Number(unified), versionId)]
+    versionId, versionId)]
 
   for (let offset = 0; offset < input.quantity; offset += 50) {
     const persisted = await Promise.all(Array.from({ length: Math.min(50, input.quantity - offset) }, async () => {
@@ -137,9 +135,8 @@ export async function previewRedemption(env: RedemptionEnv, user: string, input:
     await recordFailure(env.DB)
     throw invalidCode()
   }
-  const { name, config } = code.template_id
-    ? await currentRedemptionTemplate(env, user, code.template_id)
-    : await getRedemptionVersion(env.DB, code.template_version_id, code.template_name)
+  if (!code.template_id) throw invalidCode()
+  const { name, config } = await currentRedemptionTemplate(env, user, code.template_id)
   return {
     name,
     duration: code.duration_json ? durationSchema.parse(JSON.parse(code.duration_json)) : config.duration,
@@ -167,26 +164,6 @@ function replay(row: Receipt | null, code: Candidate) {
   return receiptDto(row)
 }
 
-function redemptionStatements(db: D1Database, code: Candidate, user: string, requestKey: string, verifier: string, subscription: Subscription) {
-  const { id, name, expiresAt, createdAt } = subscription
-  const recordId = crypto.randomUUID()
-  return [
-    db.prepare(`UPDATE redemption_codes AS c SET used_count=used_count+1 WHERE c.id=?
-      AND EXISTS (SELECT 1 FROM redemption_batches b WHERE b.id=c.batch_id AND ${codeAvailable})
-      AND EXISTS (SELECT 1 FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE code_id=c.id AND user_id=?)
-      AND NOT EXISTS (SELECT 1 FROM all_redemption_records WHERE user_id=? AND idempotency_key=?)`).bind(code.id, user, user, user, requestKey),
-    // Read the immediately preceding UPDATE's affected rows inside the transaction.
-    // A zero-row claim must fail a constraint rather than commit unrelated writes.
-    db.prepare(`INSERT INTO redemption_records
-      (id, code_id, user_id, subscription_id, issued_subscription_id, subscription_name, expires_at, redeemed_at, idempotency_key, replay_verifier)
-      VALUES (?, CASE WHEN changes()=1 THEN ? END, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(recordId, code.id, user, id, id, name, expiresAt, createdAt, requestKey, verifier),
-    auditStatement(db, user, 'redemption.confirm', 'redemption_batches', code.batch_id,
-      { recordId, codeId: code.id, subscriptionId: id }, createdAt),
-  ]
-}
-
 export async function confirmRedemption(env: RedemptionEnv, user: string, input: z.infer<typeof redeemInput>) {
   const normalized = await normalizeOrReject(env.DB, input.code)
   const previous = () => readReceipt(env.DB, user, input.idempotencyKey)
@@ -200,20 +177,11 @@ export async function confirmRedemption(env: RedemptionEnv, user: string, input:
     throw invalidCode()
   }
 
+  if (!code.template_id) throw invalidCode()
   const digest = await verifier.sign()
   for (let attempt = 0; ; attempt += 1) {
     try {
-      if (code.template_id) {
-        return await redeemBinding(env, user, input.idempotencyKey, digest, code)
-      }
-      const { subscription } = await createSubscription(env, { userId: user, templateVersionId: code.template_version_id }, {
-        actorUserId: user,
-        redemption: {
-          templateName: code.template_name,
-          statements: (subscription) => redemptionStatements(env.DB, code, user, input.idempotencyKey, digest, subscription),
-        },
-      })
-      return { id: subscription.id, name: subscription.name, expiresAt: subscription.expiresAt }
+      return await redeemBinding(env, user, input.idempotencyKey, digest, code)
     } catch (error) {
       const concurrent = replay(await previous(), code)
       if (concurrent) return concurrent
@@ -226,10 +194,6 @@ export async function confirmRedemption(env: RedemptionEnv, user: string, input:
       if (error instanceof Error && /NOT NULL constraint failed: (binding_)?redemption_records\.code_id/.test(error.message)) {
         await recordFailure(env.DB)
         throw invalidCode()
-      }
-      if ((error instanceof DeliveryError && ['GROUP_NOT_FOUND', 'USER_NOT_FOUND'].includes(error.code))
-        || (error instanceof ApiError && ['SUBSCRIPTION_NODE_UNAVAILABLE', 'SUBSCRIPTION_REFERENCE_CHANGED'].includes(error.code))) {
-        throw apiError(409, 'REDEMPTION_ENTITLEMENT_UNAVAILABLE', '暂时无法发放订阅，请联系管理员')
       }
       throw error
     }

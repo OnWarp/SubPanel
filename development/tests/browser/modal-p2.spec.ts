@@ -196,36 +196,31 @@ for (const width of [1440, 1024, 390]) {
       expect(attempts).toBe(2)
     })
 
-    test('user subscription opens import, QR and share dialogs', async ({ page }) => {
+    test('unified subscription imports a client, creates a scoped share and revokes all shares', async ({ page, context }) => {
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'])
       const shareToken = randomUUID()
-      const subscription = {
-        id: 'sub', name: '测试订阅', userId: 'fixture', groupIds: [], diagnostics: {},
-        enabled: true, defaultClient: 'mihomo', revision: 1, expiresAt: null, startsAt: null,
-        links: { mihomo: 'https://example.test/sub/example' },
-      }
-      const share = {
-        id: 'share', subscriptionId: 'sub', remark: '分享测试', accessCount: 0, status: 'active',
-        expiresAt: '2099-01-01T00:00:00Z', createdAt: '2026-01-01T00:00:00Z',
-      }
-      let shares: Array<typeof share> = []
+      let revoked = false
       await mock(page, {
-        '/api/account/subscriptions': { subscriptions: [subscription], shareEnabled: true },
-        '/api/me/subscriptions/sub': { subscription },
+        '/api/user/subscription': {
+          status: 'active', expiresAt: null, lastExpiredAt: null, permanent: true,
+          subscriptionUrl: 'https://example.test/s/subscription-token',
+          supportedFormats: ['mihomo'], importPlatforms: [{ platform: 'mihomo', displayName: 'Mihomo' }],
+          shareEnabled: true, hasAvailableNodes: true, nodeCount: 1,
+        },
         '/api/apps': { apps: [], downloadsEnabled: true },
-        '/api/account/subscription-platforms': { platforms: [{ platform: 'mihomo', displayName: 'Mihomo' }] },
-        '/api/user/subscription': async (route: Route) => {
-          await route.fulfill({ status: 404, json: { error: { code: 'UNIFIED_SUBSCRIPTION_DISABLED', message: '统一订阅暂未开放' } } })
-        },
         '/api/shares': async (route: Route) => {
-          if (route.request().method() === 'POST') {
-            expect(route.request().postDataJSON()).toMatchObject({ subscriptionId: 'sub', remark: '分享测试' })
-            shares = [share]
-            await route.fulfill({ json: { share, token: shareToken } })
-          } else await route.fulfill({ json: { shares } })
+          expect(route.request().method()).toBe('POST')
+          expect(route.request().postDataJSON()).toMatchObject({ scope: { type: 'unified' }, remark: '分享测试' })
+          await route.fulfill({ status: 201, json: {
+            share: { id: 'share', scope: { type: 'unified' }, status: 'active' },
+            token: shareToken,
+            linkBaseUrl: 'https://example.test',
+          } })
         },
-        '/api/shares/share/disable': async (route: Route) => {
-          shares = [{ ...share, status: 'disabled' }]
-          await route.fulfill({ json: { share: shares[0] } })
+        '/api/shares/revoke-all': async (route: Route) => {
+          expect(route.request().method()).toBe('POST')
+          revoked = true
+          await route.fulfill({ status: 204 })
         },
       }, 'user')
       await page.goto('/subscriptions')
@@ -234,30 +229,23 @@ for (const width of [1440, 1024, 390]) {
       await verify(imports, 'm', width, 'client-import')
       await expect(imports.getByRole('link', { name: 'Mihomo' })).toHaveAttribute('href', /^clash:/)
       await page.keyboard.press('Escape')
-      await page.getByRole('button', { name: '订阅二维码' }).click()
-      const qr = page.getByRole('dialog', { name: '订阅二维码' })
-      await verify(qr, 's', width)
-      await expect(qr.getByRole('img')).toBeVisible()
-      await expect(qr.locator('footer')).toHaveCount(0)
-      await page.keyboard.press('Escape')
       await page.getByRole('button', { name: '分享', exact: true }).click()
-      const list = page.getByRole('dialog', { name: '测试订阅 的分享' })
-      await verify(list, 'm', width, 'share')
-      await list.getByRole('button', { name: '创建分享' }).click()
-      const editor = page.getByRole('dialog', { name: '创建分享' })
-      await editor.getByLabel('备注').fill('分享测试')
-      await editor.getByRole('button', { name: '创建', exact: true }).click()
-      const result = page.getByRole('dialog', { name: '分享链接' })
-      await expect(result.getByLabel('分享链接')).toHaveValue(new RegExp(`/s/${shareToken}$`))
-      await page.mouse.click(2, 2)
-      await expect(result).toBeVisible()
-      await result.getByRole('button', { name: '完成' }).click()
-      await list.getByRole('button', { name: /禁用分享测试/ }).click()
-      const confirm = page.getByRole('dialog', { name: '禁用分享' })
+      const share = page.getByRole('dialog', { name: '分享订阅' })
+      await verify(share, 'm', width, 'share')
+      await share.getByLabel('备注').fill('分享测试')
+      await share.getByRole('button', { name: '创建', exact: true }).click()
+      await share.getByRole('button', { name: '复制分享链接' }).click()
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`https://example.test/s/${shareToken}`)
+      await page.keyboard.press('Escape')
+
+      await page.getByText('更多', { exact: true }).click()
+      await page.getByRole('button', { name: '撤销全部分享' }).click()
+      const confirm = page.getByRole('dialog', { name: '撤销全部分享' })
       await verify(confirm, 's', width)
-      await expect(page.locator('dialog:modal')).toHaveCount(1)
-      await confirm.getByRole('button', { name: '确认禁用' }).click()
-      await expect(list.getByText('分享已禁用')).toBeVisible()
+      await confirm.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect(confirm).toBeHidden()
+      await expect(page.getByRole('status')).toHaveText('已撤销全部分享')
+      expect(revoked).toBe(true)
     })
 
     test('knowledge base creates an article and reloads it for editing', async ({ page }) => {
@@ -388,36 +376,6 @@ for (const width of [1440, 1024, 390]) {
       await close.getByRole('button', { name: '关闭工单' }).click()
       await expect(close).toBeHidden()
       await expect(page.getByRole('button', { name: '重开工单' })).toBeVisible()
-    })
-
-    test('conversion and rule editors use XL with a guarded draft', async ({ page }) => {
-      const root = '/api/admin/system/subscription-templates'
-      await mock(page, {
-        [root]: { templates: [], defaultId: null, defaultRevision: 0 },
-        '/api/admin/subscriptions': { subscriptions: [], total: 0 },
-        [`${root}/rule-sources`]: { sources: [], localSets: [] },
-        [`${root}/rule-sources/local`]: async (route: Route) => {
-          expect(route.request().postDataJSON()).toEqual({ name: '测试规则集', rules: ['DOMAIN,example.test'] })
-          await route.fulfill({ json: {} })
-        },
-      })
-      await page.goto('/delivery/conversions')
-      await page.getByRole('button', { name: '新增配置' }).first().click()
-      const conversion = page.getByRole('dialog', { name: '新增配置' })
-      await verify(conversion, 'xl', width, 'conversion')
-      await conversion.getByLabel('配置名称').fill('测试配置')
-      await page.keyboard.press('Escape')
-      await conversion.getByRole('button', { name: '放弃更改' }).click()
-      await expect(conversion).toBeHidden()
-      await page.getByText('规则来源', { exact: true }).click()
-      await page.getByRole('button', { name: '新建自建规则集' }).click()
-      const rule = page.getByRole('dialog', { name: '编辑自建规则集' })
-      await verify(rule, 'xl', width, 'rule-set')
-      await rule.getByLabel('自建规则集名称').fill('测试规则集')
-      await rule.getByLabel('自建规则（每行一条）').fill('DOMAIN,example.test')
-      await rule.getByRole('button', { name: '保存自建规则集' }).click()
-      await expect(rule).toBeHidden()
-      await expect(page.getByText('自建规则集已保存').first()).toBeVisible()
     })
 
     test('entitlement template editor submits resources and duration from L', async ({ page }) => {

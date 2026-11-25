@@ -19,7 +19,7 @@ export function UserManagementPage() {
       <PageHeader title="用户管理" />
       <section className="data-section" aria-label="用户管理">
         <OperationsHeading action={
-          <><Button onClick={() => navigate("/delivery/migration")}>订阅迁移</Button><Button onClick={() => setJobs(true)}>批量任务</Button><Button variant="primary" size="page" onClick={() => navigate(`/invites${search}`)}>
+          <><Button onClick={() => setJobs(true)}>批量任务</Button><Button variant="primary" size="page" onClick={() => navigate(`/invites${search}`)}>
             <UserPlus aria-hidden="true" size={18} />
             邀请用户
           </Button></>
@@ -27,7 +27,7 @@ export function UserManagementPage() {
         {invite ? <InvitesPage /> : <UsersPage key={pathname} view={trash ? 'trash' : 'active'} />}
       </section>
       {jobs && <SubscriptionBatchJobs request={null} choosingPlan={false} plans={[]} platforms={{}}
-        historyOpen onCloseHistory={() => setJobs(false)} onClear={() => setJobs(false)}
+        historyOpen onCloseHistory={() => setJobs(false)} onClear={() => undefined}
         onPreviewPlan={() => undefined} onChanged={() => undefined} />}
     </div>
   )

@@ -1,13 +1,12 @@
-import { env, exports } from 'cloudflare:workers'
+import { exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { savePlan } from '../../../worker/delivery/plans'
 import {
   BYTES_PER_TRAFFIC_GB,
   attachTrafficUsage,
   measuredTrafficForSubscription,
   trafficUsageFromMeasurement,
 } from '../../../worker/delivery/traffic-usage'
-import { createFixtureAccount, enableD1Modules, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { bindFixtureTemplate, createFixtureAccount, jsonRequest, login, setupContractedAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 const gib = (value: number) => value * BYTES_PER_TRAFFIC_GB
 
@@ -46,65 +45,28 @@ describe('traffic usage seam', () => {
 })
 
 describe('user traffic fields stay absent without a meter', () => {
-  beforeEach(async () => {
-    await resetData()
-    await enableD1Modules()
-    await setupAdmin()
-  })
+  beforeEach(setupContractedAdmin)
 
-  it('keeps usedGb and remainingGb off the user summary and subscription payloads', async () => {
-    const admin = await login()
-    const plan = await savePlan(env.DB, {
-      name: 'Quota',
-      groupIds: [],
-      durationDays: 30,
-      trafficGb: 100,
-      speedLimitMbps: 0,
-      deviceLimit: 0,
-    })
+  it('keeps usedGb and remainingGb off the unified subscription and entitlement summaries', async () => {
     const account = await createFixtureAccount('traffic-user', 'traffic user password')
     const { user } = await account.json() as { user: { id: string } }
-    const created = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/subscriptions`,
-      jsonRequest({ userId: user.id, name: '主订阅', planId: plan.id, groupIds: [] }, withCookie(admin)),
-    )
-    expect(created.status).toBe(201)
-    const createdBody = await created.json() as { subscription: { id: string; trafficGb: number } }
-    expect(createdBody.subscription.trafficGb).toBe(100)
-    expect(createdBody.subscription).not.toHaveProperty('usedGb')
-    expect(createdBody.subscription).not.toHaveProperty('remainingGb')
-
+    const auth = withCookie(await login())
+    const source = await exports.default.fetch(TEST_ORIGIN + '/api/admin/catalog/sources', jsonRequest({
+      type: 'manual', name: 'Traffic fixture',
+      content: `ss://${btoa('aes-128-gcm:fixture')}@traffic.example:8388#Traffic`,
+    }, auth))
+    expect(source.status).toBe(201)
+    const catalog = await exports.default.fetch(TEST_ORIGIN + '/api/admin/catalog', auth)
+    const { nodes } = await catalog.json<{ nodes: { id: string }[] }>()
+    await bindFixtureTemplate(user.id, { name: 'Unmetered entitlement', nodeIds: [nodes[0].id] })
     const userCookie = await login('traffic-user', 'traffic user password')
-    const mine = await (await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(userCookie))).json() as {
-      subscriptions: Array<Record<string, unknown>>
-    }
-    expect(mine.subscriptions).toHaveLength(1)
-    expect(mine.subscriptions[0]).toMatchObject({
-      id: createdBody.subscription.id,
-      trafficGb: 100,
-      planId: plan.id,
-      name: '主订阅',
-    })
-    expect(mine.subscriptions[0]).not.toHaveProperty('usedGb')
-    expect(mine.subscriptions[0]).not.toHaveProperty('remainingGb')
 
-    const summary = await (await exports.default.fetch(`${TEST_ORIGIN}/api/account/entitlement`, withCookie(userCookie))).json() as {
-      state: string
-      latest: { plan: { trafficGb: number } } | null
+    for (const path of ['/api/user/subscription', '/api/account/entitlement']) {
+      const response = await exports.default.fetch(TEST_ORIGIN + path, withCookie(userCookie))
+      expect(response.status).toBe(200)
+      const summary = await response.json()
+      expect(summary).not.toHaveProperty('usedGb')
+      expect(summary).not.toHaveProperty('remainingGb')
     }
-    expect(summary.state).toBe('active')
-    expect(summary.latest?.plan.trafficGb).toBe(100)
-    expect(summary).not.toHaveProperty('usedGb')
-    expect(summary).not.toHaveProperty('remainingGb')
-
-    const reset = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/account/subscriptions/${createdBody.subscription.id}/token/reset`,
-      jsonRequest({}, withCookie(userCookie)),
-    )
-    expect(reset.status).toBe(200)
-    const resetBody = await reset.json() as { subscription: Record<string, unknown> }
-    expect(resetBody.subscription.trafficGb).toBe(100)
-    expect(resetBody.subscription).not.toHaveProperty('usedGb')
-    expect(resetBody.subscription).not.toHaveProperty('remainingGb')
   })
 })

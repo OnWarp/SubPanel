@@ -530,10 +530,10 @@ describe('subscription compile on D1 matches KV', () => {
 })
 
 describe('POST /api/admin/migration/run delivery and shares', () => {
-  it('requires an administrator and imports both modules', async () => {
+  it('requires an administrator, rejects delivery import, and still imports shares', async () => {
     await setupAdmin()
     const catalog = await writeCatalog(env, catalogFixture(), NOW)
-    const delivery = await writeDelivery(env, deliveryFixture(), NOW)
+    await writeDelivery(env, deliveryFixture(), NOW)
     const share = shareRecord()
     await writeShare(env, share)
     await writeShareSettings(env, shareSettingsFixture())
@@ -569,20 +569,8 @@ describe('POST /api/admin/migration/run delivery and shares', () => {
       `${TEST_ORIGIN}/api/admin/migration/run`,
       jsonRequest({ module: 'delivery' }, withCookie(admin)),
     )
-    expect(response.status).toBe(200)
-    const body = await response.json() as { ready: boolean, module: string, anomalies: string[] }
-    expect(body.module).toBe('delivery')
-    expect(body.ready).toBe(true)
-    expect(body.anomalies).toEqual([])
-    expect(await readDelivery(env)).toEqual(delivery)
-
-    const repeated = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/migration/run`,
-      jsonRequest({ module: 'delivery' }, withCookie(admin)),
-    )
-    expect(repeated.status).toBe(200)
-    expect(await counts('subscriptions')).toBe(2)
-    expect(await counts('subscription_groups')).toBe(2)
+    expect(response.status).toBe(422)
+    expect(await counts('subscriptions')).toBe(0)
 
     const sharesResponse = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/migration/run`,

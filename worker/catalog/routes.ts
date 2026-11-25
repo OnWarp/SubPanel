@@ -14,17 +14,14 @@ import {
   summarizeSources,
   updateSource,
 } from './import-service.js'
-import { catalogSnapshotSchema, groupIdSchema, groupRulesSchema, formatOverrideSchema, nodeIdSchema, nodeSchema, sourceIdSchema, tagsSchema, type CatalogSnapshot, type Group, type Node } from './schema.js'
+import { catalogSnapshotSchema, groupIdSchema, groupRulesSchema, formatOverrideSchema, nodeIdSchema, nodeSchema, sourceIdSchema, tagsSchema, type Group, type Node } from './schema.js'
 import { readCatalog, writeCatalog } from './repository.js'
 import { RemoteFetchError } from './remote.js'
 import { detectImport } from '../import/detect.js'
-import type { Subscription } from '../delivery/schema.js'
-import { readDelivery } from '../delivery/repository.js'
 import { countTemplateGroupReferences } from '../delivery/entitlement-templates.js'
 
 import { CLIENT_IDS, prepareClientRender, renderClient } from '../renderers/index.js'
-import { previewCatalogEntitlement, selectedNodes } from '../delivery/compiler.js'
-import { listPlans, type Plan } from '../delivery/plans.js'
+import { listPlans } from '../delivery/plans.js'
 import { resolveGroupCandidates, resolveGroupNodes } from './groups.js'
 import { MAX_NODES } from './repository.js'
 import { logAudit } from '../admin/audit.js'
@@ -258,28 +255,6 @@ catalogRoutes.get('/sources/:sourceId/sync-runs', async (c) => {
   }) })
 })
 
-function affectedGroupSubscriptions(
-  before: CatalogSnapshot,
-  after: CatalogSnapshot,
-  groupId: string,
-  subscriptions: Subscription[],
-  plans: Plan[],
-) {
-  const planById = new Map(plans.map((plan) => [plan.id, plan]))
-  return subscriptions.filter((subscription) => {
-    if (!subscription.groupIds.includes(groupId)) return false
-    const plan = subscription.planId && subscription.userId !== null ? planById.get(subscription.planId) : undefined
-    if (subscription.planId && subscription.userId !== null && !plan?.groupIds.includes(groupId)) return false
-    const intersection = {
-      groupIds: plan ? subscription.groupIds.filter((id) => plan.groupIds.includes(id)) : subscription.groupIds,
-      nodeIds: subscription.planId ? undefined : subscription.nodeIds,
-    }
-    const oldIds = selectedNodes(before, intersection).map(({ id }) => id)
-    const newIds = selectedNodes(after, intersection).map(({ id }) => id)
-    return oldIds.length !== newIds.length || oldIds.some((id, index) => id !== newIds[index])
-  })
-}
-
 const clientSchema = z.enum(CLIENT_IDS)
 const nodeCreateSchema = nodeConnectionSchema.partial().extend({
   originNodeId: nodeIdSchema.optional(),
@@ -352,7 +327,7 @@ catalogRoutes.post('/groups/preview', async (c) => {
     input: groupInputSchema, groupId: groupIdSchema.optional(),
     subscriptionId: z.string().max(128).optional(), client: clientSchema,
   }))
-  const [snapshot, delivery, plans] = await Promise.all([readCatalog(c.env), readDelivery(c.env), listPlans(c.env.DB)])
+  const snapshot = await readCatalog(c.env)
   validateReferences(snapshot, input)
   if (groupId && !snapshot.groups.some((group) => group.id === groupId)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   const id = groupId ?? `grp_${snapshot.nextGroupId}`
@@ -365,15 +340,12 @@ catalogRoutes.post('/groups/preview', async (c) => {
   const nodes = resolveGroupNodes(candidate, group.id)
   const prepared = prepareClientRender(client, nodes).render()
   const skipped = new Set(prepared.diagnostics.filter((item) => item.outcome === 'skipped').map((item) => item.nodeId))
-  const subscriptions = affectedGroupSubscriptions(snapshot, candidate, id, delivery.subscriptions, plans)
-  const subscription = delivery.subscriptions.find((sub) => sub.id === subscriptionId)
-  if (subscriptionId && !subscription) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
+  if (subscriptionId) throw apiError(404, 'SUBSCRIPTION_NOT_FOUND', '旧订阅已停用')
   return c.json({
     matched: matching.length, disabled: matching.length - nodes.length,
     incompatible: nodes.length - prepared.outputNodes, outputNodes: prepared.outputNodes,
     nodes: nodes.filter((node) => !skipped.has(node.id)).map(({ id, displayName }) => ({ id, displayName })),
-    affectedSubscriptions: subscriptions.length,
-    entitlement: subscription ? await previewCatalogEntitlement(c.env, subscription, client, candidate) : undefined,
+    affectedSubscriptions: groupId ? await countTemplateGroupReferences(c.env.DB, groupId) : 0,
   })
 })
 
@@ -415,14 +387,13 @@ catalogRoutes.delete('/groups/:groupId', async (c) => {
   if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   const snapshot = await readCatalog(c.env)
   if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
-  const [delivery, plans, templates] = await Promise.all([
-    readDelivery(c.env), listPlans(c.env.DB), countTemplateGroupReferences(c.env.DB, id.data),
+  const [plans, templates] = await Promise.all([
+    listPlans(c.env.DB), countTemplateGroupReferences(c.env.DB, id.data),
   ])
-  const subscriptions = delivery.subscriptions.filter((sub) => sub.groupIds.includes(id.data)).length
   const activePlans = plans.filter((plan) => plan.enabled && plan.groupIds.includes(id.data)).length
-  if (subscriptions || templates || activePlans) {
-    throw apiError(409, 'GROUP_IN_USE', `分组仍被 ${subscriptions} 个订阅、${templates} 个订阅模板和 ${activePlans} 个启用计划引用，请先更换或移除引用`, {
-      subscriptions, templates, activePlans,
+  if (templates || activePlans) {
+    throw apiError(409, 'GROUP_IN_USE', `分组仍被 ${templates} 个订阅模板和 ${activePlans} 个启用计划引用，请先更换或移除引用`, {
+      subscriptions: 0, templates, activePlans,
     })
   }
   await writeCatalog(c.env, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })

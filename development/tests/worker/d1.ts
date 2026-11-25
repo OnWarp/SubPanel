@@ -1,3 +1,4 @@
+import contractSql from '../../../docs/unified-subscription-pr6-full-NOT-EXECUTED.sql?raw'
 import backfillSql from '../../../migrations/0028_unified_subscription_backfill.sql?raw'
 import operationsSql from '../../../migrations/0027_unified_subscription_operations.sql?raw'
 import unifiedSql from '../../../migrations/0026_unified_subscription.sql?raw'
@@ -325,4 +326,21 @@ export async function applyBackfillMigration(db: D1Database = env.DB) {
     ...splitSqlStatements(backfillSql.replace(triggerPattern, '')),
     ...(backfillSql.match(triggerPattern) ?? []),
   ] }])
+}
+
+export async function applyContraction(db: D1Database = env.DB) {
+  await applyMigrations(db)
+  await applyBackfillMigration(db)
+  const flags = [
+    'accounts_d1_ready', 'apps_d1_ready', 'catalog_d1_ready', 'delivery_d1_ready',
+    'shares_d1_ready', 'unified_subscription_ready', 'unified_subscription_public_ready',
+  ]
+  await db.batch(flags.map(flag => db.prepare(
+    "INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,'true',?)",
+  ).bind(flag, new Date().toISOString())))
+  // Protect trigger-body semicolons while preserving statement order in the atomic batch.
+  const triggers = contractSql.match(triggerPattern) ?? []
+  const queries = splitSqlStatements(contractSql.replace(triggerPattern, () => 'PR6_TRIGGER_PLACEHOLDER;'))
+    .map(query => query === 'PR6_TRIGGER_PLACEHOLDER' ? triggers.shift()! : query)
+  await applyD1Migrations(db, [{ name: 'pr6-full-contraction', queries }])
 }

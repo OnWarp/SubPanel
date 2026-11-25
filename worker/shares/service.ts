@@ -3,23 +3,13 @@ import { readArtifactCatalog } from '../delivery/artifacts.js'
 import { renderResolvedSubscription } from '../delivery/compiler.js'
 import { unifiedOperationsEnabled } from '../delivery/user-access.js'
 import { SHARES_D1_READY_KEY, isModuleReady } from '../db/module-switch.js'
-import { getEffectiveTemplate } from '../templates/repository.js'
 import type { Principal } from '../app-env.js'
 import type { User } from '../accounts/schema.js'
-import { readAccounts } from '../accounts/repository.js'
 import { hashPassword, verifyPassword } from '../accounts/password.js'
 import type { DataEnv } from '../db/module-switch.js'
-import { resolveEntitlement, renderEntitledSubscription } from '../delivery/compiler.js'
-import { subscriptionLink } from '../delivery/links.js'
-import { readDelivery } from '../delivery/repository.js'
-import { clientIdSchema, type ClientId, type Subscription } from '../delivery/schema.js'
-import { readCutover } from '../delivery/legacy-compatibility.js'
-import { assertSubscriptionAvailable, subscriptionRowStatus } from '../delivery/expiry.js'
-import { decryptSubscriptionToken } from '../delivery/service.js'
+import { clientIdSchema, type ClientId } from '../delivery/schema.js'
 import { encryptText, getOrCreateCryptoMaterial, hashToken, randomToken } from '../platform/crypto.js'
 import {
-  addIndexHash,
-  allocateShareId,
   claimExportAccess,
   consumeVerifySlot,
   deleteShare,
@@ -36,7 +26,6 @@ import {
   writeUnifiedShare,
   writeShareSettings,
 } from './repository.js'
-import { primaryDomainOriginSafe } from '../domains/service.js'
 import {
   canonicalPublicBaseUrl,
   exportQuerySchema,
@@ -113,15 +102,6 @@ function byNewest(records: ShareRecord[]): ShareRecord[] {
   return [...records].sort((left, right) => right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
 }
 
-async function publicOrigin(env: DataEnv, settings: ShareSettings, requestUrl: string): Promise<string> {
-  // Share-related subscription links follow the primary subscription
-  // domain first (Roye: share links use the primary subscription domain
-  // too), then the share settings public base URL, then the request
-  // origin as the last resort for deployments without domain config.
-  const primary = await primaryDomainOriginSafe(env.DB, 'subscription')
-  return primary ?? settings.publicBaseUrl ?? new URL(requestUrl).origin
-}
-
 function resolveShareClient(value: string): ClientId | null {
   const normalized = value.trim().toLowerCase()
   const aliased = clientAliases[normalized] ?? normalized
@@ -147,11 +127,6 @@ async function assertActiveCapacity(env: DataEnv, settings: ShareSettings, userI
   if (active >= settings.maxActiveSharesPerUser) throw shareError(409, 'SHARE_LIMIT_REACHED', '分享数量已达上限')
 }
 
-async function assertSubscriptionCapacity(env: DataEnv, settings: ShareSettings, subscriptionId: string): Promise<void> {
-  const shares = await listIndexedShares(env, subscriptionIndexKey(subscriptionId))
-  if (shares.length >= settings.maxSharesPerSubscription) throw shareError(409, 'SHARE_LIMIT_REACHED', '分享数量已达上限')
-}
-
 async function sealToken(kv: KVNamespace, token: string): Promise<Pick<ShareRecord, 'tokenHash' | 'tokenPrefix' | 'tokenEncrypted'>> {
   // 与订阅令牌相同：32 字节随机数的 base64url，只存 SHA-256、前 8 位和 AES-GCM 密文。明文不写入 KV。
   const material = await getOrCreateCryptoMaterial(kv)
@@ -162,19 +137,6 @@ async function sealToken(kv: KVNamespace, token: string): Promise<Pick<ShareReco
   }
 }
 
-async function liveSubscription(env: DataEnv, share: ShareRecord): Promise<Subscription | null> {
-  const delivery = await readDelivery(env)
-  const subscription = delivery.subscriptions.find((item) => item.id === share.subscriptionId)
-  if (!subscription?.enabled || subscription.userId !== share.ownerUserId) return null
-
-  const accounts = await readAccounts(env)
-  const owner = accounts.users.find((user) => user.id === share.ownerUserId)
-  if (!owner?.enabled || owner.deletedAt) return null
-  return subscription
-}
-
-// 访问保护按这个顺序失败即拒绝：存在 → 状态 → 到期 → 登录 → 密码关 → 次数 → 订阅和用户仍启用。
-// 原始链接开关只在 export?type=link 上检查。meta 与 export 未通过时统一 404，避免泄露分享是否存在。
 async function guard(
   env: DataEnv,
   token: string,
@@ -203,14 +165,9 @@ async function guard(
     throw notFound()
   }
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) throw notFound()
-  if (share.scope) return { share, settings, aggregate: await resolveShareScope(env, share, now.getTime()) }
-  if (await readCutover(env.DB) !== null || await unifiedOperationsEnabled(env.DB)) {
-    throw shareError(404, 'SHARE_LEGACY_SCOPE_REVIEW', '旧分享已暂停，请联系分享者重新创建')
-  }
-  const subscription = await liveSubscription(env, share)
-  if (!subscription) throw notFound()
-  if (kind !== 'export' && subscriptionRowStatus(subscription, now.getTime())) throw notFound()
-  return { share, subscription, settings }
+
+  const aggregate = await resolveShareScope(env, share, now.getTime())
+  return { share, aggregate }
 }
 
 async function setStatus(env: DataEnv, share: ShareRecord, status: ShareStatus, now: Date, actorRole: Principal['role'], actor = share.ownerUserId): Promise<ShareRecord> {
@@ -246,21 +203,9 @@ export async function createShare(
   const settings = await readShareSettings(env)
   assertFeatureEnabled(actorRole, settings)
   if (!settings.createAllowed) throw shareError(403, 'SHARE_CREATE_DISABLED', '当前不允许创建分享')
-  const unified = await unifiedOperationsEnabled(env.DB)
-  if (unified !== Boolean(input.scope)) {
-    throw shareError(422, 'SHARE_SCOPE_REQUIRED', '请选择可用的分享范围')
-  }
-  if (input.scope) {
-    if (!await isModuleReady(env.DB, SHARES_D1_READY_KEY)) throw notFound()
-    await resolveShareScope(env, { ownerUserId, scope: input.scope }, now.getTime())
-  } else {
-    const delivery = await readDelivery(env)
-    const subscription = delivery.subscriptions.find(item => item.id === input.subscriptionId)
-    if (!subscription || subscription.userId !== ownerUserId) throw shareError(404, 'SUBSCRIPTION_NOT_FOUND', '订阅不存在')
-    const status = subscriptionRowStatus(subscription, now.getTime())
-    if (status && status !== 'pending') throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅未启用')
-    await assertSubscriptionCapacity(env, settings, subscription.id)
-  }
+  if (!input.scope) throw shareError(422, 'SHARE_SCOPE_REQUIRED', '请选择可用的分享范围')
+  if (!await isModuleReady(env.DB, SHARES_D1_READY_KEY)) throw notFound()
+  await resolveShareScope(env, { ownerUserId, scope: input.scope }, now.getTime())
   const expiresAt = input.expiresAt ?? new Date(now.getTime() + settings.maxValidityDays * DAY_MS).toISOString()
   assertExpiry(expiresAt, now.getTime(), settings.maxValidityDays)
   await assertActiveCapacity(env, settings, ownerUserId)
@@ -280,16 +225,16 @@ export async function createShare(
   const nowIso = now.toISOString()
   const record: ShareRecord = {
     schemaVersion: 1,
-    id: input.scope ? `shr_${crypto.randomUUID()}` : await allocateShareId(env),
+    id: `shr_${crypto.randomUUID()}`,
     ownerUserId,
-    subscriptionId: input.subscriptionId ?? null,
+    subscriptionId: null,
     scope: input.scope,
     ...sealed,
     remark: input.remark ?? '',
     status: 'active',
     accessControl,
     expiresAt,
-    allowOriginalLink: !input.scope && (input.allowOriginalLink ?? settings.defaultAllowOriginalLink),
+    allowOriginalLink: false,
     showSubscriptionName: input.showSubscriptionName ?? false,
     showGroups: input.showGroups ?? false,
     showExpiry: input.showExpiry ?? false,
@@ -302,12 +247,7 @@ export async function createShare(
     createdAt: nowIso,
     updatedAt: nowIso,
   }
-  if (record.scope) await writeUnifiedShare(env, ownerUserId, null, record, 'create')
-  else {
-    await writeShare(env, record)
-    await addIndexHash(env, userIndexKey(ownerUserId), record.tokenHash)
-    await addIndexHash(env, subscriptionIndexKey(record.subscriptionId!), record.tokenHash)
-  }
+  await writeUnifiedShare(env, ownerUserId, null, record, 'create')
   return { share: toShareView(record), token }
 }
 
@@ -404,7 +344,7 @@ export async function revealOriginalLink(
   env: DataEnv,
   id: string,
   ownerUserId: string,
-  requestUrl: string,
+  _requestUrl: string,
   now = new Date(),
   actorRole: Principal['role'] = 'user',
 ): Promise<{ link: string }> {
@@ -413,16 +353,8 @@ export async function revealOriginalLink(
   if (current.status !== 'active' || Date.parse(current.expiresAt) <= now.getTime()) {
     throw shareError(409, 'SHARE_UNAVAILABLE', '分享当前不可用')
   }
-  if (current.scope || await unifiedOperationsEnabled(env.DB) || !current.allowOriginalLink) throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
-  const delivery = await readDelivery(env)
-  const subscription = delivery.subscriptions.find((item) => item.id === current.subscriptionId && item.userId === ownerUserId)
-  if (!subscription || subscriptionRowStatus(subscription, now.getTime())) throw shareError(409, 'SUBSCRIPTION_UNAVAILABLE', '订阅不可用')
-  const settings = await readShareSettings(env)
-  const link = subscriptionLink(await publicOrigin(env, settings, requestUrl), await decryptSubscriptionToken(env, subscription), 'auto')
-  const nowIso = now.toISOString()
-  // lastOriginalRevealAt 是审计占位：项目暂无审计表，这个字段不能当成完整审计日志。
-  await writeShare(env, { ...current, lastOriginalRevealAt: nowIso, updatedAt: nowIso })
-  return { link }
+
+  throw shareError(403, 'SHARE_ORIGINAL_LINK_DISABLED', '未开启原始链接')
 }
 
 export async function readShareMeta(
@@ -432,30 +364,13 @@ export async function readShareMeta(
   sessionHash: string | null,
   now = new Date(),
 ): Promise<ShareMeta> {
-  const { share, subscription, aggregate } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
-  if (aggregate) return {
+  const { share, aggregate } = await guard(env, token, 'meta', actor, sessionHash, undefined, now)
+  return {
     nodeCount: aggregate.nodes.length,
     ...(share.showExpiry ? { expiresAt: share.expiresAt } : {}),
     ...(share.showNodeNames ? { nodeNames: aggregate.nodes.map(node => node.displayName) } : {}),
   }
-  if (!subscription) throw notFound()
-  const { catalog, nodes, authorizedGroupIds } = await resolveEntitlement(env, subscription, now.toISOString())
-  // 公开预览仅返回启用节点的显示名称
-  const enabled = nodes.filter((node) => node.enabled)
-  // showExpiry 展示分享自己的 expiresAt。订阅时效不从这里下发文案。
-  const meta: ShareMeta = { nodeCount: enabled.length }
-  if (share.showSubscriptionName) meta.subscriptionName = subscription.name
-  if (share.showGroups) {
-    const allowed = new Set(authorizedGroupIds)
-    meta.groupNames = subscription.groupIds.flatMap((groupId) => {
-      if (!allowed.has(groupId)) return []
-      const group = catalog.groups.find((item) => item.id === groupId)
-      return group ? [group.name] : []
-    })
-  }
-  if (share.showExpiry) meta.expiresAt = share.expiresAt
-  if (share.showNodeNames) meta.nodeNames = enabled.map((node) => node.displayName)
-  return meta
+
 }
 
 export async function verifyShare(
@@ -480,7 +395,7 @@ export async function exportShare(
   client: string | undefined,
   actor: User | null,
   sessionHash: string | null,
-  requestUrl: string,
+  _requestUrl: string,
   now = new Date(),
 ): Promise<ShareExportResult> {
   const guarded = await guard(env, token, 'export', actor, sessionHash, undefined, now)
@@ -490,47 +405,19 @@ export async function exportShare(
   })
   if (!parsed.success) throw notFound()
   const nowIso = now.toISOString()
-  if (guarded.aggregate) {
-    const client = parsed.data.type !== 'link' && resolveShareClient(parsed.data.client ?? '')
-    if (!client) throw notFound()
-    const conversion = client === 'mihomo' || client === 'singbox'
-      ? await getEffectiveTemplate(env.DB, null, client) : undefined
-    const artifact = await renderResolvedSubscription(env, { id: null, revision: guarded.aggregate.access!.revision! },
-      client, guarded.aggregate, nowIso, undefined, undefined, conversion)
-    if (!artifact.available) throw notFound()
-    const current = await resolveShareScope(env, guarded.share, Date.now())
-    if (current.templateRevision !== guarded.aggregate.templateRevision ||
-      current.catalog.revision !== guarded.aggregate.catalog.revision ||
-      JSON.stringify(current.effectiveTemplateIds) !== JSON.stringify(guarded.aggregate.effectiveTemplateIds) ||
-      !(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, new Date().toISOString()))) throw notFound()
-    return { kind: 'client', body: artifact.body, contentType: artifact.contentType,
-      fileName: artifact.fileName, downloadName: artifact.fileName, etag: artifact.etag, profileTitle: null }
-  }
-  if (!guarded.subscription) throw notFound()
-  if (parsed.data.type === 'link') {
-    if (!guarded.share.allowOriginalLink) throw notFound()
-    assertSubscriptionAvailable(guarded.subscription, now.getTime())
-    const link = subscriptionLink(await publicOrigin(env, guarded.settings, requestUrl), await decryptSubscriptionToken(env, guarded.subscription), 'auto')
-    if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
-    return { kind: 'link', link }
-  }
-  const resolved = resolveShareClient(parsed.data.client ?? '')
-  if (!resolved) throw notFound()
-  assertSubscriptionAvailable(guarded.subscription, now.getTime())
-  const artifact = await renderEntitledSubscription(env, guarded.subscription, resolved, nowIso)
-  if (!artifact.available) throw shareError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
-  if (!(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, nowIso))) throw notFound()
-  const extension = artifact.fileName.includes('.') ? artifact.fileName.slice(artifact.fileName.lastIndexOf('.')) : ''
-  const base = guarded.share.showSubscriptionName ? guarded.subscription.name : 'share'
-  return {
-    kind: 'client',
-    body: artifact.body,
-    contentType: artifact.contentType,
-    fileName: artifact.fileName,
-    downloadName: `${base}${extension}`,
-    etag: artifact.etag,
-    profileTitle: guarded.share.showSubscriptionName ? guarded.subscription.name : null,
-  }
+  const resolvedClient = parsed.data.type !== 'link' && resolveShareClient(parsed.data.client ?? '')
+  if (!resolvedClient) throw notFound()
+  const artifact = await renderResolvedSubscription(env, { id: null, revision: guarded.aggregate.access!.revision! },
+    resolvedClient, guarded.aggregate, nowIso)
+  if (!artifact.available) throw notFound()
+  const current = await resolveShareScope(env, guarded.share, Date.now())
+  if (current.templateRevision !== guarded.aggregate.templateRevision ||
+    current.catalog.revision !== guarded.aggregate.catalog.revision ||
+    JSON.stringify(current.effectiveTemplateIds) !== JSON.stringify(guarded.aggregate.effectiveTemplateIds) ||
+    !(await readShareSettings(env)).enabled || !(await claimExportAccess(env, guarded.share.tokenHash, new Date().toISOString()))) throw notFound()
+  return { kind: 'client', body: artifact.body, contentType: artifact.contentType,
+    fileName: artifact.fileName, downloadName: artifact.fileName, etag: artifact.etag, profileTitle: null }
+
 }
 
 export async function listAdminShares(env: DataEnv, filter: AdminShareQuery): Promise<ShareView[]> {

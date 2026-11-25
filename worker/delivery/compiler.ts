@@ -99,7 +99,7 @@ export async function renderResolvedSubscription(
   const prepared = await prepareSubscriptionRender(client, nodes, speed)
   let template = previewTemplate
   let templateVersionId: string | undefined
-  if ((client === 'mihomo' || client === 'singbox') && prepared.outputNodes > 0 && !template) {
+  if ((client === 'mihomo' || client === 'singbox') && prepared.outputNodes > 0 && !template && subscription.id !== null) {
     const effective = resolvedTemplate ?? await getEffectiveTemplate(env.DB, subscription.id, client)
     templateVersionId = effective.version_id ?? undefined
     if (client === 'singbox' && effective.compiled_json) {

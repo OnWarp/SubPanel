@@ -8,7 +8,7 @@ const userPassword = 'mobile nav user password'
 const adminEntries = [
   ['概览', '/dashboard'],
   ['节点管理', '/catalog/nodes'],
-  ['订阅管理', '/delivery/subscriptions'],
+  ['订阅管理', '/delivery/templates'],
   ['用户管理', '/users'],
 ] as const
 const adminDock = (page: Page) => page.getByRole('navigation', { name: '主导航', exact: true })
@@ -29,6 +29,7 @@ async function loginAdmin(page: Page) {
   if (await setup.isVisible()) {
     await page.getByLabel('管理员用户名').fill('Admin')
     await page.getByLabel('管理员密码').fill(adminPassword)
+    await page.getByLabel('初始化密钥').fill(process.env.BOOTSTRAP_SECRET!)
     await page.getByRole('button', { name: '创建管理员' }).click()
     await expect(page).toHaveURL(/\/login$/)
   }

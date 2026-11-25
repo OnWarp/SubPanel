@@ -1,4 +1,3 @@
-import { disableExpiredSubscriptions } from '../delivery/service.js'
 import { z } from 'zod'
 import { refreshSource } from '../catalog/import-service.js'
 import { readCatalog } from '../catalog/repository.js'
@@ -62,7 +61,6 @@ export async function runCron(env: DataEnv, options: CronRunOptions = {}): Promi
     await env.DB.prepare(`DELETE FROM rate_limits WHERE expires_at <= ?
       AND bucket IN ('subscription_address', 'subscription_subscription', 'subscription_global')`).bind(Math.floor(Date.parse(now) / 1000)).run()
       .catch(() => console.warn(JSON.stringify({ event: 'subscription_rate_limit_cleanup_failed' })))
-    await disableExpiredSubscriptions(env, now)
     const catalog = await readCatalog(env)
     const selected = selectDueSource(catalog.sources, now)
     if (!selected) {

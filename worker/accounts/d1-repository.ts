@@ -233,9 +233,9 @@ export async function listAdminUsers(
   const { clause, binds } = adminUserWhere(filters)
   const listed = await db
     .prepare(
-      `SELECT ${USER_COLUMNS.split(', ').map((column) => `u.${column}`).join(', ')}, COUNT(s.id) AS subscription_count
+      `SELECT ${USER_COLUMNS.split(', ').map((column) => `u.${column}`).join(', ')}, COUNT(b.template_id) AS subscription_count
        FROM users u
-       LEFT JOIN subscriptions s ON s.user_id = u.id
+       LEFT JOIN user_template_bindings b ON b.user_id = u.id AND b.status = 'active'
        ${clause}
        GROUP BY u.id
        ORDER BY CAST(substr(u.id, 5) AS INTEGER) ASC
@@ -273,68 +273,6 @@ export interface AdminUserSubscription {
   updatedAt: string
 }
 
-interface SubscriptionRow {
-  plan_id: string | null
-  plan_name: string | null
-  traffic_gb: number
-  speed_limit_mbps: number
-  device_limit: number
-  id: string
-  name: string
-  token_prefix: string
-  enabled: number
-  default_client: string
-  revision: number
-  starts_at: number | null
-  expires_at: number | null
-  created_at: string
-  updated_at: string
-}
-
-export async function listAdminUserSubscriptions(db: AppDatabase, userId: string): Promise<AdminUserSubscription[]> {
-  const listed = await db
-    .prepare(
-      `SELECT s.*, p.name AS plan_name FROM subscriptions s LEFT JOIN plans p ON p.id=s.plan_id
-       WHERE s.user_id = ? ORDER BY CAST(substr(s.id, 5) AS INTEGER) ASC`,
-    )
-    .bind(userId)
-    .all<SubscriptionRow>()
-  if (listed.results.length === 0) return []
-  const ids = listed.results.map((row) => row.id)
-  const placeholders = ids.map(() => '?').join(', ')
-  const links = await db
-    .prepare(
-      `SELECT subscription_id, group_id FROM subscription_groups
-       WHERE subscription_id IN (${placeholders}) ORDER BY subscription_id, position ASC`,
-    )
-    .bind(...ids)
-    .all<{ subscription_id: string, group_id: string }>()
-  const groupIds = new Map<string, string[]>()
-  for (const link of links.results) {
-    const owned = groupIds.get(link.subscription_id) ?? []
-    owned.push(link.group_id)
-    groupIds.set(link.subscription_id, owned)
-  }
-  return listed.results.map((row) => ({
-    id: row.id,
-    planId: row.plan_id,
-    planName: row.plan_name,
-    trafficGb: row.traffic_gb,
-    speedLimitMbps: row.speed_limit_mbps,
-    deviceLimit: row.device_limit,
-    name: row.name,
-    tokenPrefix: row.token_prefix,
-    enabled: row.enabled === 1,
-    defaultClient: row.default_client,
-    revision: row.revision,
-    startsAt: row.starts_at,
-    expiresAt: row.expires_at,
-    groupIds: groupIds.get(row.id) ?? [],
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }))
-}
-
 export interface AdminInvitationRedemption {
   id: number
   invitationId: string
@@ -367,33 +305,12 @@ export async function listAdminUserRedemptions(db: AppDatabase, userId: string):
 // redemptions reference both users and the user's own invitations; the
 // CASCADE tables (email_verifications, email_change_requests) are deleted
 // explicitly anyway so the batch does not depend on FK enforcement being on.
-// Returns the purged subscriptions' token hashes so the caller can drop
-// their compiled artifacts from KV.
 export async function purgeUserFromD1(
   db: AppDatabase,
   user: { id: string, username: string, emailNormalized: string | null },
-): Promise<{ tokenHashes: string[] }> {
-  const listed = await db
-    .prepare('SELECT token_hash FROM subscriptions WHERE user_id = ?')
-    .bind(user.id)
-    .all<{ token_hash: string }>()
-  const tokenHashes = listed.results.map((row) => row.token_hash)
-
+): Promise<void> {
   const statements: D1PreparedStatement[] = [
-    db.prepare(
-      `DELETE FROM shares
-       WHERE owner_user_id = ?
-          OR subscription_id IN (SELECT id FROM subscriptions WHERE user_id = ?)`,
-    ).bind(user.id, user.id),
-    db.prepare(
-      `DELETE FROM subscription_groups
-       WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id = ?)`,
-    ).bind(user.id),
-    db.prepare(`
-      DELETE FROM subscription_template_bindings
-      WHERE subscription_id IN (SELECT id FROM subscriptions WHERE user_id=?)
-    `).bind(user.id),
-    db.prepare('DELETE FROM subscriptions WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM shares WHERE owner_user_id = ?').bind(user.id),
     db.prepare(
       `DELETE FROM invitation_redemptions
        WHERE user_id = ?
@@ -416,5 +333,4 @@ export async function purgeUserFromD1(
   }
   statements.push(db.prepare('DELETE FROM users WHERE id = ?').bind(user.id))
   await batch(db, statements)
-  return { tokenHashes }
 }

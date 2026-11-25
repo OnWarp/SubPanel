@@ -317,7 +317,7 @@ describe('administrator Catalog APIs', () => {
     )).status).toBe(204)
   })
 
-  it('does not delete a group when subscription state cannot be updated', async () => {
+  it('deletes an unreferenced group independently of the retired delivery revision', async () => {
     const cookie = await login()
     const createdSource = await exports.default.fetch(
       `${TEST_ORIGIN}/api/admin/catalog/sources`,
@@ -339,9 +339,9 @@ describe('administrator Catalog APIs', () => {
       `${TEST_ORIGIN}/api/admin/catalog/groups/${groupId}`,
       jsonRequest({}, { ...withCookie(cookie), method: 'DELETE' }),
     )
-    expect(response.status).toBe(500)
+    expect(response.status).toBe(204)
     const latest = await (await exports.default.fetch(`${TEST_ORIGIN}/api/admin/catalog`, withCookie(cookie))).json() as { groups: Array<{ id: string }> }
-    expect(latest.groups.map(({ id }) => id)).toContain(groupId)
+    expect(latest.groups.map(({ id }) => id)).not.toContain(groupId)
   })
 
   it('previews without applying, confirms the captured response once, and rejects stale previews', async () => {

@@ -4,12 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { hashToken } from '../../../worker/platform/crypto'
 import { shareEntityKey } from '../../../worker/shares/repository'
 import { DEFAULT_SHARE_SETTINGS, type ShareSettings } from '../../../worker/shares/schema'
-import { enableD1Modules, createDeliveryFixturePlan, jsonRequest, login, resetData, setupAdmin, TEST_ORIGIN, withCookie } from './helpers'
+import { bindFixtureTemplate, jsonRequest, login, setupContractedAdmin, TEST_ORIGIN, withCookie } from './helpers'
 
 type ShareView = {
   id: string
   ownerUserId: string
-  subscriptionId: string
+  scope?: { type: string; templateId: string }
   tokenPrefix: string
   remark: string
   status: string
@@ -31,11 +31,7 @@ type ShareView = {
 
 type ErrorBody = { error: { code: string, message: string } }
 
-beforeEach(async () => {
-  await resetData()
-  await enableD1Modules()
-  await setupAdmin()
-})
+beforeEach(setupContractedAdmin)
 
 async function expectError(response: Response, status: number, code: string): Promise<void> {
   expect(response.status).toBe(status)
@@ -92,20 +88,9 @@ async function createGroup(adminCookie: string, name: string, nodeName: string, 
   return (await group.json() as { group: { id: string } }).group.id
 }
 
-async function createSubscription(
-  adminCookie: string,
-  userId: string,
-  groupId: string,
-  name: string,
-  enabled = true,
-): Promise<string> {
-  const plan = await createDeliveryFixturePlan([groupId])
-  const response = await exports.default.fetch(
-    `${TEST_ORIGIN}/api/admin/subscriptions`,
-    jsonRequest({ userId, name, planId: plan.id, groupIds: [groupId], enabled, defaultClient: 'mihomo' }, withCookie(adminCookie)),
-  )
-  expect(response.status).toBe(201)
-  return (await response.json() as { subscription: { id: string } }).subscription.id
+async function createScope(userId: string, groupId: string, name: string, paused = false) {
+  const { id } = await bindFixtureTemplate(userId, { name, groupIds: [groupId], paused })
+  return { type: 'template', templateId: id }
 }
 
 async function putSettings(adminCookie: string, patch: Partial<ShareSettings> = {}): Promise<ShareSettings> {
@@ -138,16 +123,17 @@ describe('Share backend', () => {
     const admin = await login()
     const owner = await provisionUser(admin, 'toggle-user', 'toggle user password')
     const groupId = await createGroup(admin, 'Toggle group', 'Toggle node', 'toggle.example.com')
-    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Toggle subscription')
+    const ownerId = role === 'admin' ? 'usr_1' : owner.id
+    const scope = await createScope(ownerId, groupId, 'Toggle subscription')
     await putSettings(admin, { enabled })
 
     const actor = role === 'admin' ? admin : owner.cookie
-    const account = await exports.default.fetch(`${TEST_ORIGIN}/api/account/subscriptions`, withCookie(actor))
+    const account = await exports.default.fetch(`${TEST_ORIGIN}/api/user/subscription`, withCookie(actor))
     expect(account.status).toBe(200)
-    expect(await account.json()).toMatchObject({ shareEnabled: role === 'admin' || enabled })
+    expect(await account.json()).toMatchObject({ shareEnabled: enabled })
 
-    const path = role === 'admin' ? '/api/admin/shares' : '/api/shares'
-    const response = await exports.default.fetch(`${TEST_ORIGIN}${path}`, jsonRequest({ subscriptionId }, withCookie(actor)))
+    const path = '/api/shares'
+    const response = await exports.default.fetch(`${TEST_ORIGIN}${path}`, jsonRequest({ scope }, withCookie(actor)))
     if (status === 403) {
       await expectError(response, 403, 'SHARE_DISABLED')
       return
@@ -155,8 +141,8 @@ describe('Share backend', () => {
 
     expect(response.status).toBe(201)
     const { share, token } = await response.json() as { share: ShareView, token: string }
-    expect(share).toMatchObject({ ownerUserId: owner.id, subscriptionId, status: 'active' })
-    expect(await listShares(owner.cookie)).toContainEqual(share)
+    expect(share).toMatchObject({ ownerUserId: ownerId, scope, status: 'active' })
+    expect(await listShares(actor)).toContainEqual(share)
 
     if (!enabled) {
       await expectError(
@@ -177,21 +163,21 @@ describe('Share backend', () => {
 
     const owner = await provisionUser(admin, 'share-user', 'share user password')
     const groupId = await createGroup(admin, 'Share group', 'Hong Kong 01', 'hk.example.com')
-    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Share sub')
-    const disabledId = await createSubscription(admin, owner.id, groupId, 'Disabled sub', false)
+    const scope = await createScope(owner.id, groupId, 'Share sub')
+    const disabledId = await createScope(owner.id, groupId, 'Disabled sub', true)
     await expectError(
-      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ subscriptionId: disabledId }, withCookie(owner.cookie))),
-      409,
-      'SUBSCRIPTION_UNAVAILABLE',
+      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ scope: disabledId }, withCookie(owner.cookie))),
+      404,
+      'SHARE_NOT_FOUND',
     )
     await expectError(
-      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ subscriptionId }, withCookie(admin))),
+      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ scope }, withCookie(admin))),
       404,
-      'SUBSCRIPTION_NOT_FOUND',
+      'SHARE_NOT_FOUND',
     )
     await expectError(await exports.default.fetch(`${TEST_ORIGIN}/api/shares`), 401, 'AUTH_REQUIRED')
 
-    const created = await createShare(owner.cookie, { subscriptionId, remark: 'first' })
+    const created = await createShare(owner.cookie, { scope, remark: 'first' })
     expect(created.token).toMatch(/^[A-Za-z0-9_-]{43}$/u)
     expect(created.share.tokenPrefix).toBe(created.token.slice(0, 8))
     expect(created.share.accessControl).toBe('none')
@@ -206,7 +192,7 @@ describe('Share backend', () => {
     expect(JSON.stringify(listed)).not.toContain('tokenEncrypted')
 
     const adminList = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/admin/shares?user=${owner.id}&subscription=${subscriptionId}&status=active`,
+      `${TEST_ORIGIN}/api/admin/shares?user=${owner.id}&status=active`,
       withCookie(admin),
     )
     expect(adminList.status).toBe(200)
@@ -222,17 +208,10 @@ describe('Share backend', () => {
       'ADMIN_REQUIRED',
     )
 
-    await putSettings(admin, { maxSharesPerSubscription: 1 })
-    await expectError(
-      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ subscriptionId }, withCookie(owner.cookie))),
-      409,
-      'SHARE_LIMIT_REACHED',
-    )
-
-    const secondSubscription = await createSubscription(admin, owner.id, groupId, 'Second sub')
+    const secondScope = await createScope(owner.id, groupId, 'Second sub')
     await putSettings(admin, { maxSharesPerSubscription: 5, maxActiveSharesPerUser: 1 })
     await expectError(
-      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ subscriptionId: secondSubscription }, withCookie(owner.cookie))),
+      await exports.default.fetch(`${TEST_ORIGIN}/api/shares`, jsonRequest({ scope: secondScope }, withCookie(owner.cookie))),
       409,
       'SHARE_LIMIT_REACHED',
     )
@@ -242,13 +221,13 @@ describe('Share backend', () => {
     await expectError(
       await exports.default.fetch(
         `${TEST_ORIGIN}/api/shares`,
-        jsonRequest({ subscriptionId: secondSubscription, expiresAt: tooFar }, withCookie(owner.cookie)),
+        jsonRequest({ scope: secondScope, expiresAt: tooFar }, withCookie(owner.cookie)),
       ),
       422,
       'SHARE_EXPIRY_INVALID',
     )
     const soon = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
-    const shortLived = await createShare(owner.cookie, { subscriptionId: secondSubscription, expiresAt: soon })
+    const shortLived = await createShare(owner.cookie, { scope: secondScope, expiresAt: soon })
     expect(shortLived.share.expiresAt).toBe(soon)
 
     const storedBase = await putSettings(admin, { publicBaseUrl: 'https://share.example.com/' })
@@ -266,7 +245,7 @@ describe('Share backend', () => {
     await expectError(
       await exports.default.fetch(
         `${TEST_ORIGIN}/api/shares`,
-        jsonRequest({ subscriptionId: secondSubscription, expiresAt: soon }, withCookie(owner.cookie)),
+        jsonRequest({ scope: secondScope, expiresAt: soon }, withCookie(owner.cookie)),
       ),
       403,
       'SHARE_CREATE_DISABLED',
@@ -275,7 +254,7 @@ describe('Share backend', () => {
     await expectError(
       await exports.default.fetch(
         `${TEST_ORIGIN}/api/shares`,
-        jsonRequest({ subscriptionId: secondSubscription, expiresAt: soon }, withCookie(owner.cookie)),
+        jsonRequest({ scope: secondScope, expiresAt: soon }, withCookie(owner.cookie)),
       ),
       403,
       'SHARE_DISABLED',
@@ -291,9 +270,9 @@ describe('Share backend', () => {
     const admin = await login()
     const owner = await provisionUser(admin, 'share-user', 'share user password')
     const groupId = await createGroup(admin, 'Share group', 'Hong Kong 01', 'hk.example.com')
-    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Share sub')
+    const scope = await createScope(owner.id, groupId, 'Share sub')
     const created = await createShare(owner.cookie, {
-      subscriptionId,
+      scope,
       password: 'share-secret',
       accessControl: 'password',
       allowOriginalLink: false,
@@ -338,8 +317,6 @@ describe('Share backend', () => {
     expect(meta.status).toBe(200)
     const metaBody = await meta.json() as { meta: Record<string, unknown> }
     expect(metaBody.meta).toEqual({
-      subscriptionName: 'Share sub',
-      groupNames: ['Share group'],
       expiresAt: created.share.expiresAt,
       nodeCount: 1,
       nodeNames: ['Hong Kong 01'],
@@ -369,7 +346,7 @@ describe('Share backend', () => {
       'SHARE_NOT_FOUND',
     )
 
-    const open = await createShare(owner.cookie, { subscriptionId, showNodeNames: false })
+    const open = await createShare(owner.cookie, { scope, showNodeNames: false })
     const openMeta = await (await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${open.token}/meta`)).json() as { meta: Record<string, unknown> }
     expect(openMeta.meta).toEqual({ nodeCount: 1 })
 
@@ -396,7 +373,7 @@ describe('Share backend', () => {
     expect(loggedInExport.status).toBe(200)
 
     const both = await createShare(owner.cookie, {
-      subscriptionId,
+      scope,
       password: 'share-secret',
       accessControl: 'password',
       requireLogin: true,
@@ -434,8 +411,8 @@ describe('Share backend', () => {
     const owner = await provisionUser(admin, 'share-user', 'share user password')
     const peer = await provisionUser(admin, 'share-peer', 'share peer password')
     const groupId = await createGroup(admin, 'Share group', 'Hong Kong 01', 'hk.example.com')
-    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Share sub')
-    const created = await createShare(owner.cookie, { subscriptionId, allowOriginalLink: true })
+    const scope = await createScope(owner.id, groupId, 'Share sub')
+    const created = await createShare(owner.cookie, { scope, allowOriginalLink: true })
 
     const firstExport = await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${created.token}/export?client=generic`)
     expect(firstExport.status).toBe(200)
@@ -458,14 +435,14 @@ describe('Share backend', () => {
     expect((await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${rotated.token}/export?client=generic`)).status).toBe(200)
 
     const expiredHash = await hashToken(rotated.token)
-    await env.DB.prepare('UPDATE shares SET expires_at = ? WHERE token_hash = ?').bind(new Date(Date.now() - 1_000).toISOString(), expiredHash).run()
+    await env.DB.prepare('UPDATE user_subscription_shares SET record_json=json_set(record_json, "$.expiresAt", ?) WHERE token_hash = ?').bind(new Date(Date.now() - 1_000).toISOString(), expiredHash).run()
     await expectError(
       await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${rotated.token}/export?client=generic`),
       404,
       'SHARE_NOT_FOUND',
     )
 
-    const fresh = await createShare(owner.cookie, { subscriptionId })
+    const fresh = await createShare(owner.cookie, { scope })
     await expectError(
       await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${fresh.token}/export?type=link`),
       404,
@@ -478,18 +455,11 @@ describe('Share backend', () => {
     )
     expect(updated.status).toBe(200)
     expect(JSON.stringify(await updated.json())).not.toContain(fresh.token)
-    const revealed = await exports.default.fetch(
-      `${TEST_ORIGIN}/api/shares/${fresh.share.id}/reveal`,
-      jsonRequest({}, withCookie(owner.cookie)),
+    await expectError(
+      await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${fresh.share.id}/reveal`, jsonRequest({}, withCookie(owner.cookie))),
+      403,
+      'SHARE_ORIGINAL_LINK_DISABLED',
     )
-    expect(revealed.status).toBe(200)
-    const link = (await revealed.json() as { link: string }).link
-    expect(link).toContain('/sub/')
-    expect((await exports.default.fetch(link)).status).toBe(200)
-    expect((await listShares(owner.cookie)).find((share) => share.id === fresh.share.id)?.lastOriginalRevealAt).toEqual(expect.any(String))
-    const linkExport = await exports.default.fetch(`${TEST_ORIGIN}/api/shares/${fresh.token}/export?type=link`)
-    expect(linkExport.status).toBe(200)
-    expect(await linkExport.json()).toEqual({ link })
 
     await expectError(
       await exports.default.fetch(`${TEST_ORIGIN}/api/shares/not-a-share-token/export?client=generic`),
@@ -544,15 +514,15 @@ describe('Share backend', () => {
     )
     expect(removed.status).toBe(204)
     expect(await env.DATA.get(shareEntityKey(await hashToken(fresh.token)))).toBeNull()
-    expect((await listShares(owner.cookie)).some((share) => share.id === fresh.share.id)).toBe(false)
+    expect((await listShares(owner.cookie)).find((share) => share.id === fresh.share.id)?.status).toBe('revoked')
   })
 
   it('stops password guesses after 10 attempts in 10 minutes', async () => {
     const admin = await login()
     const owner = await provisionUser(admin, 'share-user', 'share user password')
     const groupId = await createGroup(admin, 'Share group', 'Hong Kong 01', 'hk.example.com')
-    const subscriptionId = await createSubscription(admin, owner.id, groupId, 'Share sub')
-    const created = await createShare(owner.cookie, { subscriptionId, password: 'share-secret', accessControl: 'password' })
+    const scope = await createScope(owner.id, groupId, 'Share sub')
+    const created = await createShare(owner.cookie, { scope, password: 'share-secret', accessControl: 'password' })
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const response = await exports.default.fetch(
         `${TEST_ORIGIN}/api/shares/${created.token}/verify`,

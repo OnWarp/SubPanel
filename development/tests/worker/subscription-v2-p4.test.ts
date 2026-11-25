@@ -98,7 +98,7 @@ it('enforces global public and redemption windows under concurrent admission', a
     limitAttempts(env.DB, `fixture-${i}`, undefined, 0)))
   expect(redemption.filter(result => result.status === 'fulfilled')).toHaveLength(10)
   const publicFetch = await Promise.all(Array.from({ length: 100 }, () =>
-    allowSubscriptionFetch(env.DB, 'global', 'all', 90)))
+    allowSubscriptionFetch(env.DB, 'global', 'all', 90, 'unified_subscription')))
   expect(publicFetch.filter(Boolean)).toHaveLength(90)
 })
 

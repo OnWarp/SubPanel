@@ -3,9 +3,10 @@ import type { AppEnv } from '../app-env.js'
 import { resolveGroupNodes } from '../catalog/groups.js'
 import type { CatalogSnapshot, Group, Node } from '../catalog/schema.js'
 import { subscriptionRowStatus } from './expiry.js'
-import { resolveEntitlement } from './compiler.js'
-import { loadAccessSnapshot } from './lifecycle.js'
-import { readDelivery } from './repository.js'
+import { readArtifactCatalog } from './artifacts.js'
+import { aggregateBindings } from './aggregate.js'
+import { bindingConfig, readBindings } from './bindings.js'
+import { readUserAccess, requireUnifiedSubscription } from './user-access.js'
 
 export type UserNodeRef = {
   id: string
@@ -141,16 +142,46 @@ const hasUserNodeParams = (query: Record<string, string | undefined>): boolean =
 export const userNodeRoutes = new Hono<AppEnv>()
 
 userNodeRoutes.get('/', async (c) => {
-  const [delivery, snapshot] = await Promise.all([readDelivery(c.env), loadAccessSnapshot(c.env)])
+  await requireUnifiedSubscription(c.env.DB, true)
   const userId = c.get('principal').id
-  const now = new Date()
-  const assigned = delivery.subscriptions.filter(subscription => subscription.userId === userId)
-  const eligible = (await Promise.all(assigned.map(async (subscription) => {
-    const access = await resolveEntitlement(c.env, subscription, now.toISOString(), snapshot)
-    return access.zeroNodeReason && !['noGroupIntersection', 'noEnabledNodes'].includes(access.zeroNodeReason)
-      ? [] : [{ ...subscription, groupIds: access.authorizedGroupIds, nodeIds: subscription.planId ? undefined : subscription.nodeIds }]
-  }))).flat()
-  const nodes = collectUserNodes(eligible, snapshot.catalog, userId, now.getTime())
+  const now = Date.now()
+  const [catalog, access, bindings, templates] = await Promise.all([
+    readArtifactCatalog(c.env),
+    readUserAccess(c.env.DB, { userId }),
+    readBindings(c.env.DB, userId, false),
+    c.env.DB.prepare(`SELECT t.id, t.name FROM entitlement_templates t
+      JOIN user_template_bindings b ON b.template_id=t.id WHERE b.user_id=?`)
+      .bind(userId).all<UserNodeRef>(),
+  ])
+  const aggregate = aggregateBindings(access, bindings, now, catalog)
+  const templateNames = new Map(templates.results.map(({ id, name }) => [id, name]))
+  const nodes = aggregate.nodes.map(node => ({
+    id: node.id, name: node.displayName, protocol: protocolOf(node),
+    groups: [] as UserNodeRef[], subscriptions: [] as UserNodeRef[],
+  }))
+  const byId = new Map(nodes.map(node => [node.id, node]))
+  const groups = new Map(catalog.groups.map(group => [group.id, group]))
+  for (const binding of bindings) {
+    if (!aggregate.effectiveTemplateIds.includes(binding.template_id)) continue
+    const scoped = aggregateBindings(access, [binding], now, catalog)
+    const name = templateNames.get(binding.template_id)
+    if (!name) continue
+    for (const node of scoped.nodes) {
+      const item = byId.get(node.id)
+      if (item) pushRef(item.subscriptions, { id: binding.template_id, name })
+    }
+    for (const groupId of bindingConfig(binding).groupIds) {
+      const group = groups.get(groupId)
+      if (!group) continue
+      for (const node of resolveGroupNodes(catalog, groupId)) {
+        const item = byId.get(node.id)
+        if (item?.subscriptions.some(({ id }) => id === binding.template_id)) {
+          pushRef(item.groups, { id: group.id, name: group.name })
+        }
+      }
+    }
+  }
+  nodes.sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans') || left.id.localeCompare(right.id))
   const query = c.req.query()
   if (!hasUserNodeParams(query)) return c.json({ nodes })
   const { page, pageSize } = parsePagination(query)
@@ -162,6 +193,6 @@ userNodeRoutes.get('/', async (c) => {
     pageSize,
     subscriptionOptions: uniqueNodeRefs(nodes, 'subscriptions'),
     groupOptions: uniqueNodeRefs(nodes, 'groups'),
-    hasActiveSubscription: eligible.length > 0,
+    hasActiveSubscription: aggregate.status === 'active',
   })
 })

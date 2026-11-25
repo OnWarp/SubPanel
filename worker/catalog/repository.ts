@@ -70,19 +70,7 @@ export async function writeCatalog(
       const audit = impacts.groupIds.length || impacts.directNodeIds.length
         ? env.DB.prepare(`INSERT INTO audit_logs (id, action, target_type, detail, created_at)
           SELECT ?, 'compile.invalidate.catalog', 'catalog',
-            json_set(?, '$.candidateSubscriptions', (SELECT count(*) FROM (
-              SELECT sg.subscription_id FROM json_each(?) changed
-              JOIN subscription_groups sg ON sg.group_id=changed.value
-              JOIN subscriptions s ON s.id=sg.subscription_id
-              WHERE s.plan_id IS NULL OR EXISTS (
-                SELECT 1 FROM plan_groups pg WHERE pg.plan_id=s.plan_id AND pg.group_id=sg.group_id
-              )
-              UNION
-              SELECT sn.subscription_id FROM json_each(?) changed
-              JOIN subscription_nodes sn ON sn.node_id=changed.value
-              JOIN subscriptions s ON s.id=sn.subscription_id WHERE s.plan_id IS NULL
-            ))), ?`).bind(crypto.randomUUID(), JSON.stringify(impacts),
-              JSON.stringify(impacts.groupIds), JSON.stringify(impacts.directNodeIds), now)
+            ?, ?`).bind(crypto.randomUUID(), JSON.stringify(impacts), now)
         : undefined
       await persistCatalogSnapshot(env.DB, next, snapshot.revision, audit)
     } catch (error) {

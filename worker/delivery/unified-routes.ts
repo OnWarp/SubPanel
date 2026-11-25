@@ -8,8 +8,7 @@ import { listEnabledPlatforms, primaryDomainOriginSafe } from '../domains/servic
 import { apiError, ApiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
-import { clientAliases, clientFromUserAgent, tokenPattern } from '../public-subscriptions.js'
-import { getEffectiveTemplate } from '../templates/repository.js'
+import { clientAliases, clientFromUserAgent, tokenPattern } from './public-client.js'
 import { resolveUserSubscription } from './aggregate.js'
 import { readArtifactCatalog } from './artifacts.js'
 import { bindingInput, mutateBinding, planBinding, readBindings, replaceInput, type Binding, type BindingChange } from './bindings.js'
@@ -17,8 +16,6 @@ import { renderResolvedSubscription } from './compiler.js'
 import { createEntitlementTemplate, templateInputSchema } from './entitlement-templates.js'
 import { allowSubscriptionFetch } from './public-rate-limit.js'
 import { clientIdSchema } from './schema.js'
-import { verifyShadowUser } from './shadow.js'
-import { DELIVERY_D1_READY_KEY, isModuleReady } from '../db/module-switch.js'
 import { loadUnifiedArtifact } from './unified-artifacts.js'
 import { accountAvailable, prepareUserAccess, readUserAccess, requireUnifiedSubscription, resetUserToken, revealUserToken, subscriptionNotFound, unifiedOperationsEnabled } from './user-access.js'
 
@@ -192,10 +189,8 @@ unifiedAdminRoutes.get(`${subscription}/preview`, async c => {
   const now = Date.now()
   const result = await resolveUserSubscription(c.env.DB, c.req.param('id'), now, await readArtifactCatalog(c.env))
   if (!result.access) throw subscriptionNotFound()
-  const effective = client.data === 'mihomo' || client.data === 'singbox'
-    ? await getEffectiveTemplate(c.env.DB, null, client.data) : undefined
   const output = await renderResolvedSubscription(c.env, { id: null, revision: result.access.revision ?? 0 },
-    client.data, result, new Date(now).toISOString(), undefined, undefined, effective)
+    client.data, result, new Date(now).toISOString())
   return c.json({
     status: result.status, expiresAt: iso(result.expiresAt), permanent: result.permanent, nextTransitionAt: iso(result.nextTransitionAt),
     nodeCount: result.nodes.length, outputNodes: output.outputNodes, diagnostics: result.diagnostics,
@@ -206,16 +201,9 @@ unifiedAdminRoutes.get(`${subscription}/preview`, async c => {
 unifiedAdminRoutes.get(`${subscription}/fetch-stats`, async c => {
   const userId = c.req.param('id')
   if (!await readUserAccess(c.env.DB, { userId })) throw subscriptionNotFound()
-  const ids = await c.env.DB.prepare('SELECT id FROM subscriptions WHERE user_id=? ORDER BY id')
+  const archived = await c.env.DB.prepare('SELECT id FROM legacy_subscriptions_archive WHERE user_id=? ORDER BY id')
     .bind(userId).all<{ id: string }>()
-  return c.json({ fetches: await readUserFetchSummary(c.env.DATA, userId, ids.results.map(row => row.id)), measuredTraffic: null })
-})
-
-unifiedAdminRoutes.get(`${subscription}/shadow`, async c => {
-  if (!await isModuleReady(c.env.DB, DELIVERY_D1_READY_KEY)) {
-    throw apiError(503, 'UNIFIED_SHADOW_UNAVAILABLE', '旧订阅 D1 数据未就绪')
-  }
-  return c.json(await verifyShadowUser(c.env, c.req.param('id'), Date.now(), await readArtifactCatalog(c.env)))
+  return c.json({ fetches: await readUserFetchSummary(c.env.DATA, userId, archived.results.map(row => row.id)), measuredTraffic: null })
 })
 
 export const unifiedPublicRoutes = new Hono<AppEnv>()

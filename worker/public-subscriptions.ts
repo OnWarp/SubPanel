@@ -12,31 +12,9 @@ import { isPublicSubscriptionCurrent, readDeliverySubscription } from './deliver
 import { readCutover, renderLegacyCompatibility } from './delivery/legacy-compatibility.js'
 import { allowSubscriptionFetch } from './delivery/public-rate-limit.js'
 
-export const tokenPattern = /^[A-Za-z0-9_-]{43}$/u
-const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
-export const clientAliases: Record<string, string> = {
-  clash: 'mihomo',
-  'clash-meta': 'mihomo',
-  stash: 'mihomo',
-  karing: 'singbox',
-  'sing-box': 'singbox',
-  'quantumult-x': 'quantumultx',
-  v2rayng: 'v2rayn',
-  'neko-box': 'nekobox',
-}
+import { clientAliases, clientFromUserAgent, tokenPattern } from './delivery/public-client.js'
 
-export function clientFromUserAgent(userAgent: string): string {
-  const value = userAgent.toLowerCase()
-  if (value.includes('mihomo') || value.includes('clash') || value.includes('stash')) return 'mihomo'
-  if (value.includes('sing-box') || value.includes('singbox') || value.includes('karing')) return 'singbox'
-  if (value.includes('surge')) return 'surge'
-  if (value.includes('loon')) return 'loon'
-  if (value.includes('quantumult')) return 'quantumultx'
-  if (value.includes('v2rayn') || value.includes('v2rayng')) return 'v2rayn'
-  if (value.includes('nekobox')) return 'nekobox'
-  if (value.includes('shadowrocket')) return 'shadowrocket'
-  return 'generic'
-}
+const clients = new Set(['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'])
 
 const BLOCKED_PUBLIC = new Set(['revoked', 'disabled', 'owner_unavailable'])
 

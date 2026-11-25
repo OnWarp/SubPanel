@@ -2,11 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('fills the desktop workspace away from the selected navigation edge', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto('/')
-  await page.getByLabel('管理员用户名').fill('Admin')
-  await page.getByLabel('管理员密码').fill('correct horse battery staple')
-  await page.getByRole('button', { name: '创建管理员' }).click()
-  await expect(page).toHaveURL(/\/login$/)
+  await page.goto('/login')
   await page.getByLabel('用户名', { exact: true }).fill('admin')
   await page.getByLabel('密码', { exact: true }).fill('correct horse battery staple')
   await page.getByRole('button', { name: '登录' }).click()
@@ -15,9 +11,9 @@ test('fills the desktop workspace away from the selected navigation edge', async
   const main = page.locator('.workspace-content')
   const topbar = page.locator('.admin-desktop-topbar')
   const routes = [
-    { path: '/dashboard', name: 'dashboard', card: '.ops-overview', ready: page.getByRole('region', { name: '系统统计' }) },
-    { path: '/users', name: 'users', card: '.usr-card', ready: page.getByRole('row', { name: /admin/i }) },
-    { path: '/system/registration', name: 'settings', card: '.ops-system', ready: page.getByRole('heading', { name: '邮箱域名白名单' }) },
+    { path: '/dashboard', name: 'dashboard', card: '.adm-overview', ready: page.getByRole('region', { name: '概览统计与待办' }) },
+    { path: '/users', name: 'users', card: '.data-section', ready: page.getByRole('row', { name: /admin/i }) },
+    { path: '/system/registration', name: 'settings', card: '.sys-page', ready: page.getByRole('heading', { name: '邮箱域名白名单' }) },
   ]
 
   for (const layout of ['sidebar', 'topbar'] as const) {
@@ -76,4 +72,8 @@ test('fills the desktop workspace away from the selected navigation edge', async
     expect(await page.evaluate(() => window.scrollY)).toBe(0)
     await page.setViewportSize({ width: 1440, height: 900 })
   }
+  await topbar.locator('.admin-account summary').click()
+  await page.getByRole('button', { name: '侧边栏', exact: true }).click()
+  await expect(topbar).toBeHidden()
+
 })

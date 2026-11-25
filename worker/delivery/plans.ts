@@ -1,15 +1,13 @@
 import { expiryFromDuration } from '../../shared/subscription-duration.js'
 import { auditStatement } from '../admin/audit.js'
 import { mutateBinding } from './bindings.js'
-import { prepareUserAccess, unifiedOperationsEnabled } from './user-access.js'
+import { prepareUserAccess } from './user-access.js'
 import { z } from 'zod'
 import { batch } from '../db/db.js'
 import { getSetting, decodeSettingJson } from '../db/settings-repository.js'
 import { DELIVERY_D1_READY_KEY, DELIVERY_SETTING_KEYS, isModuleReady, markModuleReady, type DataEnv } from '../db/module-switch.js'
 import { readDeliveryKv } from './repository.js'
-import { parseStoredOrder, readDeliveryFromD1, resolveSubscriptionOrder } from './d1-repository.js'
-import { effectiveStartsAt, subscriptionWindowStatus } from './expiry.js'
-import { preparePlanSubscription, updateSubscription } from './service.js'
+import { subscriptionWindowStatus } from './expiry.js'
 import type { Subscription } from './schema.js'
 import { apiError } from '../platform/api-error.js'
 
@@ -64,11 +62,6 @@ export async function savePlan(db: D1Database, input: PlanInput, id?: string): P
     db.prepare(`INSERT INTO plans(id,name,description,duration_days,traffic_gb,speed_limit_mbps,device_limit,enabled,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,duration_days=excluded.duration_days,traffic_gb=excluded.traffic_gb,speed_limit_mbps=excluded.speed_limit_mbps,device_limit=excluded.device_limit,enabled=excluded.enabled,sort_order=excluded.sort_order,updated_at=excluded.updated_at`).bind(planId,p.name,p.description,p.durationDays,p.trafficGb,p.speedLimitMbps,p.deviceLimit,p.enabled ? 1 : 0,p.sortOrder,now,now),
     db.prepare('DELETE FROM plan_groups WHERE plan_id = ?').bind(planId),
-    db.prepare(`UPDATE subscriptions SET traffic_gb=?, speed_limit_mbps=?, device_limit=?, revision=revision+1
-      WHERE plan_id=?`).bind(p.trafficGb,p.speedLimitMbps,p.deviceLimit,planId),
-    ...(id ? [db.prepare(`INSERT INTO audit_logs (id, action, target_type, target_id, detail, created_at)
-      SELECT ?, 'compile.invalidate.plan', 'plan', ?, json_object('subscriptions', count(*)), ?
-      FROM subscriptions WHERE plan_id=?`).bind(crypto.randomUUID(), planId, now, planId)] : []),
     bumpDeliveryRevision(db, now),
     ...p.groupIds.map((g, i) => db.prepare('INSERT INTO plan_groups(plan_id,group_id,position) VALUES(?,?,?)').bind(planId,g,i)),
   ])
@@ -76,7 +69,6 @@ export async function savePlan(db: D1Database, input: PlanInput, id?: string): P
 }
 export async function deletePlan(db: D1Database, id: string): Promise<void> {
   await getPlan(db, id)
-  if (await db.prepare('SELECT id FROM subscriptions WHERE plan_id = ? LIMIT 1').bind(id).first()) throw apiError(409, 'PLAN_IN_USE', '计划已有订阅记录，请停用')
   const trial = await readTrialSettings(db)
   if (trial.trialPlanId === id) throw apiError(409, 'PLAN_IN_USE', '计划正在用于注册试用')
   try { await db.prepare('DELETE FROM plans WHERE id = ?').bind(id).run() }
@@ -93,68 +85,31 @@ export function subscriptionPlanState(subscription: Pick<Subscription, 'planRevo
 
 // Historical response shape retained for existing API clients.
 export async function getSubscriptionPlanSummary(db: D1Database, userId: string, now = new Date().toISOString()): Promise<SubscriptionPlanSummary> {
-  if (await unifiedOperationsEnabled(db)) {
-    const { results } = await db.prepare(`SELECT b.*, mapping.plan_id,
-      EXISTS (SELECT 1 FROM audit_logs a WHERE a.target_id=b.user_id AND a.action='subscription.trial'
-        AND json_extract(a.detail,'$.templateId')=b.template_id) AS trial
-      FROM user_template_bindings b JOIN entitlement_plan_policies mapping ON mapping.template_id=b.template_id
-      WHERE b.user_id=? ORDER BY b.updated_at DESC,b.template_id`).bind(userId).all<{
-        template_id: string; plan_id: string; starts_at: number; expires_at: number | null;
-        status: 'active' | 'paused' | 'revoked'; created_at: string; updated_at: string; trial: number;
-      }>()
-    const plans = new Map((await listPlans(db)).map(plan => [plan.id, plan]))
-    const candidates = results.flatMap(row => {
-      const plan = plans.get(row.plan_id)
-      if (!plan) return []
-      const state: SubscriptionPlanSummary['state'] = row.status === 'revoked' ? 'revoked'
-        : row.status === 'paused' || !plan.enabled ? 'disabled'
-          : row.starts_at > Date.parse(now) ? 'pending'
-            : row.expires_at !== null && row.expires_at <= Date.parse(now) ? 'expired' : 'active'
-      const latest: PlanAssignment = { id: row.template_id, userId, planId: row.plan_id,
-        startsAt: new Date(row.starts_at).toISOString(),
-        expiresAt: row.expires_at === null ? null : new Date(row.expires_at).toISOString(),
-        status: row.status === 'revoked' ? 'revoked' : 'active', source: row.trial ? 'trial' : 'admin',
-        note: '', createdAt: row.created_at, updatedAt: row.updated_at, plan,
-      }
-      return [{ state, current: state === 'active' ? latest : null, latest }]
-    })
-    return candidates.find(item => item.current) ?? candidates[0] ?? { state: 'none', current: null, latest: null }
-  }
-  const [rows, planList, order] = await Promise.all([
-    db.prepare(`SELECT id, plan_id AS planId, enabled, starts_at AS startsAt, expires_at AS expiresAt,
-      created_at AS createdAt, updated_at AS updatedAt, plan_revoked AS planRevoked,
-      plan_source AS planSource, plan_note AS planNote, traffic_gb AS trafficGb,
-      speed_limit_mbps AS speedLimitMbps, device_limit AS deviceLimit
-      FROM subscriptions WHERE user_id = ? AND plan_id IS NOT NULL`).bind(userId).all<
-        Pick<Subscription, 'id' | 'startsAt' | 'expiresAt' | 'createdAt' | 'updatedAt' |
-          'planSource' | 'planNote' | 'trafficGb' | 'speedLimitMbps' | 'deviceLimit'> &
-        { planId: string; enabled: number; planRevoked: number }
-      >(),
-    listPlans(db),
-    getSetting(db, DELIVERY_SETTING_KEYS.entityOrder),
-  ])
-  const plans = new Map(planList.map(plan => [plan.id, plan]))
-  const time = Date.parse(now)
-  const candidates = resolveSubscriptionOrder(rows.results, parseStoredOrder(order), false).flatMap(row => {
-    const plan = plans.get(row.planId)
+  const { results } = await db.prepare(`SELECT b.*, mapping.plan_id,
+    EXISTS (SELECT 1 FROM audit_logs a WHERE a.target_id=b.user_id AND a.action='subscription.trial'
+      AND json_extract(a.detail,'$.templateId')=b.template_id) AS trial
+    FROM user_template_bindings b JOIN entitlement_plan_policies mapping ON mapping.template_id=b.template_id
+    WHERE b.user_id=? ORDER BY b.updated_at DESC,b.template_id`).bind(userId).all<{
+      template_id: string; plan_id: string; starts_at: number; expires_at: number | null;
+      status: 'active' | 'paused' | 'revoked'; created_at: string; updated_at: string; trial: number;
+    }>()
+  const plans = new Map((await listPlans(db)).map(plan => [plan.id, plan]))
+  const candidates = results.flatMap(row => {
+    const plan = plans.get(row.plan_id)
     if (!plan) return []
-    const subscription = { ...row, enabled: row.enabled === 1, planRevoked: row.planRevoked === 1 }
-    return [{ subscription, plan, state: subscriptionPlanState(subscription, plan, time) }]
+    const state: SubscriptionPlanSummary['state'] = row.status === 'revoked' ? 'revoked'
+      : row.status === 'paused' || !plan.enabled ? 'disabled'
+        : row.starts_at > Date.parse(now) ? 'pending'
+          : row.expires_at !== null && row.expires_at <= Date.parse(now) ? 'expired' : 'active'
+    const latest: PlanAssignment = { id: row.template_id, userId, planId: row.plan_id,
+      startsAt: new Date(row.starts_at).toISOString(),
+      expiresAt: row.expires_at === null ? null : new Date(row.expires_at).toISOString(),
+      status: row.status === 'revoked' ? 'revoked' : 'active', source: row.trial ? 'trial' : 'admin',
+      note: '', createdAt: row.created_at, updatedAt: row.updated_at, plan,
+    }
+    return [{ state, current: state === 'active' ? latest : null, latest }]
   })
-  const match = candidates.find(candidate => candidate.state === 'active') ??
-    candidates.sort((a, b) => Number(!!a.subscription.planRevoked) - Number(!!b.subscription.planRevoked)
-      || b.subscription.updatedAt.localeCompare(a.subscription.updatedAt))[0]
-  if (!match) return { state: 'none', current: null, latest: null }
-  const { subscription: row, plan, state } = match
-  const latest: PlanAssignment = {
-    id: row.id, userId, planId: plan.id,
-    startsAt: new Date(effectiveStartsAt(row)).toISOString(),
-    expiresAt: row.expiresAt === null ? null : new Date(row.expiresAt).toISOString(),
-    status: row.planRevoked ? 'revoked' : 'active', source: row.planSource ?? 'admin',
-    note: row.planNote ?? '', createdAt: row.createdAt, updatedAt: row.updatedAt,
-    plan: { ...plan, trafficGb: row.trafficGb ?? 0, speedLimitMbps: row.speedLimitMbps ?? 0, deviceLimit: row.deviceLimit ?? 0 },
-  }
-  return { state, latest, current: state === 'active' ? latest : null }
+  return candidates.find(item => item.current) ?? candidates[0] ?? { state: 'none', current: null, latest: null }
 }
 
 export function bumpDeliveryRevision(db: D1Database, now: string, guarded = false) {
@@ -172,34 +127,10 @@ export async function requirePlanStorage(env: DataEnv) {
   await markModuleReady(env.DB, DELIVERY_D1_READY_KEY)
 }
 
-export async function operateSubscriptionPlan(env: DataEnv, userId: string, action: 'grant' | 'renew' | 'switch' | 'revoke', planId?: string, note = '', now = new Date().toISOString(),
+export async function operateSubscriptionPlan(env: DataEnv, userId: string, action: 'grant' | 'renew' | 'switch' | 'revoke', planId?: string, _note = '', now = new Date().toISOString(),
   actor = 'admin', requestId?: string, expectedRevision?: number,
 ) {
-  if (await unifiedOperationsEnabled(env.DB)) return operateBoundPlan(env, userId, action, planId, now, actor, requestId, expectedRevision)
-  const db = env.DB
-  if (!await db.prepare('SELECT id FROM users WHERE id = ? AND deleted_at IS NULL').bind(userId).first()) throw apiError(404, 'USER_NOT_FOUND', '用户不存在')
-  await requirePlanStorage(env)
-  const state = await getSubscriptionPlanSummary(db, userId, now)
-  const existing = state.latest?.status === 'active' ? state.latest : null
-  if (action === 'grant' && existing) throw apiError(409, 'ENTITLEMENT_EXISTS', '已有订阅计划，请续期或换计划')
-  if (action !== 'grant' && !existing) throw apiError(409, 'ENTITLEMENT_MISSING', '没有可操作的订阅计划')
-  const plan = action === 'revoke' ? null : await getPlan(db, action === 'renew' ? existing!.planId : planId ?? '')
-  if (plan && !plan.enabled) throw apiError(409, 'PLAN_DISABLED', '计划已停用')
-  const candidate = existing?.id ?? (await readDeliveryFromD1(db)).subscriptions
-    .filter(s => s.userId === userId && !s.planId)
-    .sort((a,b) => Number(b.enabled) - Number(a.enabled) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))[0]?.id
-  if (!candidate) {
-    const grant = await preparePlanSubscription(env, userId, plan!, plan!.durationDays, 'admin', note, now)
-    const [result] = await batch(db, grant)
-    if (result.meta.changes !== 1) throw apiError(409, 'ENTITLEMENT_EXISTS', '已有订阅计划，请刷新')
-  } else {
-    await updateSubscription(env, candidate, {}, {
-      actorRole: 'admin', now,
-      planOperation: { action, userId, previousPlanId: existing?.planId ?? null, plan, note },
-    })
-  }
-  const summary = await getSubscriptionPlanSummary(db, userId, now)
-  return { ...summary, subscriptionId: candidate ?? summary.latest?.id ?? null }
+  return operateBoundPlan(env, userId, action, planId, now, actor, requestId, expectedRevision)
 }
 export const trialSchema = z.object({ trialPlanId: z.string().min(1).nullable(), trialDays: z.number().int().min(1).max(36500).nullable() })
 export async function readTrialSettings(db: D1Database): Promise<z.infer<typeof trialSchema>> {
@@ -211,28 +142,24 @@ export async function trialSubscriptionStatements(env: DataEnv, userId: string, 
   if (!settings.trialPlanId || !settings.trialDays) return []
   const plan = await getPlan(env.DB, settings.trialPlanId)
   if (!plan.enabled) return []
-  if (await unifiedOperationsEnabled(env.DB)) {
-    const db = env.DB
-    const template = await templateForPlan(db, plan.id)
-    const start = Date.parse(now)
-    const expires = expiryFromDuration(start, { unit: 'day', value: settings.trialDays })
-    const requestId = crypto.randomUUID()
-    return [
-      await prepareUserAccess(env, userId, now),
-      db.prepare(`INSERT INTO user_template_bindings
-        (user_id,template_id,starts_at,expires_at,status,created_at,updated_at)
-        VALUES (CASE WHEN changes()=1 AND EXISTS (
-          SELECT 1 FROM entitlement_templates t JOIN entitlement_plan_policies p ON p.template_id=t.id
-          JOIN plans ON plans.id=p.plan_id WHERE t.id=? AND t.revision=? AND t.status='enabled'
-            AND plans.id=? AND plans.enabled=1 AND plans.updated_at=?
-        ) THEN ? END,?,?,?,'active',?,?)`).bind(template.id, template.revision, plan.id, plan.updatedAt,
-        userId, template.id, start, expires, now, now),
-      auditStatement(db, userId, 'subscription.trial', 'user', userId,
-        { userId, templateId: template.id, requestId, before: null, after: { status: 'active', startsAt: start, expiresAt: expires } }, now),
-    ]
-  }
-  await requirePlanStorage(env)
-  return preparePlanSubscription(env, userId, plan, settings.trialDays, 'trial', '', now)
+  const db = env.DB
+  const template = await templateForPlan(db, plan.id)
+  const start = Date.parse(now)
+  const expires = expiryFromDuration(start, { unit: 'day', value: settings.trialDays })
+  const requestId = crypto.randomUUID()
+  return [
+    await prepareUserAccess(env, userId, now),
+    db.prepare(`INSERT INTO user_template_bindings
+      (user_id,template_id,starts_at,expires_at,status,created_at,updated_at)
+      VALUES (CASE WHEN changes()=1 AND EXISTS (
+        SELECT 1 FROM entitlement_templates t JOIN entitlement_plan_policies p ON p.template_id=t.id
+        JOIN plans ON plans.id=p.plan_id WHERE t.id=? AND t.revision=? AND t.status='enabled'
+          AND plans.id=? AND plans.enabled=1 AND plans.updated_at=?
+      ) THEN ? END,?,?,?,'active',?,?)`).bind(template.id, template.revision, plan.id, plan.updatedAt,
+      userId, template.id, start, expires, now, now),
+    auditStatement(db, userId, 'subscription.trial', 'user', userId,
+      { userId, templateId: template.id, requestId, before: null, after: { status: 'active', startsAt: start, expiresAt: expires } }, now),
+  ]
 }
 
 async function templateForPlan(db: D1Database, planId: string) {

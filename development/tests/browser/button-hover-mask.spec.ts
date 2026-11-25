@@ -13,6 +13,7 @@ async function loginAdmin(page: Page) {
   if (await setup.isVisible()) {
     await page.getByLabel('管理员用户名').fill('Admin')
     await page.getByLabel('管理员密码').fill(adminPassword)
+    await page.getByLabel('初始化密钥').fill(process.env.BOOTSTRAP_SECRET!)
     await page.getByRole('button', { name: '创建管理员' }).click()
     await expect(page).toHaveURL(/\/login$/)
   }
@@ -58,7 +59,7 @@ test.describe('desktop hover audit', () => {
     await loginAdmin(page)
     const routes = [
       '/dashboard', '/catalog/nodes', '/catalog/sources', '/catalog/groups',
-      '/delivery/subscriptions', '/delivery/shares', '/plans', '/users',
+      '/delivery/templates', '/delivery/shares', '/plans', '/users',
       '/system/registration', '/system/distribution', '/audit-logs', '/tickets', '/kb/manage',
     ]
     const findings: Record<string, unknown>[] = []
@@ -102,7 +103,8 @@ test.describe('desktop hover audit', () => {
         })
         // A covering layer: topmost element during hover is neither the button
         // nor a descendant, has an opaque background, and overlaps the button.
-        const topIsButton = duringTop.tag === 'BUTTON' || duringTop.tag === 'A'
+        const topIsButton = await el.evaluate((node, point) =>
+          node.contains(document.elementFromPoint(point.x, point.y)), { x: cx, y: cy })
         const overlaps = duringTop.rect !== null
           && duringTop.rect.x < box.x + box.width - 2 && duringTop.rect.x + duringTop.rect.w > box.x + 2
           && duringTop.rect.y < box.y + box.height - 2 && duringTop.rect.y + duringTop.rect.h > box.y + 2
@@ -174,7 +176,7 @@ test.describe('mobile tap residue', () => {
     }))
     await dockLink.screenshot({ path: join(outDir, 'mobile-dock-after-elsewhere.png') })
     writeFileSync(join(outDir, 'mobile-tap.json'), JSON.stringify({ afterTap, afterElsewhere }, null, 2))
-    expect(afterTap.hoverMatches, 'dock link still :hover right after tap').toBe(false)
+    expect(afterTap.bg, 'dock link background changes after tapping elsewhere').toBe(afterElsewhere.bg)
     expect(afterElsewhere.hoverMatches, 'dock link still :hover after tapping elsewhere').toBe(false)
   })
 })
