@@ -56,20 +56,18 @@ function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
       { key: 'purge', label: '永久删除', danger: true },
     ]
   }
-  const items: MenuItem[] = [{ key: 'edit-email', label: '改邮箱' }]
+  const items: MenuItem[] = [{ key: 'edit-email', label: '修改邮箱' }]
   if (user.role === 'user') {
     items.push(
       { key: 'reset-password', label: '重置密码' },
-      { key: 'promote', label: '设为管理员' },
+      { key: 'promote', label: '设管理员' },
     )
   }
+  items.push({ key: 'subscription-plan', label: '订阅授权' })
   items.push(user.enabled
-    ? { key: 'disable', label: '停用', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
-    : { key: 'enable', label: '启用', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
-  items.push(
-    { key: 'subscription-plan', label: '订阅授权' },
-    { key: 'soft-delete', label: '移入回收站', danger: true },
-  )
+    ? { key: 'disable', label: '停用账号', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
+    : { key: 'enable', label: '启用账号', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
+  items.push({ key: 'soft-delete', label: '删除用户', danger: true })
   return items
 }
 
@@ -151,9 +149,9 @@ export function UsersDirectory({
 }) {
   const allSelected = users.length > 0 && users.every((user) => selectedIds.has(user.id))
   const batchActions: BatchAction[] = [
-    { key: 'disable', label: '停用', icon: XCircle, tone: 'danger', onClick: () => onBatch('disable') },
-    { key: 'enable', label: '启用', icon: CheckCircle2, onClick: () => onBatch('enable') },
-    { key: 'delete', label: '移入回收站', icon: Trash2, tone: 'danger', onClick: () => onBatch('delete') },
+    { key: 'disable', label: '停用用户', icon: XCircle, tone: 'danger', onClick: () => onBatch('disable') },
+    { key: 'enable', label: '启用用户', icon: CheckCircle2, onClick: () => onBatch('enable') },
+    { key: 'delete', label: '删除用户', icon: Trash2, tone: 'danger', onClick: () => onBatch('delete') },
   ]
   const columns: Array<DataTableColumn<UserSummary>> = [
     ...(view === 'active' ? [{
@@ -590,14 +588,14 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const confirmCopy = confirmAction
     ? {
         promote: {
-          title: '设为管理员',
+          title: '设管理员',
           description: `将 ${confirmAction.user.username} 设为管理员，对方现有会话会退出；已有管理员不受影响`,
-          confirmLabel: '设为管理员',
+          confirmLabel: '设管理员',
         },
         'soft-delete': {
-          title: '移入回收站',
+          title: '删除用户',
           description: `删除后 ${confirmAction.user.username} 将立即无法登录，其订阅也会停止下发；数据保留在回收站，可随时恢复`,
-          confirmLabel: '移入回收站',
+          confirmLabel: '删除用户',
         },
         purge: {
           title: '永久删除',
@@ -608,9 +606,9 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
     : null
   const batchCopy = batchConfirm === 'delete'
     ? {
-        title: '移入回收站',
+        title: '删除用户',
         description: `将把选中的 ${selectedUsers.size} 个用户移入回收站，他们将无法登录，订阅也会停止下发`,
-        confirmLabel: '移入回收站',
+        confirmLabel: '删除用户',
       }
     : {
         title: '停用用户',

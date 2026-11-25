@@ -226,7 +226,7 @@ for (const width of [1440, 1024, 390]) {
       await expect(page).toHaveURL(/\/users$/u)
       const menu = page.getByLabel('member 的操作')
       await menu.click()
-      await page.getByRole('menuitem', { name: '改邮箱' }).click()
+      await page.getByRole('menuitem', { name: '修改邮箱' }).click()
       const userEdit = page.getByRole('dialog', { name: '编辑用户' })
       await userEdit.getByLabel('邮箱').fill('updated@example.test')
       await checkDialog(page, userEdit, 'm', width)

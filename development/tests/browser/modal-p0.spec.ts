@@ -152,7 +152,7 @@ test('desktop user dialogs guard dirty content and one-time results', async ({ p
   await page.goto('/users')
   const menu = page.getByLabel('member 的操作')
   await menu.click()
-  await page.getByRole('menuitem', { name: '改邮箱' }).click()
+  await page.getByRole('menuitem', { name: '修改邮箱' }).click()
   const edit = page.getByRole('dialog', { name: '编辑用户' })
   await edit.getByLabel('邮箱').fill('member@example.test')
   await page.mouse.click(3, 3)
