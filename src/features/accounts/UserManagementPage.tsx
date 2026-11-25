@@ -27,7 +27,7 @@ export function UserManagementPage() {
         {invite ? <InvitesPage /> : <UsersPage key={pathname} view={trash ? 'trash' : 'active'} />}
       </section>
       {jobs && <SubscriptionBatchJobs request={null} choosingPlan={false} plans={[]} platforms={{}}
-        historyOpen onCloseHistory={() => setJobs(false)} onClear={() => setJobs(false)}
+        historyOpen onCloseHistory={() => setJobs(false)} onClear={() => undefined}
         onPreviewPlan={() => undefined} onChanged={() => undefined} />}
     </div>
   )
