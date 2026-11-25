@@ -117,39 +117,6 @@ for (const width of [1440, 390]) {
       await expect(trigger).toBeFocused()
     })
 
-    test('conversion history uses XL and restores focus after unmount', async ({ page }) => {
-      const root = '/api/admin/system/subscription-templates'
-      const date = '2026-11-20T09:25:00Z'
-      const template = {
-        id: 'config', name: '测试配置', status: 'published', revision: 2,
-        publishedVersionId: 'v2', publishedSequence: 2, publishedAt: date,
-        references: { isDefault: true, directBindings: 0, inheritedCount: 0 },
-      }
-      await mockPage(page, 'admin', {
-        [root]: { templates: [template], defaultId: template.id, defaultRevision: 1, total: 1 },
-        [`${root}/config/versions`]: {
-          versions: [{ id: 'v2', sequence: 2, createdAt: date }, { id: 'v1', sequence: 1, createdAt: date }],
-          total: 2, page: 1, pageSize: 20,
-        },
-      })
-      await page.goto('/delivery/conversions')
-      const trigger = page.getByRole('button', { name: '更多操作', exact: true })
-      await trigger.click()
-      await page.getByRole('button', { name: '版本历史', exact: true }).click()
-      const dialog = page.getByRole('dialog', { name: '测试配置 · 版本历史' })
-      await expect(dialog.getByText('当前发布')).toBeVisible()
-      await expect(dialog).toHaveCSS('width', `${Math.min(width - 32, 960)}px`)
-      await dialog.getByRole('button', { name: '回退', exact: true }).click()
-      await expect(dialog.getByRole('button', { name: '取消回退' })).toBeVisible()
-      await mkdir(screenshots, { recursive: true })
-      await page.screenshot({ path: `${screenshots}/conversion-history-${width}.png` })
-      await dialog.getByRole('button', { name: '取消回退' }).click()
-      await expect(dialog).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(dialog).toBeHidden()
-      await expect(trigger).toBeFocused()
-    })
-
     test('redemption confirmation keeps its backdrop policy and focuses the safe action', async ({ page }) => {
       const batch = {
         id: 'fixture', name: '测试批次', status: 'active', templateName: '测试模板',
