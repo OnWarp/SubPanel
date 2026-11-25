@@ -11,6 +11,7 @@ export default defineConfig({
       'development/tests/ui/users-page.test.tsx',
       'development/tests/ui/data-cache.test.ts',
       'development/tests/ui/user-pages-style.test.tsx',
+      'development/tests/ui/entitlement-names.test.ts',
       'development/tests/worker/catalog-counts.test.ts',
       'development/tests/worker/catalog-remote.test.ts',
       'development/tests/worker/delivery-renderers-compat.test.ts',

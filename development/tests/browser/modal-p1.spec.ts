@@ -179,7 +179,7 @@ for (const width of [1440, 1024, 390]) {
         buffer: Buffer.from('http://one.example.test:80\nhttp://two.example.test:80'),
       })
       await source.getByRole('button', { name: '预览', exact: true }).click()
-      await expect(source.getByText('检测到 2 个节点')).toBeVisible()
+      await expect(source.getByText('已解析 2 个节点')).toBeVisible()
       await page.mouse.click(3, 3)
       await expect(source.getByRole('button', { name: '继续编辑' })).toHaveCount(0)
       await source.getByRole('button', { name: '取消' }).click()
