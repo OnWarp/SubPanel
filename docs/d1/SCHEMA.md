@@ -1,14 +1,16 @@
 # D1 表结构映射
 
-绑定名 `DB`，`database_name` 为 `subpanel`，迁移目录 `migrations/`。
+当前 D1 绑定名为 `DB`，数据库名为 `subpanel-d1`，迁移目录为 `migrations/`。启动参数以 `wrangler.jsonc` 为准，相关 KV 通过 `DATA` 绑定。
 
-`wrangler.jsonc` 里的 `database_id` 目前是占位符 `00000000-0000-0000-0000-000000000000`。远程库创建后要换成真实 UUID，再部署。本地 Miniflare 不使用这个远程 id。
+## 当前 schema bootstrap（统一订阅至 0028）
 
-KV 绑定 `DATA` 保持不动。本批不切换业务读写。
+新建本地 D1 使用 `npx wrangler d1 migrations apply subpanel-d1 --local`，按 `migrations/` 中实际存在的 27 条迁移执行至 0028（文件编号跳过 0013）。迁移完成后，按本地用例在 `system_settings` 设置 `catalog_d1_ready`、`apps_d1_ready`、`accounts_d1_ready`、`delivery_d1_ready`、`shares_d1_ready`。验证统一读写还需要 `unified_subscription_ready` 和 `unified_subscription_public_ready`。就绪值为 JSON 布尔 `true`。只有兼容场景才按需设置本地切换时间。
 
-仓库里没有方案正文。表名单、唯一约束和“字段以当前 Zod 为准”来自本批任务。已经存在的实体按 Zod 字段逐列映射。名单里有、KV 里还没有的表，按名称和任务点名的唯一键做了最小预留，并在文末标出。
+下方早期结构说明记录初始迁移。检查现行外键以迁移后的 schema 为准，特别是 0003 已解除 `shares.subscription_id` 的外键，0028 的 `unified_subscription_mappings` 仍外键引用 `subscriptions`。0027 的兑换联合视图和权益模板保护必须在正式收缩时保留。转换规则模板及版本、发布指针和转换配置仍有自己的完整 schema。
 
-## 约定
+正式收缩发布时同步更新新库初始化、存量库迁移检测和 `development/tests/worker/d1.ts` 的夹具，并重跑恢复演练。[发布门槛和回滚路径](../unified-subscription-migration.md) 适用于这两条安装路径。
+
+## 初始迁移约定
 
 - 主键沿用现有文本 id：`usr_N`、`src_N`、`node_N`、`grp_N`、`sub_N`、`app_N`、`plt_N`、`shr_N`。邀请主键是令牌哈希。
 - 布尔值用 `INTEGER`，只允许 `0` 和 `1`。
