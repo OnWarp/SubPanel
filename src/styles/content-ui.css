@@ -249,7 +249,7 @@
   width: min(calc(var(--dialog-viewport-width, 100%) - var(--drawer-safe-inline)), 560px);
 }
 .content-dialog[data-placement='end'] .sp-dialog-panel {
-  height: calc(var(--dialog-viewport-height, 100dvh) - var(--drawer-safe-block));
+  height: calc(var(--dialog-viewport-height, 100dvh) - var(--drawer-safe-block) - var(--dialog-bottom-reserve, 0px));
   max-height: none;
   border-radius: 0;
 }
