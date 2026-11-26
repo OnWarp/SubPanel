@@ -53,6 +53,44 @@ it('uses built-in formats and rejects the retired public and administrator paths
   expect((await exports.default.fetch(TEST_ORIGIN + '/api/admin/subscriptions', auth)).status).toBe(404)
 })
 
+it('renders the share page for an unknown token document and keeps the JSON 404', async () => {
+  const unknown = 'unknowntoken0001'
+  const html = await exports.default.fetch(TEST_ORIGIN + '/s/' + unknown, { headers: { accept: 'text/html' } })
+  expect(html.status).toBe(200)
+  expect(html.headers.get('content-type')).toContain('text/html')
+  expect(html.headers.get('cache-control')).toContain('private, no-store')
+  expect(await html.text()).toContain('spa-shell-test-fixture')
+
+  const malformed = await exports.default.fetch(TEST_ORIGIN + '/s/doesnotexist1234567890', { headers: { accept: 'text/html' } })
+  expect(malformed.status).toBe(200)
+  expect(malformed.headers.get('content-type')).toContain('text/html')
+
+  const json = await exports.default.fetch(TEST_ORIGIN + '/s/' + unknown, { headers: { accept: 'application/json' } })
+  expect(json.status).toBe(404)
+  expect(await json.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NOT_FOUND', message: '订阅不存在' } })
+
+  const omitted = await exports.default.fetch(TEST_ORIGIN + '/s/' + unknown)
+  expect(omitted.status).toBe(404)
+  expect(await omitted.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NOT_FOUND' } })
+
+  const clientPath = await exports.default.fetch(TEST_ORIGIN + '/s/' + unknown + '/mihomo', { headers: { accept: 'text/html' } })
+  expect(clientPath.status).toBe(404)
+  expect(await clientPath.json()).toMatchObject({ error: { code: 'SUBSCRIPTION_NOT_FOUND' } })
+
+  const legacy = await exports.default.fetch(TEST_ORIGIN + '/sub/' + unknown, { headers: { accept: 'text/html' } })
+  expect(legacy.status).toBe(404)
+  expect(await legacy.json()).toMatchObject({ error: { code: 'NOT_FOUND' } })
+
+  const { path } = await fixture()
+  const live = await exports.default.fetch(TEST_ORIGIN + path, {
+    headers: { accept: 'text/html', 'user-agent': 'custom-test-client' },
+  })
+  expect(live.status).toBe(200)
+  expect(live.headers.get('x-subscription-client')).toBe('generic')
+  expect(live.headers.get('content-type') ?? '').not.toContain('text/html')
+  expect(atob(await live.text())).toContain('delivery.example')
+})
+
 it('renders an imported Hysteria2 PEM certificate as a Mihomo fingerprint', async () => {
   const certificate = '-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----'
   const { path } = await fixture(`hysteria2://password@hy2.example.com:443?cert=${encodeURIComponent(certificate)}#HY2`)

@@ -451,13 +451,17 @@ test('real local API covers authorization, redemption, delivery and shell checks
     })
 
     await step('share-unknown', '未知分享令牌整页导航', ['login'], async () => {
-      const response = await page.goto('/s/unknowntoken0001')
+      const short = await page.goto('/s/unknowntoken0001')
+      if ((short?.status() ?? 0) !== 200) throw new Error(`短令牌页面状态 ${short?.status() ?? 0}`)
+      await expect(page.getByRole('heading', { name: '链接不可用' })).toBeVisible()
+      const longToken = 'A'.repeat(43)
+      const long = await page.goto(`/s/${longToken}`)
+      if ((long?.status() ?? 0) !== 200) throw new Error(`长令牌页面状态 ${long?.status() ?? 0}`)
+      await expect(page.getByRole('heading', { name: '访问验证' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '验证' })).toBeVisible()
       const body = await page.locator('body').innerText()
-      const status = response?.status() ?? 0
-      if (status === 404 && body.includes('SUBSCRIPTION_NOT_FOUND')) {
-        return 'known:Worker 对未知令牌返回 JSON 404，这是基底已知问题，本线不改分享错误处理'
-      }
-      throw new Error(`未知令牌页面状态 ${status}，与基底记录不一致`)
+      if (body.includes('SUBSCRIPTION_NOT_FOUND') || body.includes(longToken)) throw new Error('未知令牌页面仍暴露 JSON 或令牌')
+      return '短令牌显示链接不可用，43 位未知令牌进入访问验证'
     })
 
     await step('shell', '五档视口、外壳、键盘、焦点、对比度、溢出和触控', ['login', 'redemption'], async () => {

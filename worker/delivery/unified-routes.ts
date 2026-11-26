@@ -219,6 +219,32 @@ function publicRateLimited(c: Context<AppEnv>) {
   return apiError(429, 'SUBSCRIPTION_RATE_LIMITED', '请求过于频繁')
 }
 
+// A browser document asks for text/html and has no client segment. Those
+// navigations render the share page. Other clients keep the JSON contract.
+function shareDocument(c: Context<AppEnv>): boolean {
+  return !c.req.param('client') && (c.req.header('Accept') ?? '').includes('text/html')
+}
+
+async function shareShell(c: Context<AppEnv>): Promise<Response> {
+  const shell = await c.env.ASSETS.fetch(new URL('/', c.req.url))
+  const headers = new Headers(shell.headers)
+  headers.set('Cache-Control', 'private, no-store')
+  headers.set('Referrer-Policy', 'no-referrer')
+  const html = await shell.text()
+  // Vite's dev shell has one inline refresh preamble. The document CSP
+  // allows that exact script so the share page can render during local dev.
+  const preamble = html.match(/<script type="module">([\s\S]*?injectIntoGlobalHook[\s\S]*?)<\/script>/u)
+  if (preamble) {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(preamble[1])))
+    let binary = ''
+    for (const byte of digest) binary += String.fromCharCode(byte)
+    const hash = btoa(binary)
+    headers.set('Content-Security-Policy', "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: https://www.gravatar.com https://api.dicebear.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-" + hash + "'; connect-src 'self'")
+  }
+  headers.delete('content-length')
+  return new Response(html, { status: shell.status, headers })
+}
+
 unifiedPublicRoutes.use('/s/*', async (c, next) => {
   c.header('Cache-Control', 'private, no-store')
   c.header('Referrer-Policy', 'no-referrer')
@@ -233,19 +259,25 @@ unifiedPublicRoutes.use('/s/*', async (c, next) => {
 unifiedPublicRoutes.get('/s/:token/:client?', async c => {
   const started = Date.now()
   const raw = c.req.param('token')
-  if (!tokenPattern.test(raw)) throw subscriptionNotFound()
+  const document = shareDocument(c)
+  if (!tokenPattern.test(raw)) {
+    if (document) return shareShell(c)
+    throw subscriptionNotFound()
+  }
   const tokenHash = await hashToken(raw)
   if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${tokenHash}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
-  if (!c.req.param('client') && c.req.header('Accept')?.includes('text/html') && await readShare(c.env, tokenHash)) {
-    const shell = await c.env.ASSETS.fetch(new URL('/', c.req.url))
-    const headers = new Headers(shell.headers)
-    headers.set('Cache-Control', 'private, no-store')
-    headers.set('Referrer-Policy', 'no-referrer')
-    return new Response(shell.body, { status: shell.status, headers })
+  if (document && await readShare(c.env, tokenHash)) return shareShell(c)
+  try {
+    await requireUnifiedSubscription(c.env.DB, true)
+  } catch (error) {
+    if (document && error instanceof ApiError && error.code === 'SUBSCRIPTION_NOT_FOUND') return shareShell(c)
+    throw error
   }
-  await requireUnifiedSubscription(c.env.DB, true)
   const access = await readUserAccess(c.env.DB, { tokenHash })
-  if (!accountAvailable(access) || access.enabled !== 1) throw subscriptionNotFound()
+  if (!accountAvailable(access) || access.enabled !== 1) {
+    if (document) return shareShell(c)
+    throw subscriptionNotFound()
+  }
   if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${access.user_id}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
 
   const detected = clientFromUserAgent(c.req.header('User-Agent') ?? '')
