@@ -471,7 +471,7 @@ body:has(.sp-dialog:modal) :is(.workspace-content, .sidebar-nav) {
     --dialog-safe-bottom: env(safe-area-inset-bottom, 0px);
     --dialog-safe-left: env(safe-area-inset-left, 0px);
     --dialog-css-height: 100vh;
-    --dialog-available-height: calc(var(--dialog-viewport-height, var(--dialog-css-height)) - var(--dialog-safe-top) - var(--dialog-safe-bottom));
+    --dialog-available-height: calc(var(--dialog-viewport-height, var(--dialog-css-height)) - var(--dialog-safe-top) - var(--dialog-safe-bottom) - var(--dialog-bottom-reserve, 0px));
     --dialog-available-width: calc(var(--dialog-viewport-width, 100%) - var(--dialog-safe-left) - var(--dialog-safe-right));
     inset: calc(var(--dialog-viewport-top, 0px) + var(--dialog-safe-top) + var(--dialog-available-height) / 2)
       auto auto calc(var(--dialog-viewport-left, 0px) + var(--dialog-safe-left) + var(--dialog-available-width) / 2);

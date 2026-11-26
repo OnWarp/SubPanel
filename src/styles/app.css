@@ -378,6 +378,10 @@ tbody tr:last-child td { border-bottom: 0; }
     --mobile-bar-safe-bottom: env(safe-area-inset-bottom, 0px);
     --mobile-bar-floating-offset: calc(9px + var(--mobile-bar-safe-bottom));
     --mobile-bar-content-gap: var(--space-4);
+    --dialog-bottom-reserve: var(--mobile-bar-height);
+  }
+  .app-layout[data-mobile-bar="floating"] {
+    --dialog-bottom-reserve: calc(var(--mobile-bar-height) + var(--mobile-bar-floating-offset) - var(--mobile-bar-safe-bottom));
   }
   .workspace-content { padding: var(--space-4); }
   .admin-layout .workspace-content { padding-inline: var(--space-page-inline); }
