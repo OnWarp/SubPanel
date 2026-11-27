@@ -310,6 +310,7 @@ export function UserSubscriptionPlan({ user, details }: { user: UserSummary; det
         { label: '重置链接', danger: true, disabled: actionsUnavailable, onClick: () => start('reset') },
       ]} />}
     </div>}>
+      {summary.subscriptionUrl ? null : <p>订阅链接暂不可用</p>}
       {copyError && <StatusMessage tone="error">复制失败，请重试</StatusMessage>}
     </Section>
     <Section title="已绑定模板" actions={<div className="content-toolbar-actions binding-section-actions">

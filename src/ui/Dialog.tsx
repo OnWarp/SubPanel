@@ -22,6 +22,7 @@ type DialogProps = {
   dirty?: boolean
   sensitive?: boolean
   closeOnBackdrop?: boolean
+  className?: string
   returnFocusRef?: RefObject<HTMLElement | null>
 }
 
@@ -89,7 +90,7 @@ function trackDialogViewport(element: HTMLDialogElement) {
 
 export function Dialog({
   open, onClose, title, description, children, footer, size = 'm', busy = false, dirty = false,
-  appearance, placement = 'center', sensitive = false, closeOnBackdrop = true, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
+  appearance, placement = 'center', sensitive = false, closeOnBackdrop = true, className, returnFocusRef, headerStatus, headerActions, discardCopy, focusStep,
 }: DialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -199,7 +200,7 @@ export function Dialog({
   return (
     <dialog
       ref={dialog}
-      className={appearance === 'content' ? "sp-dialog content-scope content-dialog" : "sp-dialog"}
+      className={`${appearance === 'content' ? 'sp-dialog content-scope content-dialog' : 'sp-dialog'}${className ? ` ${className}` : ''}`}
       data-size={size}
       data-placement={placement === 'end' ? placement : undefined}
       aria-modal="true"

@@ -121,7 +121,7 @@ describe('navigation ownership and route compatibility', () => {
   })
   it.each([
     ['registration', '正在加载注册设置'], ['mail', '邮件模板与群发'],
-    ['distribution', '域名与平台展示'], ['status', '服务健康与定时任务'],
+    ['distribution', '域名管理'], ['status', '服务健康与定时任务'],
   ])('renders only the %s settings subpage on direct entry', (section, marker) => {
     const html = render(`/system/${section}`)
     expect(html).toContain(marker)
