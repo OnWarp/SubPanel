@@ -30,6 +30,6 @@
     "enabled": true,
     "logs": { "invocation_logs": false }
   },
-  "routes": [{ "pattern": "sub.warp.dpdns.org", "custom_domain": true }],
+  "routes": [{ "pattern": "sub.warp.dpdns.org", "custom_domain": true }, { "pattern": "sub.owarp.bond", "custom_domain": true }],
   "upload_source_maps": true
 }
