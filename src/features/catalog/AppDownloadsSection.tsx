@@ -57,9 +57,8 @@ export function AppDownloadsSection() {
       {!loading && loadError ? <ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /> : null}
       {!loading && !loadError && enabled !== null ? (
         <div>
-          <p className="sys-hint">开启后，普通用户可以在用户端查看各平台的客户端下载入口；关闭后，用户端隐藏整个客户端下载板块，但不会删除已配置的 APP</p>
           <div className="sys-toggles">
-            <FormField label="显示客户端下载板块">
+            <FormField label="显示客户端下载板块" hintTip="开启后，普通用户可以在用户端查看各平台的客户端下载入口；关闭后，用户端隐藏整个客户端下载板块，但不会删除已配置的 APP">
               <Switch checked={enabled} onChange={(checked) => { toggle(checked).catch(() => undefined) }} disabled={saving} ariaLabel="显示客户端下载板块" />
             </FormField>
           </div>

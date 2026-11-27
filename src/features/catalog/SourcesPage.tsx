@@ -18,6 +18,7 @@ import { StatusMessage } from '../../ui/StatusMessage'
 import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { PasswordInput } from '../../ui/PasswordInput'
 import { Dialog } from '../../ui/Dialog'
+import { HintTip } from '../../ui/HintTip'
 import { useToast } from '../../ui/Toast'
 import { formatDate, formatLabel, matchesText, sourceStatus, sourceTypeLabel } from './catalog-utils'
 
@@ -481,7 +482,7 @@ export function SourcesPage() {
               <label className="field"><span>导入格式</span><FormSelect value={form.formatOverride} onChange={(event) => updateForm('formatOverride', event.currentTarget.value)}><option value="">自动识别</option>{syncFormats.map((format) => <option key={format} value={format}>{formatLabel(format)}</option>)}</FormSelect></label>
               <label className="field"><span>请求 Headers（JSON）</span><Textarea aria-label="请求 Headers" value={form.headers} onChange={(event) => updateForm('headers', event.currentTarget.value)} placeholder={editor === 'create' ? '{"User-Agent":"SubPanel"}' : '留空保持当前 Headers；填写 {} 可清空'} rows={3} /></label>
               <label className="field"><span>刷新周期（分钟）</span><Input aria-label="刷新周期" type="number" min={15} step={15} value={form.refreshIntervalMinutes} onChange={(event) => updateForm('refreshIntervalMinutes', event.currentTarget.value)} required /></label>
-              <p className="dialog-note">同步失败时保留上次成功导入的节点</p>
+              <HintTip text="同步失败时保留上次成功导入的节点" />
             </details>
           </> : <>
             {form.type === 'file' ? <label className="field"><span>来源文件</span><FileInput aria-label="来源文件" type="file" accept=".txt,.conf,.json,.yaml,.yml,text/plain,application/json,application/yaml,text/yaml" onChange={(event) => { loadFile(event).catch(() => setEditorError('读取文件失败')) }} /></label> : null}
@@ -535,7 +536,7 @@ export function SourcesPage() {
             <span>识别格式 {formatLabel(syncPreview.format)}</span>
             <DiffCounts diff={syncPreview.diff} />
             <ImportWarnings warnings={syncPreview.warnings ?? []} />
-            <span>失效节点会保留 24 小时，在后续成功同步时清理</span>
+            <HintTip text="失效节点会保留 24 小时，在后续成功同步时清理" />
           </section> : !syncError && <p role="status">正在获取差异</p>}
         </div>
       </Dialog>

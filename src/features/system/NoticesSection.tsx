@@ -222,7 +222,7 @@ export function NoticesSection() {
             />
           </FormField>
           <div className="sys-grid">
-            <FormField label="排序（越小越靠前）" htmlFor="ntc-sort">
+            <FormField label="排序" htmlFor="ntc-sort" hintTip="越小越靠前">
               <Input
                 id="ntc-sort"
                 type="number"

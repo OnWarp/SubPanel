@@ -20,6 +20,7 @@ import { ConfirmDialog } from '../../ui/ConfirmDialog'
 import { DetailList } from '../../ui/DetailList'
 import { PasswordInput } from '../../ui/PasswordInput'
 import { Dialog } from '../../ui/Dialog'
+import { HintTip } from '../../ui/HintTip'
 import { Link } from 'react-router-dom'
 import { useToast } from '../../ui/Toast'
 import { groupNodeIds } from './catalog-counts'
@@ -464,8 +465,10 @@ export function NodesPage() {
             <label className="field"><span>转换目标</span><FormSelect value={testClient} onChange={(event) => { setTestClient(event.currentTarget.value); setTestResult(null) }}>
               {['mihomo', 'singbox', 'surge', 'loon', 'quantumultx', 'v2rayn', 'nekobox', 'shadowrocket', 'generic'].map((client) => <option key={client}>{client}</option>)}
             </FormSelect></label>
-            <button className="button secondary" type="button" onClick={testOutput}>测试转换输出</button>
-            {connectionDirty && <p className="dialog-note">转换测试使用已保存的连接参数</p>}
+            <div className="sp-hint-row">
+              <button className="button secondary" type="button" onClick={testOutput}>测试转换输出</button>
+              {connectionDirty ? <HintTip text="转换测试使用已保存的连接参数" /> : null}
+            </div>
             {testResult && <section className="form-stack"><p>可输出 {testResult.outputNodes} 个节点</p>
               {testResult.diagnostics.map((diagnostic, index) => <p key={index}>{diagnostic.message}</p>)}
               {testResult.outputNodes > 0 && <details><summary>显示转换结果（含连接凭据）</summary><Textarea aria-label="转换结果" readOnly value={testResult.body} /></details>}

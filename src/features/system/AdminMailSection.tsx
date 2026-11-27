@@ -69,14 +69,12 @@ export function AdminMailSection() {
        <Input id="mail-template-subject" required maxLength={500} value={draft.subject} disabled={busy}
          onChange={event => setDraft({ ...draft, subject: event.currentTarget.value })} />
      </FormField>
-     <FormField label="正文" htmlFor="mail-template-body">
+     <FormField label="正文" htmlFor="mail-template-body" hintTip={draft.key === 'verification' ? '文本变量 {{username}}, {{code}}, {{purpose}}' : draft.key === 'expiry_reminder' ? '文本变量 {{username}}, {{plan}}, {{expires_at}}' : '文本变量 {{username}}, {{subject}}, {{body}}'}>
        <Textarea id="mail-template-body" rows={10} required value={draft.body} disabled={busy}
          onChange={event => setDraft({ ...draft, body: event.currentTarget.value })} />
      </FormField>
-     <p className="sys-hint">文本变量 {draft.key === 'verification' ? '{{username}}, {{code}}, {{purpose}}' : draft.key === 'expiry_reminder' ? '{{username}}, {{plan}}, {{expires_at}}' : '{{username}}, {{subject}}, {{body}}'}</p>
      {error && <StatusMessage tone="error">{error}</StatusMessage>}
      <div className="content-danger-zone">
-       <p className="sys-hint">自定义模板及当前编辑将被清除</p>
        <button type="button" className="button ghost" disabled={busy} onClick={() => { setError(''); setResetting(true) }}>恢复默认</button>
      </div>
    </form>}
@@ -92,7 +90,7 @@ export function AdminMailSection() {
    {error && <StatusMessage tone="error">{error}</StatusMessage>}
  </ConfirmDialog>
  <form className="sys-form sp-form-stack" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/mail-broadcasts',{method:'POST',body:jsonBody({subject,body,target})}))}}>
- <FormGroup id="sys-mail-broadcast-title" title="群发邮件" hint="逐个发送并记录结果；无邮箱或邮件服务未配置会计为失败">
+ <FormGroup id="sys-mail-broadcast-title" title="群发邮件" hintTip="逐个发送并记录结果；无邮箱或邮件服务未配置会计为失败">
  <FormField label="目标"><FormSelect aria-label="目标" value={target} onChange={e=>setTarget(e.target.value)}><option value="all">全部用户</option><option value="active">有效订阅用户</option><option value="expiring">7 日内到期用户</option></FormSelect></FormField>
  <FormField label="标题"><Input required maxLength={500} value={subject} onChange={e=>setSubject(e.target.value)}/></FormField>
  <FormField label="正文" wide><Textarea required maxLength={50000} value={body} onChange={e=>setBody(e.target.value)}/></FormField>
@@ -103,9 +101,8 @@ export function AdminMailSection() {
  </Section>
  {ready ? <form className="sys-form sp-form-stack" onSubmit={e=>{e.preventDefault();void run(()=>api('/api/admin/system/reminders',{method:'PUT',body:jsonBody({reminder_days:days})}))}}>
  <Section title="到期提醒" actions={<button className="button primary" type="submit" disabled={busy}>保存天数</button>}>
- <FormField label="提前天数"><Input type="number" min={1} max={365} required value={days} onChange={e=>setDays(Number(e.target.value))}/></FormField>
+ <FormField label="提前天数" hintTip="同一到期日只提醒一次；失败可重试。自动定时触发待 cron 修复"><Input type="number" min={1} max={365} required value={days} onChange={e=>setDays(Number(e.target.value))}/></FormField>
  <FormActions><button className="button" type="button" disabled={busy} onClick={()=>void run(()=>api('/api/admin/jobs/expiry-reminders',{method:'POST'}))}>手动发送到期提醒</button></FormActions>
- <p className="sys-hint">同一到期日只提醒一次；失败可重试。自动定时触发待 cron 修复</p>
  </Section>
  </form> : null}
  </>

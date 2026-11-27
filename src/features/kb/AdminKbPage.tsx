@@ -404,7 +404,7 @@ export function AdminKbPage() {
                     onChange={(event) => setCategoryForm({ ...categoryForm, name: event.currentTarget.value })}
                   />
                 </FormField>
-                <FormField label="排序（越小越靠前）" htmlFor="kb-category-sort">
+                <FormField label="排序" htmlFor="kb-category-sort" hintTip="越小越靠前">
                   <Input
                     id="kb-category-sort"
                     type="number"
@@ -465,7 +465,7 @@ export function AdminKbPage() {
               onChange={(event) => setArticleForm({ ...articleForm, title: event.currentTarget.value })}
             />
           </FormField>
-          <FormField label="正文（Markdown）" htmlFor="kb-article-content">
+          <FormField label="正文" htmlFor="kb-article-content" hintTip="Markdown">
             <Textarea
               id="kb-article-content"
               rows={14}
@@ -481,7 +481,7 @@ export function AdminKbPage() {
             <div className="kb-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(articleForm.content) }} />
           </section>
           <div className="kb-form-grid">
-            <FormField label="排序（越小越靠前）" htmlFor="kb-article-sort">
+            <FormField label="排序" htmlFor="kb-article-sort" hintTip="越小越靠前">
               <Input
                 id="kb-article-sort"
                 type="number"

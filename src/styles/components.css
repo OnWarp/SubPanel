@@ -61,6 +61,54 @@
   font-weight: var(--weight-semibold);
   line-height: 1.2;
 }
+.sp-form-field-label-row,
+.sp-form-group-heading,
+.sp-hint-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.sp-hint-tip { display: inline-flex; flex: 0 0 auto; }
+.sp-hint-tip-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.sp-hint-tip-button:hover,
+.sp-hint-tip-button:focus-visible {
+  color: var(--color-text);
+  background: var(--color-surface-subtle);
+}
+.sp-hint-tip-button:focus-visible {
+  outline: 2px solid var(--color-border-strong);
+  outline-offset: 2px;
+}
+.sp-hint-bubble {
+  position: fixed;
+  inset: auto;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-float);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 .sp-form-field-error {
   margin: 0;
   color: var(--color-danger);

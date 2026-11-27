@@ -7,6 +7,7 @@ import { api, peekApi, watchApi, ApiClientError, jsonBody } from '../../app/api'
 import { adminDomains } from '../../app/navigation'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField, FormGroup } from '../../ui/FormField'
+import { HintTip } from '../../ui/HintTip'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageContainer } from '../../ui/PageContainer'
 import { PageHeader } from '../../ui/PageHeader'
@@ -92,7 +93,6 @@ function RegistrationSection() {
       {!loading && loadError ? <div><ErrorState message={loadError} onRetry={() => { load().catch(() => undefined) }} /></div> : null}
       {!loading && !loadError && mode ? (
         <div className="sys-body">
-          <p className="sys-hint">切换后立即生效</p>
           <EmailDomains />
         </div>
       ) : null}
@@ -166,7 +166,7 @@ function EmailDomains() {
   }
 
   return (
-    <FormGroup id="sys-email-domains-title" title="邮箱域名白名单" hint="名单内的邮箱域名才可以注册与绑定，白名单为空时不限制域名">
+    <FormGroup id="sys-email-domains-title" title="邮箱域名白名单" hintTip="名单内的邮箱域名才可以注册与绑定，白名单为空时不限制域名">
       {loading ? <LoadingState label="正在加载白名单" /> : null}
       {!loading && notReady ? (
         <div className="sys-not-ready">
@@ -325,7 +325,7 @@ function MailSection() {
             <FormField label="SMTP 用户名" htmlFor="sys-mail-user">
               <Input id="sys-mail-user" type="text" autoComplete="off" value={form.smtpUser} disabled={saving} onChange={(event) => setForm({ ...form, smtpUser: event.currentTarget.value })} />
             </FormField>
-            <FormField label="SMTP 密码" htmlFor="sys-mail-pass">
+            <FormField label="SMTP 密码" htmlFor="sys-mail-pass" hintTip="只写入不回显，留空表示不修改">
               <Input
                 id="sys-mail-pass"
                 type="password"
@@ -337,7 +337,7 @@ function MailSection() {
               />
             </FormField>
             <div className="sys-field-wide">
-              <FormField label="Resend API Key" htmlFor="sys-mail-resend-key">
+              <FormField label="Resend API Key" htmlFor="sys-mail-resend-key" hintTip="只写入不回显，留空表示不修改">
                 <Input
                   id="sys-mail-resend-key"
                   type="password"
@@ -350,9 +350,6 @@ function MailSection() {
               </FormField>
             </div>
           </div>
-          <p className="sys-hint">
-            密码与 API Key 只写入不回显，留空表示不修改
-          </p>
           <FormGroup id="sys-mail-test-title" title="测试邮件">
             <div className="sys-test-row">
               <FormField label="收件邮箱" htmlFor="sys-mail-test-to">
@@ -390,7 +387,7 @@ function HealthSection() {
     <Section title="服务健康与定时任务" actions={<button className="button primary" onClick={() => { void load() }}>刷新</button>}>
       <div className="sys-body">{error ? <ErrorState message={error} onRetry={() => { void load() }} /> : !health ? <LoadingState label="正在加载服务健康" /> : <>
         <p>服务健康：{health.ok ? '正常' : '异常'}</p>
-        <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hint="每 15 分钟检查需要刷新的来源">
+        <FormGroup id="sys-health-cron-title" title="来源刷新定时任务" hintTip="每 15 分钟检查需要刷新的来源">
           {health.cron ? <dl className="key-value-rows"><div><dt>最近结果</dt><dd>{{ idle: '无待刷新来源', success: '成功', failed: '失败' }[health.cron.status]}</dd></div><div><dt>开始</dt><dd>{formatDate(health.cron.ranAt)}</dd></div><div><dt>完成</dt><dd>{formatDate(health.cron.finishedAt)}{health.cron.errorCode ? ` · ${health.cron.errorCode}` : ''}</dd></div></dl> : <p className="sys-hint">暂无任务运行记录</p>}
         </FormGroup>
       </>}</div>
@@ -430,7 +427,7 @@ function StatusSection() {
         <div className="sys-body">
           <div className="sys-status-db">
             <Database aria-hidden="true" />
-            <span>D1 数据库</span>
+            <span className="sp-hint-row">D1 数据库<HintTip text="存储后端由迁移流程统一切换，此页仅供查看" /></span>
             <strong>{status.databaseName}</strong>
           </div>
           <ul className="sys-status-list">
@@ -459,7 +456,6 @@ function StatusSection() {
               </ul>
             )}
           </FormGroup>
-          <p className="sys-hint">存储后端由迁移流程统一切换，此页仅供查看</p>
         </div>
       ) : null}
     </Section>

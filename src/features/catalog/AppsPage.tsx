@@ -14,6 +14,7 @@ import { DataTable, type DataTableColumn } from '../../ui/DataTable'
 import { Dialog } from '../../ui/Dialog'
 import { ErrorState } from '../../ui/ErrorState'
 import { FormField } from '../../ui/FormField'
+import { HintTip } from '../../ui/HintTip'
 import { LoadingState } from '../../ui/LoadingState'
 import { PageHeader } from '../../ui/PageHeader'
 import { Switch } from '../../ui/Switch'
@@ -401,10 +402,9 @@ export function AppsPage() {
 
           <div className="app-platforms">
             <div className="app-platforms-heading">
-              <h3>平台配置</h3>
+              <div className="sp-hint-row"><h3>平台配置</h3><HintTip text="每个平台配置一个下载链接，文档链接可选；下载与文档链接都必须是 https 链接" /></div>
               <button className="button secondary" type="button" disabled={busy || form.platforms.length >= PLATFORM_OPTIONS.length} onClick={addRow}><Plus aria-hidden="true" size={15} />添加平台</button>
             </div>
-            <p className="app-note">每个平台配置一个下载链接，文档链接可选；下载与文档链接都必须是 https 链接</p>
             <div className="app-platform-list">
               {form.platforms.map((row, index) => (
                 <div className="app-platform-card app-platform-fields" key={index}>
