@@ -1,11 +1,14 @@
+import type { VerifyFailure } from './verification-contract.js'
 import { type AppDatabase, queryFirst } from '../db/db.js'
 import { decodeSettingJson, getSetting } from '../db/settings-repository.js'
 import { apiError } from '../platform/api-error.js'
+import { randomToken, readCryptoMaterial, signHmac, verifyHmac } from '../platform/crypto.js'
 import { bumpGateRevision, DomainService, invalidateGateCache, normalizeHostname, type DomainKind } from './domain-service.js'
 
 const INSTANCE_ID_KEY = 'instance_id'
 const VERIFY_BUCKET = 'domain_verify'
 const HOUR_MS = 3_600_000
+const CHALLENGE_MS = 120_000
 
 export async function getOrCreateInstanceId(db: AppDatabase): Promise<string> {
   let raw = await getSetting(db, INSTANCE_ID_KEY)
@@ -25,62 +28,75 @@ async function hashToken(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-function txtNameFor(hostname: string): string {
-  return `_subpanel-verify.${hostname}`
-}
-
 export async function issueDomainChallenge(db: AppDatabase, purpose: DomainKind, id: string) {
   const { domainId, hostname } = await new DomainService(db).requireRow(purpose, id)
-  const random = crypto.getRandomValues(new Uint8Array(32))
-  const txtValue = btoa(String.fromCharCode(...random)).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
-  const hash = await hashToken(txtValue)
+  if (normalizeHostname(hostname) !== hostname) throw apiError(400, 'INVALID_HOSTNAME', '域名格式无效')
+  const nonce = randomToken()
+  const hash = await hashToken(nonce)
+  const challengeId = crypto.randomUUID()
   const time = Date.now()
   const now = new Date(time).toISOString()
-  const expiresAt = new Date(time + 24 * HOUR_MS).toISOString()
+  const expiresAt = new Date(time + CHALLENGE_MS).toISOString()
   const [, issued] = await db.batch([
     db.prepare(`UPDATE domain_verification_challenges SET consumed_at = ? WHERE domain_id = ? AND consumed_at IS NULL
       AND EXISTS (SELECT 1 FROM domain_bindings WHERE id = ?)`).bind(now, domainId, id),
     db.prepare(`INSERT INTO domain_verification_challenges (id, domain_id, challenge_hash, expires_at, created_at)
       SELECT ?, domain_id, ?, ?, ? FROM domain_bindings WHERE id = ?`)
-      .bind(crypto.randomUUID(), hash, expiresAt, now, id),
+      .bind(challengeId, hash, expiresAt, now, id),
   ])
   if (!issued.meta.changes) throw apiError(409, 'VERSION_CONFLICT', '域名配置已更改，请刷新后重试')
-  invalidateGateCache(db)
-  return { txtName: txtNameFor(hostname), txtValue, expiresAt }
+  return { nonce, expiresAt, challengeId }
 }
 
-type DnsFailure = 'DNS_NOT_FOUND' | 'DNS_MISMATCH' | 'TIMEOUT'
-type VerifyFailure = DnsFailure | 'INSTANCE_MISMATCH'
-type Challenge = { id: string; challenge_hash: string; expires_at: string }
+export type DomainProof = {
+  version: 1
+  hostname: string
+  challengeId: string
+  expiresAt: string
+  instanceId: string
+  signature: string
+}
 
-async function checkDns(hostname: string, hash: string, fetcher: typeof fetch): Promise<DnsFailure | null> {
-  const normalized = normalizeHostname(hostname)
-  if (normalized === null) return 'DNS_NOT_FOUND'
-  const url = new URL('https://cloudflare-dns.com/dns-query')
-  url.searchParams.set('name', txtNameFor(normalized))
-  url.searchParams.set('type', 'TXT')
-  try {
-    const response = await fetcher(url, {
-      headers: { Accept: 'application/dns-json' },
-      redirect: 'error',
-      signal: AbortSignal.timeout(5_000),
-    })
-    if (!response.ok) return 'TIMEOUT'
-    const body = await response.json<{ Status?: number; Answer?: Array<{ name?: string; type?: number; data?: string }> }>()
-    if (body.Status === 3) return 'DNS_NOT_FOUND'
-    if (body.Status !== 0) return 'TIMEOUT'
-    const name = txtNameFor(normalized)
-    const answers = (body.Answer ?? []).filter(answer =>
-      answer.type === 16 && answer.name?.toLowerCase().replace(/\.$/, '') === name && typeof answer.data === 'string')
-    if (answers.length === 0) return 'DNS_NOT_FOUND'
-    for (const { data } of answers) {
-      const value = data!.replace(/^"|"$/g, '').replace(/"\s+"/g, '')
-      if (await hashToken(value) === hash) return null
-    }
-    return 'DNS_MISMATCH'
-  } catch {
-    return 'TIMEOUT'
+type VerificationInput = {
+  proof?: DomainProof
+  challengeId?: string
+  reason?: 'PROBE_FAILED'
+}
+
+export function encodeProof({ hostname, challengeId, expiresAt, instanceId }: Omit<DomainProof, 'signature'>): string {
+  return ['v1', hostname, challengeId, expiresAt, instanceId].join('\n')
+}
+
+type Challenge = { id: string; expires_at: string; created_at: string; consumed_at: string | null }
+
+function isHttpChallenge(challenge: Challenge): boolean {
+  return Date.parse(challenge.expires_at) - Date.parse(challenge.created_at) === CHALLENGE_MS
+}
+
+export async function createDomainProof(env: Env, hostname: string, nonce: string): Promise<DomainProof | null> {
+  const challenge = await queryFirst<Challenge>(env.DB.prepare(`SELECT c.id, c.expires_at, c.created_at, c.consumed_at
+    FROM domains d JOIN domain_verification_challenges c ON c.domain_id = d.id
+    WHERE d.hostname = ? AND c.challenge_hash = ? AND c.consumed_at IS NULL AND c.expires_at > ?`)
+    .bind(hostname, await hashToken(nonce), new Date().toISOString()))
+  if (!challenge || !isHttpChallenge(challenge)) return null
+  const proof = {
+    version: 1 as const,
+    hostname,
+    challengeId: challenge.id,
+    expiresAt: challenge.expires_at,
+    instanceId: await getOrCreateInstanceId(env.DB),
   }
+  const { sessionKey } = await readCryptoMaterial(env.DATA, env)
+  return { ...proof, signature: await signHmac(encodeProof(proof), sessionKey) }
+}
+
+export async function allowDomainProbe(db: AppDatabase, address: string): Promise<boolean> {
+  const windowStart = Math.floor(Date.now() / 60_000) * 60
+  const result = await db.prepare(`INSERT INTO rate_limits (bucket, subject, window_start, count, expires_at)
+    VALUES ('domain_probe', ?, ?, 1, ?)
+    ON CONFLICT(bucket, subject, window_start) DO UPDATE SET count = count + 1 WHERE count < 60`)
+    .bind(address, windowStart, windowStart + 60).run()
+  return result.meta.changes === 1
 }
 
 async function reserveAttempt(db: AppDatabase, id: string, now: number): Promise<void> {
@@ -100,42 +116,51 @@ async function reserveAttempt(db: AppDatabase, id: string, now: number): Promise
   }
 }
 
-export async function verifyDomain(
-  db: AppDatabase,
-  purpose: DomainKind,
-  id: string,
-  observedInstanceId: string,
-  fetcher: typeof fetch = fetch,
-) {
+async function validateProof(env: Env, input: VerificationInput, hostname: string, challenge: Challenge) {
+  if (input.reason) return input.reason
+  const { proof } = input
+  if (!proof || proof.hostname !== hostname || proof.expiresAt !== challenge.expires_at) return 'PROOF_INVALID'
+  try {
+    const { sessionKey } = await readCryptoMaterial(env.DATA, env)
+    const validSignature = await verifyHmac(encodeProof(proof), proof.signature, sessionKey)
+    if (proof.instanceId !== await getOrCreateInstanceId(env.DB)) return 'INSTANCE_MISMATCH'
+    return validSignature ? null : 'PROOF_INVALID'
+  } catch {
+    return 'TIMEOUT'
+  }
+}
+
+export async function verifyDomain(env: Env, purpose: DomainKind, id: string, input: VerificationInput) {
+  const { DB: db } = env
   const service = new DomainService(db)
   const { domainId, hostname } = await service.requireRow(purpose, id)
-  const started = Date.now()
-  await reserveAttempt(db, id, started)
-  const activeChallenge = `SELECT id, challenge_hash, expires_at FROM domain_verification_challenges
-    WHERE domain_id = ? AND consumed_at IS NULL AND expires_at > ?`
-  const startedAt = new Date(started).toISOString()
-  const challenge = await queryFirst<Challenge>(db.prepare(activeChallenge).bind(domainId, startedAt))
+  await reserveAttempt(db, id, Date.now())
+  const challengeId = input.proof?.challengeId ?? input.challengeId
+  const challenge = challengeId ? await queryFirst<Challenge>(db.prepare(`SELECT id, expires_at, created_at, consumed_at
+    FROM domain_verification_challenges WHERE domain_id = ? AND id = ?`).bind(domainId, challengeId)) : null
+  const rejected = async (failure: VerifyFailure) => ({ domain: await service.get(purpose, id), failure })
+  if (!challengeId) return rejected('PROOF_INVALID')
+  if (!challenge || challenge.consumed_at || !isHttpChallenge(challenge)) return rejected('CHALLENGE_INVALID')
 
-  let failure: VerifyFailure | null = challenge ? await checkDns(hostname, challenge.challenge_hash, fetcher) : 'DNS_NOT_FOUND'
-  if (!failure && observedInstanceId !== await getOrCreateInstanceId(db)) failure = 'INSTANCE_MISMATCH'
-
+  let failure: VerifyFailure | null = challenge.expires_at <= new Date().toISOString()
+    ? 'CHALLENGE_EXPIRED' : await validateProof(env, input, hostname, challenge)
   const now = new Date().toISOString()
-  if (challenge && challenge.expires_at <= now) failure = 'DNS_NOT_FOUND'
-  const challengeId = challenge?.id ?? null
-  const statements = [
+  if (challenge.expires_at <= now) failure = 'CHALLENGE_EXPIRED'
+
+  // Both writes have the same eligibility predicate and commit in one D1 batch.
+  // A competing issuance or finalization makes both writes no-ops.
+  const eligible = `id = ? AND consumed_at IS NULL
+    AND EXISTS (SELECT 1 FROM domain_bindings WHERE id = ? AND domain_id = ?)`
+  const eligibilityArgs = [challenge.id, id, domainId]
+  const [, consumed] = await db.batch([
     db.prepare(`UPDATE domains SET verification_status = ?, verified_at = COALESCE(?, verified_at),
       last_checked_at = ?, last_error_code = ?, updated_at = ?
-      WHERE id = ? AND EXISTS (SELECT 1 FROM domain_bindings WHERE id = ?)
-      AND (SELECT id FROM (${activeChallenge})) IS ?`)
-      .bind(failure ? 'failed' : 'verified', failure ? null : now, now, failure, now, domainId, id,
-        domainId, startedAt, challengeId),
-  ]
-  if (!failure) {
-    statements.push(db.prepare(`UPDATE domain_verification_challenges SET consumed_at = ?
-      WHERE id = ? AND changes() = 1`).bind(now, challengeId))
-  }
-  const [updated] = await db.batch([...statements, bumpGateRevision(db)])
-  if (!updated.meta.changes) throw apiError(409, 'VERSION_CONFLICT', '验证挑战已更改，请刷新后重试')
+      WHERE id = ? AND EXISTS (SELECT 1 FROM domain_verification_challenges WHERE ${eligible})`)
+      .bind(failure ? 'failed' : 'verified', failure ? null : now, now, failure, now, domainId, ...eligibilityArgs),
+    db.prepare(`UPDATE domain_verification_challenges SET consumed_at = ? WHERE ${eligible}`).bind(now, ...eligibilityArgs),
+    bumpGateRevision(db),
+  ])
+  if (!consumed.meta.changes) return rejected('CHALLENGE_INVALID')
   invalidateGateCache(db)
   return { domain: await service.get(purpose, id), failure }
 }

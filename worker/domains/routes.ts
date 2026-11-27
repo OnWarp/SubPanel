@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
-import { apiError } from '../platform/api-error.js'
+import { ApiError, apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
 import { logAudit } from '../admin/audit.js'
 import {
@@ -13,7 +13,8 @@ import {
   type DomainKind,
 } from './domain-service.js'
 import { listEnabledPlatforms, listPlatformSettings, updatePlatformSettings } from './service.js'
-import { getOrCreateInstanceId, issueDomainChallenge, verifyDomain } from './verification.js'
+import { DOMAIN_VERIFY_PATH } from './verification-contract.js'
+import { allowDomainProbe, createDomainProof, getOrCreateInstanceId, issueDomainChallenge, verifyDomain } from './verification.js'
 
 function kindFromParam(c: Context<AppEnv>): DomainKind {
   const kind = c.req.param('kind')
@@ -110,18 +111,39 @@ adminDomainRoutes.post('/system/domains/:kind/:id/challenge', async (c) => {
   const id = domainIdFromParam(c)
   const domain = await new DomainService(c.env.DB).get(purpose, id)
   const challenge = await issueDomainChallenge(c.env.DB, purpose, id)
-  await auditDomain(c, 'challenge', domain, domain, { expiresAt: challenge.expiresAt })
-  return c.json({ challenge })
+  await auditDomain(c, 'challenge', domain, domain, { expiresAt: challenge.expiresAt, challengeId: challenge.challengeId })
+  return c.json({ challenge }, 200, { 'Cache-Control': 'no-store' })
 })
 
-const verifySchema = z.object({ observedInstanceId: z.string().min(1).max(128) }).strict()
+const challengeIdSchema = z.uuid()
+const proofSchema = z.object({
+  version: z.literal(1),
+  hostname: z.string().min(1).max(253),
+  challengeId: challengeIdSchema,
+  expiresAt: z.iso.datetime(),
+  instanceId: z.string().min(1).max(128),
+  signature: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
+}).strict()
+const verifySchema = z.union([
+  z.object({ proof: proofSchema }).strict(),
+  z.object({ challengeId: challengeIdSchema, reason: z.literal('PROBE_FAILED') }).strict(),
+])
+const malformedProofSchema = z.object({
+  proof: z.object({ challengeId: challengeIdSchema }),
+})
 
 adminDomainRoutes.post('/system/domains/:kind/:id/verify', async (c) => {
   const purpose = kindFromParam(c)
   const id = domainIdFromParam(c)
   const before = await new DomainService(c.env.DB).get(purpose, id)
-  const { observedInstanceId } = await readJson(c, verifySchema)
-  const { domain, failure } = await verifyDomain(c.env.DB, purpose, id, observedInstanceId)
+  const raw = await readJson(c, z.unknown()).catch((error: unknown) => {
+    if (error instanceof ApiError && error.code === 'INVALID_JSON') return null
+    throw error
+  })
+  const parsed = verifySchema.safeParse(raw)
+  const malformed = malformedProofSchema.safeParse(raw)
+  const input = parsed.success ? parsed.data : { challengeId: malformed.data?.proof.challengeId }
+  const { domain, failure } = await verifyDomain(c.env, purpose, id, input)
   await auditDomain(c, 'verify', before, domain)
   if (failure) throw apiError(422, 'VERIFY_FAILED', '域名验证失败', { reason: failure })
   return c.json({ domain })
@@ -174,4 +196,20 @@ export const publicSystemRoutes = new Hono<AppEnv>()
 publicSystemRoutes.get('/system/instance', async (c) => {
   const instanceId = await getOrCreateInstanceId(c.env.DB)
   return c.json({ instanceId }, 200, { 'Access-Control-Allow-Origin': '*' })
+})
+
+export const domainProbeRoutes = new Hono<AppEnv>()
+
+domainProbeRoutes.get(DOMAIN_VERIFY_PATH, async (c) => {
+  c.header('Cache-Control', 'no-store')
+  const { hostname, search } = new URL(c.req.url)
+  const nonce = /^\?challenge=([A-Za-z0-9_-]{43})$/u.exec(search)?.[1]
+  if (!nonce || c.req.raw.body || c.req.header('Transfer-Encoding') || Number(c.req.header('Content-Length')) > 0) {
+    return c.notFound()
+  }
+  const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
+  if (!await allowDomainProbe(c.env.DB, address)) return c.notFound()
+  const proof = await createDomainProof(c.env, hostname, nonce).catch(() => null)
+  if (!proof) return c.notFound()
+  return c.json(proof, 200, { 'Access-Control-Allow-Origin': '*' })
 })

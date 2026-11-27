@@ -86,7 +86,7 @@ function fixture(overrides: Partial<Fixture> = {}): Fixture {
       row({ id: 'panel-backup', hostname: 'backup.example.com', note: '备用', enabled: true, verificationStatus: 'verified', verifiedAt: '2026-01-01T00:00:00Z', createdAt: '2026-01-01T00:00:00Z' }),
       row({ id: 'panel-old', hostname: 'old.example.com', enabled: true, verificationStatus: 'verified', verifiedAt: '2026-01-02T00:00:00Z', createdAt: '2026-01-02T00:00:00Z' }),
       row({ id: 'panel-pending', hostname: 'pending.example.com', createdAt: '2026-01-03T00:00:00Z' }),
-      row({ id: 'panel-failed', hostname: 'failed.example.com', enabled: true, verificationStatus: 'failed', createdAt: '2026-01-04T00:00:00Z', lastCheckError: '证书不匹配', health: { dns: 'failed', https: 'unknown', service: null } }),
+      row({ id: 'panel-failed', hostname: 'failed.example.com', enabled: true, verificationStatus: 'failed', createdAt: '2026-01-04T00:00:00Z', lastCheckError: '证书不匹配', health: { https: 'failed', service: null } }),
       row({ id: 'panel-primary', hostname: 'primary.example.com', note: '原备注', enabled: true, verificationStatus: 'verified', verifiedAt: '2026-06-01T00:00:00Z', createdAt: '2026-06-01T00:00:00Z' }),
     ],
     subscription: [
@@ -114,7 +114,7 @@ function fixture(overrides: Partial<Fixture> = {}): Fixture {
     holdPrimary: null,
     holdChallenge: null,
     verifyStatus: 200,
-    verifyMessage: 'TXT 记录未生效',
+    verifyMessage: '域名验证失败',
     verifyShape: 'domain',
     instanceMode: 'id',
     holdInstance: null,
@@ -138,6 +138,17 @@ function readBody(route: Route): unknown {
 
 async function fail(route: Route, status: number, message: string, code: string) {
   await route.fulfill({ status, json: { error: { code, message } } })
+}
+
+const probePath = '/.well-known/subpanel-verify'
+const challengeFixture = {
+  nonce: 'A'.repeat(43), expiresAt: '2026-12-01T00:00:00.000Z', challengeId: '12345678-1234-4234-8234-123456789abc',
+}
+function proofFixture(hostname: string) {
+  return {
+    version: 1, hostname, challengeId: challengeFixture.challengeId, expiresAt: challengeFixture.expiresAt,
+    instanceId: `inst-${hostname}`, signature: 'A'.repeat(43),
+  }
 }
 
 async function install(page: Page, state: Fixture) {
@@ -169,7 +180,7 @@ async function install(page: Page, state: Fixture) {
     state.restrictionEnabled = enabled
     await route.fulfill({ json: { enabled } })
   })
-  await page.route('**/api/system/instance', async (route) => {
+  await page.route(`**${probePath}?*`, async (route) => {
     record(route)
     if (state.holdInstance) await state.holdInstance
     if (state.instanceMode === 'fail') {
@@ -180,7 +191,7 @@ async function install(page: Page, state: Fixture) {
       await route.fulfill({ json: {} })
       return
     }
-    await route.fulfill({ json: { instanceId: `inst-${new URL(route.request().url()).hostname}` } })
+    await route.fulfill({ json: proofFixture(new URL(route.request().url()).hostname), headers: { 'access-control-allow-origin': '*' } })
   })
   await page.route('**/api/admin/system/domains**', async (route) => {
     const call = record(route)
@@ -275,11 +286,15 @@ async function install(page: Page, state: Fixture) {
 
     if (call.method === 'POST' && action === 'challenge') {
       if (state.holdChallenge) await state.holdChallenge
-      await route.fulfill({ json: { challenge: { txtName: `_subpanel-verify.${current.hostname}`, txtValue: `token-${current.id}`, expiresAt: '2026-12-01T00:00:00Z' } } })
+      await route.fulfill({ json: { challenge: challengeFixture } })
       return
     }
 
     if (call.method === 'POST' && action === 'verify') {
+      if ((call.body as { reason?: string } | null)?.reason === 'PROBE_FAILED') {
+        await fail(route, 422, '无法连接该域名上的验证端点', 'VERIFY_FAILED')
+        return
+      }
       if (state.verifyStatus !== 200) {
         await fail(route, state.verifyStatus, state.verifyMessage, 'VERIFY_FAILED')
         return
@@ -290,7 +305,7 @@ async function install(page: Page, state: Fixture) {
       }
       current.verificationStatus = 'verified'
       current.verifiedAt = '2026-03-01T00:00:00Z'
-      current.health = { dns: 'unknown', https: 'unknown', service: 'unknown' }
+      current.health = { https: 'unknown', service: 'unknown' }
       await route.fulfill({ json: { domain: current } })
       return
     }
@@ -486,25 +501,18 @@ test('adds a domain and verifies it from the published challenge', async ({ page
   const drawer = page.getByRole('dialog', { name: 'created.example.com' })
   await expect(drawer).toBeVisible()
   await expect(dialog).toBeHidden()
-  await expect(drawer.getByRole('status')).toHaveText('正在获取验证记录')
-  await expect(drawer.getByText('_subpanel-verify.created.example.com')).toHaveCount(0)
+  expect(calls.filter((call) => call.path.endsWith('/challenge'))).toHaveLength(0)
+  await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(2)
+  await drawer.getByRole('button', { name: '验证', exact: true }).click()
+  await expect(drawer.getByRole('status')).toHaveText('正在验证域名')
   challengeGate.release()
   state.holdChallenge = null
-  await expect(drawer.getByText('_subpanel-verify.created.example.com')).toBeVisible()
-  await expect(drawer.getByText('token-subscription-created')).toBeVisible()
-  await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(3)
-  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
-  await drawer.getByRole('button', { name: '复制记录名' }).click()
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('_subpanel-verify.created.example.com')
-
-  await drawer.getByRole('button', { name: '确认验证' }).click()
   await expect(drawer.getByText('已验证', { exact: true }).first()).toBeVisible()
-  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
-  await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(3)
-  const instance = calls.find((call) => call.path === '/api/system/instance')
-  expect(instance?.url).toBe('https://created.example.com/api/system/instance')
-  const verify = calls.find((call) => call.path.endsWith('/verify'))
-  expect(verify?.body).toEqual({ observedInstanceId: 'inst-created.example.com' })
+  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(2)
+  const probe = calls.find((call) => call.path === probePath)
+  expect(probe?.url).toBe(`https://created.example.com${probePath}?challenge=${challengeFixture.nonce}`)
+  const verify = calls.find((call) => call.path.startsWith('/api/admin/') && call.path.endsWith('/verify'))
+  expect(verify?.body).toEqual({ proof: proofFixture('created.example.com') })
   expect(calls.find((call) => call.method === 'POST' && call.path === '/api/admin/system/domains/subscription')?.body).toEqual({
     hostname: 'created.example.com', note: '订阅入口',
   })
@@ -521,11 +529,11 @@ test('reports verification failures and does not treat unchecked probes as healt
   await page.goto('/system/distribution')
 
   await openMenu(page, 'failed.example.com')
-  await page.getByRole('button', { name: '查看详情 / DNS 配置' }).click()
+  await page.getByRole('button', { name: '查看详情' }).click()
   let drawer = page.getByRole('dialog', { name: 'failed.example.com' })
   await expect(drawer).toContainText('证书不匹配')
   await expect(drawer.getByText('异常', { exact: true })).toHaveCount(1)
-  await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(2)
+  await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(1)
   await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
   await expect(drawer.getByText('验证失败', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '关闭' }).click()
@@ -534,9 +542,8 @@ test('reports verification failures and does not treat unchecked probes as healt
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '重新验证' }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
-  await expect(drawer.getByText('_subpanel-verify.pending.example.com')).toBeVisible()
-  await drawer.getByRole('button', { name: '确认验证' }).click()
-  await expect(drawer.getByRole('alert')).toHaveText('TXT 记录未生效')
+  await drawer.getByRole('button', { name: '验证', exact: true }).click()
+  await expect(drawer.getByRole('alert')).toHaveText('域名验证失败')
   await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
   await expect(drawer.getByText('待验证', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '关闭' }).click()
@@ -544,11 +551,13 @@ test('reports verification failures and does not treat unchecked probes as healt
   state.verifyStatus = 200
   state.instanceMode = 'fail'
   await openMenu(page, 'pending.example.com')
-  await page.getByRole('button', { name: '查看详情 / DNS 配置' }).click()
+  await page.getByRole('button', { name: '查看详情' }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
-  await drawer.getByRole('button', { name: '确认验证' }).click()
-  await expect(drawer.getByRole('alert')).toHaveText('无法连接该域名上的实例标识接口')
-  expect(calls.filter((call) => call.path.endsWith('/verify'))).toHaveLength(1)
+  await drawer.getByRole('button', { name: '验证', exact: true }).click()
+  await expect(drawer.getByRole('alert')).toHaveText('无法连接该域名上的验证端点')
+  const verifyCalls = calls.filter((call) => call.path.startsWith('/api/admin/') && call.path.endsWith('/verify'))
+  expect(verifyCalls).toHaveLength(2)
+  expect(verifyCalls[1].body).toEqual({ challengeId: challengeFixture.challengeId, reason: 'PROBE_FAILED' })
   await drawer.getByRole('button', { name: '关闭' }).click()
 
   state.instanceMode = 'id'
@@ -556,7 +565,7 @@ test('reports verification failures and does not treat unchecked probes as healt
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '重新验证' }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
-  await drawer.getByRole('button', { name: '确认验证' }).click()
+  await drawer.getByRole('button', { name: '验证', exact: true }).click()
   await expect(drawer.getByRole('alert')).toHaveText('服务返回了无效的域名状态')
 })
 
@@ -692,7 +701,7 @@ test.describe('390px domain list', () => {
     await page.keyboard.press('Escape')
 
     await openMenu(page, hostname)
-    await page.getByRole('button', { name: '查看详情 / DNS 配置' }).click()
+    await page.getByRole('button', { name: '查看详情' }).click()
     const drawer = page.getByRole('dialog', { name: hostname })
     await expect(drawer).toBeVisible()
     const full = await drawer.evaluate((element) => {
@@ -706,7 +715,7 @@ test.describe('390px domain list', () => {
     expect(Math.abs(full.actual - full.expected)).toBeLessThan(2)
   })
 })
-test('the Worker CSP permits the cross-origin instance probe path', async ({ page }) => {
+test('the Worker CSP permits both cross-origin verification paths', async ({ page }) => {
   const health = await page.request.get('/api/health')
   expect(health.ok()).toBe(true)
   const policy = health.headers()['content-security-policy']
@@ -725,11 +734,13 @@ test('the Worker CSP permits the cross-origin instance probe path', async ({ pag
   }))
   await page.goto('/domain-probe-fixture')
   const result = await page.evaluate(async (origin) => {
-    const response = await fetch(`${origin}/api/system/instance`, { credentials: 'omit', redirect: 'error' })
+    const options = { credentials: 'omit', redirect: 'error' } as const
+    const proof = await fetch(`${origin}/.well-known/subpanel-verify?challenge=${'A'.repeat(43)}`, options)
+    const instance = await fetch(`${origin}/api/system/instance`, options)
     const blocked = await fetch(`${origin}/api/health`, { credentials: 'omit' }).then(() => false, () => true)
-    return { instance: await response.json(), blocked }
+    return { proof: await proof.json(), instance: await instance.json(), blocked }
   }, probeOrigin)
 
-  expect(result).toEqual({ instance: { instanceId: 'fixture' }, blocked: true })
-  expect(requests).toEqual(['/api/system/instance'])
+  expect(result).toEqual({ proof: { instanceId: 'fixture' }, instance: { instanceId: 'fixture' }, blocked: true })
+  expect(requests).toEqual([probePath, '/api/system/instance'])
 })
