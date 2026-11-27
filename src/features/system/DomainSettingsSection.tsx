@@ -1,8 +1,8 @@
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { Input } from '../../ui/Controls'
-import { ArrowDown, ArrowUp, Check, CircleAlert, Clock, Minus, Plus, type LucideIcon } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowDown, ArrowUp, Check, CircleAlert, Clock, Info, Minus, Plus, type LucideIcon } from 'lucide-react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api, peekApi, readData, ApiClientError, jsonBody } from '../../app/api'
 import { copyToClipboard } from '../../app/clipboard'
@@ -70,7 +70,21 @@ type PlatformItem = {
 }
 
 type Challenge = { nonce: string; challengeId: string; expiresAt: string }
-type DetailRequest = { kind: DomainKind; id: string; nonce: number }
+type DetailRequest = { kind: DomainKind; id: string; nonce: number; autoStart: boolean }
+type VerifyOutcome =
+  | { phase: 'idle' }
+  | { phase: 'running' }
+  | { phase: 'success'; text: string }
+  | { phase: 'failed'; text: string }
+
+const REASON_TEXT: Record<string, string> = {
+  PROBE_FAILED: '探针未取回证明，请确认域名已通过 HTTPS 绑定到当前实例',
+  CHALLENGE_EXPIRED: '验证挑战已过期，请重试',
+  CHALLENGE_INVALID: '验证挑战无效，请重试',
+  PROOF_INVALID: '实例证明无效',
+  INSTANCE_MISMATCH: '该域名指向的不是当前实例',
+  TIMEOUT: '验证超时，请重试',
+}
 
 const KIND_LABEL: Record<DomainKind, string> = { panel: '面板域名', subscription: '订阅域名' }
 const PASSING = new Set(['ok', 'pass', 'passed', 'healthy', 'reachable', 'success', 'verified'])
@@ -139,6 +153,84 @@ function probeOf(health: DomainHealth, key: 'https' | 'service'): ProbeState {
   if (!health || typeof health !== 'object') return 'unchecked'
   if (key === 'service') return readProbe(health.service ?? health.reachability)
   return readProbe(health[key])
+}
+
+function stripPeriod(text: string): string {
+  return text.replace(/。+$/u, '')
+}
+
+function reasonOf(cause: unknown): string | null {
+  if (!(cause instanceof ApiClientError) || !cause.details || typeof cause.details !== 'object') return null
+  const reason = (cause.details as { reason?: unknown }).reason
+  return typeof reason === 'string' && reason ? reason : null
+}
+
+function failureText(reason: string, fallback = ''): string {
+  const known = REASON_TEXT[reason]
+  const detail = stripPeriod(known ?? fallback)
+  return detail ? `验证失败：${detail}（${reason}）` : `验证失败（${reason}）`
+}
+
+/** Same acceptance rule as the backend drawer: 43-char nonce, plus challenge id and expiry. */
+function acceptedChallenge(value: unknown): value is Challenge {
+  if (!value || typeof value !== 'object') return false
+  const record = value as { nonce?: unknown; challengeId?: unknown; expiresAt?: unknown }
+  return typeof record.nonce === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(record.nonce)
+    && typeof record.challengeId === 'string' && record.challengeId !== ''
+    && typeof record.expiresAt === 'string' && record.expiresAt !== ''
+}
+
+function DomainHint({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId()
+  const descriptionId = useId()
+  const popup = useRef<HTMLDivElement>(null)
+  const hoverOpened = useRef(false)
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <>
+      <button
+        className="sys-domain-hint-button"
+        type="button"
+        aria-label={label}
+        aria-expanded={expanded}
+        aria-controls={id}
+        aria-describedby={descriptionId}
+        popoverTarget={id}
+        onMouseEnter={() => {
+          hoverOpened.current = true
+          popup.current?.showPopover()
+        }}
+        onMouseLeave={(event) => {
+          const next = event.relatedTarget
+          if (next instanceof Node && popup.current?.contains(next)) return
+          hoverOpened.current = false
+          popup.current?.hidePopover()
+        }}
+        onClick={(event) => {
+          // Hover already opened the popover; keep the click from toggling it shut.
+          if (!hoverOpened.current) return
+          hoverOpened.current = false
+          if (popup.current?.matches(':popover-open')) event.preventDefault()
+        }}
+      >
+        <Info aria-hidden="true" size={16} />
+      </button>
+      <div
+        ref={popup}
+        id={id}
+        className="sys-domain-hint-popover"
+        popover="auto"
+        role="note"
+        onToggle={(event) => setExpanded(event.newState === 'open')}
+        onMouseLeave={() => {
+          hoverOpened.current = false
+          popup.current?.hidePopover()
+        }}
+      >
+        <p id={descriptionId}>{children}</p>
+      </div>
+    </>
+  )
 }
 
 function asHealth(value: unknown): DomainHealth {
@@ -337,9 +429,10 @@ export function DomainSettingsSection() {
 
   const showDetail = (nextKind: DomainKind, id: string, refresh = false) => {
     setDetail((current) => {
-      if (refresh && current?.kind === nextKind && current.id === id) return { kind: nextKind, id, nonce: current.nonce + 1 }
-      if (current?.kind === nextKind && current.id === id) return current
-      return { kind: nextKind, id, nonce: refresh ? 1 : 0 }
+      if (current?.kind === nextKind && current.id === id) {
+        return refresh ? { kind: nextKind, id, nonce: current.nonce + 1, autoStart: true } : current
+      }
+      return { kind: nextKind, id, nonce: refresh ? 1 : 0, autoStart: refresh }
     })
   }
 
@@ -532,9 +625,11 @@ export function DomainSettingsSection() {
       {domains ? (
         <FormGroup id="sys-domain-restriction-title" title="访问限制">
           <FormField label="域名限制">
-            <Switch checked={domains.restrictionEnabled} disabled={restrictionBusy} ariaLabel="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
+            <span className="sys-domain-restriction">
+              <Switch checked={domains.restrictionEnabled} disabled={restrictionBusy} ariaLabel="域名限制" onChange={(enabled) => { toggleRestriction(enabled).catch(() => undefined) }} />
+              <DomainHint label="域名限制说明">开启后，面板只接受已启用的面板域名访问，订阅与分享只接受已启用的订阅域名访问；某一类没有已启用的域名时，该类不做限制，不会把任何人锁在门外</DomainHint>
+            </span>
           </FormField>
-          <p className="sys-hint">开启后，面板只接受已启用的面板域名访问，订阅与分享只接受已启用的订阅域名访问；某一类没有已启用的域名时，该类不做限制，不会把任何人锁在门外</p>
         </FormGroup>
       ) : null}
       {domains ? (
@@ -562,7 +657,9 @@ export function DomainSettingsSection() {
       ]} />
       <section className="sys-domain-panel" aria-label={KIND_LABEL[kind]}>
         <div className="sys-domain-panel-head">
-          <p className="sys-hint">{kind === 'panel' ? '主链接用于邀请链接等面板绝对链接' : '订阅链接与分享链接都使用主订阅域名生成，备用域名不会出现在任何链接里'}</p>
+          <DomainHint label={kind === 'panel' ? '面板域名用途说明' : '订阅域名用途说明'}>
+            {kind === 'panel' ? '主链接用于邀请链接等面板绝对链接' : '订阅链接与分享链接都使用主订阅域名生成，备用域名不会出现在任何链接里'}
+          </DomainHint>
           <button className="button primary" type="button" disabled={busy} onClick={() => setAddOpen(true)}><Plus aria-hidden="true" size={16} />添加域名</button>
         </div>
         {loading && !domains ? (
@@ -651,13 +748,17 @@ export function DomainSettingsSection() {
               .map((entry) => ({ ...entry, isPrimary: entry.id === primaryId }))
             return withKind(current, detail.kind, items, primaryId)
           })
-          setFeedback({ tone: 'success', text: domain.verificationStatus === 'verified' ? '验证已通过' : '验证结果已更新' })
+          const passed = domain.verificationStatus === 'verified'
+          setFeedback({
+            tone: passed ? 'success' : 'error',
+            text: passed ? (domain.enabled ? '验证已通过' : '验证已通过，启用需手动打开') : '验证未通过',
+          })
         }}
       />
       <ConfirmDialog
         open={pendingDelete !== null}
         title="删除域名"
-        description={pendingDelete ? `删除 ${pendingDelete.hostname} 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 记录或 Worker 绑定` : ''}
+        description={pendingDelete ? `删除 ${pendingDelete.hostname} 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 或域名绑定，可另行清理基础设施` : ''}
         confirmLabel="确认删除"
         danger
         busy={busy}
@@ -776,6 +877,19 @@ function NoteDialog({ item, busy, onClose, onSave }: {
   )
 }
 
+function useCountdown(expiresAt: string | null): number | null {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!expiresAt) return undefined
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [expiresAt])
+  if (!expiresAt) return null
+  const end = new Date(expiresAt).getTime()
+  if (Number.isNaN(end)) return null
+  return Math.max(0, Math.ceil((end - now) / 1000))
+}
+
 function DomainDetail({ item, request, onClose, onFailure, onVerified, verifyAbortRef }: {
   item: DomainItem | null
   request: DetailRequest | null
@@ -784,76 +898,115 @@ function DomainDetail({ item, request, onClose, onFailure, onVerified, verifyAbo
   onVerified: (domain: DomainItem) => void
   verifyAbortRef: { current: AbortController | null }
 }) {
-  const [expiresAt, setExpiresAt] = useState<string | null>(null)
+  const [challenge, setChallenge] = useState<Challenge | null>(null)
   const [verifying, setVerifying] = useState(false)
-  const [verifyError, setVerifyError] = useState('')
-  const [probeStatus, setProbeStatus] = useState<ProbeState | null>(null)
+  const [outcome, setOutcome] = useState<VerifyOutcome>({ phase: 'idle' })
+  const [sessionProbe, setSessionProbe] = useState<ProbeState | null>(null)
+  const runSeq = useRef(0)
+  const runRef = useRef<() => void>(() => undefined)
+  const remaining = useCountdown(challenge?.expiresAt ?? null)
 
-  const confirm = async () => {
-    if (!item || !request || verifying) return
+  const runVerification = () => {
+    if (!item || !request) return
+    if (verifyAbortRef.current && !verifyAbortRef.current.signal.aborted) return
     const controller = new AbortController()
     verifyAbortRef.current?.abort()
     verifyAbortRef.current = controller
+    const runId = ++runSeq.current
+    const kind = request.kind
+    const source = item
     setVerifying(true)
-    setVerifyError('')
-    setExpiresAt(null)
-    setProbeStatus(null)
-    const path = `/api/admin/system/domains/${request.kind}/${item.id}`
-    try {
-      const { challenge } = await api<{ challenge: Challenge }>(`${path}/challenge`, {
-        method: 'POST',
-        body: jsonBody({}),
-        signal: controller.signal,
-      })
-      if (!challenge || !/^[A-Za-z0-9_-]{43}$/u.test(challenge.nonce) || !challenge.challengeId || !challenge.expiresAt) {
-        throw new Error('服务返回了无效的验证挑战')
+    setOutcome({ phase: 'running' })
+    setSessionProbe('pending')
+    void (async () => {
+      const finish = () => {
+        if (runSeq.current !== runId) return
+        setVerifying(false)
+        if (verifyAbortRef.current === controller) verifyAbortRef.current = null
       }
-      setExpiresAt(challenge.expiresAt)
-      let verification: { proof: unknown } | { challengeId: string; reason: 'PROBE_FAILED' }
+      const stale = () => controller.signal.aborted || runSeq.current !== runId
       try {
-        const proof = await readDomainProof(item.hostname, challenge.nonce, controller.signal)
-        verification = { proof }
-      } catch {
-        controller.signal.throwIfAborted()
-        setProbeStatus('failed')
-        verification = { challengeId: challenge.challengeId, reason: 'PROBE_FAILED' }
+        const issued = await api<{ challenge?: unknown }>(`/api/admin/system/domains/${kind}/${source.id}/challenge`, {
+          method: 'POST',
+          body: jsonBody({}),
+          signal: controller.signal,
+        })
+        if (stale()) return
+        if (!acceptedChallenge(issued.challenge)) {
+          setSessionProbe(null)
+          setOutcome({ phase: 'failed', text: failureText('CHALLENGE_INVALID', '服务返回了无效的验证挑战') })
+          return
+        }
+        const issuedChallenge = issued.challenge
+        setChallenge(issuedChallenge)
+        let proof: unknown
+        try {
+          proof = await readDomainProof(source.hostname, issuedChallenge.nonce, controller.signal)
+        } catch {
+          if (stale()) return
+          controller.signal.throwIfAborted()
+          setSessionProbe('failed')
+          setOutcome({ phase: 'failed', text: failureText('PROBE_FAILED') })
+          await api(`/api/admin/system/domains/${kind}/${source.id}/verify`, {
+            method: 'POST',
+            body: jsonBody({ challengeId: issuedChallenge.challengeId, reason: 'PROBE_FAILED' }),
+            signal: controller.signal,
+          })
+          return
+        }
+        if (stale()) return
+        setSessionProbe('ok')
+        const result = await api<{ domain?: DomainPayload }>(`/api/admin/system/domains/${kind}/${source.id}/verify`, {
+          method: 'POST',
+          body: jsonBody({ proof }),
+          signal: controller.signal,
+        })
+        if (stale()) return
+        const domain = result.domain ? asDomain(result.domain, kind, source.isPrimary ? source.id : null, source) : null
+        if (!domain) throw new Error('服务返回了无效的域名状态')
+        onVerified(domain)
+        if (domain.verificationStatus === 'verified') {
+          setOutcome({ phase: 'success', text: domain.enabled ? '验证已通过' : '验证已通过，启用需手动打开' })
+        } else {
+          const reason = domain.lastCheckError && REASON_TEXT[domain.lastCheckError] ? domain.lastCheckError : 'TIMEOUT'
+          setOutcome({ phase: 'failed', text: failureText(reason, domain.lastCheckError ?? '') })
+        }
+      } catch (cause) {
+        if (stale()) return
+        if (cause instanceof ApiClientError && cause.code === 'VERIFY_FAILED') {
+          await onFailure().catch(() => undefined)
+          if (stale()) return
+        }
+        const reason = reasonOf(cause)
+        if (reason) setOutcome({ phase: 'failed', text: failureText(reason, errorText(cause)) })
+        else setOutcome({ phase: 'failed', text: stripPeriod(errorText(cause) || '验证失败') })
+      } finally {
+        finish()
       }
-      const result = await api<{ domain?: DomainPayload }>(`${path}/verify`, {
-        method: 'POST',
-        body: jsonBody(verification),
-        signal: controller.signal,
-      })
-      const domain = result.domain ? asDomain(result.domain, request.kind, item.isPrimary ? item.id : null, item) : null
-      if (!domain) throw new Error('服务返回了无效的域名状态')
-      setProbeStatus('ok')
-      onVerified(domain)
-    } catch (cause) {
-      if (controller.signal.aborted) return
-      if (cause instanceof ApiClientError && cause.code === 'VERIFY_FAILED') {
-        await onFailure().catch(() => undefined)
-        if (controller.signal.aborted) return
-      }
-      const details = cause instanceof ApiClientError ? cause.details as { reason?: string } | undefined : undefined
-      const reason = details?.reason
-      const messages: Record<string, string> = {
-        CHALLENGE_EXPIRED: '验证挑战已过期，请重试',
-        CHALLENGE_INVALID: '验证挑战已失效，请重试',
-        PROOF_INVALID: '该域名返回的验证证明无效',
-        INSTANCE_MISMATCH: '该域名指向另一个实例',
-        PROBE_FAILED: '无法连接该域名上的验证端点',
-        TIMEOUT: '验证未完成，请稍后重试',
-      }
-      setVerifyError(reason && Object.hasOwn(messages, reason) ? messages[reason] : errorText(cause))
-    } finally {
-      if (verifyAbortRef.current === controller) setVerifying(false)
-    }
+    })()
   }
+  runRef.current = runVerification
 
+  useEffect(() => {
+    setChallenge(null)
+    setOutcome({ phase: 'idle' })
+    setSessionProbe(null)
+  }, [request?.kind, request?.id])
+
+  useEffect(() => {
+    if (!request?.autoStart) return undefined
+    runRef.current()
+    return () => verifyAbortRef.current?.abort()
+  }, [request])
+
+  const httpsState = sessionProbe ?? (item ? probeOf(item.health, 'https') : 'unchecked')
+  const serviceState = sessionProbe ?? (item ? probeOf(item.health, 'service') : 'unchecked')
+  const actionLabel = verifying ? '正在验证' : outcome.phase === 'failed' ? '重试' : outcome.phase === 'success' ? '重新验证' : '验证'
   return (
     <Dialog open={item !== null} title={item?.hostname ?? '域名详情'} placement="end" appearance="content" size="m" className="sys-domain-drawer" onClose={onClose}
       headerStatus={item ? <Mark status={item.verificationStatus} /> : undefined}
       footer={() => (
-        <button className="button primary" type="button" disabled={!item || verifying} onClick={() => { confirm().catch(() => undefined) }}>{verifying ? '正在验证' : '验证'}</button>
+        <button className="button primary" type="button" disabled={!item || verifying} onClick={() => runRef.current()}>{actionLabel}</button>
       )}>
       {item ? (
         <div className="form-stack">
@@ -865,16 +1018,25 @@ function DomainDetail({ item, request, onClose, onFailure, onVerified, verifyAbo
               { id: 'enabled', label: '启用', value: item.enabled ? '已启用' : '未启用' },
               { id: 'note', label: '备注', value: item.note || '无' },
               { id: 'verifiedAt', label: '验证时间', value: item.verifiedAt ? formatTime(item.verifiedAt) : '未验证' },
-              { id: 'https', label: 'HTTPS', value: <Probe status={probeStatus ?? probeOf(item.health, 'https')} /> },
-              { id: 'service', label: '服务可达性', value: <Probe status={probeStatus ?? probeOf(item.health, 'service')} /> },
+              { id: 'https', label: 'HTTPS', value: <Probe status={httpsState} /> },
+              { id: 'service', label: '服务可达性', value: <Probe status={serviceState} /> },
               { id: 'checked', label: '最近检查', value: item.lastCheckAt ? formatTime(item.lastCheckAt) : '未检查' },
             ]} />
           </div>
           {item.lastCheckError ? <p className="sys-domain-error">{item.lastCheckError}</p> : null}
-          <section aria-label="HTTPS 验证">
-            {expiresAt && verifying ? <p className="sys-hint">挑战有效期至 {formatTime(expiresAt)}</p> : null}
-            {verifying ? <p role="status">正在验证域名</p> : null}
-            {verifyError ? <StatusMessage tone="error">{verifyError}</StatusMessage> : null}
+          <section className="sys-domain-verify" aria-label="HTTP 验证">
+            <h3>HTTP 验证</h3>
+            <p className="sys-hint">挑战有效期 120 秒</p>
+            {challenge ? (
+              <p className="sys-hint" role="status">
+                {remaining !== null && remaining > 0
+                  ? `有效期至 ${formatTime(challenge.expiresAt)}，剩余 ${remaining} 秒`
+                  : `有效期至 ${formatTime(challenge.expiresAt)}，挑战已过期`}
+              </p>
+            ) : null}
+            {outcome.phase === 'running' ? <p role="status">正在验证</p> : null}
+            {outcome.phase === 'success' ? <p role="status">{outcome.text}</p> : null}
+            {outcome.phase === 'failed' ? <StatusMessage tone="error">{outcome.text}</StatusMessage> : null}
           </section>
         </div>
       ) : null}

@@ -42,9 +42,10 @@ type Fixture = {
   holdChallenge: Promise<void> | null
   verifyStatus: number
   verifyMessage: string
+  verifyReason: string
   verifyShape: 'domain' | 'empty'
-  instanceMode: 'id' | 'fail' | 'missing'
-  holdInstance: Promise<void> | null
+  probeMode: 'proof' | 'fail' | 'status' | 'oversize'
+  lastProbe: { url: string; cookie: string; authorization: string } | null
 }
 
 type Call = { method: string; path: string; url: string; body: unknown }
@@ -114,10 +115,11 @@ function fixture(overrides: Partial<Fixture> = {}): Fixture {
     holdPrimary: null,
     holdChallenge: null,
     verifyStatus: 200,
-    verifyMessage: '域名验证失败',
+    verifyMessage: '验证未通过',
+    verifyReason: 'PROOF_INVALID',
     verifyShape: 'domain',
-    instanceMode: 'id',
-    holdInstance: null,
+    probeMode: 'proof',
+    lastProbe: null,
     ...overrides,
   }
 }
@@ -141,15 +143,6 @@ async function fail(route: Route, status: number, message: string, code: string)
 }
 
 const probePath = '/.well-known/subpanel-verify'
-const challengeFixture = {
-  nonce: 'A'.repeat(43), expiresAt: '2026-12-01T00:00:00.000Z', challengeId: '12345678-1234-4234-8234-123456789abc',
-}
-function proofFixture(hostname: string) {
-  return {
-    version: 1, hostname, challengeId: challengeFixture.challengeId, expiresAt: challengeFixture.expiresAt,
-    instanceId: `inst-${hostname}`, signature: 'A'.repeat(43),
-  }
-}
 
 async function install(page: Page, state: Fixture) {
   const calls: Call[] = []
@@ -180,18 +173,39 @@ async function install(page: Page, state: Fixture) {
     state.restrictionEnabled = enabled
     await route.fulfill({ json: { enabled } })
   })
-  await page.route(`**${probePath}?*`, async (route) => {
+  await page.route(/\/\.well-known\/subpanel-verify(?:\?|$)/, async (route) => {
     record(route)
-    if (state.holdInstance) await state.holdInstance
-    if (state.instanceMode === 'fail') {
+    const headers = route.request().headers()
+    state.lastProbe = {
+      url: route.request().url(),
+      cookie: headers.cookie ?? '',
+      authorization: headers.authorization ?? '',
+    }
+    if (state.probeMode === 'fail') {
       await route.abort('failed')
       return
     }
-    if (state.instanceMode === 'missing') {
-      await route.fulfill({ json: {} })
+    if (state.probeMode === 'status') {
+      await route.fulfill({ status: 502, headers: { 'access-control-allow-origin': '*' }, body: 'bad' })
       return
     }
-    await route.fulfill({ json: proofFixture(new URL(route.request().url()).hostname), headers: { 'access-control-allow-origin': '*' } })
+    if (state.probeMode === 'oversize') {
+      await route.fulfill({ status: 200, headers: { 'access-control-allow-origin': '*' }, body: 'x'.repeat(5000) })
+      return
+    }
+    const url = new URL(route.request().url())
+    await route.fulfill({
+      status: 200,
+      headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+      json: {
+        version: 1,
+        hostname: url.hostname,
+        challengeId: `chal-${url.hostname}`,
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+        instanceId: `inst-${url.hostname}`,
+        signature: 'c2lnbmF0dXJl',
+      },
+    })
   })
   await page.route('**/api/admin/system/domains**', async (route) => {
     const call = record(route)
@@ -286,17 +300,32 @@ async function install(page: Page, state: Fixture) {
 
     if (call.method === 'POST' && action === 'challenge') {
       if (state.holdChallenge) await state.holdChallenge
-      await route.fulfill({ json: { challenge: challengeFixture } })
+      await route.fulfill({
+        json: {
+          challenge: {
+            nonce: 'A'.repeat(43),
+            expiresAt: new Date(Date.now() + 120_000).toISOString(),
+            challengeId: `chal-${current.id}`,
+          },
+        },
+      })
       return
     }
 
     if (call.method === 'POST' && action === 'verify') {
-      if ((call.body as { reason?: string } | null)?.reason === 'PROBE_FAILED') {
-        await fail(route, 422, '无法连接该域名上的验证端点', 'VERIFY_FAILED')
+      const body = call.body as { challengeId?: string; reason?: string } | null
+      if (body?.reason === 'PROBE_FAILED') {
+        await route.fulfill({
+          status: 422,
+          json: { error: { code: 'VERIFY_FAILED', message: '域名验证失败', details: { reason: 'PROBE_FAILED' } } },
+        })
         return
       }
       if (state.verifyStatus !== 200) {
-        await fail(route, state.verifyStatus, state.verifyMessage, 'VERIFY_FAILED')
+        await route.fulfill({
+          status: state.verifyStatus,
+          json: { error: { code: 'VERIFY_FAILED', message: state.verifyMessage, details: { reason: state.verifyReason } } },
+        })
         return
       }
       if (state.verifyShape === 'empty') {
@@ -334,7 +363,15 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
 
   await expect(page.getByRole('heading', { name: '域名管理' })).toBeVisible()
   await expect(page.getByRole('navigation', { name: '域名用途' }).getByRole('link', { name: '面板域名' })).toHaveAttribute('aria-current', 'page')
-  await expect(panel(page)).toContainText('主链接用于邀请链接等面板绝对链接')
+  const purposeHint = panel(page).getByRole('button', { name: '面板域名用途说明' })
+  await expect(purposeHint).toHaveAttribute('aria-expanded', 'false')
+  await expect(purposeHint).toHaveAttribute('aria-describedby', /.+/ )
+  await purposeHint.focus()
+  await page.keyboard.press('Enter')
+  await expect(purposeHint).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('note').getByText('主链接用于邀请链接等面板绝对链接')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('主链接用于邀请链接等面板绝对链接')).toBeHidden()
   await expect(panel(page).getByRole('searchbox')).toHaveCount(0)
   await expect(panel(page).getByRole('button', { name: '保存', exact: true })).toHaveCount(0)
   await expect(panel(page).locator('.ops-footer')).toHaveText('共 5 个域名')
@@ -348,7 +385,11 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await page.getByRole('switch', { name: '域名限制' }).click()
   await expect(page.getByRole('switch', { name: '域名限制' })).toBeChecked()
   expect(calls.find((call) => call.path === '/api/admin/system/domain-restriction')?.body).toEqual({ enabled: true })
+  const restrictionHint = page.getByRole('button', { name: '域名限制说明' })
+  await expect(page.getByText('某一类没有已启用的域名时，该类不做限制')).toBeHidden()
+  await restrictionHint.click()
   await expect(page.getByText('某一类没有已启用的域名时，该类不做限制')).toBeVisible()
+  await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: '下移 Mihomo' }).click()
   await expect(page.locator('.dom-platform-name strong').first()).toHaveText('Stash')
@@ -361,7 +402,9 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await expect(page).toHaveURL(/domainKind=subscription/)
   await expect(subscription(page)).toBeVisible()
   await expect(panel(page)).toHaveCount(0)
-  await expect(subscription(page)).toContainText('备用域名不会出现在任何链接里')
+  await subscription(page).getByRole('button', { name: '订阅域名用途说明' }).click()
+  await expect(page.getByText('备用域名不会出现在任何链接里')).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(subscription(page).locator('.ops-footer')).toHaveText('共 1 个域名')
   await page.getByRole('link', { name: '面板域名' }).click()
   await expect(page).toHaveURL(/subscription=sub_1/)
@@ -459,7 +502,8 @@ test('protects the primary domain and confirms deletion', async ({ page }) => {
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '删除 pending.example.com', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '删除域名' })
-  await expect(dialog).toContainText('删除 pending.example.com 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 记录或 Worker 绑定')
+  await expect(dialog).toContainText('删除 pending.example.com 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 或域名绑定，可另行清理基础设施')
+  await expect(dialog).not.toContainText('TXT')
   await dialog.getByRole('button', { name: '取消' }).click()
   expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
   await expect(panel(page).getByText('pending.example.com')).toBeVisible()
@@ -479,7 +523,7 @@ test('protects the primary domain and confirms deletion', async ({ page }) => {
   await expect(panel(page).getByText('backup.example.com')).toBeVisible()
 })
 
-test('adds a domain and verifies it from the published challenge', async ({ page, context }) => {
+test('adds a domain and verifies it from the HTTPS probe', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   const state = fixture()
   const challengeGate = deferred()
@@ -501,23 +545,52 @@ test('adds a domain and verifies it from the published challenge', async ({ page
   const drawer = page.getByRole('dialog', { name: 'created.example.com' })
   await expect(drawer).toBeVisible()
   await expect(dialog).toBeHidden()
-  expect(calls.filter((call) => call.path.endsWith('/challenge'))).toHaveLength(0)
+  await expect(drawer).toContainText('挑战有效期 120 秒')
   await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(2)
+  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByText('DNS', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByText('未启用', { exact: true })).toBeVisible()
+
   await drawer.getByRole('button', { name: '验证', exact: true }).click()
-  await expect(drawer.getByRole('status')).toHaveText('正在验证域名')
+  await expect(drawer.getByRole('status').filter({ hasText: '正在验证' })).toBeVisible()
+  await expect(drawer.getByText('检测中', { exact: true })).toHaveCount(2)
+  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
   challengeGate.release()
   state.holdChallenge = null
+
   await expect(drawer.getByText('已验证', { exact: true }).first()).toBeVisible()
   await expect(drawer.getByText('正常', { exact: true })).toHaveCount(2)
-  const probe = calls.find((call) => call.path === probePath)
-  expect(probe?.url).toBe(`https://created.example.com${probePath}?challenge=${challengeFixture.nonce}`)
-  const verify = calls.find((call) => call.path.startsWith('/api/admin/') && call.path.endsWith('/verify'))
-  expect(verify?.body).toEqual({ proof: proofFixture('created.example.com') })
+  await expect(drawer.getByText('验证已通过，启用需手动打开')).toBeVisible()
+  await expect(drawer.getByText(/剩余 \d+ 秒/)).toBeVisible()
+  await expect(drawer.getByText('未启用', { exact: true })).toBeVisible()
+  const probe = calls.find((call) => call.path === '/.well-known/subpanel-verify')
+  expect(probe?.method).toBe('GET')
+  const probeUrl = new URL(probe?.url ?? '')
+  expect(probeUrl.origin).toBe('https://created.example.com')
+  expect(probeUrl.pathname).toBe('/.well-known/subpanel-verify')
+  expect(probeUrl.searchParams.get('challenge')).toBe('A'.repeat(43))
+  expect(state.lastProbe?.cookie).toBe('')
+  expect(state.lastProbe?.authorization).toBe('')
+  const verify = calls.find((call) => call.path.endsWith('/verify'))
+  expect(verify?.body).toEqual({
+    proof: {
+      version: 1,
+      hostname: 'created.example.com',
+      challengeId: 'chal-created.example.com',
+      expiresAt: expect.any(String),
+      instanceId: 'inst-created.example.com',
+      signature: 'c2lnbmF0dXJl',
+    },
+  })
+  expect(calls.filter((call) => call.method === 'PATCH')).toHaveLength(0)
   expect(calls.find((call) => call.method === 'POST' && call.path === '/api/admin/system/domains/subscription')?.body).toEqual({
     hostname: 'created.example.com', note: '订阅入口',
   })
 
   await drawer.getByRole('button', { name: '关闭' }).click()
+  const createdSwitch = subscription(page).getByRole('switch', { name: 'created.example.com 启用' })
+  await expect(createdSwitch).toBeEnabled()
+  await expect(createdSwitch).not.toBeChecked()
   await openMenu(page, 'created.example.com')
   await page.getByRole('button', { name: '复制链接', exact: true }).click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('https://created.example.com')
@@ -529,44 +602,52 @@ test('reports verification failures and does not treat unchecked probes as healt
   await page.goto('/system/distribution')
 
   await openMenu(page, 'failed.example.com')
-  await page.getByRole('button', { name: '查看详情' }).click()
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
   let drawer = page.getByRole('dialog', { name: 'failed.example.com' })
   await expect(drawer).toContainText('证书不匹配')
+  await expect(drawer).toContainText('挑战有效期 120 秒')
   await expect(drawer.getByText('异常', { exact: true })).toHaveCount(1)
   await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(1)
   await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByText('DNS', { exact: true })).toHaveCount(0)
   await expect(drawer.getByText('验证失败', { exact: true })).toBeVisible()
   await drawer.getByRole('button', { name: '关闭' }).click()
 
   state.verifyStatus = 422
+  state.verifyReason = 'PROOF_INVALID'
+  state.verifyMessage = '实例证明无效'
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '重新验证' }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
-  await drawer.getByRole('button', { name: '验证', exact: true }).click()
-  await expect(drawer.getByRole('alert')).toHaveText('域名验证失败')
-  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByRole('alert')).toContainText('PROOF_INVALID')
+  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(2)
   await expect(drawer.getByText('待验证', { exact: true })).toBeVisible()
+  await expect(drawer.getByRole('button', { name: '重试' })).toBeEnabled()
   await drawer.getByRole('button', { name: '关闭' }).click()
 
   state.verifyStatus = 200
-  state.instanceMode = 'fail'
+  state.probeMode = 'fail'
   await openMenu(page, 'pending.example.com')
-  await page.getByRole('button', { name: '查看详情' }).click()
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
   await drawer.getByRole('button', { name: '验证', exact: true }).click()
-  await expect(drawer.getByRole('alert')).toHaveText('无法连接该域名上的验证端点')
-  const verifyCalls = calls.filter((call) => call.path.startsWith('/api/admin/') && call.path.endsWith('/verify'))
-  expect(verifyCalls).toHaveLength(2)
-  expect(verifyCalls[1].body).toEqual({ challengeId: challengeFixture.challengeId, reason: 'PROBE_FAILED' })
+  await expect(drawer.getByRole('alert')).toContainText('PROBE_FAILED')
+  await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
+  await expect(drawer.getByText('异常', { exact: true })).toHaveCount(2)
+  await expect(drawer.getByRole('button', { name: '重试' })).toBeEnabled()
+  await expect(drawer.getByText('待验证', { exact: true })).toBeVisible()
+  const probeFailure = calls.filter((call) => call.path.endsWith('/verify'))
+  expect(probeFailure.at(-1)?.body).toEqual({ challengeId: 'chal-panel-pending', reason: 'PROBE_FAILED' })
   await drawer.getByRole('button', { name: '关闭' }).click()
 
-  state.instanceMode = 'id'
+  state.probeMode = 'proof'
   state.verifyShape = 'empty'
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '重新验证' }).click()
   drawer = page.getByRole('dialog', { name: 'pending.example.com' })
-  await drawer.getByRole('button', { name: '验证', exact: true }).click()
   await expect(drawer.getByRole('alert')).toHaveText('服务返回了无效的域名状态')
+  await expect(drawer.getByText('待验证', { exact: true })).toBeVisible()
+  await expect(drawer.getByRole('button', { name: '重试' })).toBeEnabled()
 })
 
 test('edits a note without exposing the hostname and keeps the dialog on failure', async ({ page }) => {
@@ -700,8 +781,27 @@ test.describe('390px domain list', () => {
     expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(845)
     await page.keyboard.press('Escape')
 
+    await page.getByRole('button', { name: '域名限制说明' }).click()
+    const restrictionBubble = page.locator('.sys-domain-hint-popover:popover-open')
+    await expect(restrictionBubble).toBeVisible()
+    const restrictionBox = await restrictionBubble.boundingBox()
+    expect(restrictionBox!.x).toBeGreaterThanOrEqual(0)
+    expect(restrictionBox!.x + restrictionBox!.width).toBeLessThanOrEqual(391)
+    expect(restrictionBox!.y).toBeGreaterThanOrEqual(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await page.keyboard.press('Escape')
+
+    await panel(page).getByRole('button', { name: '面板域名用途说明' }).click()
+    const purposeBubble = page.locator('.sys-domain-hint-popover:popover-open')
+    await expect(purposeBubble).toBeVisible()
+    const purposeBox = await purposeBubble.boundingBox()
+    expect(purposeBox!.x).toBeGreaterThanOrEqual(0)
+    expect(purposeBox!.x + purposeBox!.width).toBeLessThanOrEqual(391)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await page.keyboard.press('Escape')
+
     await openMenu(page, hostname)
-    await page.getByRole('button', { name: '查看详情' }).click()
+    await page.getByRole('button', { name: '查看详情', exact: true }).click()
     const drawer = page.getByRole('dialog', { name: hostname })
     await expect(drawer).toBeVisible()
     const full = await drawer.evaluate((element) => {
