@@ -128,6 +128,7 @@ describe('D1 migrations', () => {
       '0025_core_g.sql',
       '0026_unified_subscription.sql',
       '0027_unified_subscription_operations.sql',
+      '0029_domain_bindings.sql',
     ])
 
     await applyMigrations(env.DB)

@@ -5,7 +5,8 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { requireAuth } from '../accounts/auth.js'
-import { listEnabledPlatforms, primaryDomainOriginSafe } from '../domains/service.js'
+import { listEnabledPlatforms } from '../domains/service.js'
+import { DomainService } from '../domains/domain-service.js'
 import { apiError, ApiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
@@ -64,7 +65,7 @@ unifiedUserRoutes.get('/', async c => {
   }
   const result = await resolveUserSubscription(c.env.DB, userId, Date.now(), await readArtifactCatalog(c.env))
   const token = result.diagnostics.length ? null : await revealUserToken(c.env, result.access)
-  const origin = token && (await primaryDomainOriginSafe(c.env.DB, 'subscription') ?? new URL(c.req.url).origin)
+  const subscriptionUrl = token ? await new DomainService(c.env.DB).buildUnifiedSubscriptionUrl(token) : null
   const [enabledFormats, shareSettings] = await Promise.all([listEnabledPlatforms(c.env.DB), readShareSettings(c.env)])
   const supportedFormats = [...new Set(enabledFormats.flatMap(({ platform }) =>
     platform === 'auto' ? [] : [clientAliases[platform] ?? platform]))]
@@ -73,7 +74,7 @@ unifiedUserRoutes.get('/', async c => {
     expiresAt: iso(result.expiresAt),
     lastExpiredAt: result.status === 'expired' ? iso(result.lastExpiredAt) : null,
     permanent: result.permanent,
-    subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
+    subscriptionUrl,
     supportedFormats,
     importPlatforms: enabledFormats.filter(({ platform }) => platform !== 'auto'),
     shareEnabled: shareSettings.enabled && shareSettings.createAllowed,
@@ -172,7 +173,7 @@ unifiedAdminRoutes.get(`${subscription}/summary`, async c => {
   if (!result.access) throw subscriptionNotFound()
   const token = await unifiedOperationsEnabled(c.env.DB) && !result.diagnostics.length
     ? await revealUserToken(c.env, result.access) : null
-  const origin = token && (await primaryDomainOriginSafe(c.env.DB, 'subscription') ?? new URL(c.req.url).origin)
+  const subscriptionUrl = token ? await new DomainService(c.env.DB).buildUnifiedSubscriptionUrl(token) : null
   const logs = await c.env.DB.prepare(`SELECT id, action, created_at AS createdAt FROM audit_logs
     WHERE target_type='user' AND target_id=? ORDER BY created_at DESC, id DESC LIMIT 50`)
     .bind(result.access.user_id).all<{ id: string; action: string; createdAt: string }>()
@@ -181,7 +182,7 @@ unifiedAdminRoutes.get(`${subscription}/summary`, async c => {
     status: result.status, effectiveBindingCount: result.effectiveTemplateIds.length,
     latestExpiresAt: iso(result.latestExpiresAt), lastExpiredAt: iso(result.lastExpiredAt),
     nodes: result.nodes.map(node => ({ name: node.displayName, protocol: node.protocol })),
-    subscriptionUrl: origin && token ? `${origin}/s/${token}` : null,
+    subscriptionUrl,
     logs: logs.results,
   })
 })

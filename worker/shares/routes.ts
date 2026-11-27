@@ -6,7 +6,7 @@ import type { AppEnv } from '../app-env.js'
 import { resolveSessionUser, requireAuth } from '../accounts/auth.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
-import { primaryDomainOriginSafe } from '../domains/service.js'
+import { DomainService } from '../domains/domain-service.js'
 import { readShareSettings } from './repository.js'
 import {
   adminShareQuerySchema,
@@ -98,7 +98,7 @@ shareRoutes.post('/', async (c) => {
   const input = await readJson(c, createShareSchema)
   const actor = c.get('principal')
   const result = await run(() => createShare(c.env, actor.id, input, undefined, actor.role))
-  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  const linkBaseUrl = await new DomainService(c.env.DB).getOrigin('subscription')
   return c.json({ ...result, linkBaseUrl }, 201)
 })
 
@@ -138,7 +138,7 @@ shareRoutes.post('/:id/reset-token', async (c) => {
   await readJson(c, emptySchema)
   const actor = c.get('principal')
   const result = await run(() => resetShareToken(c.env, requireShareId(c.req.param('id')), actor.id, undefined, actor.role))
-  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  const linkBaseUrl = await new DomainService(c.env.DB).getOrigin('subscription')
   return c.json({ ...result, linkBaseUrl })
 })
 
@@ -158,7 +158,7 @@ shareRoutes.get('/:token/meta', async (c) => {
   const token = requireShareToken(c.req.param('token'))
   const [actor, sessionHash] = await Promise.all([resolveSessionUser(c), readShareSessionHash(c)])
   const meta = await run(() => readShareMeta(c.env, token, actor, sessionHash))
-  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  const linkBaseUrl = await new DomainService(c.env.DB).getOrigin('subscription')
   return c.json({ meta, linkBaseUrl })
 })
 
@@ -203,7 +203,7 @@ adminShareRoutes.post('/shares', async (c) => {
   const ownerUserId = subscription.userId
   if (!ownerUserId) throw apiError(409, 'SUBSCRIPTION_UNASSIGNED', '请先分配订阅')
   const result = await run(() => createShare(c.env, ownerUserId, input, undefined, c.get('principal').role))
-  const linkBaseUrl = await primaryDomainOriginSafe(c.env.DB, 'subscription')
+  const linkBaseUrl = await new DomainService(c.env.DB).getOrigin('subscription')
   return c.json({ ...result, linkBaseUrl }, 201)
 })
 

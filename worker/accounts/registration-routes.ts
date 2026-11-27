@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { primaryDomainOriginSafe } from '../domains/service.js'
+import { DomainService } from '../domains/domain-service.js'
 import type { AppEnv } from '../app-env.js'
 import { getOrCreateCryptoMaterial } from '../platform/crypto.js'
 import { readJson } from '../platform/http.js'
@@ -78,8 +78,11 @@ adminRegistrationRoutes.post('/invitations', async (c) => {
     count: input.count,
   })
   // Plaintext codes appear only in this creation response.
-  const panelOrigin = await primaryDomainOriginSafe(c.env.DB, 'panel')
-  return c.json({ invitations: codes.map((code) => ({ ...code, link: new URL(`/invite/${code.code}`, panelOrigin ?? c.req.url).toString() })) }, 201)
+  const service = new DomainService(c.env.DB)
+  const invitations = await Promise.all(codes.map(async code => ({
+    ...code, link: await service.buildPanelUrl(`/invite/${code.code}`),
+  })))
+  return c.json({ invitations }, 201)
 })
 
 adminRegistrationRoutes.get('/invitations', async (c) => {

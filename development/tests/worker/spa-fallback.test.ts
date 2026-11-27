@@ -14,6 +14,7 @@ describe('SPA fallback', () => {
       const response = await exports.default.fetch(`${ORIGIN}${path}`, { headers: browserHeaders })
       expect(response.status).toBe(200)
       expect(response.headers.get('content-type')).toContain('text/html')
+      expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' https://*/api/system/instance")
       expect(await response.text()).toContain('spa-shell-test-fixture')
     }
   })

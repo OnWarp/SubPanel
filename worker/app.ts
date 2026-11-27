@@ -7,7 +7,7 @@ import { Hono } from 'hono'
 import type { AppEnv } from './app-env.js'
 import { accountRoutes } from './accounts/account-routes.js'
 import { adminAccountRoutes } from './accounts/admin-routes.js'
-import { requireAdmin, requireAuth } from './accounts/auth.js'
+import { adminGuard, requireAdmin, requireAuth } from './accounts/auth.js'
 import { publicAccountRoutes } from './accounts/public-routes.js'
 import { adminRegistrationRoutes, registrationRoutes } from './accounts/registration-routes.js'
 import { catalogRoutes } from './catalog/routes.js'
@@ -61,7 +61,11 @@ app.use('/api/kb', requireAuth)
 app.use('/api/kb/*', requireAuth)
 
 app.use('/api/admin/*', requireAuth)
-app.use('/api/admin/*', requireAdmin)
+const requireDomainAdmin = adminGuard('FORBIDDEN')
+app.use('/api/admin/*', (c, next) => {
+  const domainManagement = /^\/api\/admin\/system\/(?:domains(?:\/|$)|domain-restriction$)/.test(c.req.path)
+  return (domainManagement ? requireDomainAdmin : requireAdmin)(c, next)
+})
 app.use('/api/admin/*', auditAdminMutation)
 app.get('/api/admin/operations/status', async c => {
   return c.json({ ok: true, cron: await readCronStatus(c.env.DATA) })
@@ -110,7 +114,12 @@ app.notFound(async (c) => {
     accept.includes('text/html')
   ) {
     const shell = await c.env.ASSETS.fetch(new URL('/index.html', c.req.url))
-    if (shell.ok) return shell
+    if (shell.ok) {
+      const headers = new Headers(shell.headers)
+      // The Worker supplies CSP for this document, including the browser domain probe.
+      headers.delete('Content-Security-Policy')
+      return new Response(shell.body, { status: shell.status, headers })
+    }
   }
   return c.json({ error: { code: 'NOT_FOUND', message: '请求的资源不存在' } }, 404)
 })

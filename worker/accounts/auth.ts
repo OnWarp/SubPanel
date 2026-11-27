@@ -35,7 +35,11 @@ export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next()
 }
 
-export const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
-  if (c.get('principal').role !== 'admin') throw apiError(403, 'ADMIN_REQUIRED', '需要管理员权限')
-  await next()
+export function adminGuard(code: 'ADMIN_REQUIRED' | 'FORBIDDEN' = 'ADMIN_REQUIRED'): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (c.get('principal').role !== 'admin') throw apiError(403, code, '需要管理员权限')
+    await next()
+  }
 }
+
+export const requireAdmin = adminGuard()
