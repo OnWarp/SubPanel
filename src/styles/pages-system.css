@@ -240,6 +240,67 @@
 
 .sys-domain-panel-head .sys-hint { margin: 0; }
 
+.sys-domain-restriction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sys-domain-hint-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.sys-domain-hint-button:hover { color: var(--color-text); background: var(--color-surface-subtle); }
+
+.sys-domain-hint-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.sys-domain-hint-popover {
+  position: fixed;
+  inset: auto;
+  position-area: bottom span-right;
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: min(50dvh, 240px);
+  margin: var(--space-1) 0 0;
+  padding: var(--space-2) var(--space-3);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-float);
+  color: var(--color-text);
+  font-size: var(--font-xs);
+  line-height: var(--leading-body);
+}
+
+.sys-domain-hint-popover p { margin: 0; }
+
+@supports not (position-area: bottom) {
+  .sys-domain-hint-popover {
+    inset: 8px 8px auto 8px;
+    width: auto;
+    margin: 0;
+  }
+}
+
 .sys-domain-rows {
   margin: 0;
   padding: 0;
@@ -356,24 +417,15 @@
   padding-block: 12px;
 }
 
-.sys-domain-txt {
+.sys-domain-verify {
   display: grid;
   gap: 8px;
   min-width: 0;
 }
 
-.sys-domain-txt-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.sys-domain-txt code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
+.sys-domain-verify h3 {
+  margin: 0;
+  font-size: var(--font-sm);
 }
 
 @media (width <= 720px) {

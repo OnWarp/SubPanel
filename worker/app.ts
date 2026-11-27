@@ -21,7 +21,7 @@ import { readCronStatus } from './operations/cron.js'
 import { migrationRoutes } from './migration/routes.js'
 import { adminSystemRoutes } from './system/routes.js'
 import { hostGate } from './domains/host-gate.js'
-import { adminDomainRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
+import { adminDomainRoutes, domainProbeRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
 import { unifiedAdminRoutes, unifiedPublicRoutes, unifiedUserRoutes } from './delivery/unified-routes.js'
 import { adminNoticeRoutes, adminTicketRoutes, noticeRoutes, userTicketRoutes } from './tickets/routes.js'
 import { adminKbRoutes, userKbRoutes } from './kb/routes.js'
@@ -84,6 +84,7 @@ app.route('/api/admin', adminNoticeRoutes)
 app.route('/api/admin', adminKbRoutes)
 app.route('/api/account', userDomainRoutes)
 app.route('/api', publicSystemRoutes)
+app.route('/', domainProbeRoutes)
 app.route('/api/admin/catalog', catalogRoutes)
 app.route('/api/admin/subscription-templates', entitlementTemplateRoutes)
 app.route('/api/admin/compile-jobs', compileJobRoutes)

@@ -1,3 +1,4 @@
+import { VERIFY_FAILURES } from './verification-contract.js'
 import { apiError } from '../platform/api-error.js'
 import { type AppDatabase, queryFirst } from '../db/db.js'
 import { decodeSettingJson, getSetting, putSetting } from '../db/settings-repository.js'
@@ -22,7 +23,7 @@ type DomainRow = {
   updatedAt: string
 }
 
-const SAFE_CHECK_ERRORS = new Set(['DNS_NOT_FOUND', 'DNS_MISMATCH', 'INSTANCE_MISMATCH', 'TIMEOUT'])
+const SAFE_CHECK_ERRORS = new Set<string>(VERIFY_FAILURES)
 
 function toBinding({ domainId: _, enabled, isPrimary, lastCheckError, ...row }: DomainRow) {
   return {
@@ -54,12 +55,17 @@ const HOSTNAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
  */
 export function normalizeHostname(input: string): string | null {
   if (typeof input !== 'string') return null
-  const value = input.trim().toLowerCase()
+  const trimmed = input.trim()
+  if (/[^ -~]/u.test(trimmed)) return null
+  const value = trimmed.toLowerCase()
   if (value.length === 0 || value.length > 253) return null
   if (/[\s/?#@:[\]\\]/.test(value)) return null
   const labels = value.split('.')
   if (labels.length < 2) return null
   if (!labels.every((label) => HOSTNAME_LABEL.test(label))) return null
+  const lastLabel = labels.at(-1)!
+  // A numeric final label triggers the browser's IPv4 parser, including octal and hex forms.
+  if (/^(?:[0-9]+|0x[0-9a-f]*)$/u.test(lastLabel) || lastLabel === 'localhost') return null
   return value
 }
 
@@ -111,7 +117,7 @@ export class DomainService {
 
   async update(purpose: DomainKind, id: string, input: { enabled?: boolean; note?: string }) {
     const before = await this.requireRow(purpose, id)
-    if (input.enabled === true && before.verificationStatus !== 'verified') throw notVerified()
+    if (input.enabled === true && (before.verificationStatus !== 'verified' || before.verifiedAt === null)) throw notVerified()
     if (input.enabled === false && before.isPrimary) throw protectedPrimary()
     const enabled = input.enabled === undefined ? null : Number(input.enabled)
     const [result] = await this.changeGate([
@@ -121,7 +127,7 @@ export class DomainService {
         ) THEN 1 ELSE is_primary END, updated_at = ?
         WHERE id = ? AND (? IS NULL OR enabled = ? AND is_primary = ?)
           AND (? IS NULL OR ? = 1 AND EXISTS (
-          SELECT 1 FROM domains WHERE domains.id = domain_bindings.domain_id AND verification_status = 'verified'
+          SELECT 1 FROM domains WHERE domains.id = domain_bindings.domain_id AND verification_status = 'verified' AND verified_at IS NOT NULL
         ) OR ? = 0 AND is_primary = 0)
         RETURNING is_primary AS isPrimary`).bind(input.note?.trim() ?? null, enabled, enabled, purpose,
         new Date().toISOString(), id, enabled, before.enabled, before.isPrimary, enabled, enabled, enabled),
@@ -153,7 +159,7 @@ export class DomainService {
 
   async setPrimary(purpose: DomainKind, id: string): Promise<DomainBinding> {
     const [target, current] = await Promise.all([this.requireRow(purpose, id), this.getPrimary(purpose)])
-    if (target.verificationStatus !== 'verified') throw notVerified()
+    if (target.verificationStatus !== 'verified' || target.verifiedAt === null) throw notVerified()
     if (!target.enabled) throw apiError(409, 'DOMAIN_DISABLED', '请先启用域名')
     if (current?.id === id) return toBinding(target)
     const now = new Date().toISOString()
@@ -161,13 +167,13 @@ export class DomainService {
       this.db.prepare(`UPDATE domain_bindings SET is_primary = 0, updated_at = ?
         WHERE id = ? AND is_primary = 1 AND EXISTS (
           SELECT 1 FROM domain_bindings b JOIN domains d ON d.id = b.domain_id
-          WHERE b.id = ? AND b.enabled = 1 AND d.verification_status = 'verified'
+          WHERE b.id = ? AND b.enabled = 1 AND d.verification_status = 'verified' AND verified_at IS NOT NULL
         )`).bind(now, current?.id ?? null, id),
       this.db.prepare(`UPDATE domain_bindings SET is_primary = 1, updated_at = ?
         WHERE id = ? AND enabled = 1 AND (? IS NULL OR changes() = 1)
           AND NOT EXISTS (SELECT 1 FROM domain_bindings WHERE purpose = ? AND is_primary = 1)
           AND EXISTS (SELECT 1 FROM domains WHERE domains.id = domain_bindings.domain_id
-            AND verification_status = 'verified')`).bind(now, id, current?.id ?? null, purpose),
+            AND verification_status = 'verified' AND verified_at IS NOT NULL)`).bind(now, id, current?.id ?? null, purpose),
     ])
     if (!promoted.meta.changes) throw conflict()
     return this.get(purpose, id)
@@ -182,7 +188,7 @@ export class DomainService {
 
   async getOrigin(purpose: DomainKind): Promise<string | null> {
     const binding = await this.getPrimary(purpose)
-    return binding?.enabled && binding.verificationStatus === 'verified' ? `https://${binding.hostname}` : null
+    return binding?.enabled && binding.verifiedAt !== null ? `https://${binding.hostname}` : null
   }
 
   async buildPanelUrl(path: string): Promise<string | null> {
@@ -267,7 +273,7 @@ async function getGateState(db: AppDatabase): Promise<GateHosts | null> {
 async function loadGateState(db: AppDatabase): Promise<GateHosts> {
   const rows = await db.prepare(`SELECT b.purpose, d.hostname
     FROM domain_bindings b JOIN domains d ON d.id = b.domain_id
-    WHERE b.enabled = 1 AND d.verification_status = 'verified'`)
+    WHERE b.enabled = 1 AND d.verified_at IS NOT NULL`)
     .all<{ purpose: DomainKind; hostname: string }>()
   const hosts: GateHosts = { panel: new Set(), subscription: new Set() }
   for (const { purpose, hostname } of rows.results) hosts[purpose].add(hostname)

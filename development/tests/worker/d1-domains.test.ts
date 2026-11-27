@@ -1,9 +1,15 @@
+import { createHash, createHmac } from 'node:crypto'
+import { encodeProof, verifyDomain, type DomainProof } from '../../../worker/domains/verification'
+import { DOMAIN_VERIFY_PATH, VERIFY_FAILURES } from '../../../worker/domains/verification-contract'
+import { signHmac } from '../../../worker/platform/crypto'
 import { env, exports } from 'cloudflare:workers'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { getSetting } from '../../../worker/db/settings-repository'
 import { DomainService, invalidateGateCache, normalizeHostname } from '../../../worker/domains/domain-service'
 import { applyMigrations } from './d1'
 import {
+  ADMIN_PASSWORD,
+  ADMIN_USERNAME,
   bindFixtureTemplate,
   createFixtureAccount,
   setupContractedAdmin,
@@ -76,7 +82,7 @@ beforeEach(async () => {
   adminCookie = await login()
 })
 
-afterEach(() => vi.unstubAllGlobals())
+const domainPath = '/api/admin/system/domains'
 
 const adminJson = async (path: string, init: RequestInit = {}) => {
   const response = await fetchApi(path, withCookie(adminCookie, init))
@@ -222,43 +228,63 @@ describe('domain CRUD and verification rules', () => {
     expect(promote.status).toBe(409)
   })
 
-  it('verifies using hashed TXT challenges, shares verification, and auto-promotes the first enable', async () => {
-    const instance = await (await fetchApi('/api/system/instance')).json<{ instanceId: string }>()
-    const created = await createDomain('subscription', 'verify.example.com')
-    const id = (created.body.domain as DomainBody).id
-    const path = `/api/admin/system/domains/subscription/${id}`
-    const old = (await adminJson(`${path}/challenge`, { method: 'POST', headers: { origin: TEST_ORIGIN } })).body
-      .challenge as { txtValue: string }
-    const { body } = await adminJson(`${path}/challenge`, { method: 'POST', headers: { origin: TEST_ORIGIN } })
-    const { txtName, txtValue, expiresAt } = body.challenge as { txtName: string; txtValue: string; expiresAt: string }
-    expect(txtName).toBe('_subpanel-verify.verify.example.com')
-    expect(txtValue).toMatch(/^[A-Za-z0-9_-]{43}$/)
-    expect(Date.parse(expiresAt) - Date.now()).toBeGreaterThan(86_390_000)
-    const challenges = await env.DB.prepare('SELECT challenge_hash, consumed_at FROM domain_verification_challenges').all()
-    expect(challenges.results).toEqual(expect.arrayContaining([
-      { challenge_hash: expect.stringMatching(/^[a-f0-9]{64}$/), consumed_at: expect.any(String) },
-      { challenge_hash: expect.stringMatching(/^[a-f0-9]{64}$/), consumed_at: null },
-    ]))
+  type Challenge = { nonce: string; expiresAt: string; challengeId: string }
 
-    const seen: string[] = []
-    let txt = old.txtValue
-    vi.stubGlobal('fetch', async (input: unknown, init: RequestInit) => {
-      seen.push(String(input))
-      expect(init.redirect).toBe('error')
-      return Response.json({ Status: 0, Answer: [{ name: txtName + '.', type: 16, data: JSON.stringify(txt) }] })
+  const issue = async (path: string) => {
+    const { response, body } = await adminJson(`${path}/challenge`, { method: 'POST', headers: { origin: TEST_ORIGIN } })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    return body.challenge as Challenge
+  }
+  const probePath = ({ nonce }: Challenge) => `${DOMAIN_VERIFY_PATH}?challenge=${nonce}`
+  const getProof = async (host: string, challenge: Challenge) => {
+    const response = await fetchHost(host, probePath(challenge))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    return response.json<DomainProof>()
+  }
+  const verify = (path: string, input: unknown) => adminJson(`${path}/verify`, jsonRequest(input))
+  const failureIs = async (path: string, input: unknown, reason: string) => {
+    const result = await verify(path, input)
+    expect(result.response.status).toBe(422)
+    expect(result.body.error).toEqual({ code: 'VERIFY_FAILED', message: '域名验证失败', details: { reason } })
+  }
+
+  it('signs HTTP challenges, consumes once under concurrency, and auto-promotes the first enable', async () => {
+    const host = 'verify.example.com'
+    const { body } = await createDomain('subscription', host)
+    const path = `${domainPath}/subscription/${(body.domain as DomainBody).id}`
+    const old = await issue(path)
+    const challenge = await issue(path)
+    expect(challenge.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/u)
+    expect(Date.parse(challenge.expiresAt) - Date.now()).toBeGreaterThan(110_000)
+    expect(await env.DB.prepare('SELECT challenge_hash, consumed_at FROM domain_verification_challenges WHERE id = ?')
+      .bind(challenge.challengeId).first()).toEqual({
+      challenge_hash: createHash('sha256').update(challenge.nonce).digest('hex'), consumed_at: null,
     })
-    const verify = (observedInstanceId = instance.instanceId) => adminJson(`${path}/verify`, jsonRequest({ observedInstanceId }))
-    expect((await verify()).body.error).toMatchObject({ code: 'VERIFY_FAILED', details: { reason: 'DNS_MISMATCH' } })
-    txt = txtValue
-    expect((await verify('wrong')).body.error).toMatchObject({ code: 'VERIFY_FAILED', details: { reason: 'INSTANCE_MISMATCH' } })
-    const verified = await verify()
-    expect(verified.response.status).toBe(200)
-    expect(verified.body.domain).toMatchObject({ verificationStatus: 'verified', verifiedAt: expect.any(String), enabled: false })
-    expect(seen).toEqual(Array(3).fill('https://cloudflare-dns.com/dns-query?name=_subpanel-verify.verify.example.com&type=TXT'))
+    expect((await fetchHost(host, probePath(old))).status).toBe(404)
+    const proof = await getProof(host, challenge)
+    const instance = await (await fetchApi('/api/system/instance')).json<{ instanceId: string }>()
+    expect(proof).toEqual({
+      version: 1, hostname: host, challengeId: challenge.challengeId, expiresAt: challenge.expiresAt,
+      instanceId: instance.instanceId, signature: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u),
+    })
+    expect((await getProof(host, challenge)).signature).toBe(proof.signature)
+
+    const results = await Promise.all([verify(path, { proof }), verify(path, { proof })])
+    const verified = results.find(result => result.response.status === 200)
+    expect(verified?.body.domain).toMatchObject({
+      verificationStatus: 'verified', verifiedAt: expect.any(String), enabled: false, isPrimary: false, lastCheckError: null,
+    })
+    expect(results.find(result => result.response.status === 422)?.body.error)
+      .toMatchObject({ details: { reason: 'CHALLENGE_INVALID' } })
+    expect((await fetchHost(host, probePath(challenge))).status).toBe(404)
     expect(await env.DB.prepare('SELECT count(*) AS total FROM domain_verification_challenges WHERE consumed_at IS NULL').first())
       .toEqual({ total: 0 })
 
-    const other = await createDomain('panel', 'verify.example.com')
+    const other = await createDomain('panel', host)
     expect(other.body.domain).toMatchObject({ verificationStatus: 'verified', enabled: false })
     const service = new DomainService(env.DB)
     await env.DB.prepare("DELETE FROM domain_bindings WHERE id = 'dom_sub_primary'").run()
@@ -269,30 +295,107 @@ describe('domain CRUD and verification rules', () => {
     expect(await service.buildPanelUrl('/invite/code')).toBe('https://sub.warp.dpdns.org/invite/code')
     const audit = await env.DB.prepare("SELECT detail FROM audit_logs WHERE action LIKE 'domain.%'").all<{ detail: string }>()
     expect(audit.results.some(row => JSON.parse(row.detail).autoPrimary)).toBe(true)
-    expect(JSON.stringify(audit.results)).not.toContain(txtValue)
+    expect(audit.results.some(row => JSON.parse(row.detail).challengeId === challenge.challengeId)).toBe(true)
+    expect(JSON.stringify(audit.results)).not.toContain(challenge.nonce)
+    expect(JSON.stringify(audit.results)).not.toContain(proof.signature)
   })
 
-  it('records safe failure codes and limits verification to ten attempts per binding', async () => {
-    const { body } = await createDomain('panel', 'unit.example.com')
-    const id = (body.domain as DomainBody).id
-    const path = `/api/admin/system/domains/panel/${id}`
-    const verify = () => adminJson(`${path}/verify`, jsonRequest({ observedInstanceId: 'fixture' }))
-    expect((await verify()).body.error).toMatchObject({ details: { reason: 'DNS_NOT_FOUND' } })
-    await adminJson(`${path}/challenge`, { method: 'POST', headers: { origin: TEST_ORIGIN } })
-    vi.stubGlobal('fetch', async () => { throw new Error('internal address') })
-    const attempts = await Promise.all(Array.from({ length: 10 }, verify))
+  it('only allows an exact GET probe on the challenge hostname while the gate is enabled', async () => {
+    const host = 'pending.example.com'
+    const { body } = await createDomain('panel', host)
+    const path = `${domainPath}/panel/${(body.domain as DomainBody).id}`
+    const challenge = await issue(path)
+    await adminJson('/api/admin/system/domain-restriction', jsonRequest({ enabled: true }, { method: 'PUT' }))
+    await getProof(host, challenge)
+    expect(await (await fetchHost(host, '/login')).json()).toMatchObject({ error: { code: 'DOMAIN_NOT_ALLOWED' } })
+    const invalid = [
+      fetchHost('wrong.example.com', probePath(challenge), { headers: { 'X-Forwarded-Host': host } }),
+      fetchHost(host, probePath(challenge), { method: 'POST' }),
+      fetchHost(host, `${DOMAIN_VERIFY_PATH}/?challenge=${challenge.nonce}`, { headers: { Accept: 'text/html' } }),
+      fetchHost(host, `${DOMAIN_VERIFY_PATH}/nested?challenge=${challenge.nonce}`),
+      fetchHost(host, `${probePath(challenge)}&other=1`),
+      fetchHost(host, `${probePath(challenge)}&challenge=${challenge.nonce}`),
+      fetchHost(host, DOMAIN_VERIFY_PATH),
+    ]
+    for (const response of await Promise.all(invalid)) {
+      expect(response.status).toBe(404)
+      expect(await response.json()).toEqual({ error: { code: 'NOT_FOUND', message: '请求的资源不存在' } })
+    }
+    expect((await fetchHost(host, probePath(challenge), { method: 'HEAD' })).status).toBe(404)
+  })
+
+  it('rejects legacy, expired, cross-domain, malformed and forged proofs', async () => {
+    const host = 'sub.warp.dpdns.org'
+    const path = `${domainPath}/panel/dom_panel_primary`
+    const other = await createDomain('panel', 'other.example.com')
+    const otherPath = `${domainPath}/panel/${(other.body.domain as DomainBody).id}`
+    const first = await issue(path)
+    const proof = await getProof(host, first)
+    await failureIs(otherPath, { proof }, 'CHALLENGE_INVALID')
+    await failureIs(path, { proof: { ...proof, signature: 'A'.repeat(43) } }, 'PROOF_INVALID')
+    const binding = await new DomainService(env.DB).get('panel', 'dom_panel_primary')
+    expect(binding).toMatchObject({
+      verificationStatus: 'failed', verifiedAt: SEED_NOW, enabled: true, isPrimary: true,
+      lastCheckAt: expect.any(String), lastCheckError: 'PROOF_INVALID',
+    })
+    const wrongInstance = await getProof(host, await issue(path))
+    await failureIs(path, { proof: { ...wrongInstance, instanceId: 'another-instance' } }, 'INSTANCE_MISMATCH')
+    const expired = await issue(path)
+    const expiredProof = await getProof(host, expired)
+    await env.DB.prepare('UPDATE domain_verification_challenges SET created_at = ?, expires_at = ? WHERE id = ?')
+      .bind('2025-01-01T00:00:00.000Z', '2025-01-01T00:02:00.000Z', expired.challengeId).run()
+    expect((await fetchHost(host, probePath(expired))).status).toBe(404)
+    await failureIs(path, { proof: expiredProof }, 'CHALLENGE_EXPIRED')
+    const legacy = await issue(path)
+    await env.DB.prepare('UPDATE domain_verification_challenges SET created_at = ? WHERE id = ?')
+      .bind('2025-01-01T00:00:00.000Z', legacy.challengeId).run()
+    expect((await fetchHost(host, probePath(legacy))).status).toBe(404)
+    await failureIs(path, { proof: { ...proof, challengeId: legacy.challengeId } }, 'CHALLENGE_INVALID')
+    const malformed = await issue(path)
+    await failureIs(path, { proof: { challengeId: malformed.challengeId } }, 'PROOF_INVALID')
+    const failedProbe = await issue(path)
+    await failureIs(path, { challengeId: failedProbe.challengeId, reason: 'PROBE_FAILED' }, 'PROBE_FAILED')
+    const unavailable = await issue(path)
+    const unavailableProof = await getProof(host, unavailable)
+    const missingKey = { get: async () => null } as unknown as KVNamespace
+    expect(await verifyDomain({ ...env, DATA: missingKey }, 'panel', 'dom_panel_primary', { proof: unavailableProof }))
+      .toMatchObject({ failure: 'TIMEOUT', domain: { lastCheckError: 'TIMEOUT' } })
+    expect(VERIFY_FAILURES).toEqual([
+      'CHALLENGE_EXPIRED', 'CHALLENGE_INVALID', 'PROOF_INVALID', 'INSTANCE_MISMATCH', 'PROBE_FAILED', 'TIMEOUT',
+    ])
+    expect(await new DomainService(env.DB).buildPanelUrl('/login')).toBe(`https://${host}/login`)
+    await adminJson('/api/admin/system/domain-restriction', jsonRequest({ enabled: true }, { method: 'PUT' }))
+    expect((await fetchHost(host, '/api/account/subscription-platforms', withCookie(adminCookie))).status).toBe(200)
+  })
+
+  it('limits admin verification separately from the public probe', async () => {
+    const host = 'limited.example.com'
+    const { body } = await createDomain('panel', host)
+    const path = `${domainPath}/panel/${(body.domain as DomainBody).id}`
+    const challenge = await issue(path)
+    const probes = await Promise.all(Array.from({ length: 61 }, () => fetchHost(host, probePath(challenge), { headers: { 'CF-Connecting-IP': '192.0.2.42' } })))
+    expect(probes.filter(response => response.status === 200)).toHaveLength(60)
+    expect(probes.filter(response => response.status === 404)).toHaveLength(1)
+    const proof = await probes.find(response => response.ok)!.json<DomainProof>()
+    expect((await verify(path, { proof })).response.status).toBe(200)
+    const attempts = await Promise.all(Array.from({ length: 10 }, () => verify(path, { proof })))
     expect(attempts.map(({ response }) => response.status).sort()).toEqual([...Array(9).fill(422), 429])
-    const binding = await new DomainService(env.DB).get('panel', id)
-    expect(binding).toMatchObject({ verificationStatus: 'failed', lastCheckError: 'TIMEOUT' })
   })
 
   it('keeps one primary when enabled bindings are concurrently promoted', async () => {
     const service = new DomainService(env.DB)
     const bindings = await Promise.all(['one.example.com', 'two.example.com'].map(hostname => service.create('panel', { hostname })))
     await env.DB.prepare("UPDATE domains SET verification_status = 'verified'").run()
+    await expect(service.update('panel', bindings[0].id, { enabled: true })).rejects.toMatchObject({ code: 'NOT_VERIFIED' })
+    await expect(service.setPrimary('panel', bindings[0].id)).rejects.toMatchObject({ code: 'NOT_VERIFIED' })
+    await env.DB.prepare('UPDATE domains SET verified_at = ?').bind(SEED_NOW).run()
     await expect(service.setPrimary('panel', bindings[0].id)).rejects.toMatchObject({ code: 'DOMAIN_DISABLED' })
     await Promise.all(bindings.map(binding => service.update('panel', binding.id, { enabled: true })))
-    const results = await Promise.allSettled(bindings.map(binding => service.setPrimary('panel', binding.id)))
+    const [results, snapshots] = await Promise.all([
+      Promise.allSettled(bindings.map(binding => service.setPrimary('panel', binding.id))),
+      Promise.all(Array.from({ length: 12 }, () => service.list('panel'))),
+    ])
+    expect(snapshots.every(snapshot => snapshot.filter(binding => binding.isPrimary).length === 1)).toBe(true)
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
     expect(results.find(result => result.status === 'rejected')).toMatchObject({ reason: { code: 'VERSION_CONFLICT' } })
     expect((await service.list('panel')).filter(binding => binding.isPrimary)).toHaveLength(1)
@@ -338,6 +441,43 @@ describe('delivery links and share links', () => {
     const body = await share.json<{ token: string; linkBaseUrl: string }>()
     expect(body.linkBaseUrl).toBe('https://sub.warp.dpdns.org')
     expect(await (await fetchApi(`/api/shares/${body.token}/meta`)).json()).toMatchObject({ linkBaseUrl: body.linkBaseUrl })
+
+    const service = new DomainService(env.DB)
+    const backupHost = 'backup.example.com'
+    const backup = await service.create('subscription', { hostname: backupHost })
+    const backupPanel = await service.create('panel', { hostname: backupHost })
+    await env.DB.prepare("UPDATE domains SET verification_status = 'verified', verified_at = ? WHERE hostname = ?")
+      .bind(SEED_NOW, backupHost).run()
+    await service.update('subscription', backup.id, { enabled: true })
+    await service.update('panel', backupPanel.id, { enabled: true })
+    const toggle = await adminJson('/api/admin/system/domain-restriction', jsonRequest({ enabled: true }, { method: 'PUT' }))
+    expect(toggle.response.status).toBe(200)
+
+    const original = new URL(subscriptionUrl)
+    for (const hostname of [original.hostname, backupHost]) {
+      const loginResponse = await fetchHost(hostname, '/api/login', jsonRequest({
+        username: ADMIN_USERNAME, password: ADMIN_PASSWORD,
+      }, { headers: { origin: `https://${hostname}` } }))
+      expect(loginResponse.status).toBe(200)
+      const session = loginResponse.headers.get('set-cookie')!
+      expect(session).not.toMatch(/;\s*domain=/i)
+      expect((await fetchHost(hostname, '/api/admin/system/domains', withCookie(session.split(';', 1)[0]))).status).toBe(200)
+    }
+    const [initialDownload, alternateDownload] = await Promise.all([
+      fetchHost(original.hostname, original.pathname), fetchHost(backupHost, original.pathname),
+    ])
+    expect(initialDownload.status).toBe(200)
+    expect(alternateDownload.status).toBe(200)
+    expect(await alternateDownload.text()).toBe(await initialDownload.text())
+
+    await service.setPrimary('subscription', backup.id)
+    const updated = await fetchHost(original.hostname, '/api/user/subscription', auth)
+    expect(await updated.json()).toMatchObject({ subscriptionUrl: `https://${backupHost}${original.pathname}` })
+    expect((await fetchHost(original.hostname, original.pathname)).status).toBe(200)
+    await service.update('subscription', 'dom_sub_primary', { enabled: false })
+    expect(await (await fetchHost(original.hostname, original.pathname)).json())
+      .toMatchObject({ error: { code: 'DOMAIN_NOT_ALLOWED' } })
+    expect((await fetchHost(backupHost, original.pathname)).status).toBe(200)
   })
 
   it('returns no unified link when no primary domain remains', async () => {
@@ -354,7 +494,7 @@ describe('host gate', () => {
     const service = new DomainService(env.DB)
     const host = 'subscription.example.com'
     const domain = await service.create('subscription', { hostname: host })
-    await env.DB.prepare("UPDATE domains SET verification_status = 'verified' WHERE hostname = ?").bind(host).run()
+    await env.DB.prepare("UPDATE domains SET verification_status = 'verified', verified_at = ? WHERE hostname = ?").bind(SEED_NOW, host).run()
     await service.update('subscription', domain.id, { enabled: true })
     const toggle = await fetchApi('/api/admin/system/domain-restriction',
       withCookie(adminCookie, jsonRequest({ enabled: true }, { method: 'PUT' })))
@@ -425,7 +565,22 @@ describe('host gate', () => {
 
 it('normalizes bare hostnames', () => {
   expect(normalizeHostname('  Example.COM ')).toBe('example.com')
-  for (const invalid of ['https://example.com', 'a..com', 'a.com.', 'a.com:443', 'a.com/#']) {
+  for (const invalid of ['https://example.com', 'a..com', 'a.com.', 'a.com:443', 'a.com/#', 'localhost', 'foo.localhost', '192.168.1.1', '127.1', '0x7f.1', '2130706433', '::1', '[::1]', 'K.com', '例子.com']) {
     expect(normalizeHostname(invalid)).toBeNull()
   }
+})
+
+
+it('encodes the frozen HMAC vector byte for byte and matches Node crypto', async () => {
+  const proof = {
+    version: 1 as const, hostname: 'verify.example.com',
+    challengeId: '12345678-1234-4234-8234-123456789abc',
+    expiresAt: '2026-11-27T19:00:00.000Z', instanceId: 'ins_fixture',
+  }
+  const encoded = 'v1\nverify.example.com\n12345678-1234-4234-8234-123456789abc\n2026-11-27T19:00:00.000Z\nins_fixture'
+  expect(encodeProof(proof)).toBe(encoded)
+  const key = Buffer.from(Array.from({ length: 32 }, (_, index) => index))
+  const nodeSignature = createHmac('sha256', key).update(encoded, 'utf8').digest('base64url')
+  expect(nodeSignature).toBe('ctG28TMj03h6ssu32LokivG0zvvyhlP6PZ4TnEFLg74')
+  expect(await signHmac(encodeProof(proof), key.toString('base64url'))).toBe(nodeSignature)
 })
