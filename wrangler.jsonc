@@ -5,7 +5,7 @@
   "compatibility_date": "2026-07-23",
   "assets": {
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/sub", "/sub/*", "/s", "/s/*"],
+    "run_worker_first": ["/*", "!/assets/*", "!/favicon.svg", "!/icons.svg", "!/logo.png", "!/theme-init.js"],
     "not_found_handling": "single-page-application"
   },
   "vars": {
