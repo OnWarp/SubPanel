@@ -5,7 +5,7 @@ import type { AppEnv } from '../app-env.js'
 import { apiError } from '../platform/api-error.js'
 import { createInviteCodes, disableInviteCode, importLegacyInvites, listInviteCodes } from './invite-codes.js'
 import { readJson } from '../platform/http.js'
-import { primaryDomainOriginSafe } from '../domains/service.js'
+import { DomainService } from '../domains/domain-service.js'
 import { sendTestEmail } from './email.js'
 import { hashPassword } from './password.js'
 import { accountsUseD1, findAccountUserById, readAccounts, writeAccounts } from './repository.js'
@@ -372,8 +372,8 @@ adminAccountRoutes.get('/invites', async (c) => {
 })
 adminAccountRoutes.post('/invites', async (c) => {
   const [invite] = await createInviteCodes(c.env.DB, c.get('principal').id, { type: 'batch', count: 1, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() })
-  const panelOrigin = await primaryDomainOriginSafe(c.env.DB, 'panel')
-  return c.json({ invite: { ...invite, link: new URL(`/invite/${invite.code}`, panelOrigin ?? c.req.url).toString() } }, 201)
+  const link = await new DomainService(c.env.DB).buildPanelUrl(`/invite/${invite.code}`)
+  return c.json({ invite: { ...invite, link } }, 201)
 })
 adminAccountRoutes.delete('/invites/:id', async (c) => {
   await importLegacyInvites(c.env)

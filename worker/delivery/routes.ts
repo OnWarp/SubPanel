@@ -8,13 +8,12 @@ import type { Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { logAudit } from '../admin/audit.js'
-import { primaryDomainOriginSafe } from '../domains/service.js'
+import { DomainService } from '../domains/domain-service.js'
 import { readCatalog } from '../catalog/repository.js'
 import { apiError } from '../platform/api-error.js'
 import { readJson } from '../platform/http.js'
 import { previewAuthorizedOutput, type AccessSnapshot } from './compiler.js'
 import { readFetchSummary } from './fetch-stats.js'
-import { subscriptionLinks } from './links.js'
 import {
   classifySubscription,
   loadAccessSnapshot,
@@ -142,9 +141,8 @@ async function view(
   // domain (plan section 7.1). When no usable primary is configured the
   // links stay empty and linkError tells the UI to prompt for domain
   // configuration instead of silently falling back to the request Host.
-  const origin = await primaryDomainOriginSafe(c.env.DB, 'subscription')
-  const linkError = origin === null ? 'SUBSCRIPTION_DOMAIN_NOT_CONFIGURED' : null
-  const links = origin === null ? {} : subscriptionLinks(origin, token)
+  const links = await new DomainService(c.env.DB).buildSubscriptionLinks(token)
+  const linkError = links === null ? 'SUBSCRIPTION_DOMAIN_NOT_CONFIGURED' : null
   let configVersion: number | null = null
   let conversionMode: string | null = null
   let conversionTemplate: string | null = null
@@ -203,7 +201,7 @@ async function view(
     expiresAt: subscription.expiresAt,
     createdAt: subscription.createdAt,
     updatedAt: subscription.updatedAt,
-    links,
+    links: links ?? {},
     linkError,
     diagnostics,
     ...presented,
