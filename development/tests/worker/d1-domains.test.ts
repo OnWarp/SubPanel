@@ -6,6 +6,7 @@ import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { getSetting } from '../../../worker/db/settings-repository'
 import { DomainService, invalidateGateCache, normalizeHostname } from '../../../worker/domains/domain-service'
+import { invalidatePlatformRendererCache } from '../../../worker/domains/service'
 import { applyMigrations } from './d1'
 import {
   ADMIN_PASSWORD,
@@ -60,18 +61,19 @@ async function reseedDomains() {
       VALUES ('domain_restriction_enabled', 'false', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value`).bind(SEED_NOW),
     ...([
-      ['auto', '自动识别', 0], ['mihomo', 'Mihomo', 10], ['clash', 'Clash', 20],
-      ['clash-meta', 'Clash Meta', 30], ['stash', 'Stash', 40], ['singbox', 'sing-box', 50],
-      ['karing', 'Karing', 60], ['surge', 'Surge', 70], ['loon', 'Loon', 80],
-      ['quantumultx', 'Quantumult X', 90], ['v2rayn', 'v2rayN', 100],
-      ['nekobox', 'NekoBox', 110], ['shadowrocket', 'Shadowrocket', 120],
-    ] as Array<[string, string, number]>).map(([platform, displayName, sortOrder]) =>
+      ['auto', '自动识别', 0, 'auto'], ['mihomo', 'Mihomo', 10, 'mihomo'], ['clash', 'Clash', 20, 'mihomo'],
+      ['clash-meta', 'Clash Meta', 30, 'mihomo'], ['stash', 'Stash', 40, 'mihomo'], ['singbox', 'sing-box', 50, 'singbox'],
+      ['karing', 'Karing', 60, 'singbox'], ['surge', 'Surge', 70, 'surge'], ['loon', 'Loon', 80, 'loon'],
+      ['quantumultx', 'Quantumult X', 90, 'quantumultx'], ['v2rayn', 'v2rayN', 100, 'v2rayn'],
+      ['nekobox', 'NekoBox', 110, 'nekobox'], ['shadowrocket', 'Shadowrocket', 120, 'shadowrocket'],
+    ] as Array<[string, string, number, string]>).map(([platform, displayName, sortOrder, renderer]) =>
       env.DB.prepare(
-        'INSERT INTO subscription_platform_settings (platform, display_name, enabled, sort_order, updated_at) VALUES (?, ?, 1, ?, ?)',
-      ).bind(platform, displayName, sortOrder, SEED_NOW),
+        'INSERT INTO subscription_platform_settings (platform, display_name, enabled, sort_order, renderer, updated_at) VALUES (?, ?, 1, ?, ?, ?)',
+      ).bind(platform, displayName, sortOrder, renderer, SEED_NOW),
     ),
   ])
   invalidateGateCache(env.DB)
+  invalidatePlatformRendererCache()
 }
 
 beforeEach(async () => {
@@ -149,15 +151,26 @@ describe('instance identity endpoint', () => {
 })
 
 describe('subscription platform display settings', () => {
+  type AdminPlatform = { platform: string; displayName: string; enabled: boolean; sortOrder: number; renderer: string }
+
   it('round-trips order and visibility, and the user view only lists enabled platforms', async () => {
     const initial = await adminJson('/api/admin/system/subscription-platforms')
-    const platforms = initial.body.platforms as Array<{ platform: string; displayName: string; enabled: boolean }>
+    const platforms = initial.body.platforms as AdminPlatform[]
     expect(platforms).toHaveLength(13)
-    expect(platforms[0]).toMatchObject({ platform: 'auto', displayName: '自动识别', enabled: true })
+    expect(platforms[0]).toMatchObject({ platform: 'auto', displayName: '自动识别', enabled: true, renderer: 'auto' })
+    expect(platforms.find((entry) => entry.platform === 'clash')).toMatchObject({ renderer: 'mihomo' })
+    expect(platforms.find((entry) => entry.platform === 'karing')).toMatchObject({ renderer: 'singbox' })
 
     const reordered = [...platforms]
-      .map((entry) => ({ platform: entry.platform, enabled: entry.platform !== 'surge' }))
+      .map((entry) => ({
+        platform: entry.platform,
+        displayName: entry.displayName,
+        enabled: entry.platform !== 'surge',
+        sortOrder: 0,
+        renderer: entry.renderer,
+      }))
       .sort((a, b) => (a.platform === 'shadowrocket' ? -1 : b.platform === 'shadowrocket' ? 1 : 0))
+      .map((entry, index) => ({ ...entry, sortOrder: index * 10 }))
     const put = await fetchApi(
       '/api/admin/system/subscription-platforms',
       withCookie(adminCookie, jsonRequest({ platforms: reordered }, { method: 'PUT' })),
@@ -175,18 +188,52 @@ describe('subscription platform display settings', () => {
     expect(anonymous.status).toBe(401)
   })
 
-  it('rejects unknown, duplicated or incomplete platform lists', async () => {
+  it('rejects invalid platform lists with 400 and leaves the stored list unchanged', async () => {
     const initial = await adminJson('/api/admin/system/subscription-platforms')
-    const platforms = (initial.body.platforms as Array<{ platform: string }>).map((entry) => ({
-      platform: entry.platform,
-      enabled: true,
-    }))
-    const putList = (list: Array<{ platform: string; enabled: boolean }>) =>
+    const platforms = initial.body.platforms as AdminPlatform[]
+    const putList = (list: unknown) =>
       fetchApi('/api/admin/system/subscription-platforms', withCookie(adminCookie, jsonRequest({ platforms: list }, { method: 'PUT' })))
 
-    expect((await putList([...platforms.slice(1), { platform: 'unknown-client', enabled: true }])).status).toBe(422)
-    expect((await putList([...platforms, { platform: 'auto', enabled: true }])).status).toBe(422)
-    expect((await putList(platforms.slice(1))).status).toBe(422)
+    const badKey = await putList(platforms.map((entry) =>
+      entry.platform === 'mihomo' ? { ...entry, platform: 'Bad_Key' } : entry))
+    expect(badKey.status).toBe(400)
+    expect(((await badKey.json()) as { error: { message: string } }).error.message).toContain('Bad_Key')
+
+    const duplicated = await putList([...platforms, platforms[1]])
+    expect(duplicated.status).toBe(400)
+    expect(((await duplicated.json()) as { error: { message: string } }).error.message).toContain('mihomo')
+
+    const badRenderer = await putList(platforms.map((entry) =>
+      entry.platform === 'clash' ? { ...entry, renderer: 'not-a-client' } : entry))
+    expect(badRenderer.status).toBe(400)
+    expect(((await badRenderer.json()) as { error: { message: string } }).error.message).toContain('clash')
+
+    const autoRenderer = await putList(platforms.map((entry) =>
+      entry.platform === 'auto' ? { ...entry, renderer: 'mihomo' } : entry))
+    expect(autoRenderer.status).toBe(400)
+    expect(((await autoRenderer.json()) as { error: { message: string } }).error.message).toContain('auto')
+
+    const unchanged = await adminJson('/api/admin/system/subscription-platforms')
+    expect(unchanged.body.platforms).toEqual(platforms)
+  })
+
+  it('deletes a platform by omitting it from the full replace', async () => {
+    const initial = await adminJson('/api/admin/system/subscription-platforms')
+    const platforms = initial.body.platforms as AdminPlatform[]
+    const put = await fetchApi(
+      '/api/admin/system/subscription-platforms',
+      withCookie(adminCookie, jsonRequest(
+        { platforms: platforms.filter((entry) => entry.platform !== 'surge') },
+        { method: 'PUT' },
+      )),
+    )
+    expect(put.status).toBe(200)
+    const after = await adminJson('/api/admin/system/subscription-platforms')
+    expect((after.body.platforms as AdminPlatform[]).map((entry) => entry.platform)).not.toContain('surge')
+    expect(after.body.platforms).toHaveLength(12)
+    const userView = await fetchApi('/api/account/subscription-platforms', withCookie(adminCookie))
+    expect(((await userView.json()) as { platforms: Array<{ platform: string }> }).platforms
+      .map((entry) => entry.platform)).not.toContain('surge')
   })
 })
 

@@ -3,6 +3,7 @@ import { apiError } from '../platform/api-error.js'
 import { type AppDatabase, queryFirst } from '../db/db.js'
 import { decodeSettingJson, getSetting, putSetting } from '../db/settings-repository.js'
 import { subscriptionLinks, subscriptionPath } from '../delivery/links.js'
+import { listPlatformSettings } from './service.js'
 
 export type DomainKind = 'panel' | 'subscription'
 type VerificationStatus = 'pending' | 'verified' | 'failed'
@@ -208,7 +209,8 @@ export class DomainService {
 
   async buildSubscriptionLinks(token: string): Promise<Record<string, string> | null> {
     const origin = await this.getOrigin('subscription')
-    return origin ? subscriptionLinks(origin, token) : null
+    if (!origin) return null
+    return subscriptionLinks(origin, token, await listPlatformSettings(this.db))
   }
 }
 

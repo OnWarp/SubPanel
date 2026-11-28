@@ -9,7 +9,7 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { requireAuth } from '../accounts/auth.js'
-import { listEnabledPlatforms } from '../domains/service.js'
+import { listEnabledPlatforms, resolveSubscriptionClient } from '../domains/service.js'
 import { DomainService } from '../domains/domain-service.js'
 import { apiError, ApiError } from '../platform/api-error.js'
 import { hashToken } from '../platform/crypto.js'
@@ -71,8 +71,8 @@ unifiedUserRoutes.get('/', async c => {
   const token = result.diagnostics.length ? null : await revealUserToken(c.env, result.access)
   const subscriptionUrl = token ? await new DomainService(c.env.DB).buildUnifiedSubscriptionUrl(token) : null
   const [enabledFormats, shareSettings] = await Promise.all([listEnabledPlatforms(c.env.DB), readShareSettings(c.env)])
-  const supportedFormats = [...new Set(enabledFormats.flatMap(({ platform }) =>
-    platform === 'auto' ? [] : [clientAliases[platform] ?? platform]))]
+  const supportedFormats = [...new Set(enabledFormats.flatMap(({ platform, renderer }) =>
+    platform === 'auto' || renderer === 'auto' ? [] : [renderer]))]
   return c.json({
     status: result.status,
     expiresAt: iso(result.expiresAt),
@@ -274,10 +274,19 @@ async function limitPublicFetch(c: Context<AppEnv>, next: () => Promise<void>) {
 unifiedPublicRoutes.use('/s/*', limitPublicFetch)
 unifiedPublicRoutes.use('/sub/*', limitPublicFetch)
 
-function publicClient(c: Context<AppEnv>, defaultClient?: string | null) {
+async function publicClient(c: Context<AppEnv>, defaultClient?: string | null) {
   const detected = clientFromUserAgent(c.req.header('User-Agent') ?? '')
-  const requested = (c.req.param('client') ?? c.req.query('format') ??
+  const pathClient = c.req.param('client')
+  const requested = (pathClient ?? c.req.query('format') ??
     (detected === 'generic' ? defaultClient ?? detected : detected)).toLowerCase()
+  // A path segment is a platform key: resolve it against the database first
+  // so admin-added platforms render and admin-deleted ones 404. ?format=
+  // and User-Agent detection keep the previous alias behaviour untouched.
+  if (pathClient !== undefined) {
+    const resolved = await resolveSubscriptionClient(c.env.DB, requested)
+    if (resolved === null) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+    return resolved
+  }
   const client = clientIdSchema.safeParse(clientAliases[requested] ?? requested)
   if (!client.success) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
   return client.data
@@ -299,7 +308,7 @@ async function renderPlanLink(c: Context<AppEnv>, userId: string, instanceId: st
   if (!await allowSubscriptionFetch(db, 'subscription', `user:${userId}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
   const now = Date.now()
   const access = await readUserAccess(db, { userId })
-  const client = publicClient(c, access?.default_client)
+  const client = await publicClient(c, access?.default_client)
   const { catalog, nodes } = await resolveForApi(db, user, instanceId, now)
   const artifact = await renderResolvedSubscription(c.env, { id: null, revision: access?.revision ?? 1 }, client,
     { catalog, nodes, speed: 0, zeroNodeReason: nodes.length ? null : 'noEnabledNodes' }, new Date(now).toISOString())
@@ -369,7 +378,7 @@ unifiedPublicRoutes.get('/s/:token/:client?', async c => {
   if (planStorage && await hasPlanAggregate(c.env.DB, access.user_id)) throw subscriptionNotFound()
   if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${access.user_id}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
 
-  const client = publicClient(c, access.default_client)
+  const client = await publicClient(c, access.default_client)
   let status = 500
   try {
     const artifact = await loadUnifiedArtifact(c.env, access.user_id, tokenHash, client)

@@ -40,11 +40,12 @@ const patchDomainSchema = z.object({
 
 const restrictionSchema = z.object({ enabled: z.boolean() }).strict()
 
+// Shape only: the body must be an object with a platforms array. Every
+// entry is validated by updatePlatformSettings, which reports 400 naming
+// the field and platform key. A non-object body or a non-array platforms
+// list is malformed input and keeps the shared 422 validation response.
 const platformSettingsSchema = z.object({
-  platforms: z.array(z.object({
-    platform: z.string().min(1).max(64),
-    enabled: z.boolean(),
-  }).strict()).min(1).max(64),
+  platforms: z.array(z.unknown()),
 }).strict()
 
 export const adminDomainRoutes = new Hono<AppEnv>()

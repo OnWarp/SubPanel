@@ -1,4 +1,5 @@
 import domainBindingsSql from '../../../migrations/0029_domain_bindings.sql?raw'
+import platformRendererSql from '../../../migrations/0034_subscription_platform_renderer.sql?raw'
 import contractSql from '../../../docs/unified-subscription-pr6-full-NOT-EXECUTED.sql?raw'
 import backfillSql from '../../../migrations/0028_unified_subscription_backfill.sql?raw'
 import operationsSql from '../../../migrations/0027_unified_subscription_operations.sql?raw'
@@ -226,6 +227,11 @@ export const domainBindingsMigration = {
   queries: splitSqlStatements(domainBindingsSql),
 }
 
+export const platformRendererMigration = {
+  name: '0034_subscription_platform_renderer.sql',
+  queries: splitSqlStatements(platformRendererSql),
+}
+
 export const TICKETS_NOTICES_MIGRATION_NAME = '0009_tickets_notices.sql'
 
 export const ticketsNoticesMigration = {
@@ -296,7 +302,7 @@ export async function applyMigrations(db: D1Database = env.DB): Promise<void> {
     { name: '0025_core_g.sql', queries: coreGSql.trim().split(/;\s*\n(?=(?:ALTER|DROP|CREATE)|$)/u).filter(Boolean) },
   ])
   await applyUnifiedMigration(db)
-  await applyD1Migrations(db, [domainBindingsMigration])
+  await applyD1Migrations(db, [domainBindingsMigration, platformRendererMigration])
 }
 
 export async function listTables(db: D1Database = env.DB): Promise<string[]> {
