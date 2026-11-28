@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 
 type Kind = 'panel' | 'subscription'
 type Verification = 'pending' | 'verified' | 'failed'
@@ -17,7 +17,7 @@ type Row = {
   lastCheckError: string | null
 }
 
-type Platform = { platform: string; displayName: string; enabled: boolean; sortOrder: number }
+type Platform = { platform: string; displayName: string; enabled: boolean; sortOrder: number; renderer: string }
 
 type Fixture = {
   panel: Row[]
@@ -26,6 +26,8 @@ type Fixture = {
   primarySubscriptionDomainId: string | null
   restrictionEnabled: boolean
   platforms: Platform[]
+  platformStatus: number
+  platformMessage: string
   listStatus: number
   listMessage: string
   holdList: Promise<void> | null
@@ -97,9 +99,12 @@ function fixture(overrides: Partial<Fixture> = {}): Fixture {
     primarySubscriptionDomainId: 'sub-main',
     restrictionEnabled: false,
     platforms: [
-      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 0 },
-      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 1 },
+      { platform: 'auto', displayName: '自动识别', enabled: true, sortOrder: 0, renderer: 'auto' },
+      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 10, renderer: 'mihomo' },
+      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 20, renderer: 'mihomo' },
     ],
+    platformStatus: 200,
+    platformMessage: '平台键格式无效',
     listStatus: 200,
     listMessage: '没有域名管理权限',
     holdList: null,
@@ -157,13 +162,13 @@ async function install(page: Page, state: Fixture) {
   }))
   await page.route('**/api/admin/share-settings', (route) => route.fulfill({ json: { settings: SHARE_SETTINGS } }))
   await page.route('**/api/admin/system/subscription-platforms', async (route) => {
-    record(route)
+    const call = record(route)
     if (route.request().method() === 'PUT') {
-      const body = readBody(route) as { platforms: Array<{ platform: string; enabled: boolean }> }
-      state.platforms = body.platforms.map((entry, index) => {
-        const current = state.platforms.find((item) => item.platform === entry.platform)
-        return { platform: entry.platform, displayName: current?.displayName ?? entry.platform, enabled: entry.enabled, sortOrder: index }
-      })
+      if (state.platformStatus !== 200) {
+        await fail(route, state.platformStatus, state.platformMessage, 'PLATFORM_INVALID')
+        return
+      }
+      state.platforms = (call.body as { platforms: Platform[] }).platforms
     }
     await route.fulfill({ json: { platforms: state.platforms } })
   })
@@ -381,11 +386,12 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await expect(primaryRow.locator('.sys-domain-mark')).toContainText('已验证')
   await expect(primaryRow.locator('.sys-domain-mark svg')).toHaveCount(1)
   await expect(panel(page).getByRole('listitem').filter({ hasText: 'failed.example.com' }).locator('.sys-domain-mark')).toContainText('验证失败')
-  await expect(page.getByText('关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响')).toBeHidden()
-  await page.getByRole('button', { name: '关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响' }).click()
-  await expect(page.getByRole('note', { name: '关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响' })).toBeVisible()
+  const platformHint = '关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响；渲染器决定该平台链接返回的客户端格式'
+  await expect(page.getByText(platformHint)).toBeHidden()
+  await page.getByRole('button', { name: platformHint }).click()
+  await expect(page.getByRole('note', { name: platformHint })).toBeVisible()
   await page.keyboard.press('Escape')
-  await expect(page.getByText('关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响')).toBeHidden()
+  await expect(page.getByText(platformHint)).toBeHidden()
 
   const alignedHosts = ['primary.example.com', 'backup.example.com', 'pending.example.com']
   const controlBoxes = await Promise.all(alignedHosts.map(async (hostname) => {
@@ -416,9 +422,13 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await page.keyboard.press('Escape')
 
   await page.getByRole('button', { name: '下移 Mihomo' }).click()
-  await expect(page.locator('.dom-platform-name strong').first()).toHaveText('Stash')
+  await expect(page.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Stash', 'Mihomo'])
   expect(calls.find((call) => call.path === '/api/admin/system/subscription-platforms' && call.method === 'PUT')?.body).toEqual({
-    platforms: [{ platform: 'stash', enabled: false }, { platform: 'mihomo', enabled: true }],
+    platforms: [
+      { platform: 'auto', displayName: '自动识别', enabled: true, sortOrder: 0, renderer: 'auto' },
+      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 10, renderer: 'mihomo' },
+      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 20, renderer: 'mihomo' },
+    ],
   })
 
   await page.getByRole('link', { name: '订阅域名' }).click()
@@ -433,6 +443,132 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await page.getByRole('link', { name: '面板域名' }).click()
   await expect(page).toHaveURL(/subscription=sub_1/)
   await expect(page).not.toHaveURL(/domainKind=/)
+})
+
+async function chooseRenderer(page: Page, label: string) {
+  await page.getByRole('combobox', { name: '渲染器' }).click()
+  await page.getByRole('option', { name: label, exact: true }).click()
+}
+
+test('adds, edits and deletes a platform with a full replace payload', async ({ page }) => {
+  const state = fixture()
+  const calls = await install(page, state)
+  await page.goto('/system/distribution')
+
+  const list = page.locator('.dom-platform-list')
+  await expect(list.locator('.dom-platform-row')).toHaveCount(3)
+
+  await page.getByRole('button', { name: '添加平台' }).click()
+  const addDialog = page.getByRole('dialog', { name: '添加平台' })
+  await expect(addDialog).toBeVisible()
+  await expect(addDialog).not.toHaveAttribute('data-placement')
+  await expect(addDialog.getByRole('button', { name: '添加', exact: true })).toBeEnabled()
+  await addDialog.getByLabel('平台键').fill('ios')
+  await addDialog.getByLabel('显示名').fill('iOS')
+  await chooseRenderer(page, 'sing-box')
+  await addDialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(addDialog).toBeHidden()
+
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash', 'iOS'])
+  await expect(list.locator('.dom-platform-row').last().locator('.dom-platform-renderer')).toHaveText('sing-box')
+  expect(calls.filter((call) => call.method === 'PUT').at(-1)?.body).toEqual({
+    platforms: [
+      { platform: 'auto', displayName: '自动识别', enabled: true, sortOrder: 0, renderer: 'auto' },
+      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 10, renderer: 'mihomo' },
+      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 20, renderer: 'mihomo' },
+      { platform: 'ios', displayName: 'iOS', enabled: true, sortOrder: 30, renderer: 'singbox' },
+    ],
+  })
+
+  await page.getByRole('button', { name: 'iOS 更多操作' }).click()
+  await page.getByRole('button', { name: '编辑', exact: true }).click()
+  const editDialog = page.getByRole('dialog', { name: '编辑平台' })
+  await expect(editDialog.getByLabel('平台键')).toHaveValue('ios')
+  await editDialog.getByLabel('平台键').fill('ios-app')
+  await editDialog.getByLabel('显示名').fill('iOS 客户端')
+  await chooseRenderer(page, 'Surge')
+  await editDialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(editDialog).toBeHidden()
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash', 'iOS 客户端'])
+  await expect(list.locator('.dom-platform-name span').filter({ hasText: 'ios-app' })).toHaveText('ios-app')
+  expect(calls.filter((call) => call.method === 'PUT').at(-1)?.body).toEqual({
+    platforms: [
+      { platform: 'auto', displayName: '自动识别', enabled: true, sortOrder: 0, renderer: 'auto' },
+      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 10, renderer: 'mihomo' },
+      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 20, renderer: 'mihomo' },
+      { platform: 'ios-app', displayName: 'iOS 客户端', enabled: true, sortOrder: 30, renderer: 'surge' },
+    ],
+  })
+
+  await page.getByRole('button', { name: 'iOS 客户端 更多操作' }).click()
+  await page.getByRole('button', { name: '删除', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: '删除平台' })
+  await expect(confirm).toContainText('删除 iOS 客户端 后，该平台的订阅链接将不可用')
+  await confirm.getByRole('button', { name: '确认删除' }).click()
+  await expect(confirm).toBeHidden()
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash'])
+  expect(calls.filter((call) => call.method === 'PUT').at(-1)?.body).toEqual({
+    platforms: [
+      { platform: 'auto', displayName: '自动识别', enabled: true, sortOrder: 0, renderer: 'auto' },
+      { platform: 'mihomo', displayName: 'Mihomo', enabled: true, sortOrder: 10, renderer: 'mihomo' },
+      { platform: 'stash', displayName: 'Stash', enabled: false, sortOrder: 20, renderer: 'mihomo' },
+    ],
+  })
+})
+
+test('validates platform keys, duplicates and the auto renderer inline', async ({ page }) => {
+  const state = fixture()
+  await install(page, state)
+  await page.goto('/system/distribution')
+  await page.getByRole('button', { name: '添加平台' }).click()
+  const dialog = page.getByRole('dialog', { name: '添加平台' })
+
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(dialog.getByText('请输入平台键')).toBeVisible()
+  await expect(dialog.getByText('请输入显示名')).toBeVisible()
+
+  await dialog.getByLabel('平台键').fill('Mihomo')
+  await dialog.getByLabel('显示名').fill('Mihomo')
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(dialog.getByText('只能使用小写字母、数字与连字符')).toBeVisible()
+
+  await dialog.getByLabel('平台键').fill('mihomo')
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(dialog.getByText('平台键已存在')).toBeVisible()
+
+  await dialog.getByLabel('平台键').fill('auto')
+  await expect(dialog.getByLabel('渲染器')).toHaveValue('自动识别')
+  await expect(dialog.getByLabel('渲染器')).toBeDisabled()
+
+  await dialog.getByLabel('平台键').fill('custom')
+  await expect(dialog.getByRole('combobox', { name: '渲染器' })).toBeVisible()
+  await dialog.getByLabel('显示名').fill('自定义')
+  await chooseRenderer(page, '通用')
+  await dialog.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('.dom-platform-row').last().locator('.dom-platform-renderer')).toHaveText('通用')
+})
+
+test('rolls platform changes back when the save fails', async ({ page }) => {
+  const state = fixture()
+  state.platformStatus = 400
+  state.platformMessage = '平台 io 缺少字段：renderer'
+  const calls = await install(page, state)
+  await page.goto('/system/distribution')
+  const list = page.locator('.dom-platform-list')
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash'])
+
+  await page.getByRole('switch', { name: 'Mihomo 展示' }).click()
+  await expect(page.getByRole('alert')).toHaveText('平台 io 缺少字段：renderer')
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash'])
+  await expect(page.getByRole('switch', { name: 'Mihomo 展示' })).toBeChecked()
+
+  state.platformStatus = 422
+  state.platformMessage = '请求体格式错误'
+  await page.getByRole('button', { name: '下移 Mihomo' }).click()
+  await expect(page.getByRole('alert')).toHaveText('请求格式无效：请求体格式错误')
+  await expect(list.locator('.dom-platform-name strong')).toHaveText(['自动识别', 'Mihomo', 'Stash'])
+  expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(2)
 })
 
 test('selects a verified primary with the radio and restores a rejected switch', async ({ page }) => {
@@ -574,6 +710,7 @@ test('adds a domain and verifies it from the HTTPS probe', async ({ page, contex
   await subscription(page).getByRole('button', { name: '添加域名' }).click()
   const dialog = page.getByRole('dialog', { name: '添加域名' })
   await expect(dialog).toHaveAttribute('data-size', 'm')
+  await expect(dialog).not.toHaveAttribute('data-placement')
   await expect(dialog).toContainText('将添加到订阅域名')
   await expect(dialog.getByRole('button', { name: '添加', exact: true })).toBeDisabled()
   await dialog.getByLabel('域名', { exact: true }).fill('created.example.com')
@@ -584,6 +721,8 @@ test('adds a domain and verifies it from the HTTPS probe', async ({ page, contex
   const drawer = page.getByRole('dialog', { name: 'created.example.com' })
   await expect(drawer).toBeVisible()
   await expect(dialog).toBeHidden()
+  await expect(drawer).not.toHaveAttribute('data-placement')
+  await expect(drawer).toHaveAttribute('data-size', 'l')
   await expect(drawer).toContainText('挑战有效期 120 秒')
   await expect(drawer.getByText('未检测', { exact: true })).toHaveCount(2)
   await expect(drawer.getByText('正常', { exact: true })).toHaveCount(0)
@@ -784,6 +923,50 @@ test('covers loading, network, and permission states', async ({ page }) => {
   await expect(panel(page).getByText('primary.example.com')).toBeVisible()
 })
 
+test('centers both domain dialogs on desktop and at 390px', async ({ page }) => {
+  const state = fixture()
+  await install(page, state)
+  await page.goto('/system/distribution')
+
+  const center = async (dialog: Locator, width: number) => {
+    await expect(dialog).not.toHaveAttribute('data-placement')
+    const box = await dialog.boundingBox()
+    if (!box) throw new Error('dialog has no box')
+    expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(2)
+    expect(box.x).toBeGreaterThan(0)
+    expect(box.x + box.width).toBeLessThan(width)
+  }
+
+  const desktop = page.viewportSize()?.width ?? 1280
+  await panel(page).getByRole('button', { name: '添加域名' }).click()
+  let dialog = page.getByRole('dialog', { name: '添加域名' })
+  await expect(dialog).toBeVisible()
+  await center(dialog, desktop)
+  await dialog.getByRole('button', { name: '关闭' }).click()
+
+  await openMenu(page, 'primary.example.com')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: 'primary.example.com' })
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toHaveAttribute('data-size', 'l')
+  await center(dialog, desktop)
+  await dialog.getByRole('button', { name: '关闭' }).click()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await panel(page).getByRole('button', { name: '添加域名' }).click()
+  dialog = page.getByRole('dialog', { name: '添加域名' })
+  await expect(dialog).toBeVisible()
+  await center(dialog, 390)
+  await dialog.getByRole('button', { name: '关闭' }).click()
+
+  await openMenu(page, 'primary.example.com')
+  await page.getByRole('button', { name: '查看详情', exact: true }).click()
+  dialog = page.getByRole('dialog', { name: 'primary.example.com' })
+  await expect(dialog).toBeVisible()
+  await center(dialog, 390)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+})
+
 test.describe('390px domain list', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
@@ -841,17 +1024,18 @@ test.describe('390px domain list', () => {
 
     await openMenu(page, hostname)
     await page.getByRole('button', { name: '查看详情', exact: true }).click()
-    const drawer = page.getByRole('dialog', { name: hostname })
-    await expect(drawer).toBeVisible()
-    const full = await drawer.evaluate((element) => {
-      const style = getComputedStyle(element)
-      const rect = element.getBoundingClientRect()
-      return {
-        expected: Number.parseFloat(style.getPropertyValue('--dialog-viewport-width')),
-        actual: rect.width,
-      }
-    })
-    expect(Math.abs(full.actual - full.expected)).toBeLessThan(2)
+    const dialog = page.getByRole('dialog', { name: hostname })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).not.toHaveAttribute('data-placement')
+    await expect(dialog).toHaveAttribute('data-size', 'l')
+    const box = await dialog.boundingBox()
+    expect(box).not.toBeNull()
+    expect(Math.abs(box!.x + box!.width / 2 - 195)).toBeLessThan(2)
+    expect(box!.x).toBeGreaterThanOrEqual(15)
+    expect(box!.x + box!.width).toBeLessThanOrEqual(375)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await expect(dialog.getByText('挑战有效期 120 秒')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '验证', exact: true })).toBeVisible()
   })
 })
 test('the Worker CSP permits both cross-origin verification paths', async ({ page }) => {

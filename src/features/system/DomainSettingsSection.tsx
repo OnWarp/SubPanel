@@ -1,6 +1,6 @@
 import { Dialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
-import { Input } from '../../ui/Controls'
+import { FormSelect, Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Check, CircleAlert, Clock, Info, Minus, Plus, type LucideIcon } from 'lucide-react'
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -19,6 +19,22 @@ import { StatusMessage } from '../../ui/StatusMessage'
 import { scheduleHintPosition, useHintBubbleTracking } from '../../ui/hint-placement'
 import { Switch } from '../../ui/Switch'
 import { OperationsFooter } from '../admin/OperationsCard'
+import {
+  AUTO_PLATFORM,
+  PLATFORM_RENDERER_OPTIONS,
+  addPlatform,
+  buildPlatformPayload,
+  hasPlatformErrors,
+  isAutoPlatform,
+  movePlatform,
+  removePlatform,
+  rendererLabel,
+  updatePlatform,
+  validatePlatformDraft,
+  type PlatformDraft,
+  type PlatformDraftErrors,
+  type PlatformSetting as PlatformItem,
+} from './platform-settings'
 
 type DomainKind = 'panel' | 'subscription'
 type VerificationStatus = 'pending' | 'verified' | 'failed'
@@ -63,12 +79,7 @@ type DomainsResponse = {
   restrictionEnabled: boolean
 }
 
-type PlatformItem = {
-  platform: string
-  displayName: string
-  enabled: boolean
-  sortOrder: number
-}
+type PlatformEditor = { mode: 'add' } | { mode: 'edit'; platform: string }
 
 type Challenge = { nonce: string; challengeId: string; expiresAt: string }
 type DetailRequest = { kind: DomainKind; id: string; nonce: number; autoStart: boolean }
@@ -111,6 +122,16 @@ function errorText(cause: unknown): string {
   if (cause instanceof ApiClientError) return cause.message
   if (cause instanceof Error && cause.message) return cause.message
   return '操作失败'
+}
+
+/** 400 names the offending field and key; 422 means the body shape itself was rejected. */
+function platformErrorText(cause: unknown): string {
+  if (cause instanceof ApiClientError) {
+    if (cause.status === 400) return cause.message || '平台配置无效'
+    if (cause.status === 422) return `请求格式无效：${cause.message || '请稍后重试'}`
+    return cause.message || '保存平台设置失败'
+  }
+  return errorText(cause) || '保存平台设置失败'
 }
 
 function formatTime(value: string | null): string {
@@ -395,6 +416,9 @@ export function DomainSettingsSection() {
   const [kindLock, setKindLock] = useState<DomainKind | null>(null)
   const [restrictionBusy, setRestrictionBusy] = useState(false)
   const [platformSaving, setPlatformSaving] = useState(false)
+  const [platformEditor, setPlatformEditor] = useState<PlatformEditor | null>(null)
+  const [pendingPlatformDelete, setPendingPlatformDelete] = useState<PlatformItem | null>(null)
+  const [platformDeleteError, setPlatformDeleteError] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [noteId, setNoteId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DomainItem | null>(null)
@@ -439,6 +463,9 @@ export function DomainSettingsSection() {
   const rows = domains ? sortDomains(domains[kind].map((item) => ({ ...item, isPrimary: item.id === primaryIdOf(domains, kind) }))) : []
   const active = detail && domains ? domains[detail.kind].find((item) => item.id === detail.id) ?? null : null
   const noteItem = noteId && domains ? domains[kind].find((item) => item.id === noteId) ?? null : null
+  const platformEditingItem = platformEditor?.mode === 'edit' && platforms
+    ? platforms.find((entry) => entry.platform === platformEditor.platform) ?? null
+    : null
   const busy = kindLock === kind
 
   const showDetail = (nextKind: DomainKind, id: string, refresh = false) => {
@@ -586,33 +613,56 @@ export function DomainSettingsSection() {
     }
   }
 
-  const savePlatforms = async (next: PlatformItem[]) => {
+  const commitPlatforms = async (next: PlatformItem[]): Promise<string | null> => {
+    if (!platforms) return '平台设置尚未加载'
+    const previous = platforms
     setPlatforms(next)
     setPlatformSaving(true)
     setFeedback(null)
     try {
       const result = await api<{ platforms: PlatformItem[] }>('/api/admin/system/subscription-platforms', {
         method: 'PUT',
-        body: jsonBody({ platforms: next.map((entry) => ({ platform: entry.platform, enabled: entry.enabled })) }),
+        body: jsonBody(buildPlatformPayload(next)),
       })
       setPlatforms(result.platforms)
-      setFeedback({ tone: 'success', text: '平台展示设置已保存' })
+      setFeedback({ tone: 'success', text: '平台设置已保存' })
+      return null
     } catch (cause) {
-      setFeedback({ tone: 'error', text: errorText(cause) || '保存平台展示设置失败' })
-      await load()
+      setPlatforms(previous)
+      const text = platformErrorText(cause)
+      setFeedback({ tone: 'error', text })
+      return text
     } finally {
       setPlatformSaving(false)
     }
   }
 
-  const movePlatform = (index: number, direction: -1 | 1) => {
-    if (!platforms) return
-    const target = index + direction
-    if (target < 0 || target >= platforms.length) return
-    const next = [...platforms]
-    const [entry] = next.splice(index, 1)
-    next.splice(target, 0, entry)
-    void savePlatforms(next)
+  const movePlatformRow = (index: number, direction: -1 | 1) => {
+    if (!platforms || platformSaving) return
+    void commitPlatforms(movePlatform(platforms, index, direction))
+  }
+
+  const togglePlatform = (key: string, enabled: boolean) => {
+    if (!platforms || platformSaving) return
+    void commitPlatforms(platforms.map((entry) => entry.platform === key ? { ...entry, enabled } : entry))
+  }
+
+  const savePlatformEditor = async (draft: PlatformDraft, originalKey?: string): Promise<string | null> => {
+    if (!platforms) return '平台设置尚未加载'
+    const next = originalKey ? updatePlatform(platforms, originalKey, draft) : addPlatform(platforms, draft)
+    return commitPlatforms(next)
+  }
+
+  const removePlatformRow = async () => {
+    if (!pendingPlatformDelete || !platforms) return
+    const message = await commitPlatforms(removePlatform(platforms, pendingPlatformDelete.platform))
+    if (message) {
+      setPlatformDeleteError(message)
+      return
+    }
+    setPendingPlatformDelete(null)
+    setPlatformDeleteError('')
+    setFeedback({ tone: 'success', text: '平台已删除' })
   }
 
   const toggleRestriction = async (enabled: boolean) => {
@@ -647,20 +697,37 @@ export function DomainSettingsSection() {
         </FormGroup>
       ) : null}
       {domains ? (
-        <FormGroup id="sys-platform-title" title="订阅平台展示" hintTip="关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响">
+        <FormGroup id="sys-platform-title" title="订阅平台展示" hintTip="关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响；渲染器决定该平台链接返回的客户端格式">
           {platforms ? (
-            <ul className="dom-platform-list">
-              {platforms.map((entry, index) => (
-                <li className="dom-platform-row" key={entry.platform}>
-                  <span className="dom-platform-name"><strong>{entry.displayName}</strong><span>{entry.platform}</span></span>
-                  <span className="dom-platform-actions">
-                    <button className="icon-button" type="button" aria-label={`上移 ${entry.displayName}`} disabled={platformSaving || index === 0} onClick={() => movePlatform(index, -1)}><ArrowUp aria-hidden="true" size={16} /></button>
-                    <button className="icon-button" type="button" aria-label={`下移 ${entry.displayName}`} disabled={platformSaving || index === platforms.length - 1} onClick={() => movePlatform(index, 1)}><ArrowDown aria-hidden="true" size={16} /></button>
-                    <Switch checked={entry.enabled} disabled={platformSaving} ariaLabel={`${entry.displayName} 展示`} onChange={(enabled) => { void savePlatforms(platforms.map((item) => item.platform === entry.platform ? { ...item, enabled } : item)) }} />
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="dom-platform-list">
+                {platforms.map((entry, index) => (
+                  <li className="dom-platform-row" key={entry.platform}>
+                    <span className="dom-platform-name">
+                      <strong>{entry.displayName}</strong>
+                      <span>{entry.platform}</span>
+                      <span className="dom-platform-renderer">{rendererLabel(entry.renderer)}</span>
+                    </span>
+                    <span className="dom-platform-actions">
+                      <button className="icon-button" type="button" aria-label={`上移 ${entry.displayName}`} disabled={platformSaving || index === 0} onClick={() => movePlatformRow(index, -1)}><ArrowUp aria-hidden="true" size={16} /></button>
+                      <button className="icon-button" type="button" aria-label={`下移 ${entry.displayName}`} disabled={platformSaving || index === platforms.length - 1} onClick={() => movePlatformRow(index, 1)}><ArrowDown aria-hidden="true" size={16} /></button>
+                      <Switch checked={entry.enabled} disabled={platformSaving} ariaLabel={`${entry.displayName} 展示`} onChange={(enabled) => togglePlatform(entry.platform, enabled)} />
+                      <RowActions label={`${entry.displayName} 更多操作`} actions={[
+                        { label: '编辑', disabled: platformSaving, onClick: () => setPlatformEditor({ mode: 'edit', platform: entry.platform }) },
+                        { label: '删除', danger: true, disabled: platformSaving, onClick: () => { setPlatformDeleteError(''); setPendingPlatformDelete(entry) } },
+                      ]} />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="dom-platform-add">
+                <button className="button secondary" type="button" disabled={platformSaving} onClick={() => setPlatformEditor({ mode: 'add' })}>
+                  <Plus aria-hidden="true" size={16} />添加平台
+                </button>
+              </div>
+            </>
+          ) : loadError ? (
+            <StatusMessage tone="error">{loadError}</StatusMessage>
           ) : null}
         </FormGroup>
       ) : null}
@@ -745,6 +812,27 @@ export function DomainSettingsSection() {
       </section>
 
       <AddDomainDialog open={addOpen} kind={kind} onClose={() => setAddOpen(false)} onAdd={addDomain} />
+      <PlatformDialog
+        key={platformEditor ? `${platformEditor.mode}:${platformEditor.mode === 'edit' ? platformEditor.platform : 'new'}` : 'platform-closed'}
+        open={platformEditor !== null}
+        item={platformEditingItem}
+        platforms={platforms ?? []}
+        onClose={() => setPlatformEditor(null)}
+        onSave={savePlatformEditor}
+      />
+      <ConfirmDialog
+        open={pendingPlatformDelete !== null}
+        title="删除平台"
+        description={pendingPlatformDelete ? `删除 ${pendingPlatformDelete.displayName} 后，该平台的订阅链接将不可用` : ''}
+        confirmLabel="确认删除"
+        danger
+        busy={platformSaving}
+        appearance="content"
+        onClose={() => { if (!platformSaving) { setPendingPlatformDelete(null); setPlatformDeleteError('') } }}
+        onConfirm={() => { removePlatformRow().catch(() => undefined) }}
+      >
+        {platformDeleteError ? <StatusMessage tone="error">{platformDeleteError}</StatusMessage> : null}
+      </ConfirmDialog>
       <NoteDialog item={noteItem} busy={busy} onClose={() => setNoteId(null)} onSave={saveNote} />
       <DomainDetail
         key={detail ? `${detail.id}:${detail.nonce}` : undefined}
@@ -782,6 +870,103 @@ export function DomainSettingsSection() {
         {deleteError ? <StatusMessage tone="error">{deleteError}</StatusMessage> : null}
       </ConfirmDialog>
     </Section>
+  )
+}
+
+function PlatformDialog({ open, item, platforms, onClose, onSave }: {
+  open: boolean
+  item: PlatformItem | null
+  platforms: PlatformItem[]
+  onClose: () => void
+  onSave: (draft: PlatformDraft, originalKey?: string) => Promise<string | null>
+}) {
+  const idPrefix = useId()
+  const fixedAuto = isAutoPlatform(item?.platform ?? '')
+  const [draft, setDraft] = useState<PlatformDraft>(() => item
+    ? { platform: item.platform, displayName: item.displayName, enabled: item.enabled, renderer: item.renderer }
+    : { platform: '', displayName: '', enabled: true, renderer: PLATFORM_RENDERER_OPTIONS[0].value })
+  const [errors, setErrors] = useState<PlatformDraftErrors>({})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const draftIsAuto = isAutoPlatform(draft.platform.trim())
+
+  const update = (patch: Partial<PlatformDraft>) => {
+    setDraft((current) => {
+      const next = { ...current, ...patch }
+      if (patch.platform !== undefined) {
+        if (isAutoPlatform(next.platform.trim())) next.renderer = AUTO_PLATFORM
+        else if (next.renderer === AUTO_PLATFORM) next.renderer = PLATFORM_RENDERER_OPTIONS[0].value
+      }
+      return next
+    })
+    setErrors({})
+    setError('')
+  }
+
+  const dirty = open && (item
+    ? draft.platform !== item.platform || draft.displayName !== item.displayName
+      || draft.enabled !== item.enabled || draft.renderer !== item.renderer
+    : draft.platform !== '' || draft.displayName !== '' || draft.renderer !== PLATFORM_RENDERER_OPTIONS[0].value || !draft.enabled)
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault()
+    if (saving) return
+    const candidate: PlatformDraft = {
+      ...draft,
+      platform: draft.platform.trim(),
+      displayName: draft.displayName.trim(),
+      renderer: draftIsAuto ? AUTO_PLATFORM : draft.renderer,
+    }
+    const nextErrors = validatePlatformDraft(candidate, platforms, item?.platform)
+    setErrors(nextErrors)
+    if (hasPlatformErrors(nextErrors)) return
+    setSaving(true)
+    setError('')
+    try {
+      const message = await onSave(candidate, item?.platform)
+      if (message) setError(message)
+      else onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      title={item ? '编辑平台' : '添加平台'}
+      size="m"
+      appearance="content"
+      busy={saving}
+      dirty={dirty}
+      onClose={() => { if (!saving) onClose() }}
+      footer={(cancel) => <>
+        <button className="button secondary" type="button" disabled={saving} onClick={cancel}>取消</button>
+        <button className="button primary" form={`${idPrefix}-form`} type="submit" disabled={saving}>{item ? '保存' : '添加'}</button>
+      </>}
+    >
+      <form id={`${idPrefix}-form`} className="form-stack" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
+        <FormField label="平台键" htmlFor={`${idPrefix}-key`} error={errors.platform} hint={fixedAuto ? '自动识别平台不可改键' : '拼在订阅链接末尾，改键后旧链接失效'}>
+          <Input id={`${idPrefix}-key`} value={draft.platform} disabled={saving || fixedAuto} maxLength={64} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => update({ platform: event.currentTarget.value })} />
+        </FormField>
+        <FormField label="显示名" htmlFor={`${idPrefix}-name`} error={errors.displayName}>
+          <Input id={`${idPrefix}-name`} value={draft.displayName} disabled={saving} maxLength={64} autoComplete="off" onChange={(event) => update({ displayName: event.currentTarget.value })} />
+        </FormField>
+        <FormField label="渲染器" htmlFor={`${idPrefix}-renderer`} error={errors.renderer}>
+          {fixedAuto || draftIsAuto ? (
+            <Input id={`${idPrefix}-renderer`} value="自动识别" disabled readOnly />
+          ) : (
+            <FormSelect id={`${idPrefix}-renderer`} value={draft.renderer} disabled={saving} onChange={(event) => update({ renderer: event.currentTarget.value })}>
+              {PLATFORM_RENDERER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FormSelect>
+          )}
+        </FormField>
+        <FormField label="展示">
+          <Switch checked={draft.enabled} disabled={saving} ariaLabel="展示" onChange={(enabled) => update({ enabled })} />
+        </FormField>
+        {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}
+      </form>
+    </Dialog>
   )
 }
 
@@ -1016,7 +1201,7 @@ function DomainDetail({ item, request, onClose, onFailure, onVerified, verifyAbo
   const serviceState = sessionProbe ?? (item ? probeOf(item.health, 'service') : 'unchecked')
   const actionLabel = verifying ? '正在验证' : outcome.phase === 'failed' ? '重试' : outcome.phase === 'success' ? '重新验证' : '验证'
   return (
-    <Dialog open={item !== null} title={item?.hostname ?? '域名详情'} placement="end" appearance="content" size="m" className="sys-domain-drawer" onClose={onClose}
+    <Dialog open={item !== null} title={item?.hostname ?? '域名详情'} appearance="content" size="l" onClose={onClose}
       headerStatus={item ? <Mark status={item.verificationStatus} /> : undefined}
       footer={() => (
         <button className="button primary" type="button" disabled={!item || verifying} onClick={() => runRef.current()}>{actionLabel}</button>

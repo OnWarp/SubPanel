@@ -423,6 +423,7 @@ const writeFamilies: Array<[string[], string[]]> = [
   [['/api/admin/notices'], ['/api/admin/notices', '/api/notices']],
   [['/api/admin/kb'], ['/api/admin/kb', '/api/kb']],
   [['/api/admin/system/domains', '/api/admin/system/domain-restriction'], ['/api/admin/system/domains', '/api/admin/system/domain-restriction']],
+  [['/api/admin/system/subscription-platforms'], ['/api/admin/system/subscription-platforms', '/api/account/subscription-platforms']],
 ]
 const sessionWrites = new Set([
   '/api/login', '/api/setup', '/api/register', '/api/password/reset',
