@@ -40,8 +40,7 @@ FROM plans WHERE true
 ON CONFLICT (source_type, source_id) DO NOTHING;
 
 -- Direct node selections are retained verbatim in remark.direct_node_ids for
--- pre-cutover reconciliation. They must be materialized as group membership
--- before enabling any plan reader that would otherwise lose those nodes.
+-- pre-cutover reconciliation. The plan reader resolves these IDs directly.
 INSERT INTO plan_node_groups (plan_id, group_id)
 SELECT p.id, g.id
 FROM plan_definitions p
@@ -141,3 +140,6 @@ ON CONFLICT (id) DO NOTHING;
 -- SELECT count(*) AS legacy_receipts_without_user FROM redemption_records r WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = r.user_id);
 -- SELECT count(*) AS overlapping_receipt_requests FROM redemption_records r JOIN binding_redemption_records b ON b.user_id = r.user_id AND b.idempotency_key = r.idempotency_key;
 -- SELECT count(*) AS direct_nodes_missing FROM plan_definitions p JOIN json_each(p.remark, '$.direct_node_ids') n WHERE p.source_type = 'template' AND NOT EXISTS (SELECT 1 FROM nodes WHERE id = n.value);
+-- Compare direct selections in both directions against the imported template version.
+-- SELECT p.id, n.value AS missing_direct_node FROM plan_definitions p JOIN entitlement_template_versions v ON v.id=json_extract(p.remark, '$.template_version_id') JOIN json_each(v.config_json, '$.nodeIds') n WHERE p.source_type='template' AND NOT EXISTS (SELECT 1 FROM json_each(p.remark, '$.direct_node_ids') d WHERE d.value=n.value);
+-- SELECT p.id, n.value AS extra_direct_node FROM plan_definitions p JOIN entitlement_template_versions v ON v.id=json_extract(p.remark, '$.template_version_id') JOIN json_each(p.remark, '$.direct_node_ids') n WHERE p.source_type='template' AND NOT EXISTS (SELECT 1 FROM json_each(v.config_json, '$.nodeIds') d WHERE d.value=n.value);

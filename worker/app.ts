@@ -3,7 +3,7 @@ import { compileJobRoutes } from './delivery/compile-jobs.js'
 import { adminManagementRoutes } from './admin/routes.js'
 import { auditAdminMutation } from './admin/audit.js'
 import { adminPlanRoutes, userPlanRoutes } from './delivery/plan-routes.js'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import type { AppEnv } from './app-env.js'
 import { accountRoutes } from './accounts/account-routes.js'
 import { adminAccountRoutes } from './accounts/admin-routes.js'
@@ -24,6 +24,7 @@ import { hostGate } from './domains/host-gate.js'
 import { adminDomainRoutes, domainProbeRoutes, publicSystemRoutes, userDomainRoutes } from './domains/routes.js'
 import { unifiedAdminRoutes, unifiedPublicRoutes, unifiedUserRoutes } from './delivery/unified-routes.js'
 import { adminNoticeRoutes, adminTicketRoutes, noticeRoutes, userTicketRoutes } from './tickets/routes.js'
+import { adminPhase3Routes, userPhase3Routes } from './plans/routes.js'
 import { adminKbRoutes, userKbRoutes } from './kb/routes.js'
 
 export const app = new Hono<AppEnv>()
@@ -31,7 +32,14 @@ export const app = new Hono<AppEnv>()
 app.use('*', securityHeaders)
 app.use('/api/*', noStore)
 app.use('/api/*', originGuard)
-app.use('/sub/*', noStore)
+app.use('/s/*', subscriptionPrivacy)
+app.use('/sub/*', subscriptionPrivacy)
+
+async function subscriptionPrivacy(c: Context<AppEnv>, next: () => Promise<void>) {
+  c.header('Cache-Control', 'private, no-store')
+  c.header('Referrer-Policy', 'no-referrer')
+  await next()
+}
 app.use('*', hostGate)
 
 app.get('/api/health', c => c.json({ ok: true }))
@@ -42,9 +50,9 @@ app.route('/api', registrationRoutes)
 app.use('/api/account', requireAuth)
 app.use('/api/account/*', requireAuth)
 app.route('/api/account', accountRoutes)
-app.use('/api/me/subscriptions/*', requireAuth)
 app.use('/api/me/redemptions/*', requireAuth)
 app.route('/api/me/redemptions', userRedemptionRoutes)
+app.route('/api/me', userPhase3Routes)
 app.use('/api/subscriptions', requireAuth)
 app.use('/api/subscriptions/*', requireAuth)
 app.use('/api/user/subscriptions', requireAuth)
@@ -74,6 +82,7 @@ app.route('/api/admin', adminManagementRoutes)
 app.route('/api/admin', adminRedemptionRoutes)
 app.route('/api/admin', adminAccountRoutes)
 app.route('/api/admin', adminPlanRoutes)
+app.route('/api/admin', adminPhase3Routes)
 app.route('/api/account', userPlanRoutes)
 app.route('/api/admin', adminRegistrationRoutes)
 app.route('/api/admin', migrationRoutes)

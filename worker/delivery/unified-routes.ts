@@ -1,3 +1,7 @@
+import { planUserEnabled, readPlanUser } from '../plans/entitlements.js'
+import { resolveForApi } from '../plans/routes.js'
+import { changeToken, readOwnedInstance } from '../plans/service.js'
+import { hasPlanAggregate, planStorageAvailable, readAliasTarget, readPlanToken } from '../plans/tokens.js'
 import { tokenPattern } from './subscription-token.js'
 import { readShare, readShareSettings } from '../shares/repository.js'
 import { noteSubscriptionFetch, readUserFetchSummary, stageSubscriptionFetch } from './fetch-stats.js'
@@ -18,7 +22,7 @@ import { renderResolvedSubscription } from './compiler.js'
 import { createEntitlementTemplate, templateInputSchema } from './entitlement-templates.js'
 import { allowSubscriptionFetch } from './public-rate-limit.js'
 import { clientIdSchema } from './schema.js'
-import { loadUnifiedArtifact } from './unified-artifacts.js'
+import { enforceUnifiedOutputLimit, loadUnifiedArtifact } from './unified-artifacts.js'
 import { accountAvailable, prepareUserAccess, readUserAccess, requireUnifiedSubscription, resetUserToken, revealUserToken, subscriptionNotFound, unifiedOperationsEnabled } from './user-access.js'
 
 const resetInput = z.strictObject({ expectedRevision: z.number().int().positive() })
@@ -92,7 +96,11 @@ unifiedUserRoutes.post('/reset-token', async c => {
   const user = c.get('principal').id
   const access = await readUserAccess(c.env.DB, { userId: user })
   if (!accountAvailable(access) || access.revision === null) throw subscriptionNotFound()
-  await resetUserToken(c.env, user, access.revision, user)
+  if (await planStorageAvailable(c.env.DB) && await hasPlanAggregate(c.env.DB, user)) {
+    await changeToken(c.env, user, null, user, 'reset', access.revision)
+  } else {
+    await resetUserToken(c.env, user, access.revision, user)
+  }
   return c.json({ ok: true })
 })
 
@@ -165,7 +173,13 @@ unifiedAdminRoutes.post(`${bindings}/replace`, async c => {
 
 unifiedAdminRoutes.post(`${subscription}/reset-token`, async c => {
   const input = await readJson(c, resetInput)
-  return c.json(await resetUserToken(c.env, c.req.param('id'), input.expectedRevision, c.get('principal').id))
+  const id = c.req.param('id')
+  const actor = c.get('principal').id
+  if (await planStorageAvailable(c.env.DB) && await hasPlanAggregate(c.env.DB, id)) {
+    await changeToken(c.env, id, null, actor, 'reset', input.expectedRevision)
+    return c.json({ revision: input.expectedRevision + 1 })
+  }
+  return c.json(await resetUserToken(c.env, id, input.expectedRevision, actor))
 })
 
 unifiedAdminRoutes.get(`${subscription}/summary`, async c => {
@@ -246,7 +260,7 @@ async function shareShell(c: Context<AppEnv>): Promise<Response> {
   return new Response(html, { status: shell.status, headers })
 }
 
-unifiedPublicRoutes.use('/s/*', async (c, next) => {
+async function limitPublicFetch(c: Context<AppEnv>, next: () => Promise<void>) {
   c.header('Cache-Control', 'private, no-store')
   c.header('Referrer-Policy', 'no-referrer')
   const address = c.req.header('CF-Connecting-IP') ?? 'no-edge-address'
@@ -255,53 +269,122 @@ unifiedPublicRoutes.use('/s/*', async (c, next) => {
   const globalLimit = Number.isSafeInteger(configured) && configured > 0 ? configured : 2400
   if (!await allowSubscriptionFetch(c.env.DB, 'global', 'all', globalLimit, 'unified_subscription')) throw publicRateLimited(c)
   await next()
+}
+
+unifiedPublicRoutes.use('/s/*', limitPublicFetch)
+unifiedPublicRoutes.use('/sub/*', limitPublicFetch)
+
+function publicClient(c: Context<AppEnv>, defaultClient?: string | null) {
+  const detected = clientFromUserAgent(c.req.header('User-Agent') ?? '')
+  const requested = (c.req.param('client') ?? c.req.query('format') ??
+    (detected === 'generic' ? defaultClient ?? detected : detected)).toLowerCase()
+  const client = clientIdSchema.safeParse(clientAliases[requested] ?? requested)
+  if (!client.success) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+  return client.data
+}
+
+function etagMatches(c: Context<AppEnv>, etag: string) {
+  return c.req.header('If-None-Match')?.split(',')
+    .some(value => value.trim().replace(/^W\//u, '') === etag)
+}
+
+async function renderPlanLink(c: Context<AppEnv>, userId: string, instanceId: string | null) {
+  const db = c.env.DB
+  const user = await readPlanUser(db, userId)
+  if (!planUserEnabled(user)) throw subscriptionNotFound()
+  if (instanceId !== null) {
+    const instance = await readOwnedInstance(db, instanceId, userId)
+    if (!instance || instance.status === 'revoked') throw subscriptionNotFound()
+  }
+  if (!await allowSubscriptionFetch(db, 'subscription', `user:${userId}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
+  const now = Date.now()
+  const access = await readUserAccess(db, { userId })
+  const client = publicClient(c, access?.default_client)
+  const { catalog, nodes } = await resolveForApi(db, user, instanceId, now)
+  const artifact = await renderResolvedSubscription(c.env, { id: null, revision: access?.revision ?? 1 }, client,
+    { catalog, nodes, speed: 0, zeroNodeReason: nodes.length ? null : 'noEnabledNodes' }, new Date(now).toISOString())
+  enforceUnifiedOutputLimit(artifact.body)
+  c.header('Cache-Control', 'private, no-store')
+  c.header('Referrer-Policy', 'no-referrer')
+  c.header('Content-Type', artifact.contentType)
+  c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
+  c.header('x-subscription-client', client)
+  if (artifact.available) {
+    c.header('ETag', artifact.etag)
+    if (etagMatches(c, artifact.etag)) return c.body(null, 304)
+  }
+  return c.body(artifact.body)
+}
+
+unifiedPublicRoutes.get('/sub/:token/:client?', async c => {
+  const raw = c.req.param('token')
+  if (!tokenPattern.test(raw) || !await planStorageAvailable(c.env.DB)) return c.notFound()
+  const digest = await hashToken(raw)
+  if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${digest}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
+  const target = await readAliasTarget(c.env.DB, digest)
+  if (!target) return c.notFound()
+  try {
+    await requireUnifiedSubscription(c.env.DB, true)
+    return await renderPlanLink(c, target.userId, target.instanceId)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return c.notFound()
+    throw error
+  }
 })
 
 unifiedPublicRoutes.get('/s/:token/:client?', async c => {
   const started = Date.now()
   const raw = c.req.param('token')
   const document = shareDocument(c)
+  // Legacy browser navigations still reach the share UI for short or malformed
+  // links. Phase 3 credentials have a fixed 43-character shape.
+  const legacyDocument = document && raw.length !== 43
   if (!tokenPattern.test(raw)) {
-    if (document) return shareShell(c)
+    if (legacyDocument) return shareShell(c)
     throw subscriptionNotFound()
   }
   const tokenHash = await hashToken(raw)
   if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `token:${tokenHash}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
+  const planStorage = await planStorageAvailable(c.env.DB)
+  const planToken = planStorage ? await readPlanToken(c.env.DB, tokenHash) : null
+  if (planToken) {
+    if (planToken.revoked_at !== null) throw subscriptionNotFound()
+    await requireUnifiedSubscription(c.env.DB, true)
+    const instanceId = planToken.scope === 'package' ? planToken.user_plan_id : null
+    if (planToken.scope === 'package' && instanceId === null) throw subscriptionNotFound()
+    return renderPlanLink(c, planToken.user_id, instanceId)
+  }
   if (document && await readShare(c.env, tokenHash)) return shareShell(c)
   try {
     await requireUnifiedSubscription(c.env.DB, true)
   } catch (error) {
-    if (document && error instanceof ApiError && error.code === 'SUBSCRIPTION_NOT_FOUND') return shareShell(c)
+    if ((legacyDocument || document && !planStorage) && error instanceof ApiError && error.code === 'SUBSCRIPTION_NOT_FOUND') return shareShell(c)
     throw error
   }
   const access = await readUserAccess(c.env.DB, { tokenHash })
   if (!accountAvailable(access) || access.enabled !== 1) {
-    if (document) return shareShell(c)
+    if (legacyDocument || document && !planStorage) return shareShell(c)
     throw subscriptionNotFound()
   }
+  if (planStorage && await hasPlanAggregate(c.env.DB, access.user_id)) throw subscriptionNotFound()
   if (!await allowSubscriptionFetch(c.env.DB, 'subscription', `user:${access.user_id}`, undefined, 'unified_subscription')) throw publicRateLimited(c)
 
-  const detected = clientFromUserAgent(c.req.header('User-Agent') ?? '')
-  const requested = (c.req.param('client') ?? c.req.query('format') ??
-    (detected === 'generic' ? access.default_client ?? detected : detected)).toLowerCase()
-  const client = clientIdSchema.safeParse(clientAliases[requested] ?? requested)
-  if (!client.success) throw apiError(404, 'SUBSCRIPTION_CLIENT_NOT_FOUND', '订阅格式不存在')
+  const client = publicClient(c, access.default_client)
   let status = 500
   try {
-    const artifact = await loadUnifiedArtifact(c.env, access.user_id, tokenHash, client.data)
-    if (!artifact.available && (client.data === 'mihomo' || artifact.inputNodes > 0)) {
+    const artifact = await loadUnifiedArtifact(c.env, access.user_id, tokenHash, client)
+    if (!artifact.available && (client === 'mihomo' || artifact.inputNodes > 0)) {
       throw apiError(422, 'SUBSCRIPTION_NO_NODES', '该订阅没有可用节点')
     }
     c.header('Content-Type', artifact.contentType)
     c.header('Content-Disposition', `attachment; filename="${artifact.fileName.replaceAll('"', '')}"`)
     c.header('ETag', artifact.etag)
-    c.header('x-subscription-client', client.data)
-    if (artifact.available && c.req.header('If-None-Match')?.split(',')
-      .some(value => value.trim().replace(/^W\//u, '') === artifact.etag)) {
+    c.header('x-subscription-client', client)
+    if (artifact.available && etagMatches(c, artifact.etag)) {
         status = 304
         return c.body(null, 304)
       }
-      status = 200
+    status = 200
     return c.body(artifact.body)
   } catch (err) {
     if (err instanceof ApiError) status = err.status
@@ -309,7 +392,7 @@ unifiedPublicRoutes.get('/s/:token/:client?', async c => {
   } finally {
     const key = `user:${access.user_id}`
     stageSubscriptionFetch(key, {
-      at: new Date().toISOString(), platform: client.data, ok: status < 400, status, durationMs: Date.now()-started,
+      at: new Date().toISOString(), platform: client, ok: status < 400, status, durationMs: Date.now()-started,
     })
     c.executionCtx.waitUntil(noteSubscriptionFetch(c.env.DATA, key))
   }
