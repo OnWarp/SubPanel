@@ -127,7 +127,13 @@ body:has(.app-layout) { height: 100svh; overflow: hidden; }
 .workspace-content { width: 100%; max-width: none; min-width: 0; min-height: 0; margin: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; padding: 24px max(clamp(24px,4vw,64px), calc((100% - var(--size-content-max)) / 2)) 48px; }
 
 /* Sidebar collapsed (icon-only) */
-.sidebar-toggle { flex: 0 0 auto; }
+.sidebar-toggle { flex: 0 0 auto; width: 32px; height: 32px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); }
+/* Collapsed: the sidebar is hidden, so the way back gets an accent tint on
+   top of the flipped chevron — the state reads at a glance. */
+.app-layout .sidebar-toggle[aria-expanded='false'] { border-color: var(--color-primary); background: var(--color-primary-soft); }
+@media (hover: hover) {
+  .app-layout .sidebar-toggle[aria-expanded='false']:hover:not(:disabled) { background: var(--color-primary-soft); color: var(--color-text); }
+}
 .app-layout.sidebar-collapsed { grid-template-columns: var(--size-sidebar-collapsed) minmax(0,1fr); }
 .sidebar-collapsed .sidebar { padding: 10px 8px; }
 .sidebar-collapsed .sidebar-brand { justify-content: center; }

@@ -53,6 +53,10 @@ input.sp-checkbox:checked::after {
 .sp-form-select .sp-select-trigger { width: 100%; }
 .sp-switch input.sp-checkbox { position: absolute; opacity: 0; width: 1px; height: 1px; min-height: 0; }
 .sp-search input.sp-input { min-height: 0; box-shadow: none; }
+/* The wrapper draws the focus ring (see components.css); the inner input
+   must never draw its own outline or focus shows two frames. This beats the
+   content-ui global :focus-visible rule, which loads after this file. */
+.sp-search input.sp-input:focus-visible { outline: 0; }
 
 @media (width < 768px) {
   .sp-input, .sp-textarea { min-height: var(--size-touch-target); }

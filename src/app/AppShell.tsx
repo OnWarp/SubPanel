@@ -222,7 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <MobileBarContext value={mobileBar}>
         <PageFrame
           path={location.pathname}
-          leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={16} /> : <ChevronsLeft aria-hidden="true" size={16} />}</button>}
+          leadingTools={!hasAdminTopbar && <button className="icon-button sidebar-toggle" type="button" aria-label={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} aria-expanded={!sidebarCollapsed} title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'} onClick={toggleSidebar}>{sidebarCollapsed ? <ChevronsRight aria-hidden="true" size={18} /> : <ChevronsLeft aria-hidden="true" size={18} />}</button>}
           tools={!isAdmin && <ThemeMenu />}
           account={isAdmin && <div className="topbar-account"><AdminAccount placement="mobile" showMobileBarOptions={isMobile} signOut={signOut} onError={setSignOutError} /></div>}
           tabs={adminDomain?.section && !contentOwnsModuleTabs(location.pathname)

@@ -19,6 +19,7 @@ import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
 import { AssignPlanDialog } from './AssignPlanDialog'
 import { PlanEditor } from './PlanEditor'
+import './plans.css'
 import {
   errorText, formatDuration, formatInstant, groupSummary, instanceStatus, instanceStatusLabel, pageCountFor,
   planStatusLabel, sourceLabel, type PlanDefinition, type PlanInstance, type PlanStatus,
@@ -110,7 +111,7 @@ export function PlansPage() {
     <PageContainer width="list">
       <PageHeader placement="inline" id="plans-title" title="套餐管理" actions={<button className="button primary" type="button" onClick={() => setEditor('create')}><Plus aria-hidden="true" size={17} />新建套餐</button>} />
       <AdminModuleTabs />
-      <FilterBar onReset={query || status !== 'all' ? () => { setQuery(''); setStatus('all'); setPage(1) } : undefined}>
+      <FilterBar className="plans-filter" onReset={query || status !== 'all' ? () => { setQuery(''); setStatus('all'); setPage(1) } : undefined}>
         <SearchInput label="搜索套餐" placeholder="搜索名称、说明或备注" value={query} onChange={(value) => { setQuery(value); setPage(1) }} />
         <label className="filter-field">
           <span>状态</span>

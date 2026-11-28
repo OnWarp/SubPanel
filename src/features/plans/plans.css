@@ -1,0 +1,3 @@
+/* Plans admin list: keep the search field from spanning the whole content
+   column; it sits beside the status filter like other admin lists. */
+.plans-filter .sp-search { width: min(360px, 100%); }

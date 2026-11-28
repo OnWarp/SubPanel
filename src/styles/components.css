@@ -136,7 +136,9 @@
 }
 .sp-search:focus-within {
   border-color: var(--color-accent);
-  box-shadow: var(--shadow-focus);
+  /* Inset ring: the outer --shadow-focus ring painted past the box and read
+     as overflow against the table edge below. Same tint, kept inside. */
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-accent) 38%, transparent);
 }
 .sp-search > svg { flex: 0 0 auto; }
 .sp-search input {
