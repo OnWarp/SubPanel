@@ -647,7 +647,7 @@ export function DomainSettingsSection() {
         </FormGroup>
       ) : null}
       {domains ? (
-        <FormGroup id="sys-platform-title" title="订阅平台展示" hint="关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响">
+        <FormGroup id="sys-platform-title" title="订阅平台展示" hintTip="关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响">
           {platforms ? (
             <ul className="dom-platform-list">
               {platforms.map((entry, index) => (
@@ -688,7 +688,6 @@ export function DomainSettingsSection() {
             <ul className="sys-domain-rows">
               {rows.map((item) => {
                 const reason = switchReason(item)
-                const reasonId = `domain-switch-reason-${item.id}`
                 const eligible = canBePrimary(item)
                 return (
                   <li className="sys-domain-row" key={item.id} aria-busy={busy || undefined}>
@@ -717,24 +716,24 @@ export function DomainSettingsSection() {
                           checked={item.enabled}
                           disabled={busy || item.isPrimary || (item.verificationStatus !== 'verified' && !item.enabled)}
                           ariaLabel={reason ? `${item.hostname} 启用，${reason}` : `${item.hostname} 启用`}
-                          describedBy={reason ? reasonId : undefined}
                           onChange={(enabled) => { setEnabled(item, enabled).catch(() => undefined) }}
                         />
-                        {reason ? <span className="sys-domain-lock-reason" id={reasonId}>{reason}</span> : null}
                       </span>
-                      <RowActions label={`${item.hostname} 更多操作`} actions={[
-                        { label: '复制链接', disabled: busy, onClick: () => { copyLink(item).catch(() => undefined) } },
-                        { label: '编辑备注', disabled: busy, onClick: () => setNoteId(item.id) },
-                        { label: '重新验证', disabled: busy, onClick: () => showDetail(kind, item.id, true) },
-                        { label: '查看详情', disabled: busy, onClick: () => showDetail(kind, item.id) },
-                        {
-                          label: '删除',
-                          danger: true,
-                          disabled: busy || item.isPrimary,
-                          accessibleLabel: item.isPrimary ? `删除 ${item.hostname}，主链接不能删除，请先切换主链接` : `删除 ${item.hostname}`,
-                          onClick: () => { if (!item.isPrimary) { setDeleteError(''); setPendingDelete(item) } },
-                        },
-                      ]} />
+                      <span className="sys-domain-menu">
+                        <RowActions label={`${item.hostname} 更多操作`} actions={[
+                          { label: '复制链接', disabled: busy, onClick: () => { copyLink(item).catch(() => undefined) } },
+                          { label: '编辑备注', disabled: busy, onClick: () => setNoteId(item.id) },
+                          { label: '重新验证', disabled: busy, onClick: () => showDetail(kind, item.id, true) },
+                          { label: '查看详情', disabled: busy, onClick: () => showDetail(kind, item.id) },
+                          {
+                            label: '删除',
+                            danger: true,
+                            disabled: busy || item.isPrimary,
+                            accessibleLabel: item.isPrimary ? `删除 ${item.hostname}，主链接不能删除，请先切换主链接` : `删除 ${item.hostname}`,
+                            onClick: () => { if (!item.isPrimary) { setDeleteError(''); setPendingDelete(item) } },
+                          },
+                        ]} />
+                      </span>
                     </div>
                   </li>
                 )
@@ -772,7 +771,7 @@ export function DomainSettingsSection() {
       <ConfirmDialog
         open={pendingDelete !== null}
         title="删除域名"
-        description={pendingDelete ? `删除 ${pendingDelete.hostname} 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 或域名绑定，可另行清理基础设施` : ''}
+        description={pendingDelete ? `删除 ${pendingDelete.hostname} 后，使用该域名的旧链接将停止服务。不会删除 Cloudflare 上的 DNS 或域名绑定` : ''}
         confirmLabel="确认删除"
         danger
         busy={busy}
@@ -881,7 +880,7 @@ function NoteDialog({ item, busy, onClose, onSave }: {
       </>}>
       {item ? (
         <form id={`domain-note-${item.id}`} className="form-stack" onSubmit={(event) => { submit(event).catch(() => undefined) }}>
-          <FormField label="备注" htmlFor={`domain-note-input-${item.id}`} hint="可以清空。保存不会修改域名">
+          <FormField label="备注" htmlFor={`domain-note-input-${item.id}`} hint="可以清空">
             <Input id={`domain-note-input-${item.id}`} value={draft ?? item.note} maxLength={200} disabled={saving} onChange={(event) => setDraft(event.currentTarget.value)} />
           </FormField>
           {error ? <StatusMessage tone="error">{error}</StatusMessage> : null}

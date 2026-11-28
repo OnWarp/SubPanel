@@ -381,6 +381,30 @@ test('switches domain tabs and keeps restriction and platforms', async ({ page }
   await expect(primaryRow.locator('.sys-domain-mark')).toContainText('已验证')
   await expect(primaryRow.locator('.sys-domain-mark svg')).toHaveCount(1)
   await expect(panel(page).getByRole('listitem').filter({ hasText: 'failed.example.com' }).locator('.sys-domain-mark')).toContainText('验证失败')
+  await expect(page.getByText('关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响')).toBeHidden()
+  await page.getByRole('button', { name: '关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响' }).click()
+  await expect(page.getByRole('note', { name: '关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('关闭的平台不会出现在用户的订阅页与首页入口中，订阅内容生成不受影响')).toBeHidden()
+
+  const alignedHosts = ['primary.example.com', 'backup.example.com', 'pending.example.com']
+  const controlBoxes = await Promise.all(alignedHosts.map(async (hostname) => {
+    const row = panel(page).getByRole('listitem').filter({ hasText: hostname })
+    const read = async (selector: string) => {
+      const box = await row.locator(selector).boundingBox()
+      if (!box) throw new Error(`${hostname} ${selector} has no box`)
+      return box
+    }
+    return { radio: await read('.sys-domain-primary-choice'), toggle: await read('.sys-domain-switch'), menu: await read('.sys-domain-menu') }
+  }))
+  for (const box of controlBoxes.slice(1)) {
+    expect(Math.abs(box.radio.x - controlBoxes[0].radio.x)).toBeLessThan(2)
+    expect(Math.abs(box.toggle.x - controlBoxes[0].toggle.x)).toBeLessThan(2)
+    expect(Math.abs(box.menu.x - controlBoxes[0].menu.x)).toBeLessThan(2)
+  }
+  await expect(panel(page).locator('.sys-domain-lock-reason')).toHaveCount(0)
+  await expect(panel(page).getByText('请先切换主链接')).toHaveCount(0)
+  await expect(panel(page).getByText('请先验证')).toHaveCount(0)
 
   await page.getByRole('switch', { name: '域名限制' }).click()
   await expect(page.getByRole('switch', { name: '域名限制' })).toBeChecked()
@@ -463,11 +487,26 @@ test('toggles enablement and keeps unverified or primary switches locked', async
 
   const primarySwitch = page.getByRole('switch', { name: 'primary.example.com 启用，请先切换主链接' })
   await expect(primarySwitch).toBeDisabled()
-  await expect(primarySwitch).toHaveAttribute('aria-describedby', /domain-switch-reason-panel-primary/)
-  await expect(panel(page).getByRole('listitem').filter({ hasText: 'primary.example.com' })).toContainText('请先切换主链接')
+  await expect(primarySwitch).not.toHaveAttribute('aria-describedby')
+  await expect(panel(page).getByRole('listitem').filter({ hasText: 'primary.example.com' })).not.toContainText('请先切换主链接')
   const pendingSwitch = page.getByRole('switch', { name: 'pending.example.com 启用，请先验证' })
   await expect(pendingSwitch).toBeDisabled()
-  await expect(panel(page).getByRole('listitem').filter({ hasText: 'pending.example.com' })).toContainText('请先验证')
+  await expect(panel(page).getByRole('listitem').filter({ hasText: 'pending.example.com' })).not.toContainText('请先验证')
+  const locked = await primarySwitch.evaluate((element) => {
+    const label = element.closest('.sp-switch')
+    const track = label?.querySelector('.sp-switch-track')
+    if (!label || !track) return null
+    const labelStyle = getComputedStyle(label)
+    const trackStyle = getComputedStyle(track)
+    return { cursor: labelStyle.cursor, opacity: labelStyle.opacity, track: trackStyle.backgroundColor }
+  })
+  const openTrack = await page.getByRole('switch', { name: 'backup.example.com 启用' }).evaluate((element) => {
+    const track = element.closest('.sp-switch')?.querySelector('.sp-switch-track')
+    return track ? getComputedStyle(track).backgroundColor : ''
+  })
+  expect(locked?.cursor).toBe('not-allowed')
+  expect(locked?.track).toBeTruthy()
+  expect(locked?.track).not.toBe(openTrack)
 
   const oldSwitch = page.getByRole('switch', { name: 'old.example.com 启用' })
   await expect(oldSwitch).toBeChecked()
@@ -502,7 +541,7 @@ test('protects the primary domain and confirms deletion', async ({ page }) => {
   await openMenu(page, 'pending.example.com')
   await page.getByRole('button', { name: '删除 pending.example.com', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '删除域名' })
-  await expect(dialog).toContainText('删除 pending.example.com 后，使用该域名的旧链接将停止服务。此操作只移除应用层授权，不会自动删除 Cloudflare DNS 或域名绑定，可另行清理基础设施')
+  await expect(dialog).toContainText('删除 pending.example.com 后，使用该域名的旧链接将停止服务。不会删除 Cloudflare 上的 DNS 或域名绑定')
   await expect(dialog).not.toContainText('TXT')
   await dialog.getByRole('button', { name: '取消' }).click()
   expect(calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
