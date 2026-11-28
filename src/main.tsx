@@ -26,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
 
 import './styles/user-shell.css'
 import './styles/pages-user-d.css'
+import './styles/pages-plans-me.css'
 
 import './styles/controls.css'
 import './styles/content-ui.css'

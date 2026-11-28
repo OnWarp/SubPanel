@@ -14,19 +14,23 @@ export function inFamily(path: string, family: string) {
 }
 
 // Several display routes also perform maintenance writes. Their GETs must reach the server.
+// Plan state is time-derived (status flips at an expiry instant), so plan
+// reads are never served from the in-memory cache.
 const excludedPaths = [
   '/api/bootstrap', '/api/account', '/api/account/profile', '/api/login', '/api/setup',
   '/api/admin/invites', '/api/admin/invitations',
   '/api/admin/subscriptions', '/api/admin/delivery', '/api/admin/delivery/subscriptions',
   '/api/account/subscriptions', '/api/account/delivery', '/api/account/delivery/subscriptions',
   '/api/subscriptions', '/api/user/subscriptions',
+  '/api/me/overview', '/api/me/plans',
 ]
 
 export function cacheable(path: string) {
   if (!path.startsWith('/api/')) return false
   const url = requestPath(path)
-  return !excludedPaths.includes(url) && !['/api/register', '/api/password', '/api/invites', '/api/s']
-    .some((family) => inFamily(url, family)) && !/^\/api\/shares\/[^/]+\/(meta|verify|export)$/.test(url)
+  return !excludedPaths.includes(url) && !excludedPaths.some(prefix => url.startsWith(prefix + '/'))
+    && !['/api/register', '/api/password', '/api/invites', '/api/s']
+      .some((family) => inFamily(url, family)) && !/^\/api\/shares\/[^/]+\/(meta|verify|export)$/.test(url)
 }
 
 export function cacheKey(path: string, init: RequestInit) {

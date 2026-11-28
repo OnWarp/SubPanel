@@ -4,7 +4,22 @@ import { api, ApiClientError } from '../../app/api'
 export const unifiedSubscriptionPath = '/api/user/subscription'
 export const subscriptionStatus = { active: '有效', expired: '已过期', pending: '待生效', disabled: '已停用', none: '未开通' }
 
+export type PlanSubscriptionPackage = {
+  instanceId: string
+  planId: string
+  name: string
+  status: string
+  bucket: string
+  startsAt: number
+  expiresAt: number | null
+  permanent: boolean
+  nodeGroupCount: number
+  nodeCount: number
+}
+
 export type UnifiedSubscription = {
+  /** 'plans' once the user holds plan instances; 'templates' is the earlier model. */
+  source?: 'plans' | 'templates'
   status: keyof typeof subscriptionStatus
   expiresAt: string | null
   lastExpiredAt: string | null
@@ -15,6 +30,10 @@ export type UnifiedSubscription = {
   shareEnabled: boolean
   hasAvailableNodes: boolean
   nodeCount: number
+  /** Per-instance list; absent on the template-derived model. */
+  packages?: PlanSubscriptionPackage[]
+  nextExpiryAt?: string | null
+  expiringSoonCount?: number
 }
 
 export type SubscriptionNode = { name: string; protocol: string }

@@ -190,11 +190,16 @@ describe('user page presentation', () => {
     const html = page(createElement(MinePage))
     expect(html).toContain('upd-mine')
     expect(html).toContain('个人中心')
-    expect(html).toContain('正在加载订阅')
-    expect(html).toContain('账户信息')
+    // Personal center is now an account entry: plan overview + settings.
+    expect(html).toContain('套餐概览')
+    expect(html).toContain('upd-mine-skeleton')
     expect(html).toContain('通知设置')
     expect(html).toContain('href="/me/security"')
     expect(html).toContain('href="/me/support"')
+    expect(html).toContain('href="/me/plans"')
+    // The old duplicate subscription card and redemption entry are gone.
+    expect(html).not.toContain('/me/redemption')
+    expect(html).not.toContain('兑换订阅')
     expect(html).not.toContain('权益与计划')
     expect(html).not.toContain('注销')
     expect(html).not.toContain('删除账户')

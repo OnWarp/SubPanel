@@ -2,6 +2,7 @@ import { planUserEnabled, readPlanUser } from '../plans/entitlements.js'
 import { resolveForApi } from '../plans/routes.js'
 import { changeToken, readOwnedInstance } from '../plans/service.js'
 import { hasPlanAggregate, planStorageAvailable, readAliasTarget, readPlanToken } from '../plans/tokens.js'
+import { ownsPlanInstances, readPlanSubscriptionSummary } from '../plans/subscription-summary.js'
 import { tokenPattern } from './subscription-token.js'
 import { readShare, readShareSettings } from '../shares/repository.js'
 import { noteSubscriptionFetch, readUserFetchSummary, stageSubscriptionFetch } from './fetch-stats.js'
@@ -63,6 +64,23 @@ unifiedUserRoutes.use('*', requireAuth, (c, next) => privateResponse(c, next, tr
 
 unifiedUserRoutes.get('/', async c => {
   const userId = c.get('principal').id
+  if (await ownsPlanInstances(c.env.DB, userId)) {
+    const [summary, enabledFormats, shareSettings] = await Promise.all([
+      readPlanSubscriptionSummary(c.env, userId), listEnabledPlatforms(c.env.DB), readShareSettings(c.env),
+    ])
+    return c.json({
+      source: 'plans',
+      ...summary,
+      supportedFormats: [...new Set(enabledFormats.flatMap(({ platform }) =>
+        platform === 'auto' ? [] : [clientAliases[platform] ?? platform]))],
+      importPlatforms: enabledFormats.filter(({ platform }) => platform !== 'auto'),
+      shareEnabled: shareSettings.enabled && shareSettings.createAllowed,
+      // The aggregate summary still exposes a uniform "expiresAt" for callers
+      // that predate packages; it is the latest active expiry, never a
+      // permanent sentinel.
+      latestExpiresAt: summary.expiresAt,
+    })
+  }
   const access = await readUserAccess(c.env.DB, { userId })
   if (accountAvailable(access) && access.revision === null) {
     await (await prepareUserAccess(c.env, userId, new Date().toISOString())).run()
@@ -74,6 +92,7 @@ unifiedUserRoutes.get('/', async c => {
   const supportedFormats = [...new Set(enabledFormats.flatMap(({ platform }) =>
     platform === 'auto' ? [] : [clientAliases[platform] ?? platform]))]
   return c.json({
+    source: 'templates',
     status: result.status,
     expiresAt: iso(result.expiresAt),
     lastExpiredAt: result.status === 'expired' ? iso(result.lastExpiredAt) : null,
@@ -88,12 +107,26 @@ unifiedUserRoutes.get('/', async c => {
 })
 
 unifiedUserRoutes.get('/nodes', async c => {
-  const result = await resolveUserSubscription(c.env.DB, c.get('principal').id, Date.now(), await readArtifactCatalog(c.env))
+  const userId = c.get('principal').id
+  if (await ownsPlanInstances(c.env.DB, userId)) {
+    const user = await readPlanUser(c.env.DB, userId)
+    if (!planUserEnabled(user)) throw subscriptionNotFound()
+    const { nodes } = await resolveForApi(c.env.DB, user, null, Date.now())
+    return c.json({ nodes: nodes.map(node => ({ name: node.displayName, protocol: node.protocol })) })
+  }
+  const result = await resolveUserSubscription(c.env.DB, userId, Date.now(), await readArtifactCatalog(c.env))
   return c.json({ nodes: result.nodes.map(node => ({ name: node.displayName, protocol: node.protocol })) })
 })
 
 unifiedUserRoutes.post('/reset-token', async c => {
   const user = c.get('principal').id
+  if (await ownsPlanInstances(c.env.DB, user)) {
+    const access = await readUserAccess(c.env.DB, { userId: user })
+    // A plan-only account may have no legacy access row; changeToken then
+    // creates the aggregate token without a legacy revision precondition.
+    await changeToken(c.env, user, null, user, 'reset', access?.revision ?? undefined)
+    return c.json({ ok: true })
+  }
   const access = await readUserAccess(c.env.DB, { userId: user })
   if (!accountAvailable(access) || access.revision === null) throw subscriptionNotFound()
   if (await planStorageAvailable(c.env.DB) && await hasPlanAggregate(c.env.DB, user)) {

@@ -267,7 +267,10 @@ it('serves the new admin and user contracts with session-based permissions', asy
   expect(wrongOwner.status).toBe(404)
   expect(await wrongOwner.json()).toEqual(await missing.json())
   const userPlans = await call('/api/me/plans?status=active&search=Managed', withCookie(userCookie))
-  expect(await userPlans.json()).toMatchObject({ plans: [{ id: row.id, source: 'admin', nodeCount: 1, status: 'active' }] })
+  expect(await userPlans.json()).toMatchObject({
+    items: [{ instanceId: row.id, id: row.id, source: 'admin', nodeGroupCount: 1, status: 'active', name: 'Managed fixture' }],
+    summary: { total: 1, active: 1, accessStatus: 'active' },
+  })
   const adminList = await adminCall(`${path}/users?status=active`)
   expect(await adminList.json()).toMatchObject({ instances: [{ id: row.id }] })
   const archived = await adminCall(path, 'DELETE', { version: 1 })

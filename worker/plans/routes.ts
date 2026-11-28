@@ -9,6 +9,7 @@ import { apiError } from '../platform/api-error.js'
 import { EntitlementNotFound, EntitlementResolver, instanceDisplayStatus, instanceStatuses, listInstances, planUserEnabled, readPlanUser } from './entitlements.js'
 import { archiveRedeemCode, generateRedeemCodes, generateRedeemInput, instanceView, listCodeRedemptions, listRedeemCodes,
   redeemForUser, updateRedeemCode, updateRedeemInput, type RedeemedGrant } from './redeem.js'
+import { listMyPlans, planFilters, planListItem, planNodeGroupCounts, readMyPlanDetail, readOverview, readPlanPage, readPlanSummary, type PlanFilter } from './me.js'
 import { assignPlan, changeToken, createDefinition, definitionDetail, duplicateDefinition, listActiveTokens,
   mutateInstance, nodeCountsForPlans, previewDefinitionGroups, readOwnedInstance, updateDefinition, listDefinitions } from './service.js'
 
@@ -224,34 +225,77 @@ userPhase3Routes.use('*', requireAuth, async (c, next) => {
   c.header('Referrer-Policy', 'no-referrer')
   await next()
 })
+
+const planListQuery = z.object({
+  status: z.enum(planFilters).default('all'),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).optional(),
+  cursor: z.string().min(1).max(64).optional(),
+  search: z.string().trim().max(200).optional(),
+})
+
+function parsePlanList(query: Record<string, string>): { status: PlanFilter; limit: number; offset: number; search?: string } {
+  const parsed = planListQuery.safeParse(query)
+  if (!parsed.success) throw apiError(400, 'INVALID_INPUT', '套餐列表参数无效')
+  const { offset } = readPlanPage(parsed.data)
+  return { status: parsed.data.status, limit: parsed.data.limit, offset, search: parsed.data.search || undefined }
+}
+
+userPhase3Routes.get('/overview', async c =>
+  c.json(await readOverview(c.env, c.get('principal').id)))
+
 userPhase3Routes.get('/plans', async c => {
-  const page = parsePage(instanceFilters, c.req.query())
   const user = await readPlanUser(c.env.DB, c.get('principal').id)
   if (!planUserEnabled(user)) throw subscriptionNotFound()
+  const page = parsePlanList(c.req.query())
   const now = Date.now()
-  const [instances, { nodeCounts }] = await Promise.all([
-    listInstances(c.env.DB, { userId: user.id }, page, now), resolveForApi(c.env.DB, user, null, now),
+  const [{ rows, nextCursor }, summary] = await Promise.all([
+    listMyPlans(c.env.DB, user.id, page, now),
+    readPlanSummary(c.env.DB, user.id, now),
   ])
-  return c.json({ plans: instances.map(row => ({
-    id: row.id, planId: row.plan_id, name: row.name, status: instanceDisplayStatus(row, now),
-    startsAt: row.starts_at, expiresAt: row.expires_at, source: row.source, nodeCount: nodeCounts.get(row.id) ?? 0,
-  })) })
+  return c.json({ items: rows.map(planListItem), nextCursor, summary, serverTime: new Date(now).toISOString() })
 })
+
+userPhase3Routes.get('/plans/:instanceId', async c => {
+  const user = await readPlanUser(c.env.DB, c.get('principal').id)
+  if (!planUserEnabled(user)) throw subscriptionNotFound()
+  return c.json({ plan: await readMyPlanDetail(c.env.DB, user.id, c.req.param('instanceId')) })
+})
+
 userPhase3Routes.get('/subscriptions', async c => {
   const page = parsePage(instanceFilters, c.req.query())
   const user = await readPlanUser(c.env.DB, c.get('principal').id)
   if (!planUserEnabled(user)) throw subscriptionNotFound()
-  const [instances, { nodes, nodeCounts }, origin, tokens] = await Promise.all([
-    listInstances(c.env.DB, { userId: user.id }, page),
-    resolveForApi(c.env.DB, user, null, Date.now()), new DomainService(c.env.DB).getOrigin('subscription'),
-    listActiveTokens(c.env.DB, user.id),
+  const now = Date.now()
+  const [instances, { nodes, nodeCounts }, summary, origin, tokens, groupCounts] = await Promise.all([
+    listInstances(c.env.DB, { userId: user.id }, page, now),
+    resolveForApi(c.env.DB, user, null, now), readPlanSummary(c.env.DB, user.id, now),
+    new DomainService(c.env.DB).getOrigin('subscription'), listActiveTokens(c.env.DB, user.id),
+    planNodeGroupCounts(c.env.DB, user.id),
   ])
   const links = new Map(tokens.map(token => [token.user_plan_id, token.token_ciphertext !== null]))
   const masked = origin ? `${origin}/s/••••••••` : null
   return c.json({
-    aggregate: { subscriptionUrl: masked, issued: links.has(null), copyable: links.get(null) ?? true, nodeCount: nodes.length },
+    plans: summary,
+    aggregate: {
+      subscriptionUrl: masked,
+      issued: links.has(null),
+      copyable: links.get(null) ?? true,
+      nodeCount: nodes.length,
+      hasAvailableNodes: nodes.length > 0,
+    },
     packages: instances.filter(row => row.status !== 'revoked').map(row => ({
-      instanceId: row.id, subscriptionUrl: masked, issued: links.has(row.id), copyable: links.get(row.id) ?? true, nodeCount: nodeCounts.get(row.id) ?? 0,
+      instanceId: row.id,
+      planId: row.plan_id,
+      name: row.name,
+      status: instanceDisplayStatus(row, now),
+      startsAt: row.starts_at,
+      expiresAt: row.expires_at,
+      nodeGroupCount: groupCounts.get(row.id) ?? 0,
+      subscriptionUrl: masked,
+      issued: links.has(row.id),
+      copyable: links.get(row.id) ?? true,
+      nodeCount: nodeCounts.get(row.id) ?? 0,
     })),
   })
 })
@@ -277,14 +321,19 @@ async function redeemPayload(c: Context<AppEnv>, grant: RedeemedGrant) {
   return instanceView(grant, nodeCount)
 }
 
-userPhase3Routes.post('/redeem', async c => {
+async function redeemHandler(c: Context<AppEnv>) {
   const body = await readJson(c, redeemBody)
   const principal = c.get('principal')
   if (body.userId && body.userId !== principal.id) throw apiError(403, 'FORBIDDEN', '无权为其他用户兑换')
   const grant = await redeemForUser(c.env, principal.id, body.code, idempotencyKey(c.req.header('Idempotency-Key'), body.idempotencyKey),
     c.req.header('cf-connecting-ip'), principal.sessionVersion)
   return c.json(await redeemPayload(c, grant), grant.replayed ? 200 : 201)
-})
+}
+
+// `/plans/redeem` is the Phase 6 alias of the Phase 4 `/redeem`. Both call the
+// same redemption service; neither can consume a code the other would not.
+userPhase3Routes.post('/redeem', redeemHandler)
+userPhase3Routes.post('/plans/redeem', redeemHandler)
 
 userPhase3Routes.post('/subscriptions/copy', async c => {
   const { instanceId } = await readJson(c, z.strictObject({ instanceId: id.nullable().default(null) }))

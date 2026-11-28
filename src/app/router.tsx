@@ -1,5 +1,7 @@
 import { RedeemCodesPage } from '../features/plans/RedeemCodesPage'
 import { PlanDetailPage, PlansPage } from '../features/plans/PlansPage'
+import { MyPlanDetailPage } from '../features/plans/MyPlanDetailPage'
+import { MyPlansPage } from '../features/plans/MyPlansPage'
 import { AuditLogsPage } from '../features/admin/AuditLogsPage'
 import { UserDetailPage } from '../features/accounts/UserDetailPage'
 import type { ReactNode } from 'react'
@@ -101,6 +103,8 @@ export function AppRouter() {
       <Route path="/entitlement" element={user?.role === 'user' ? <Navigate to="/subscriptions" replace /> : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/me" element={user?.role === 'user' ? shell(<Outlet />) : <Navigate to={user ? home : signedOut} replace />}>
         <Route index element={<MinePage />} />
+        <Route path="plans" element={<MyPlansPage />} />
+        <Route path="plans/:instanceId" element={<MyPlanDetailPage />} />
         <Route path=":section" element={<MineSettingsPage />} />
       </Route>
       <Route path="/subscriptions" element={user?.role === 'user' ? shell(<MySubscriptionsPage />) : <Navigate to={user ? home : signedOut} replace />} />

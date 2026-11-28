@@ -1,0 +1,519 @@
+/*
+ * Phase 6 user plans: personal center overview, plan list and detail.
+ * Every class is upd- prefixed and uses the shared design tokens so light and
+ * dark themes, focus rings and reduced-motion all follow the rest of the app.
+ */
+
+/* Personal center: profile row, overview card, settings list. */
+.upd-mine .page-stack { gap: 0; width: 100%; max-width: 720px; margin-inline: auto; }
+
+.upd-mine-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4) 0;
+}
+
+.upd-mine-profile .profile-avatar,
+.upd-mine-avatar-fallback {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-subtle);
+}
+
+.upd-mine-profile-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.upd-mine-profile-text strong {
+  font-size: 19px;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upd-mine-profile-text span {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.upd-mine-overview {
+  display: grid;
+  min-width: 0;
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.upd-mine-overview-top {
+  display: grid;
+  gap: var(--space-1);
+  padding: 18px 20px 16px;
+}
+
+.upd-mine-caption {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.upd-mine-date {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.upd-mine-date strong {
+  font-size: 30px;
+  font-weight: var(--weight-semibold);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-mine-date.is-success strong { color: var(--color-success); }
+
+.upd-mine-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.upd-mine-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.upd-mine-status.is-success { color: var(--color-success); }
+.upd-mine-status.is-muted { color: var(--color-text-muted); }
+.upd-mine-status.is-neutral { color: var(--color-text-muted); }
+
+.upd-mine-hint {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.upd-mine-overview-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 64px;
+  padding: var(--space-3) 20px;
+  border-top: var(--size-divider) solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.upd-mine-overview-link > div { display: grid; min-width: 0; gap: 2px; }
+
+.upd-mine-count {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-mine-count strong {
+  margin-right: 2px;
+  font-size: var(--font-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-mine-subcount {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.upd-mine-overview-link > svg { flex: 0 0 auto; color: var(--color-text-faint); }
+
+.upd-mine-skeleton { min-height: 196px; padding: 20px; }
+.upd-mine-skeleton .content-skeleton { display: block; width: 100%; height: 150px; }
+
+.upd-mine-menu {
+  display: grid;
+  min-width: 0;
+  margin-top: var(--space-4);
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.upd-mine-menu a {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--size-touch-target);
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.upd-mine-menu a + a { border-top: var(--size-divider) solid var(--color-border); }
+.upd-mine-menu a svg { color: var(--color-text-muted); }
+.upd-mine-menu a > svg:last-child { color: var(--color-text-faint); }
+
+@media (hover: hover) {
+  .upd-mine-overview-link:hover { background: var(--color-surface-subtle); }
+  .upd-mine-menu a:hover { background: var(--color-surface-subtle); }
+}
+
+/* My plans list. */
+.upd-plans.page-stack { width: 100%; max-width: 760px; margin-inline: auto; gap: var(--space-4); }
+
+.upd-plans-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) 0;
+  border-top: var(--size-divider) solid var(--color-border);
+  border-bottom: var(--size-divider) solid var(--color-border);
+}
+
+.upd-plans-stats > div { display: grid; gap: 2px; }
+
+.upd-plans-stats dt {
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.upd-plans-stats dd {
+  margin: 0;
+  font-size: var(--font-title);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-plans-stats dd.is-success { color: var(--color-success); }
+.upd-plans-stats dd.is-muted { color: var(--color-text-muted); }
+
+.upd-plan-filters {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.upd-plan-filters::-webkit-scrollbar { display: none; }
+
+.upd-plan-filters button {
+  flex: 0 0 auto;
+  min-height: var(--size-touch-target);
+  padding: 0 0 var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-md);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.upd-plan-filters button.active {
+  border-bottom-color: var(--color-text);
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-plan-filters button:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.upd-plan-list {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.upd-plan-card {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 16px 20px;
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.upd-plan-card.is-muted { opacity: 0.72; }
+.upd-plan-card.is-muted:focus-visible,
+.upd-plan-card.is-muted:hover { opacity: 1; }
+
+.upd-plan-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.upd-plan-card-head strong {
+  min-width: 0;
+  font-size: var(--font-lg);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.upd-plan-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+}
+
+.upd-plan-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.upd-plan-status.is-success { color: var(--color-success); }
+.upd-plan-status.is-warning { color: var(--color-warning); }
+.upd-plan-status.is-danger { color: var(--color-danger); }
+.upd-plan-status.is-info { color: var(--color-info); }
+.upd-plan-status.is-muted { color: var(--color-text-muted); }
+
+.upd-plan-expiry {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-plan-expiry.is-warning { color: var(--color-warning); }
+
+.upd-plan-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--size-divider) solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.upd-plan-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-accent-text);
+  font-weight: var(--weight-medium);
+}
+
+.upd-plan-skeleton .upd-plan-card { display: grid; place-items: center; min-height: 96px; }
+.upd-plan-skeleton .sp-loading-label:empty { display: none; }
+
+.upd-plan-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+.upd-plan-pager button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.upd-plan-pager button:disabled { cursor: default; opacity: 0.4; }
+
+/* Plan detail. */
+.upd-plans .page-header { flex-wrap: wrap; }
+.upd-plan-detail {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 18px 20px;
+  border: var(--size-divider) solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.upd-plan-range {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-plan-description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-md);
+  overflow-wrap: anywhere;
+}
+
+.upd-plan-groups { display: grid; gap: var(--space-2); min-width: 0; }
+
+.upd-plan-groups h2 {
+  margin: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+}
+
+.upd-plan-group-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--size-divider) solid var(--color-border);
+}
+
+.upd-plan-group-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--size-touch-target);
+  border-bottom: var(--size-divider) solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.upd-plan-group-off { color: var(--color-warning); font-size: var(--font-sm); }
+.upd-plan-empty { margin: 0; color: var(--color-text-muted); }
+.upd-plan-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.upd-plan-blocked {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-inset);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+}
+
+/* Redeem result inside the existing dialog. */
+.upd-redeem-result { display: grid; gap: var(--space-3); }
+
+/* Subscription page: aggregate first, then one row per plan instance. */
+.upd-sub-packages h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-md);
+  font-weight: var(--weight-strong);
+}
+
+.upd-sub-package-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--size-divider) solid var(--color-border);
+}
+
+.upd-sub-package {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: var(--size-divider) solid var(--color-border);
+}
+
+.upd-sub-package.is-focused {
+  margin-inline: calc(var(--space-2) * -1);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-inset);
+  background: var(--color-surface-subtle);
+}
+
+.upd-sub-package > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.upd-sub-package strong {
+  min-width: 0;
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.upd-sub-package p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd-sub-package .button {
+  justify-self: start;
+  min-height: 36px;
+  padding-inline: 0;
+  color: var(--color-accent-text);
+}
+
+.upd-redeem-detail {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.upd-redeem-detail > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--font-md);
+}
+
+.upd-redeem-detail dt { color: var(--color-text-muted); }
+.upd-redeem-detail dd { margin: 0; font-weight: var(--weight-medium); }
+
+@media (width < 768px) {
+  .upd-mine .page-stack,
+  .upd-plans.page-stack { max-width: none; }
+
+  .upd-mine-overview-top { padding: 16px; }
+  .upd-mine-overview-link { padding: var(--space-3) 16px; }
+  .upd-mine-date strong { font-size: 28px; }
+  .upd-plan-card { padding: 14px 16px; }
+  .upd-plan-detail { padding: 16px; }
+  .upd-plan-filters { gap: var(--space-3); }
+}
+
+@media (width < 400px) {
+  .upd-mine-date strong { font-size: 26px; }
+  .upd-plans-stats dd { font-size: var(--font-lg); }
+}

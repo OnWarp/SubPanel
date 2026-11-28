@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { Ticket } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, jsonBody } from '../../app/api'
 import { Button } from '../../ui/Button'
@@ -23,7 +24,7 @@ import { SubscriptionImports } from './SubscriptionImports'
 import { subscriptionError, subscriptionStatus, unifiedSubscriptionPath, useUnifiedSubscription, type UnifiedSubscription } from './unified-subscription'
 
 function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; reload: () => void }) {
-  const [params, setParams] = useSearchParams()
+  const [params] = useSearchParams()
   const downloads = useDownloadsEnabled()
   const [dialog, setDialog] = useState<'import' | 'reset' | 'share' | 'revoke' | 'redeem' | null>(null)
   const [shareUrl, setShareUrl] = useState('')
@@ -35,13 +36,11 @@ function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; rel
   const close = () => { setDialog(null); setError('') }
   const open = (next: typeof dialog) => { setDialog(next); setShareUrl(''); setError(''); setNotice('') }
 
-  useEffect(() => {
-    if (!params.has('subscription') && !params.has('share')) return
-    const next = new URLSearchParams(params)
-    next.delete('subscription')
-    next.delete('share')
-    setParams(next, { replace: true })
-  }, [params, setParams])
+  // Plans can be several instances; `?subscription=` names the one the user
+  // opened from the detail page. The aggregate link stays the copy target.
+  const packages = summary.source === 'plans' ? summary.packages ?? [] : []
+  const focusedId = params.get('subscription')
+  const focused = packages.find(item => item.instanceId === focusedId) ?? null
 
   async function submit(path: string, message: string) {
     setBusy(true)
@@ -69,10 +68,15 @@ function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; rel
     <section className="content-section" aria-label="订阅详情">
       <DetailList items={[
         { id: 'status', label: '状态', value: <StatusPill tone={summary.status === 'active' ? 'success' : summary.status === 'expired' ? 'danger' : 'neutral'}>{subscriptionStatus[summary.status]}</StatusPill> },
-        { id: 'expiry', label: '到期时间', value: summary.permanent ? '长期有效' : expiry ? formatExpiryTime(Date.parse(expiry)) : '—' },
+        {
+          id: 'expiry',
+          label: packages.length > 0 ? '最近到期' : '到期时间',
+          value: summary.permanent ? '长期有效' : expiry ? formatExpiryTime(Date.parse(expiry)) : '—',
+        },
+        ...(packages.length > 0 ? [{ id: 'aggregate', label: '可用节点', value: `${summary.nodeCount} 个` }] : []),
       ]} />
       <div className="subscription-link-section">
-        <h2>订阅链接</h2>
+        <h2>{packages.length > 0 ? '聚合订阅' : '订阅链接'}</h2>
         {link ? <div className="del-link-line"><p className="del-link-text">{maskedLink}</p><CopyButton value={link} /></div>
           : <p>订阅链接暂不可用</p>}
       </div>
@@ -90,11 +94,28 @@ function UnifiedDetails({ summary, reload }: { summary: UnifiedSubscription; rel
         </details>}
       </div>
     </section>
-    <Button variant="secondary" onClick={() => open('redeem')}>兑换订阅</Button>
+    {packages.length > 0 ? <section className="content-section upd-sub-packages" aria-labelledby="sub-packages-title">
+      <h2 id="sub-packages-title">套餐订阅</h2>
+      <ul className="upd-sub-package-list">
+        {packages.map(item => <li key={item.instanceId} className={`upd-sub-package${focused?.instanceId === item.instanceId ? ' is-focused' : ''}`}>
+          <div>
+            <strong>{item.name}</strong>
+            <span className={`upd-plan-status is-${item.bucket === 'active' ? 'success' : item.bucket === 'expired' ? 'muted' : 'warning'}`}>
+              {subscriptionStatus[item.status as keyof typeof subscriptionStatus] ?? item.status}
+            </span>
+          </div>
+          <p>{item.permanent ? '长期有效' : item.expiresAt === null ? '—' : `到期 ${formatExpiryTime(item.expiresAt)}`} · {item.nodeCount} 个节点</p>
+          <Link className="button ghost" to={`/me/plans/${encodeURIComponent(item.instanceId)}`}>查看套餐</Link>
+        </li>)}
+      </ul>
+    </section> : null}
+    <div className="upd-import-actions">
+      <Button variant="primary" as="link" to="/me/plans"><Ticket size={16} aria-hidden="true" />兑换套餐</Button>
+    </div>
     <Dialog open={dialog === 'import'} appearance="content" title="导入客户端" onClose={close}>
       <SubscriptionImports entries={entries} />
     </Dialog>
-    <Dialog open={dialog === 'redeem'} appearance="content" title="兑换订阅" size="l" onClose={close} busy={busy}>
+    <Dialog open={dialog === 'redeem'} appearance="content" title="兑换套餐" size="l" onClose={close} busy={busy}>
       {dialog === 'redeem' && <PersonalRedemptions unified onRedeemed={reload} onPending={setBusy} />}
     </Dialog>
     <Dialog open={dialog === 'share'} appearance="content" title="分享订阅" onClose={close} busy={busy}>

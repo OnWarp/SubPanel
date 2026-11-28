@@ -416,6 +416,10 @@ const subscriptionFamilies = [
 const writeFamilies: Array<[string[], string[]]> = [
   [['/api/admin/catalog'], ['/api/admin/catalog', ...subscriptionFamilies]],
   [['/api/admin/plans', '/api/admin/user-plans', '/api/admin/redeem-codes'], ['/api/admin/plans', '/api/admin/user-plans', '/api/admin/redeem-codes', '/api/account/plans', ...subscriptionFamilies]],
+  // A redemption creates a new instance the user must see everywhere at once:
+  // the overview counts, the plan list, each plan detail, the subscription
+  // page and the node list.
+  [['/api/me/redeem', '/api/me/plans/redeem'], ['/api/me/overview', '/api/me/plans', '/api/me/subscriptions', ...subscriptionFamilies]],
   [[...subscriptionRoutes, ...shareRoutes, subscriptionTemplatesPath], subscriptionFamilies],
   [['/api/admin/share-settings'], ['/api/admin/share-settings', ...subscriptionFamilies]],
   [['/api/admin/apps', '/api/admin/system/app-downloads'], ['/api/admin/apps', '/api/apps', '/api/admin/system/app-downloads']],

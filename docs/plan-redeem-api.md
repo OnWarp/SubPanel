@@ -51,7 +51,9 @@
 
 ## 用户
 
-### `POST /api/me/redeem`
+### `POST /api/me/redeem` 与 `POST /api/me/plans/redeem`
+
+两个路径由同一个处理函数注册，调用同一份 `redeemForUser` 兑换服务。首阶段保留了 `/api/me/redeem`；第 6 阶段用户端使用 `/api/me/plans/redeem`，因为套餐实例是 `/api/me/plans` 的资源。二者语义、正文、响应、幂等键与限流完全一致，任何一张兑换码都只能被其中任一路径消费一次。旧调用方继续用 `/api/me/redeem` 即可，无需迁移。
 
 ```json
 { "code": "XXXX-XXXX-XXXX", "idempotencyKey": "UUID" }
