@@ -1,5 +1,3 @@
-import { SUBSCRIPTION_LINK_PLATFORMS } from '../domains/platforms.js'
-
 // Every subscription URL is built here. Pages and share exports must not
 // assemble /sub paths, aliases, or tokens on their own.
 export function subscriptionPath(token: string, platform: string): string {
@@ -10,8 +8,15 @@ export function subscriptionLink(origin: string, token: string, platform: string
   return `${origin}${subscriptionPath(token, platform)}`
 }
 
-export function subscriptionLinks(origin: string, token: string): Record<string, string> {
+// Links come from the platform rows in the database, not the seed list, so
+// admin-added platforms get links and admin-deleted platforms lose them.
+// Callers pass the rows in; the frontend still filters by the enabled list.
+export function subscriptionLinks(
+  origin: string,
+  token: string,
+  platforms: ReadonlyArray<{ platform: string }>,
+): Record<string, string> {
   return Object.fromEntries(
-    SUBSCRIPTION_LINK_PLATFORMS.map(({ platform }) => [platform, subscriptionLink(origin, token, platform)]),
+    platforms.map(({ platform }) => [platform, subscriptionLink(origin, token, platform)]),
   )
 }
