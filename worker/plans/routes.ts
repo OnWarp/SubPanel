@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import type { AppEnv } from '../app-env.js'
 import { requireAuth } from '../accounts/auth.js'
@@ -7,6 +7,8 @@ import { DomainService } from '../domains/domain-service.js'
 import { readJson } from '../platform/http.js'
 import { apiError } from '../platform/api-error.js'
 import { EntitlementNotFound, EntitlementResolver, instanceDisplayStatus, instanceStatuses, listInstances, planUserEnabled, readPlanUser } from './entitlements.js'
+import { archiveRedeemCode, generateRedeemCodes, generateRedeemInput, instanceView, listCodeRedemptions, listRedeemCodes,
+  redeemForUser, updateRedeemCode, updateRedeemInput, type RedeemedGrant } from './redeem.js'
 import { assignPlan, changeToken, createDefinition, definitionDetail, duplicateDefinition, listActiveTokens, listDefinitions,
   mutateInstance, readOwnedInstance, updateDefinition } from './service.js'
 
@@ -115,6 +117,24 @@ adminPhase3Routes.post('/users/:id/reset-aggregate-token', async c => {
   const { raw } = await changeToken(c.env, c.req.param('id'), null, c.get('principal').id, 'reset')
   return c.json({ token: raw })
 })
+const redeemCodeFilters = pagination.extend({ planId: id.optional() })
+adminPhase3Routes.get('/redeem-codes', async c => {
+  const page = parsePage(redeemCodeFilters, c.req.query())
+  return c.json({ codes: await listRedeemCodes(c.env.DB, page) })
+})
+adminPhase3Routes.post('/redeem-codes', async c =>
+  c.json(await generateRedeemCodes(c.env, c.get('principal').id, await readJson(c, generateRedeemInput)), 201))
+adminPhase3Routes.patch('/redeem-codes/:id', async c =>
+  c.json({ code: await updateRedeemCode(c.env.DB, c.req.param('id'), await readJson(c, updateRedeemInput), c.get('principal').id) }))
+adminPhase3Routes.delete('/redeem-codes/:id', async c => {
+  const result = await archiveRedeemCode(c.env.DB, c.req.param('id'), c.get('principal').id)
+  return result.archived ? c.json(result) : c.body(null, 204)
+})
+adminPhase3Routes.get('/redeem-codes/:id/redemptions', async c => {
+  const page = parsePage(pagination, c.req.query())
+  return c.json({ redemptions: await listCodeRedemptions(c.env.DB, c.req.param('id'), page) })
+})
+
 adminPhase3Routes.get(`${instance}/preview`, async c => {
   const row = await readOwnedInstance(c.env.DB, c.req.param('id'))
   if (!row) throw subscriptionNotFound()
@@ -171,6 +191,37 @@ userPhase3Routes.get('/subscriptions', async c => {
     })),
   })
 })
+const redeemBody = z.strictObject({
+  code: z.string().min(1).max(100),
+  idempotencyKey: z.uuid().optional(),
+  userId: z.string().min(1).max(100).optional(),
+})
+
+function idempotencyKey(header: string | undefined, body: string | undefined) {
+  const trimmed = header?.trim()
+  if (trimmed && body && trimmed !== body) throw apiError(409, 'CONFLICT', '幂等键不一致')
+  const key = body ?? trimmed
+  if (!key || !z.uuid().safeParse(key).success) throw apiError(400, 'INVALID_INPUT', '缺少有效幂等键')
+  return key
+}
+
+async function redeemPayload(c: Context<AppEnv>, grant: RedeemedGrant) {
+  const user = await readPlanUser(c.env.DB, c.get('principal').id)
+  const nodeCount = planUserEnabled(user)
+    ? (await resolveForApi(c.env.DB, user, grant.instance.id, Date.now())).nodeCounts.get(grant.instance.id) ?? 0
+    : 0
+  return instanceView(grant, nodeCount)
+}
+
+userPhase3Routes.post('/redeem', async c => {
+  const body = await readJson(c, redeemBody)
+  const principal = c.get('principal')
+  if (body.userId && body.userId !== principal.id) throw apiError(403, 'FORBIDDEN', '无权为其他用户兑换')
+  const grant = await redeemForUser(c.env, principal.id, body.code, idempotencyKey(c.req.header('Idempotency-Key'), body.idempotencyKey),
+    c.req.header('cf-connecting-ip'), principal.sessionVersion)
+  return c.json(await redeemPayload(c, grant), grant.replayed ? 200 : 201)
+})
+
 userPhase3Routes.post('/subscriptions/copy', async c => {
   const { instanceId } = await readJson(c, z.strictObject({ instanceId: id.nullable().default(null) }))
   const userId = c.get('principal').id

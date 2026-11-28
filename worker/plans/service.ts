@@ -6,24 +6,28 @@ import { planUserEnabled, readPlanUser } from './entitlements.js'
 import { planDefinitions, subscriptionTokens, userPlans, type PlanDefinitionRow, type SubscriptionTokenRow, type UserPlanRow } from './repository.js'
 import { hasPlanAggregate, preparePlanToken, revealPlanToken, revokeTargetCredentials } from './tokens.js'
 
-const conflict = () => apiError(409, 'CONFLICT', '资源已更新，请刷新后重试')
-const invalidDuration = () => apiError(400, 'INVALID_DURATION', '有效期无效')
-const notAssignable = () => apiError(409, 'PLAN_NOT_ASSIGNABLE', '套餐不可分配')
+export const conflict = () => apiError(409, 'CONFLICT', '资源已更新，请刷新后重试')
+export const invalidDuration = () => apiError(400, 'INVALID_DURATION', '有效期无效')
+export const notAssignable = () => apiError(409, 'PLAN_NOT_ASSIGNABLE', '套餐不可分配')
 const usableUser = 'EXISTS (SELECT 1 FROM users WHERE id=? AND enabled=1 AND deleted_at IS NULL)'
 const ownedPlan = 'EXISTS (SELECT 1 FROM plan_definitions p WHERE p.id=user_plans.plan_id AND (p.owner_user_id IS NULL OR p.owner_user_id=user_plans.user_id))'
 
 // D1 batches have no interactive transaction. Abort the whole batch on a
 // failed precondition through the settings table's NOT NULL constraint.
-function requireInBatch(db: D1Database, condition: string, ...parameters: (string | number | null)[]) {
+export function requireInBatch(db: D1Database, condition: string, ...parameters: (string | number | null)[]) {
   return db.prepare(`INSERT INTO system_settings(key, value, updated_at)
     SELECT 'plan_write_conflict', NULL, '' WHERE NOT (${condition})`).bind(...parameters)
 }
 
-async function commit(db: D1Database, statements: D1PreparedStatement[], onConflict = conflict) {
+export function planBatchAborted(error: unknown) {
+  return error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')
+}
+
+export async function commit(db: D1Database, statements: D1PreparedStatement[], onConflict = conflict) {
   try {
     await db.batch(statements)
   } catch (error) {
-    if (error instanceof Error && error.message.includes('NOT NULL constraint failed: system_settings.value')) throw onConflict()
+    if (planBatchAborted(error)) throw onConflict()
     throw error
   }
 }
@@ -33,14 +37,45 @@ function timestamp(value: number) {
   return value
 }
 
-function durationEnd(start: number, seconds: number) {
+export function durationEnd(start: number, seconds: number) {
   if (!Number.isSafeInteger(seconds) || seconds <= 0) throw invalidDuration()
   return timestamp(start + seconds * 1000)
 }
 
-function checkWindow(start: number, end: number | null) {
+export function checkWindow(start: number, end: number | null) {
   timestamp(start)
   if (end !== null && timestamp(end) <= start) throw invalidDuration()
+}
+
+// Admin assignment and redemption share this insert. A redeem never renews an existing instance.
+export async function prepareInstanceGrant(env: DataEnv, input: {
+  userId: string
+  planId: string
+  startsAt: number
+  expiresAt: number | null
+  source: UserPlanRow['source']
+  sourceId: string | null
+  remark: string | null
+  actor: string
+  action: string
+  detail: Record<string, unknown>
+  stamp: string
+}) {
+  checkWindow(input.startsAt, input.expiresAt)
+  const row: UserPlanRow = {
+    id: crypto.randomUUID(), user_id: input.userId, plan_id: input.planId, starts_at: input.startsAt,
+    expires_at: input.expiresAt, status: 'active', source: input.source, source_id: input.sourceId,
+    remark: input.remark, created_at: input.stamp, updated_at: input.stamp, version: 1,
+  }
+  const token = await preparePlanToken(env, { userId: input.userId, instanceId: row.id }, input.stamp)
+  return {
+    row, raw: token.raw, tokenId: token.row.id,
+    statements: [
+      userPlans.prepareCreate(env.DB, row),
+      subscriptionTokens.prepareCreate(env.DB, token.row),
+      auditStatement(env.DB, input.actor, input.action, 'user_plan', row.id, input.detail, input.stamp),
+    ],
+  }
 }
 
 type DefinitionInput = {
@@ -167,19 +202,17 @@ export async function assignPlan(env: DataEnv, userId: string, planId: string,
     : input.durationMode === 'permanent' ? null
       : input.durationMode === 'custom' ? durationEnd(start, input.durationSeconds)
         : plan.duration_seconds === null ? null : durationEnd(start, plan.duration_seconds)
-  checkWindow(start, expires)
   const stamp = new Date(now).toISOString()
-  const row: UserPlanRow = { id: crypto.randomUUID(), user_id: userId, plan_id: planId, starts_at: start, expires_at: expires,
-    status: 'active', source: 'admin', source_id: null, remark: input.remark ?? null,
-    created_at: stamp, updated_at: stamp, version: 1 }
-  const token = await preparePlanToken(env, { userId, instanceId: row.id }, stamp)
+  const grant = await prepareInstanceGrant(env, {
+    userId, planId, startsAt: start, expiresAt: expires, source: 'admin', sourceId: null,
+    remark: input.remark ?? null, actor, action: 'plan.instance.assign', detail: { userId, planId }, stamp,
+  })
   await commit(db, [
     requireInBatch(db, `${usableUser} AND EXISTS (SELECT 1 FROM plan_definitions WHERE id=? AND version=?
       AND enabled=1 AND archived_at IS NULL AND (owner_user_id IS NULL OR owner_user_id=?))`, userId, planId, plan.version, userId),
-    userPlans.prepareCreate(db, row), subscriptionTokens.prepareCreate(db, token.row),
-    auditStatement(db, actor, 'plan.instance.assign', 'user_plan', row.id, { userId, planId }, stamp),
+    ...grant.statements,
   ], notAssignable)
-  return { instance: row, token: token.raw }
+  return { instance: grant.row, token: grant.raw }
 }
 
 type Mutation = { action: 'patch'; startsAt?: number; expiresAt?: number | null; remark?: string | null } |
