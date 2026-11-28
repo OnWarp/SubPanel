@@ -33,12 +33,12 @@ function links(html: string) { return [...html.matchAll(/href="([^"]*)"/g)].map(
 function mobileDock(html: string) {
   return html.match(/<nav[^>]*class="admin-mobile-dock"[^>]*>[\s\S]*?<\/nav>/)?.[0] ?? ''
 }
-const desktopLabels = ['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置']
-const mobileDockLabels = ['概览', '节点管理', '订阅管理', '用户管理']
-const mobileDockRoutes = ['/dashboard', '/catalog/nodes', '/delivery/templates', '/users']
+const desktopLabels = ['概览', '节点管理', '套餐管理', '用户管理', '运营管理', '系统设置']
+const mobileDockLabels = ['概览', '节点管理', '套餐管理', '用户管理']
+const mobileDockRoutes = ['/dashboard', '/catalog/nodes', '/plans', '/users']
 
 describe('navigation ownership and route compatibility', () => {
-  const desktopDomains = ['/dashboard', '/catalog/nodes', '/delivery/templates', '/users', '/delivery/tickets', '/system/registration']
+  const desktopDomains = ['/dashboard', '/catalog/nodes', '/plans', '/users', '/delivery/tickets', '/system/registration']
   it('renders six ungrouped desktop destinations and a single-row mobile dock', () => {
     const html = render('/invites')
     const sidebar = nav(html, '主导航')
@@ -64,7 +64,7 @@ describe('navigation ownership and route compatibility', () => {
 
   it.each([
     ['节点管理导航', '/catalog/nodes', ['/catalog/nodes', '/catalog/sources', '/catalog/groups']],
-    ['订阅管理导航', '/delivery/templates', ['/delivery/templates', '/delivery/conversions', '/delivery/shares', '/delivery/redemptions']],
+    ['套餐管理导航', '/plans', ['/plans', '/delivery/shares', '/delivery/redemptions']],
     ['用户管理子页', '/users', ['/users', '/invites', '/users/recycle-bin']],
     ['运营管理导航', '/delivery/tickets', ['/delivery/tickets', '/operations/notices', '/kb/manage', '/catalog/apps']],
     ['系统设置导航', '/system/registration', ['/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs']],
@@ -90,7 +90,7 @@ describe('navigation ownership and route compatibility', () => {
 
   it('keeps redemption management under subscription navigation', () => {
     const html = render('/delivery/redemptions')
-    expect(links(nav(html, '订阅管理导航'))).toContain('/delivery/redemptions')
+    expect(links(nav(html, '套餐管理导航'))).toContain('/delivery/redemptions')
     expect(links(nav(html, '主导航'))).not.toContain('/delivery/redemptions')
     expect(links(mobileDock(html))).not.toContain('/delivery/redemptions')
   })
@@ -110,8 +110,8 @@ describe('navigation ownership and route compatibility', () => {
     expect(links(nav(render('/system/mail?keep=1'), '系统设置导航'))).toContain('/system/status?keep=1')
   })
   it.each([
-    ['/dashboard', '概览'], ['/catalog/nodes', '节点'], ['/catalog/sources', '来源'], ['/catalog/groups', '分组'],
-    ['/delivery/templates', '权益模板'], ['/delivery/shares', '分享管理'], ['/users/usr_2', '用户详情'],
+    ['/dashboard', '概览'], ['/catalog/nodes', '节点'], ['/catalog/sources', '来源'], ['/catalog/groups', '节点组'],
+    ['/plans', '套餐管理'], ['/delivery/redemptions', '兑换码'], ['/delivery/shares', '分享管理'], ['/users/usr_2', '用户详情'],
     ['/delivery/tickets', '工单'], ['/delivery/tickets/tkt_1', '工单'], ['/kb/manage', '知识库'],
     ['/catalog/apps', '客户端下载'], ['/operations/notices', '公告'], ['/audit-logs', '审计日志'], ['/account', '账户安全'],
   ])('keeps administrator route %s reachable', (path, marker) => {
@@ -131,7 +131,9 @@ describe('navigation ownership and route compatibility', () => {
     ['/system', '/system/registration'],
     ['/delivery/subscriptions', '/users'],
     ['/delivery/subscriptions/old', '/users'],
-    ['/plans', '/delivery/templates'],
+    ['/delivery/templates', '/plans'],
+    ['/delivery/conversions', '/plans'],
+    ['/redeem-codes', '/delivery/redemptions'],
     ['/system?section=admin-mail&keep=1', '/system/mail?keep=1'],
     ['/system?tab=domain&subscription=sub_1', '/system/distribution?subscription=sub_1'],
     ['/system#share', '/system/distribution'],
@@ -158,7 +160,8 @@ describe('navigation ownership and route compatibility', () => {
     expect(section).not.toContain('href="/delivery/subscriptions')
   })
   it.each([
-    ['/delivery/templates', '权益模板'],
+    ['/plans', '套餐管理'],
+    ['/delivery/redemptions', '兑换码'],
     ['/delivery/tickets', '工单'],
     ['/operations/notices', '公告'],
     ['/kb/manage', '知识库管理'],

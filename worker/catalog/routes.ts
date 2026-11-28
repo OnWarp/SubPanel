@@ -22,6 +22,7 @@ import { countTemplateGroupReferences } from '../delivery/entitlement-templates.
 
 import { CLIENT_IDS, prepareClientRender, renderClient } from '../renderers/index.js'
 import { listPlans } from '../delivery/plans.js'
+import { plansUsingGroup } from '../plans/service.js'
 import { resolveGroupCandidates, resolveGroupNodes } from './groups.js'
 import { MAX_NODES } from './repository.js'
 import { logAudit } from '../admin/audit.js'
@@ -383,18 +384,40 @@ catalogRoutes.put('/groups/:groupId', async (c) => {
   return c.json({ group: saved.groups.find(({ id: groupId }) => groupId === id.data) })
 })
 
+catalogRoutes.get('/groups/:groupId', async (c) => {
+  const id = groupIdSchema.safeParse(c.req.param('groupId'))
+  if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
+  const snapshot = await readCatalog(c.env)
+  const group = snapshot.groups.find(({ id: groupId }) => groupId === id.data)
+  if (!group) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
+  return c.json({ group: { ...group, resolvedNodeIds: resolveGroupNodes(snapshot, group.id).map(({ id: nodeId }) => nodeId) } })
+})
+
+catalogRoutes.get('/groups/:groupId/plans', async (c) => {
+  const id = groupIdSchema.safeParse(c.req.param('groupId'))
+  if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
+  const snapshot = await readCatalog(c.env)
+  if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
+  return c.json({ plans: await plansUsingGroup(c.env.DB, id.data) })
+})
+
 catalogRoutes.delete('/groups/:groupId', async (c) => {
   const id = groupIdSchema.safeParse(c.req.param('groupId'))
   if (!id.success) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
   const snapshot = await readCatalog(c.env)
   if (!snapshot.groups.some(({ id: groupId }) => groupId === id.data)) throw apiError(404, 'GROUP_NOT_FOUND', '分组不存在')
-  const [plans, templates] = await Promise.all([
-    listPlans(c.env.DB), countTemplateGroupReferences(c.env.DB, id.data),
+  const [plans, templates, definitions] = await Promise.all([
+    listPlans(c.env.DB), countTemplateGroupReferences(c.env.DB, id.data), plansUsingGroup(c.env.DB, id.data),
   ])
   const activePlans = plans.filter((plan) => plan.enabled && plan.groupIds.includes(id.data)).length
-  if (templates || activePlans) {
-    throw apiError(409, 'GROUP_IN_USE', `分组仍被 ${templates} 个订阅模板和 ${activePlans} 个启用计划引用，请先更换或移除引用`, {
-      subscriptions: 0, templates, activePlans,
+  if (templates || activePlans || definitions.length) {
+    const parts = [
+      definitions.length ? `套餐 ${definitions.map((plan) => plan.name).join('、')}` : '',
+      templates ? `${templates} 个订阅模板` : '',
+      activePlans ? `${activePlans} 个启用的旧计划` : '',
+    ].filter(Boolean)
+    throw apiError(409, 'GROUP_IN_USE', `请先解除引用：${parts.join('，')}`, {
+      subscriptions: 0, templates, activePlans, plans: definitions,
     })
   }
   await writeCatalog(c.env, { ...snapshot, groups: snapshot.groups.filter(({ id: groupId }) => groupId !== id.data) })

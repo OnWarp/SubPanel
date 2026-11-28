@@ -1,4 +1,6 @@
 import { auditStatement } from '../admin/audit.js'
+import { readCatalogFromD1 } from '../catalog/d1-repository.js'
+import { resolveGroupNodes } from '../catalog/groups.js'
 import type { DataEnv } from '../db/module-switch.js'
 import { subscriptionNotFound } from '../delivery/user-access.js'
 import { apiError } from '../platform/api-error.js'
@@ -98,12 +100,162 @@ function encodeRemark(input: string | null, previous?: string | null) {
   return JSON.stringify({ ...metadata, note: input })
 }
 
+export function planNote(remark: string | null) {
+  if (!remark) return ''
+  try {
+    const parsed: unknown = JSON.parse(remark)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && typeof (parsed as { note?: unknown }).note === 'string') {
+      return (parsed as { note: string }).note
+    }
+  } catch { /* Plain-text notes stay as written. */ }
+  return remark
+}
+
+export function definitionStatus(row: { enabled: number; archived_at: string | null }) {
+  if (row.archived_at !== null) return 'archived' as const
+  return row.enabled ? 'enabled' as const : 'disabled' as const
+}
+
+export type PlanGroupView = { id: string; name: string; enabled: boolean; nodeCount: number; empty: boolean }
+export type PlanUsage = { userCount: number; instanceCount: number }
+export type PlanStats = PlanUsage & { total: number; active: number; paused: number; revoked: number; expired: number; pending: number }
+
+type GroupLink = { plan_id: string; group_id: string; name: string | null; enabled: number | null }
+
+async function readGroupLinks(db: D1Database, planIds: string[]) {
+  if (!planIds.length) return [] as GroupLink[]
+  const rows = await db.prepare(`SELECT g.plan_id, g.group_id, groups.name, groups.enabled
+    FROM plan_node_groups g LEFT JOIN groups ON groups.id=g.group_id
+    WHERE g.plan_id IN (SELECT value FROM json_each(?))
+    ORDER BY g.plan_id, g.group_id`).bind(JSON.stringify(planIds)).all<GroupLink>()
+  return rows.results
+}
+
+function nodesForGroups(snapshot: Awaited<ReturnType<typeof readCatalogFromD1>> | null, groupIds: string[]) {
+  const counts = new Map<string, number>()
+  const union = new Set<string>()
+  if (!snapshot) {
+    for (const id of groupIds) counts.set(id, 0)
+    return { counts, nodeCount: 0 }
+  }
+  for (const id of groupIds) {
+    if (counts.has(id) || !snapshot.groups.some(group => group.id === id)) {
+      if (!counts.has(id)) counts.set(id, 0)
+      continue
+    }
+    const nodes = resolveGroupNodes(snapshot, id)
+    counts.set(id, nodes.length)
+    for (const node of nodes) union.add(node.id)
+  }
+  return { counts, nodeCount: union.size }
+}
+
+async function usageByPlan(db: D1Database, planIds: string[], now = Date.now()) {
+  const usage = new Map<string, PlanStats>()
+  if (!planIds.length) return usage
+  const rows = await db.prepare(`SELECT plan_id,
+    count(*) AS total,
+    count(DISTINCT CASE WHEN status<>'revoked' THEN user_id END) AS users,
+    sum(CASE WHEN status<>'revoked' THEN 1 ELSE 0 END) AS instances,
+    sum(CASE WHEN status='revoked' THEN 1 ELSE 0 END) AS revoked,
+    sum(CASE WHEN status<>'revoked' AND expires_at IS NOT NULL AND expires_at<=? THEN 1 ELSE 0 END) AS expired,
+    sum(CASE WHEN status='paused' AND (expires_at IS NULL OR expires_at>?) THEN 1 ELSE 0 END) AS paused,
+    sum(CASE WHEN status='active' AND starts_at>? AND (expires_at IS NULL OR expires_at>?) THEN 1 ELSE 0 END) AS pending,
+    sum(CASE WHEN status='active' AND starts_at<=? AND (expires_at IS NULL OR expires_at>?) THEN 1 ELSE 0 END) AS active
+    FROM user_plans WHERE plan_id IN (SELECT value FROM json_each(?)) GROUP BY plan_id`)
+    .bind(now, now, now, now, now, now, JSON.stringify(planIds))
+    .all<{ plan_id: string; total: number; users: number; instances: number; revoked: number; expired: number; paused: number; pending: number; active: number }>()
+  for (const row of rows.results) {
+    const count = (value: number | null) => Number(value ?? 0)
+    usage.set(row.plan_id, {
+      userCount: count(row.users), instanceCount: count(row.instances), total: count(row.total),
+      active: count(row.active), paused: count(row.paused), revoked: count(row.revoked),
+      expired: count(row.expired), pending: count(row.pending),
+    })
+  }
+  return usage
+}
+
+const emptyStats = (): PlanStats => ({ userCount: 0, instanceCount: 0, total: 0, active: 0, paused: 0, revoked: 0, expired: 0, pending: 0 })
+
+export async function describeDefinitions(db: D1Database, rows: PlanDefinitionRow[], now = Date.now()) {
+  const links = await readGroupLinks(db, rows.map(row => row.id))
+  let snapshot: Awaited<ReturnType<typeof readCatalogFromD1>> | null = null
+  if (links.length) {
+    try { snapshot = await readCatalogFromD1(db) } catch { snapshot = null }
+  }
+  const usage = await usageByPlan(db, rows.map(row => row.id), now)
+  return rows.map(row => {
+    const groups = links.filter(link => link.plan_id === row.id)
+    const resolved = nodesForGroups(snapshot, groups.map(group => group.group_id))
+    const nodeGroups: PlanGroupView[] = groups.map(group => ({
+      id: group.group_id,
+      name: group.name ?? group.group_id,
+      enabled: group.enabled === null ? false : group.enabled === 1,
+      nodeCount: resolved.counts.get(group.group_id) ?? 0,
+      empty: (resolved.counts.get(group.group_id) ?? 0) === 0,
+    }))
+    const stats = usage.get(row.id) ?? emptyStats()
+    return {
+      ...row,
+      note: planNote(row.remark),
+      status: definitionStatus(row),
+      nodeGroupIds: nodeGroups.map(group => group.id),
+      nodeGroups,
+      nodeCount: resolved.nodeCount,
+      userCount: stats.userCount,
+      instanceCount: stats.instanceCount,
+      stats,
+    }
+  })
+}
+
 export async function definitionDetail(db: D1Database, id: string) {
   const row = await planDefinitions.get(db, id)
   if (!row) throw subscriptionNotFound()
-  const groups = await db.prepare('SELECT group_id FROM plan_node_groups WHERE plan_id=? ORDER BY group_id')
-    .bind(id).all<{ group_id: string }>()
-  return { ...row, nodeGroupIds: groups.results.map(group => group.group_id) }
+  const [plan] = await describeDefinitions(db, [row])
+  return plan
+}
+
+export async function previewDefinitionGroups(db: D1Database, nodeGroupIds: string[]) {
+  await validateGroups(db, nodeGroupIds)
+  const ids = [...new Set(nodeGroupIds)]
+  let snapshot: Awaited<ReturnType<typeof readCatalogFromD1>> | null = null
+  try { snapshot = await readCatalogFromD1(db) } catch { snapshot = null }
+  const names = ids.length
+    ? await db.prepare(`SELECT id, name, enabled FROM groups WHERE id IN (SELECT value FROM json_each(?))`)
+      .bind(JSON.stringify(ids)).all<{ id: string; name: string; enabled: number }>()
+    : { results: [] as { id: string; name: string; enabled: number }[] }
+  const named = new Map(names.results.map(group => [group.id, group]))
+  const resolved = nodesForGroups(snapshot, ids)
+  const nodeGroups = ids.map(id => {
+    const group = named.get(id)
+    const nodeCount = resolved.counts.get(id) ?? 0
+    return { id, name: group?.name ?? id, enabled: group ? group.enabled === 1 : false, nodeCount, empty: nodeCount === 0 }
+  })
+  return { nodeCount: resolved.nodeCount, nodeGroups, emptyGroupIds: nodeGroups.filter(group => group.empty).map(group => group.id) }
+}
+
+export async function nodeCountsForPlans(db: D1Database, planIds: string[]) {
+  const distinct = [...new Set(planIds)]
+  if (!distinct.length) return new Map<string, number>()
+  const rows = await db.prepare('SELECT * FROM plan_definitions WHERE id IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(distinct)).all<PlanDefinitionRow>()
+  const described = await describeDefinitions(db, rows.results)
+  return new Map(described.map(plan => [plan.id, plan.nodeCount]))
+}
+
+export async function plansUsingGroup(db: D1Database, groupId: string) {
+  try {
+    const rows = await db.prepare(`SELECT p.id, p.name, p.enabled, p.archived_at
+      FROM plan_definitions p JOIN plan_node_groups g ON g.plan_id=p.id
+      WHERE g.group_id=? ORDER BY p.name, p.id`).bind(groupId)
+      .all<{ id: string; name: string; enabled: number; archived_at: string | null }>()
+    return rows.results.map(row => ({ id: row.id, name: row.name, status: definitionStatus(row) }))
+  } catch (error) {
+    if (error instanceof Error && /no such table/i.test(error.message)) return []
+    throw error
+  }
 }
 
 function insertGroups(db: D1Database, id: string, groupIds: string[]) {
@@ -113,15 +265,15 @@ function insertGroups(db: D1Database, id: string, groupIds: string[]) {
 
 export async function listDefinitions(db: D1Database, page: { limit: number; offset: number; search?: string;
   status?: 'enabled' | 'disabled' | 'archived' }) {
-  if (!page.search && !page.status) return planDefinitions.list(db, page)
-  const search = page.search ?? null
+  const search = page.search ? page.search : null
   const status = page.status ?? null
   const rows = await db.prepare(`SELECT * FROM plan_definitions
-    WHERE (? IS NULL OR instr(lower(name), lower(?))>0 OR instr(lower(description), lower(?))>0)
+    WHERE (? IS NULL OR instr(lower(name), lower(?))>0 OR instr(lower(description), lower(?))>0
+      OR instr(lower(coalesce(remark, '')), lower(?))>0)
     AND (? IS NULL OR ?=CASE WHEN archived_at IS NOT NULL THEN 'archived'
       WHEN enabled=1 THEN 'enabled' ELSE 'disabled' END)
-    ORDER BY id LIMIT ? OFFSET ?`).bind(search, search, search, status, status, page.limit, page.offset).all<PlanDefinitionRow>()
-  return rows.results
+    ORDER BY id LIMIT ? OFFSET ?`).bind(search, search, search, search, status, status, page.limit, page.offset).all<PlanDefinitionRow>()
+  return describeDefinitions(db, rows.results)
 }
 
 async function validateGroups(db: D1Database, ids: string[]) {
@@ -141,7 +293,7 @@ export async function createDefinition(db: D1Database, input: DefinitionInput, a
   }
   await commit(db, [planDefinitions.prepareCreate(db, row), insertGroups(db, row.id, input.nodeGroupIds),
     auditStatement(db, actor, 'plan.definition.create', 'plan_definition', row.id)])
-  return { ...row, nodeGroupIds: [...new Set(input.nodeGroupIds)].sort() }
+  return definitionDetail(db, row.id)
 }
 
 export async function updateDefinition(db: D1Database, id: string, version: number, input: Partial<DefinitionInput>,
@@ -191,9 +343,14 @@ type AssignmentExpiry = { durationMode: 'inherit' | 'permanent' } |
   { durationMode: 'custom'; durationSeconds: number } | { durationMode: 'custom'; expiresAt: number }
 
 export async function assignPlan(env: DataEnv, userId: string, planId: string,
-  input: AssignmentExpiry & { startsAt?: number; remark?: string | null }, actor: string, now = Date.now()) {
+  input: AssignmentExpiry & { startsAt?: number; remark?: string | null; idempotencyKey?: string }, actor: string, now = Date.now()) {
   const { DB: db } = env
   if (!planUserEnabled(await readPlanUser(db, userId))) throw subscriptionNotFound()
+  if (input.idempotencyKey) {
+    const existing = await db.prepare(`SELECT * FROM user_plans WHERE user_id=? AND source='admin' AND source_id=?`)
+      .bind(userId, input.idempotencyKey).first<UserPlanRow>()
+    if (existing) return { instance: existing, token: null, replayed: true as const }
+  }
   const plan = await planDefinitions.get(db, planId)
   if (!plan || (plan.owner_user_id !== null && plan.owner_user_id !== userId)) throw subscriptionNotFound()
   if (!plan.enabled || plan.archived_at !== null) throw notAssignable()
@@ -204,7 +361,7 @@ export async function assignPlan(env: DataEnv, userId: string, planId: string,
         : plan.duration_seconds === null ? null : durationEnd(start, plan.duration_seconds)
   const stamp = new Date(now).toISOString()
   const grant = await prepareInstanceGrant(env, {
-    userId, planId, startsAt: start, expiresAt: expires, source: 'admin', sourceId: null,
+    userId, planId, startsAt: start, expiresAt: expires, source: 'admin', sourceId: input.idempotencyKey ?? null,
     remark: input.remark ?? null, actor, action: 'plan.instance.assign', detail: { userId, planId }, stamp,
   })
   await commit(db, [
@@ -212,7 +369,7 @@ export async function assignPlan(env: DataEnv, userId: string, planId: string,
       AND enabled=1 AND archived_at IS NULL AND (owner_user_id IS NULL OR owner_user_id=?))`, userId, planId, plan.version, userId),
     ...grant.statements,
   ], notAssignable)
-  return { instance: grant.row, token: grant.raw }
+  return { instance: grant.row, token: grant.raw, replayed: false as const }
 }
 
 type Mutation = { action: 'patch'; startsAt?: number; expiresAt?: number | null; remark?: string | null } |

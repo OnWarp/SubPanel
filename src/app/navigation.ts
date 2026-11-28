@@ -1,4 +1,4 @@
-import { BookOpen, Download, LayoutDashboard, FolderKanban, Gauge, Home, type LucideIcon, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, SlidersHorizontal, ShieldCheck, UserRound, Users } from 'lucide-react'
+import { BookOpen, Download, FolderKanban, Gauge, Home, type LucideIcon, LayoutDashboard, Megaphone, MessageSquare, Network, Rss, Send, Settings, Share2, ShieldCheck, SlidersHorizontal, Ticket, UserRound, Users } from 'lucide-react'
 import { matchPath } from 'react-router-dom'
 
 export type NavItem = { to: string; label: string; icon: LucideIcon }
@@ -12,8 +12,9 @@ export const adminSections: NavSection[] = [
     { to: '/catalog/groups', label: '分组', icon: FolderKanban },
   ] },
   { label: '订阅', items: [
-    { to: '/delivery/templates', label: '权益模板', icon: Send },
+    { to: '/plans', label: '套餐管理', icon: Send },
     { to: '/delivery/shares', label: '分享管理', icon: Share2 },
+    { to: '/delivery/redemptions', label: '兑换码', icon: Ticket },
   ] },
   { label: '用户', items: [{ to: '/users', label: '用户管理', icon: Users }] },
   { label: '运营', items: [
@@ -38,13 +39,13 @@ export const adminDomains: AdminDomain[] = [
     section: { label: '节点管理导航', tabs: [
       { to: '/catalog/nodes', label: '节点' },
       { to: '/catalog/sources', label: '来源' },
-      { to: '/catalog/groups', label: '分组' },
+      { to: '/catalog/groups', label: '节点组' },
     ] },
   },
   {
-    to: '/delivery/templates', label: '订阅管理', shortLabel: '订阅', icon: Send,
-    section: { label: '订阅管理导航', tabs: [
-      { to: '/delivery/templates', label: '权益模板' },
+    to: '/plans', label: '套餐管理', shortLabel: '套餐', icon: Send,
+    section: { label: '套餐管理导航', tabs: [
+      { to: '/plans', label: '套餐', includeChildren: true },
       { to: '/delivery/shares', label: '分享' },
       { to: '/delivery/redemptions', label: '兑换码' },
     ] },
@@ -79,13 +80,13 @@ export const adminDomains: AdminDomain[] = [
 ]
 
 /** Narrow dock only. Operations and system settings stay on the desktop sidebar and the narrow account menu. */
-const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/delivery/templates', '/users'])
+const adminMobileDockTargets = new Set(['/dashboard', '/catalog/nodes', '/plans', '/users'])
 export const adminMobileDock = adminDomains.filter((domain) => adminMobileDockTargets.has(domain.to))
 
 const contentModulePaths = new Set([
   '/users', '/invites', '/users/recycle-bin',
   '/catalog/nodes', '/catalog/sources', '/catalog/groups', '/catalog/apps',
-  '/delivery/templates', '/delivery/shares', '/delivery/redemptions',
+  '/plans', '/delivery/shares', '/delivery/redemptions',
   '/system/registration', '/system/mail', '/system/distribution', '/system/status', '/audit-logs',
   '/delivery/tickets', '/operations/notices', '/kb/manage',
 ])

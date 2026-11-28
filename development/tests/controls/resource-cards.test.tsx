@@ -17,7 +17,7 @@ const noop = () => undefined
 
 describe('admin resource list cards', () => {
   it.each([
-    { Page: GroupsPage, id: 'groups-title', title: '分组', search: '搜索名称', action: '添加分组', paged: false },
+    { Page: GroupsPage, id: 'groups-title', title: '节点组', search: '搜索名称', action: '添加分组', paged: false },
     { Page: NodesPage, id: 'nodes-title', title: '节点', search: '搜索节点', action: '添加节点', paged: true },
   ])('renders the title, search and loading table for $title', ({ Page, id, title, search, action, paged }) => {
     const html = renderToStaticMarkup(<MemoryRouter><ToastProvider><Page /></ToastProvider></MemoryRouter>)

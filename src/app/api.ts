@@ -415,7 +415,7 @@ const subscriptionFamilies = [
 ]
 const writeFamilies: Array<[string[], string[]]> = [
   [['/api/admin/catalog'], ['/api/admin/catalog', ...subscriptionFamilies]],
-  [['/api/admin/plans'], ['/api/admin/plans', '/api/account/plans', ...subscriptionFamilies]],
+  [['/api/admin/plans', '/api/admin/user-plans', '/api/admin/redeem-codes'], ['/api/admin/plans', '/api/admin/user-plans', '/api/admin/redeem-codes', '/api/account/plans', ...subscriptionFamilies]],
   [[...subscriptionRoutes, ...shareRoutes, subscriptionTemplatesPath], subscriptionFamilies],
   [['/api/admin/share-settings'], ['/api/admin/share-settings', ...subscriptionFamilies]],
   [['/api/admin/apps', '/api/admin/system/app-downloads'], ['/api/admin/apps', '/api/apps', '/api/admin/system/app-downloads']],

@@ -8,7 +8,7 @@ const userPassword = 'mobile nav user password'
 const adminEntries = [
   ['概览', '/dashboard'],
   ['节点管理', '/catalog/nodes'],
-  ['订阅管理', '/delivery/templates'],
+  ['套餐管理', '/plans'],
   ['用户管理', '/users'],
 ] as const
 const adminDock = (page: Page) => page.getByRole('navigation', { name: '主导航', exact: true })

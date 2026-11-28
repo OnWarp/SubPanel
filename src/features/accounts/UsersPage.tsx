@@ -18,6 +18,7 @@ import { StatusBadge } from '../../ui/StatusBadge'
 import { FilterBar } from '../../ui/FilterBar'
 import { StatusMessage } from '../../ui/StatusMessage'
 import { useToast } from '../../ui/Toast'
+import { AssignPlanDialog } from '../plans/AssignPlanDialog'
 
 type BatchKind = 'enable' | 'disable' | 'delete'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
@@ -64,7 +65,7 @@ function menuItems(user: UserSummary, view: UsersView): MenuItem[] {
       { key: 'promote', label: '设管理员' },
     )
   }
-  items.push({ key: 'subscription-plan', label: '订阅授权' })
+  items.push({ key: 'subscription-plan', label: '套餐' })
   items.push(user.enabled
     ? { key: 'disable', label: '停用账号', danger: true, disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined }
     : { key: 'enable', label: '启用账号', disabled: user.role === 'admin', title: user.role === 'admin' ? '管理员不能在这里启用或停用' : undefined })
@@ -127,6 +128,7 @@ export function UsersDirectory({
   onToggleAll,
   onRowAction,
   onBatch,
+  onAssign,
   batchProgress,
 }: {
   phase: DirectoryPhase
@@ -150,6 +152,7 @@ export function UsersDirectory({
   onToggleAll: (checked: boolean) => void
   onRowAction: (action: RowAction, user: UserSummary, trigger: HTMLElement | null) => void
   onBatch: (action: BatchKind) => void
+  onAssign?: () => void
   batchProgress?: string
 }) {
   const allSelected = users.length > 0 && users.every((user) => selectedIds.has(user.id))
@@ -157,6 +160,7 @@ export function UsersDirectory({
     { key: 'disable', label: '停用用户', icon: XCircle, tone: 'danger', onClick: () => onBatch('disable') },
     { key: 'enable', label: '启用用户', icon: CheckCircle2, onClick: () => onBatch('enable') },
     { key: 'delete', label: '删除用户', icon: Trash2, tone: 'danger', onClick: () => onBatch('delete') },
+    ...(onAssign ? [{ key: 'assign', label: '分配套餐', icon: KeyRound, onClick: onAssign }] : []),
   ]
   const columns: Array<DataTableColumn<UserSummary>> = [
     ...(view === 'active' ? [{
@@ -321,6 +325,7 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
   const [mutating, setMutating] = useState(false)
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<Exclude<BatchKind, 'enable'> | null>(null)
+  const [assignOpen, setAssignOpen] = useState(false)
   const [batchProgress, setBatchProgress] = useState('')
   const [confirmAction, setConfirmAction] = useState<{ kind: ConfirmKind; user: UserSummary } | null>(null)
   const navigate = useNavigate()
@@ -655,8 +660,16 @@ export function UsersPage({ view = 'active' }: { view?: UsersView }) {
         onToggleAll={(checked) => setSelectedUsers(checked ? new Set(users.map((user) => user.id)) : new Set())}
         onRowAction={onRowAction}
         onBatch={requestBatch}
+        onAssign={view === 'active' ? () => setAssignOpen(true) : undefined}
         batchProgress={batchProgress}
       />
+      {assignOpen ? (
+        <AssignPlanDialog
+          targets={users.filter((user) => selectedUsers.has(user.id)).map((user) => ({ id: user.id, label: user.username }))}
+          onClose={() => setAssignOpen(false)}
+          onAssigned={() => { void refreshUsers() }}
+        />
+      ) : null}
       <Dialog
         open={editUser !== null}
         returnFocusRef={dialogTrigger}

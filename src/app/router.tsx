@@ -1,4 +1,5 @@
-import { AdminRedemptionsPage } from '../features/redemption/AdminRedemptionsPage'
+import { RedeemCodesPage } from '../features/plans/RedeemCodesPage'
+import { PlanDetailPage, PlansPage } from '../features/plans/PlansPage'
 import { AuditLogsPage } from '../features/admin/AuditLogsPage'
 import { UserDetailPage } from '../features/accounts/UserDetailPage'
 import type { ReactNode } from 'react'
@@ -16,7 +17,6 @@ import { AppsPage } from '../features/catalog/AppsPage'
 import { SourcesPage } from '../features/catalog/SourcesPage'
 import { NodesPage } from '../features/catalog/NodesPage'
 import { GroupsPage } from '../features/catalog/GroupsPage'
-import { EntitlementTemplatesPage } from '../features/delivery/EntitlementTemplatesPanel'
 import { AdminSharesPage } from '../features/delivery/AdminSharesPage'
 import { NoticesPage } from '../features/notices/NoticesPage'
 import { AdminKbPage } from '../features/kb/AdminKbPage'
@@ -80,13 +80,15 @@ export function AppRouter() {
       <Route path="/catalog/apps" element={user?.role === 'admin' ? shell(<AppsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/nodes" element={user?.role === 'admin' ? shell(<NodesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/catalog/groups" element={user?.role === 'admin' ? shell(<GroupsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/delivery/conversions" element={user?.role === 'admin' ? <Navigate to="/delivery/templates" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/conversions" element={user?.role === 'admin' ? <Navigate to="/plans" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/subscriptions/*" element={user?.role === 'admin' ? <Navigate to="/users" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/delivery/templates" element={user?.role === 'admin' ? shell(<EntitlementTemplatesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/templates" element={user?.role === 'admin' ? <Navigate to="/plans" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/migration" element={user?.role === 'admin' ? <Navigate to="/users" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/delivery/redemptions" element={user?.role === 'admin' ? shell(<AdminRedemptionsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/delivery/redemptions" element={user?.role === 'admin' ? shell(<RedeemCodesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
+      <Route path="/redeem-codes" element={user?.role === 'admin' ? <Navigate to="/delivery/redemptions" replace /> : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/shares" element={user?.role === 'admin' ? shell(<AdminSharesPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
-      <Route path="/plans" element={user?.role === 'admin' ? <Navigate to="/delivery/templates" replace /> : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/plans" element={user?.role === 'admin' ? shell(<PlansPage />) : <Navigate to={user ? home : signedOut} replace />} />
+      <Route path="/plans/:id" element={user?.role === 'admin' ? shell(<PlanDetailPage />) : <Navigate to={user ? home : signedOut} replace />} />
       <Route path="/delivery/tickets" element={user?.role === 'admin' ? shell(<AdminTicketsPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/delivery/tickets/:id" element={user?.role === 'admin' ? shell(<AdminTicketDetailPage />) : <Navigate to={user ? '/subscriptions' : signedOut} replace />} />
       <Route path="/kb/manage" element={user?.role === 'admin' ? shell(<AdminKbPage />) : <Navigate to={user ? '/dashboard' : signedOut} replace />} />

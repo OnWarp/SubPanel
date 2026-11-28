@@ -3,6 +3,7 @@ import { AdminModuleTabs } from '../admin-resources/AdminModuleTabs'
 import { ResourceRowActions, ResourceSelectAll } from '../admin-resources/ResourceCard'
 import { Checkbox, FormSelect, Input } from '../../ui/Controls'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { api, peekApi, watchApi, ApiClientError, jsonBody, type AdminSubscription, type CatalogGroup, type CatalogNode, type CatalogResponse, type CatalogSource } from '../../app/api'
 import { BatchToolbar, type BatchAction } from '../../ui/BatchToolbar'
@@ -67,6 +68,7 @@ export function GroupsPage() {
   const [previewError, setPreviewError] = useState('')
   const [editorError, setEditorError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [referencedPlans, setReferencedPlans] = useState<Array<{ id: string; name: string; status: string }>>([])
   const [progress, setProgress] = useState('')
   const editorTrigger = useRef<HTMLButtonElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -97,6 +99,19 @@ export function GroupsPage() {
   }, [])
 
   useEffect(() => { load().catch(() => undefined) }, [load])
+
+  useEffect(() => {
+    if (!editing || editing === 'create') {
+      setReferencedPlans([])
+      return
+    }
+    const controller = new AbortController()
+    const groupId = editing.id
+    void api<{ plans: Array<{ id: string; name: string; status: string }> }>(`/api/admin/catalog/groups/${encodeURIComponent(groupId)}/plans`, { signal: controller.signal })
+      .then((result) => { if (!controller.signal.aborted) setReferencedPlans(result.plans) })
+      .catch(() => { if (!controller.signal.aborted) setReferencedPlans([]) })
+    return () => controller.abort()
+  }, [editing])
 
   const groups = catalog?.groups ?? EMPTY_GROUPS
   const sources = catalog?.sources ?? EMPTY_SOURCES
@@ -277,7 +292,7 @@ export function GroupsPage() {
     <PageContainer width="list">
       <div className="page-stack resource-pages phase3-catalog">
       <section className="catalog-data-section" aria-labelledby="groups-title">
-        <PageHeader placement="inline" id="groups-title" title="分组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
+        <PageHeader placement="inline" id="groups-title" title="节点组" actions={<button className="button primary" type="button" onClick={openCreate}><Plus aria-hidden="true" size={17} />添加分组</button>} />
         <AdminModuleTabs />
         <FilterBar className="catalog-filters" searchRef={searchRef} onReset={query ? () => setQuery('') : undefined}>
           <SearchInput inputRef={searchRef} label="搜索名称" placeholder="搜索分组名称" value={query} onChange={setQuery} />
@@ -288,7 +303,7 @@ export function GroupsPage() {
         {!catalog && error ? null : !loading && groups.length === 0 ? (
           <EmptyState title="暂无分组" />
         ) : (
-          <DataTable columns={columns} rows={filteredGroups} loadingLabel={loading && !catalog ? '正在加载分组' : undefined} rowKey={(group) => group.id} empty="暂无匹配分组" summary={catalog && `共 ${filteredGroups.length} 个分组`} />
+          <DataTable columns={columns} rows={filteredGroups} loadingLabel={loading && !catalog ? '正在加载节点组' : undefined} rowKey={(group) => group.id} empty="暂无匹配分组" summary={catalog && `共 ${filteredGroups.length} 个分组`} />
         )}
       </section>
 
@@ -301,6 +316,12 @@ export function GroupsPage() {
         <form id="group-editor" className="form-stack group-form" onSubmit={saveGroup}>
           <div className="form-stack" hidden={choosingNodes}>
             <label className="field"><span>分组名称</span><Input aria-label="分组名称" value={form.name} maxLength={128} onChange={(event) => { const name = event.currentTarget.value; setForm((current) => ({ ...current, name })) }} required /></label>
+            {editing !== 'create' ? (
+              <section className="form-stack" aria-label="引用此节点组的套餐">
+                <strong>引用套餐</strong>
+                {referencedPlans.length ? <ul>{referencedPlans.map((plan) => <li key={plan.id}><Link to={`/plans/${encodeURIComponent(plan.id)}`}>{plan.name}</Link></li>)}</ul> : <p className="dialog-note">暂无套餐引用</p>}
+              </section>
+            ) : null}
 
             <section className="form-stack" aria-label="分组规则预览">
               <strong>分组规则预览</strong>

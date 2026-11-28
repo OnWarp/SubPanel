@@ -93,7 +93,7 @@ describe('users directory', () => {
     expect(admin).toContain('修改邮箱')
     expect(admin).toContain('停用账号')
     expect(admin).toContain('管理员不能在这里启用或停用')
-    expect(admin).toContain('订阅授权')
+    expect(admin).toContain('套餐')
     expect(admin).toContain('删除用户')
     expect(admin).not.toContain('重置密码')
     expect(admin).not.toContain('设为管理员')
@@ -102,7 +102,7 @@ describe('users directory', () => {
     expect(user).toContain('重置密码')
     expect(user).toContain('设管理员')
     expect(user).toContain('启用账号')
-    expect(user).toContain('订阅授权')
+    expect(user).toContain('套餐')
     expect(user).toContain('删除用户')
   })
 

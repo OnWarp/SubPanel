@@ -147,13 +147,25 @@ export async function generateRedeemCodes(env: RedeemEnv, actor: string, input: 
   return { batchId, codes: issued.map(code => ({ id: code.id, code: formatCode(code.canonical), tail: code.tail })) }
 }
 
-export async function listRedeemCodes(db: D1Database, page: { limit: number; offset: number; planId?: string }) {
+export async function listRedeemCodes(db: D1Database, page: { limit: number; offset: number; planId?: string; search?: string;
+  status?: 'active' | 'disabled' | 'expired' | 'exhausted' }, now = Date.now()) {
   const planId = page.planId ?? null
-  const rows = await db.prepare(`SELECT id, tail, plan_id, duration_mode, duration_seconds, valid_from, valid_until,
-    max_uses, used_count, per_user_limit, enabled, remark, batch_id FROM redeem_codes
-    WHERE (? IS NULL OR plan_id=?) ORDER BY id LIMIT ? OFFSET ?`)
-    .bind(planId, planId, page.limit, page.offset).all<RedeemCodeRow>()
-  return rows.results.map(maskRedeemCode)
+  const search = page.search ? page.search : null
+  const status = page.status ?? null
+  const rows = await db.prepare(`SELECT c.id, c.tail, c.plan_id, c.duration_mode, c.duration_seconds, c.valid_from, c.valid_until,
+    c.max_uses, c.used_count, c.per_user_limit, c.enabled, c.remark, c.batch_id, p.name AS plan_name
+    FROM redeem_codes c LEFT JOIN plan_definitions p ON p.id=c.plan_id
+    WHERE (? IS NULL OR c.plan_id=?)
+    AND (? IS NULL OR instr(lower(coalesce(p.name, '')), lower(?))>0 OR instr(c.tail, ?)>0 OR instr(lower(coalesce(c.remark, '')), lower(?))>0)
+    AND (? IS NULL OR ?=CASE
+      WHEN c.enabled=0 THEN 'disabled'
+      WHEN c.valid_until IS NOT NULL AND c.valid_until<=? THEN 'expired'
+      WHEN c.used_count>=c.max_uses THEN 'exhausted'
+      ELSE 'active' END)
+    ORDER BY c.id LIMIT ? OFFSET ?`)
+    .bind(planId, planId, search, search, search, search, status, status, now, page.limit, page.offset)
+    .all<RedeemCodeRow & { plan_name: string | null }>()
+  return rows.results.map(row => ({ ...maskRedeemCode(row), planName: row.plan_name }))
 }
 
 export async function updateRedeemCode(db: D1Database, id: string, input: z.infer<typeof updateRedeemInput>, actor: string) {
@@ -197,12 +209,21 @@ export async function archiveRedeemCode(db: D1Database, id: string, actor: strin
 
 export async function listCodeRedemptions(db: D1Database, codeId: string, page: { limit: number; offset: number }) {
   if (!await redeemCodes.get(db, codeId)) throw subscriptionNotFound()
-  const rows = await db.prepare(`SELECT id, code_id, user_id, user_plan_id, redeemed_at, request_id
-    FROM redemptions WHERE code_id=? ORDER BY redeemed_at, id LIMIT ? OFFSET ?`)
-    .bind(codeId, page.limit, page.offset).all<Pick<RedemptionRow, 'id' | 'code_id' | 'user_id' | 'user_plan_id' | 'redeemed_at' | 'request_id'>>()
+  const rows = await db.prepare(`SELECT r.id, r.code_id, r.user_id, r.user_plan_id, r.redeemed_at, r.request_id,
+    u.username AS username, i.status AS instance_status, i.expires_at AS expires_at, p.name AS plan_name
+    FROM redemptions r
+    LEFT JOIN users u ON u.id=r.user_id
+    LEFT JOIN user_plans i ON i.id=r.user_plan_id
+    LEFT JOIN plan_definitions p ON p.id=i.plan_id
+    WHERE r.code_id=? ORDER BY r.redeemed_at, r.id LIMIT ? OFFSET ?`)
+    .bind(codeId, page.limit, page.offset)
+    .all<Pick<RedemptionRow, 'id' | 'code_id' | 'user_id' | 'user_plan_id' | 'redeemed_at' | 'request_id'> & {
+      username: string | null; instance_status: string | null; expires_at: number | null; plan_name: string | null
+    }>()
   return rows.results.map(row => ({
     id: row.id, codeId: row.code_id, userId: row.user_id, userPlanId: row.user_plan_id,
     redeemedAt: row.redeemed_at, requestId: row.request_id,
+    username: row.username, instanceStatus: row.instance_status, expiresAt: row.expires_at, planName: row.plan_name,
   }))
 }
 

@@ -9,7 +9,8 @@ import { PageContainer } from '../../ui/PageContainer'
 import { DetailTabs } from '../../ui/SectionTabs'
 import { PageHeader } from '../../ui/PageHeader'
 import { StatusPill } from '../../ui/StatusPill'
-import { useBindingDetails, UserSubscriptionPlan } from '../delivery/UserSubscriptionPlan'
+import { useBindingDetails } from '../delivery/UserSubscriptionPlan'
+import { UserPlansPanel } from '../plans/UserPlansPanel'
 
 function UserDetail({ id }: { id: string }) {
   const [params] = useSearchParams()
@@ -21,7 +22,7 @@ function UserDetail({ id }: { id: string }) {
   const base = `/users/${encodeURIComponent(id)}`
   const tabs = [
     { to: base, label: '基本信息' },
-    { to: `${base}?tab=subscription`, label: '订阅授权' },
+    { to: `${base}?tab=subscription`, label: '套餐' },
     { to: `${base}?tab=logs`, label: '操作日志' },
   ]
   const activeTab = tabs[tab === 'subscription' ? 1 : tab === 'logs' ? 2 : 0].to
@@ -39,7 +40,7 @@ function UserDetail({ id }: { id: string }) {
     {error ? <ErrorState message="加载用户失败" onRetry={() => { setError(false); setRevision(value => value + 1) }} />
       : !user ? <LoadingState label="正在加载用户" /> : <>
         <DetailTabs label="用户详情" tabs={tabs} activeTo={activeTab} />
-        {tab === 'subscription' ? <UserSubscriptionPlan user={user} details={details} />
+        {tab === 'subscription' ? <UserPlansPanel userId={user.id} username={user.username} />
           : tab === 'logs' ? details.error
             ? <ErrorState message={details.error} onRetry={() => void details.load()} />
             : details.legacy ? <Link to="/audit-logs">审计日志</Link>

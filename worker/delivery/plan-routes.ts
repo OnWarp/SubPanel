@@ -9,14 +9,22 @@ import { userAnchorStatement } from '../db/ensure-users.js'
 import { batch } from '../db/db.js'
 import { upsertSettingStatement } from '../db/module-switch.js'
 import { apiError } from '../platform/api-error.js'
+import { archiveDefinitionResponse, createDefinitionResponse, isDefinitionCollectionQuery, listDefinitionsResponse } from '../plans/routes.js'
 import { deletePlan, getPlan, getSubscriptionPlanSummary, listPlans, listPublicPlans, operateSubscriptionPlan, planSchema, readTrialSettings, savePlan, trialSchema } from './plans.js'
 import { attachTrafficUsage, measuredTrafficForSubscription } from './traffic-usage.js'
 
 export const adminPlanRoutes = new Hono<AppEnv>()
-adminPlanRoutes.get('/plans', async (c) => c.json({ plans: await listPlans(c.env.DB) }))
+adminPlanRoutes.get('/plans', async (c) => {
+  if (isDefinitionCollectionQuery(c.req.query())) return listDefinitionsResponse(c)
+  return c.json({ plans: await listPlans(c.env.DB) })
+})
 adminPlanRoutes.post('/plans', async (c) => {
-  const plan = await savePlan(c.env.DB, await readJson(c,planSchema))
-  return c.json({ plan },201)
+  const body = await readJson(c, z.unknown())
+  if (body && typeof body === 'object' && !Array.isArray(body) && 'nodeGroupIds' in body) return createDefinitionResponse(c, body)
+  const parsed = planSchema.safeParse(body)
+  if (!parsed.success) throw apiError(422, 'VALIDATION_FAILED', '输入校验失败', parsed.error.flatten())
+  const plan = await savePlan(c.env.DB, parsed.data)
+  return c.json({ plan }, 201)
 })
 adminPlanRoutes.put('/plans/:id', async (c) => {
   const plan = await savePlan(c.env.DB,await readJson(c,planSchema),c.req.param('id'))
@@ -50,7 +58,18 @@ adminPlanRoutes.put('/plans/:id/entitlement-template', async c => {
   }
   return c.json({ templateId, planId: plan.id })
 })
-adminPlanRoutes.delete('/plans/:id', async (c) => { await deletePlan(c.env.DB,c.req.param('id')); return c.body(null,204) })
+adminPlanRoutes.delete('/plans/:id', async (c) => {
+  const text = await c.req.text()
+  let body: unknown = {}
+  if (text.trim()) {
+    try { body = JSON.parse(text) } catch { throw apiError(400, 'INVALID_JSON', 'JSON 格式无效') }
+  }
+  if (body && typeof body === 'object' && !Array.isArray(body) && typeof (body as { version?: unknown }).version === 'number') {
+    return archiveDefinitionResponse(c, c.req.param('id'), body)
+  }
+  await deletePlan(c.env.DB, c.req.param('id'))
+  return c.body(null, 204)
+})
 for (const path of ['/subscriptions/trial', '/entitlements/trial'] as const) {
   adminPlanRoutes.get(path, async (c) => c.json(await readTrialSettings(c.env.DB)))
   adminPlanRoutes.put(path, async (c) => {

@@ -28,10 +28,10 @@ test.describe.serial('Administrator frontend', () => {
     await expect(page).toHaveURL(/\/dashboard$/)
     await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
     await expect(page.locator('.workspace-topbar').getByRole('heading', { name: '概览' })).toBeVisible()
-    await expect(sidebar(page).getByRole('link')).toHaveText(['概览', '节点管理', '订阅管理', '用户管理', '运营管理', '系统设置'])
+    await expect(sidebar(page).getByRole('link')).toHaveText(['概览', '节点管理', '套餐管理', '用户管理', '运营管理', '系统设置'])
     await sidebar(page).getByRole('link', { name: '节点管理', exact: true }).click()
     await expect(page).toHaveURL(/\/catalog\/nodes$/)
-    await expect(page.getByRole('navigation', { name: '节点管理导航' }).getByRole('link')).toHaveText(['节点', '来源', '分组'])
+    await expect(page.getByRole('navigation', { name: '节点管理导航' }).getByRole('link')).toHaveText(['节点', '来源', '节点组'])
   })
 
   test('previews and saves a source, then keeps the edit drawer open on backdrop clicks', async ({ page }) => {
@@ -311,9 +311,9 @@ test.describe.serial('Administrator frontend', () => {
 
   test('creates a group and keeps edit and batch confirmation surfaces open on backdrop clicks', async ({ page }) => {
     await loginAdmin(page)
-    await openNodeSection(page, '分组')
+    await openNodeSection(page, '节点组')
     await expect(page).toHaveURL(/\/catalog\/groups$/)
-    await expect(page.getByRole('heading', { name: '分组', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '节点组', exact: true })).toBeVisible()
 
     await page.getByRole('button', { name: '添加分组' }).click()
     const createDrawer = page.getByRole('dialog', { name: '添加分组' })

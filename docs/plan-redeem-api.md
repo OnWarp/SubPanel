@@ -35,7 +35,7 @@
 
 ### `GET /api/admin/redeem-codes`
 
-分页参数 `limit`、`offset`，可选 `planId`。每条只返回 `masked`（`••••` 加末四位）和 `tail`，不返回摘要或明文。
+分页参数 `limit`、`offset`，可选 `planId`、`search`、`status`。`search` 匹配套餐名称、末四位和备注。`status` 为 `active`、`disabled`、`expired`、`exhausted`，停用优先于过期，过期优先于用完。每条返回 `masked`（`••••` 加末四位）、`tail` 和 `planName`，不返回摘要或明文。
 
 ### `PATCH /api/admin/redeem-codes/:id`
 
@@ -47,7 +47,7 @@
 
 ### `GET /api/admin/redeem-codes/:id/redemptions`
 
-分页返回兑换记录：`id`、`codeId`、`userId`、`userPlanId`、`redeemedAt`、`requestId`。不含兑换码明文和订阅 token。
+分页返回兑换记录：`id`、`codeId`、`userId`、`userPlanId`、`redeemedAt`、`requestId`，以及 `username`、`instanceStatus`、`expiresAt`、`planName`。不含兑换码明文和订阅 token。管理端字段说明见 `docs/plan-admin-api.md`。
 
 ## 用户
 
