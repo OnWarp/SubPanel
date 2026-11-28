@@ -16,6 +16,7 @@ import { RowActions } from '../../ui/RowActions'
 import { Section } from '../../ui/Section'
 import { SectionTabs } from '../../ui/SectionTabs'
 import { StatusMessage } from '../../ui/StatusMessage'
+import { scheduleHintPosition, useHintBubbleTracking } from '../../ui/hint-placement'
 import { Switch } from '../../ui/Switch'
 import { OperationsFooter } from '../admin/OperationsCard'
 
@@ -184,11 +185,14 @@ function DomainHint({ label, children }: { label: string; children: ReactNode })
   const id = useId()
   const descriptionId = useId()
   const popup = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const hoverOpened = useRef(false)
   const [expanded, setExpanded] = useState(false)
+  useHintBubbleTracking(trigger, popup)
   return (
     <>
       <button
+        ref={trigger}
         className="sys-domain-hint-button"
         type="button"
         aria-label={label}
@@ -198,7 +202,11 @@ function DomainHint({ label, children }: { label: string; children: ReactNode })
         popoverTarget={id}
         onMouseEnter={() => {
           hoverOpened.current = true
-          popup.current?.showPopover()
+          const node = popup.current
+          const anchor = trigger.current
+          if (!node || !anchor) return
+          if (!node.matches(':popover-open')) node.showPopover()
+          if (node.matches(':popover-open')) scheduleHintPosition(anchor, node)
         }}
         onMouseLeave={(event) => {
           const next = event.relatedTarget
@@ -221,7 +229,13 @@ function DomainHint({ label, children }: { label: string; children: ReactNode })
         className="sys-domain-hint-popover"
         popover="auto"
         role="note"
-        onToggle={(event) => setExpanded(event.newState === 'open')}
+        onToggle={(event) => {
+          setExpanded(event.newState === 'open')
+          if (event.newState !== 'open') return
+          const node = popup.current
+          const anchor = trigger.current
+          if (node && anchor) scheduleHintPosition(anchor, node)
+        }}
         onMouseLeave={() => {
           hoverOpened.current = false
           popup.current?.hidePopover()

@@ -269,16 +269,16 @@
   outline-offset: 2px;
 }
 
+/* Coordinates are written by placeHintBubble. position-area is not used: showPopover()
+   without an invoker source ignores it and the popover stays at the viewport origin. */
 .sys-domain-hint-popover {
   position: fixed;
   inset: auto;
-  position-area: bottom span-right;
-  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
   box-sizing: border-box;
-  width: min(280px, calc(100vw - 16px));
-  max-width: calc(100vw - 16px);
+  width: min(280px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
   max-height: min(50dvh, 240px);
-  margin: var(--space-1) 0 0;
+  margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow: auto;
   overflow-wrap: anywhere;
@@ -292,14 +292,6 @@
 }
 
 .sys-domain-hint-popover p { margin: 0; }
-
-@supports not (position-area: bottom) {
-  .sys-domain-hint-popover {
-    inset: 8px 8px auto 8px;
-    width: auto;
-    margin: 0;
-  }
-}
 
 .sys-domain-rows {
   margin: 0;
